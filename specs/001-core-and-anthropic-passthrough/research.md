@@ -413,3 +413,17 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   requests or requests upstream never saw. The spec states the exception.
 - Outcome: spec: one clause on the "No retries" rule naming the transport's replay of
   a bodyless idempotent request on a failed reused connection.
+
+## Q22 — Should a `Trailer` header reach the client when the spec calls it hop-by-hop?
+- Status: answered     Level: technical
+- Blocks / shapes: spec.md hop-by-hop header rule; AC14
+- Context: 2026-09-26. The final branch review of 001 found that when upstream
+  announces trailers, `httputil.ReverseProxy` strips the hop-by-hop `Trailer` header
+  and then adds a new one to the client response naming the same trailer keys (Go 1.25
+  `net/http/httputil/reverseproxy.go`, `rw.Header().Add("Trailer", …)`). The spec lists
+  `Trailer` as hop-by-hop, and AC14's test covers only the request side.
+- Question: is the re-announced `Trailer` a breach of the hop-by-hop rule?
+- Answer (2026-09-26, owner): no. Re-announcing `Trailer` is how the reverse proxy
+  forwards upstream's trailers to the client, which the passthrough rule wants, so the
+  behaviour stays.
+- Outcome: no spec, plan or task change.
