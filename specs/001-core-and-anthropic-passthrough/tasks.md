@@ -272,7 +272,7 @@ leak check (a goroutine-profile stack scan, no new dependency) before it returns
 
 ## Wiring
 
-- [ ] T15 — `cmd/gateway/run.go`: build the adapter list and profile list once; pass
+- [x] T15 — `cmd/gateway/run.go`: build the adapter list and profile list once; pass
   `config.Options.Upstreams` from the same list, so a key and its adapter cannot drift;
   build the `core.Registry` (`AddProfile(claudecode.Profile{})`, `AddAdapter` with
   `cfg.Upstreams["anthropic"]`) and add `registry.Mount` to the `server.New` mounts

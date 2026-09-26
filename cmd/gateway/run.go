@@ -12,8 +12,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/brutally-honest/llm-gateway/internal/clients/claudecode"
 	"github.com/brutally-honest/llm-gateway/internal/config"
+	"github.com/brutally-honest/llm-gateway/internal/core"
 	"github.com/brutally-honest/llm-gateway/internal/logging"
+	"github.com/brutally-honest/llm-gateway/internal/protocols/anthropic"
 	"github.com/brutally-honest/llm-gateway/internal/server"
 )
 
@@ -27,6 +30,23 @@ type deps struct {
 	stdout    io.Writer
 	listen    func(network, addr string) (net.Listener, error)
 	mount     []func(chi.Router) // test-only routes; nil in main
+}
+
+// registered is every protocol adapter and client profile the gateway runs with, in
+// registration order. It is the one list: config's upstream keys and the mounted
+// proxies both come from it, so a key and its adapter cannot drift. This package is
+// the only one that imports an adapter or a profile.
+func registered() ([]core.Adapter, []core.Profile) {
+	return []core.Adapter{anthropic.Adapter{}}, []core.Profile{claudecode.Profile{}}
+}
+
+// upstreamSpecs is the upstreams.<name> block config expects for each adapter.
+func upstreamSpecs(adapters []core.Adapter) []config.UpstreamSpec {
+	specs := make([]config.UpstreamSpec, 0, len(adapters))
+	for _, a := range adapters {
+		specs = append(specs, config.UpstreamSpec{Name: a.Name(), DefaultBaseURL: a.DefaultBaseURL()})
+	}
+	return specs
 }
 
 // Exit codes.
@@ -59,10 +79,8 @@ func run(ctx context.Context, d deps) int {
 		return exitConfig
 	}
 
-	// Interim until T15 builds this list from the registered adapters: config.example.yaml
-	// already holds the block, so Load must know its name.
-	upstreams := []config.UpstreamSpec{{Name: "anthropic", DefaultBaseURL: "https://api.anthropic.com"}}
-	cfg, src, err := config.Load(config.Options{Path: *configPath, DefaultPath: "config.yaml", LookupEnv: d.lookupEnv, Upstreams: upstreams})
+	adapters, profiles := registered()
+	cfg, src, err := config.Load(config.Options{Path: *configPath, DefaultPath: "config.yaml", LookupEnv: d.lookupEnv, Upstreams: upstreamSpecs(adapters)})
 	if err != nil {
 		var ce *config.Error
 		if errors.As(err, &ce) {
@@ -96,7 +114,16 @@ func run(ctx context.Context, d deps) int {
 		return exitRuntime
 	}
 
-	srv := server.New(log, d.mount...)
+	registry := core.NewRegistry(log)
+	for _, p := range profiles {
+		registry.AddProfile(p)
+	}
+	for _, a := range adapters {
+		registry.AddAdapter(a, cfg.Upstreams[a.Name()])
+	}
+	// The adapters' prefixes first, then the test-only routes.
+	mounts := append([]func(chi.Router){registry.Mount}, d.mount...)
+	srv := server.New(log, mounts...)
 	serveErr := logging.Go(log, "serve", func() error { return srv.Serve(ln) })
 
 	configSource := src.File
