@@ -239,7 +239,7 @@ leak check (a goroutine-profile stack scan, no new dependency) before it returns
 
 ## Client and protocol
 
-- [ ] T13 — `internal/clients/claudecode/profile.go`: `Profile` (`Name` is
+- [x] T13 — `internal/clients/claudecode/profile.go`: `Profile` (`Name` is
   `claude-code`; `Match` is true when `User-Agent` starts with `claude-cli/` or
   `x-app: cli` is present). Detection only: no session or agent IDs. It must not import
   `core`, only satisfy its interface. Test first: `TestProfile_ClaudeCodeDetected`
