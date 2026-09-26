@@ -221,7 +221,7 @@ leak check (a goroutine-profile stack scan, no new dependency) before it returns
   check, and T10's tests still pass. Commit:
   `feat(proxy): handle client disconnects and upstream aborts` (AC30, AC31, AC47, AC48)
   (shaped: Q8, Q12, Q13) (shaped: Q19)
-- [ ] T12 — `internal/core/registry.go`: `NewRegistry(log)`, `AddProfile`,
+- [x] T12 — `internal/core/registry.go`: `NewRegistry(log)`, `AddProfile`,
   `AddAdapter(a, up)` (builds a `Proxy` per adapter), `Identify(r)` (first matching
   profile in registration order, else `ClientUnknown`) and `Mount(chi.Router)` (the
   signature `server.New` takes), which registers `prefix + "/*"` for every method with
