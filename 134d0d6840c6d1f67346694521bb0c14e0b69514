@@ -1,0 +1,6 @@
+Spec: specs/001-core-and-anthropic-passthrough/spec.md (AC24, AC25)
+Research: Q10, Q14
+Why this approach: the fake upstream parses stream.headers (status line, then Name: value lines) and sets each header as recorded, then writes stream.sse split after each "\n\n" boundary with a Flush per event; the split is checked to rebuild the file. The client is a plain http.Client POST to /anthropic/v1/messages via startGateway (server.New + core.Registry with anthropic.Adapter). Besides the byte-equal body, it checks the recorded status and that every recorded header reaches the client with its value.
+Alternatives rejected: comparing only the body (the header check costs nothing and guards open-list forwarding); the leak check (the stream ends normally, not in a cancel or abort).
+Trade-off / known limit: a guard with no production change, so it passed on arrival; the header check is Get-based, so a recorded multi-valued header would only have its first value compared (the fixture has none).
+Verified by: passed on arrival; proved by briefly making modifyResponse drop Server and append one byte to the body (test failed on both the header and the 2035-vs-2034 byte body), then reverting; go test -race -count=5 -run TestProxy_GoldenAnthropicStreamReplay; TestFixtures_NoIdentifiers over the real fixture; make verify.
