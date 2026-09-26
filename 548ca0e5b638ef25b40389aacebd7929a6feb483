@@ -1,0 +1,6 @@
+Spec: specs/001-core-and-anthropic-passthrough/spec.md (AC32)
+Research: Q1 (HEAD /api/hello comes with User-Agent Bun/... and no X-App, so it stays unknown)
+Why this approach: a value type with Name and Match reading only two headers; the core.Profile conformance check sits in the external test package so profile.go never imports core.
+Alternatives rejected: case-insensitive or substring matching on User-Agent (the spec says "starts with"); matching any x-app value (the spec names x-app: cli).
+Trade-off / known limit: x-app must equal "cli" exactly; a client that spoofs either header is labelled claude-code, which is fine for detection-only labelling.
+Verified by: TestProfile_ClaudeCodeDetected (claude-cli UA, x-app: cli alone, the Q1 Bun HEAD /api/hello shape, a non-prefix UA, another x-app value, no headers); first failed on no non-test Go files; go test -race; make verify.
