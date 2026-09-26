@@ -1,0 +1,5 @@
+Spec: specs/001-core-and-anthropic-passthrough/spec.md (AC40)
+Why this approach: a guard with no production change. The fake upstream sends one SSE event, then blocks until released; the test cancels run's ctx, waits until the listener refuses dials (so Shutdown has begun), holds the stream 500ms more, then releases it and reads the rest. The hold makes a short timeout cut the stream, which is what the proof relies on.
+Alternatives rejected: a fixed sleep after cancel instead of polling the listener (would not show shutdown had actually started); a test-only route in place of the anthropic adapter (the AC asks for a real proxied stream).
+Trade-off / known limit: the 500ms hold adds half a second to the suite; no goroutine leak check, since the stream ends normally rather than in a cancel or abort; a sync.Once cleanup releases the upstream if the test fails early, so httptest Close cannot hang.
+Verified by: passed on arrival; proved by running it once with GATEWAY_SHUTDOWN_TIMEOUT=100ms (stream cut with unexpected EOF, exit 1, no gateway stopped line), then reverting; go test -race -count=3 -run TestRun_Shutdown ./cmd/gateway; make verify.
