@@ -1,0 +1,4 @@
+Spec: specs/001-core-and-anthropic-passthrough/spec.md
+Why: the final branch review found the comment claimed defaults are validated like any other base URL; internal/config/upstream.go defaultUpstream only calls url.Parse.
+Trade-off / known limit: a malformed adapter default (http, a query, a fragment) would not fail fast; the comment now says so instead of the code changing.
+Verified by: make verify
