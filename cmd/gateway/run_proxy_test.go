@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -139,6 +140,9 @@ func TestRun_ProxiesAnthropicEndToEnd(t *testing.T) {
 	}
 }
 
+// overrideValue is the base_url override in TestRun_UpstreamEnvOverrideLogged.
+var overrideValue = regexp.MustCompile(`127\.0\.0\.1:1\b`)
+
 // AC2, the startup-line half: an upstream env override is named in env_overrides.
 func TestRun_UpstreamEnvOverrideLogged(t *testing.T) {
 	g, _ := servedWith(t, map[string]string{
@@ -157,7 +161,8 @@ func TestRun_UpstreamEnvOverrideLogged(t *testing.T) {
 			t.Errorf("env_overrides = %v, want it to name %s", got, key)
 		}
 	}
-	if strings.Contains(g.stdout.String(), "127.0.0.1:1") {
+	// The word boundary after ":1" keeps the gateway's own 127.0.0.1:<port> from matching.
+	if overrideValue.MatchString(g.stdout.String()) {
 		t.Errorf("an override value appears in the output\n%s", g.stdout.String())
 	}
 }
@@ -172,12 +177,25 @@ func TestProxy_SecretsNotLogged(t *testing.T) {
 	}
 	stderr := os.Stderr
 	os.Stderr = w
-	t.Cleanup(func() { os.Stderr = stderr })
 	stderrOut := make(chan string, 1)
 	go func() {
 		b, _ := io.ReadAll(r)
 		stderrOut <- string(b)
 	}()
+	// readStderr restores os.Stderr, closes the pipe so the reader returns, and waits
+	// for it. The cleanup runs it on every exit path, a t.Fatal included.
+	var once sync.Once
+	var stderrText string
+	readStderr := func() string {
+		once.Do(func() {
+			os.Stderr = stderr
+			_ = w.Close()
+			stderrText = <-stderrOut
+			_ = r.Close()
+		})
+		return stderrText
+	}
+	t.Cleanup(func() { readStderr() })
 
 	header := map[string]string{
 		"User-Agent":    "claude-cli/2.1.283 (external, cli)",
@@ -246,9 +264,7 @@ func TestProxy_SecretsNotLogged(t *testing.T) {
 		}
 		noValue(t, g, sentinel)
 	}
-	os.Stderr = stderr
-	_ = w.Close()
-	if out := <-stderrOut; strings.Contains(out, sentinel) {
+	if out := readStderr(); strings.Contains(out, sentinel) {
 		t.Errorf("stderr contains the sentinel\n%s", out)
 	}
 }
