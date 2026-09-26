@@ -247,7 +247,7 @@ leak check (a goroutine-profile stack scan, no new dependency) before it returns
   `Bun/…` user agent with neither header, the `HEAD /api/hello` shape from Q1, does
   not). Done: it passes. Commit: `feat(claude-code): detect claude code requests`
   (AC32) (shaped: Q1)
-- [ ] T14 — `internal/protocols/anthropic/adapter.go`: `Name = "anthropic"`, `Adapter`
+- [x] T14 — `internal/protocols/anthropic/adapter.go`: `Name = "anthropic"`, `Adapter`
   (`Prefix` `/anthropic`, `DefaultBaseURL` `https://api.anthropic.com`, `AuthKind` from
   header presence only, `ErrorBody` returning the envelope
   `{"type":"error","error":{"type":"api_error","message":"gateway: <reason>"}}` as

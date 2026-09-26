@@ -12,6 +12,7 @@ const (
 	AuthNone   AuthKind = "none"
 	AuthAPIKey AuthKind = "api_key"
 	AuthBearer AuthKind = "bearer"
+	AuthBoth   AuthKind = "both" // an API key and a bearer token are both present
 )
 
 // ClientUnknown labels a request that no registered profile matches. It is still
