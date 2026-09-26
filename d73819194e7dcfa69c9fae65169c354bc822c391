@@ -1,0 +1,5 @@
+Spec: specs/001-core-and-anthropic-passthrough/spec.md (No retries; AC29), research Q21
+Why: the final branch review flagged that the stock http.Transport replays some requests, contradicting "one client request is at most one upstream request".
+Alternatives rejected: the owner's first wording ("a bodyless GET, HEAD or OPTIONS once") was narrower than Go 1.25 does: it also replays TRACE and Idempotency-Key requests, and is not capped at one replay. The owner chose the accurate clause.
+Trade-off / known limit: TestProxy_NoRetry still covers only a POST with a body on a fresh connection; the replay is accepted, not tested.
+Verified by: reading net/http request.go isReplayable and transport.go shouldRetryRequest/roundTrip (go1.25.4); make verify
