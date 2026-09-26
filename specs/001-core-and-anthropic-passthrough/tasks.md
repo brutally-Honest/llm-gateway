@@ -319,7 +319,7 @@ leak check (a goroutine-profile stack scan, no new dependency) before it returns
   same commit. No other line of `PLAN.md` changes. Done: `git diff` shows exactly those
   two edits, and `make verify` passes. Commit: `docs(repo): mark adr 0003 approved` (no
   AC; plan "Files and packages touched")
-- [ ] T20 — `docs/clients/claude-code.md` (replacing the `.gitkeep`). It has four
+- [x] T20 — `docs/clients/claude-code.md` (replacing the `.gitkeep`). It has four
   sections. (1) Setup: `ANTHROPIC_BASE_URL=http://127.0.0.1:7197/anthropic`, in API-key
   mode (`ANTHROPIC_API_KEY`) and in subscription mode (`/login`, no
   `ANTHROPIC_API_KEY`). (2) The known limits from `PLAN.md` §3, quoted by link, not
