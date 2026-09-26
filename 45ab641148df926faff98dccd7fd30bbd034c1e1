@@ -1,0 +1,7 @@
+Spec: specs/001-core-and-anthropic-passthrough/spec.md (AC11, AC33, AC35)
+ADR: docs/decisions/0003-reverseproxy-with-rewrite-as-proxy-engine.md
+Research: Q20 (non-standard methods get chi's 405)
+Why this approach: Mount registers prefix + "/*" with chi's Handle, so every standard method, HEAD included, reaches the proxy and the bare prefix falls to chi's 404. AddAdapter passes the method value r.Identify to NewProxy, so profiles are read at request time whatever the registration order.
+Alternatives rejected: per-method routes (an allowlist of methods); dispatch by prefix before chi (Q20 option c, deferred).
+Trade-off / known limit: registration is not locked; everything is added before Serve and only read after. Non-standard methods get 405 (Q20).
+Verified by: TestRouter_PathOutsidePrefixIs404, TestProfile_UnknownClientProxied, TestCore_TestAdapterAndProfileNeedNoCoreChange (GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS through a server.New mount), TestRegistry_IdentifyFirstMatchWins; first failed on undefined core.NewRegistry; go test -race -count=3; make verify.
