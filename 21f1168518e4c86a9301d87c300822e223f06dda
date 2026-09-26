@@ -1,0 +1,5 @@
+Spec: specs/001-core-and-anthropic-passthrough/spec.md (AC14), research Q22
+Why: the final branch review flagged that Trailer, listed as hop-by-hop, can reappear on client responses.
+Alternatives rejected: stripping Trailer from responses, which would stop trailers being forwarded and break passthrough.
+Trade-off / known limit: AC14's test still checks Trailer only on the request side.
+Verified by: go1.25.4 net/http/httputil/reverseproxy.go line 528; make verify
