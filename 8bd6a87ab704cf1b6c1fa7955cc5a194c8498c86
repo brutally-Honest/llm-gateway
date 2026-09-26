@@ -1,0 +1,4 @@
+Spec: specs/001-core-and-anthropic-passthrough/spec.md (AC44, AC45, AC46)
+Why: T20 wrote the checklist into the docs page, which left the same steps in two files that had to be kept in step by hand. The page is now the single copy.
+Kept in T22: why it is NEEDS-HUMAN, the Q4 API-key dependency, the PR-evidence and Q4-answer instructions, the fail-then-query rule, and every tag.
+Verified by: make verify
