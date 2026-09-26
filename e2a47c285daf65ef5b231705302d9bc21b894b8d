@@ -1,0 +1,4 @@
+Spec: specs/001-core-and-anthropic-passthrough/spec.md (AC46)
+Why this approach: four numbered sections matching the AC's four items; the known limits link to PLAN.md §3 instead of copying them (one home per rule); the smoke checklist restates T22's seven steps and evidence list in reader form with the same commands and expectations.
+Trade-off / known limit: the checklist is a second copy of T22's steps, so a change to one must be mirrored in the other; the page adds `docker compose kill` as the immediate-stop path for Docker, which the spec does not name.
+Verified by: read against AC46's four items (setup for both modes with ANTHROPIC_BASE_URL=http://127.0.0.1:7197/anthropic, PLAN §3 limits by link, the smoke checklist, the 10-minute shutdown incl. docker compose stop and the second Ctrl-C); make verify.
