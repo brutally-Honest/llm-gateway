@@ -294,7 +294,7 @@ leak check (a goroutine-profile stack scan, no new dependency) before it returns
   arrival, so it is proved by running it once with `GATEWAY_SHUTDOWN_TIMEOUT=100ms` and
   seeing the stream cut and a non-zero exit, then reverting. Done: it passes under
   `-race`. Commit: `test(server): prove shutdown waits for a proxied stream` (AC40)
-- [ ] T17 — `docker-compose.yml`: `stop_grace_period: 10m` on the gateway service, and
+- [x] T17 — `docker-compose.yml`: `stop_grace_period: 10m` on the gateway service, and
   `test/conventions/compose_test.go`, which parses the file with the `yaml` package
   already in `go.mod` and compares it to `config.Defaults().ShutdownTimeout`, so the two
   cannot drift. Test first: `TestCompose_StopGracePeriodMatchesShutdownTimeout`, which
