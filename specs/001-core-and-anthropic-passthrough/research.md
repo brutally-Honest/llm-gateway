@@ -385,3 +385,31 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   drops the unknown-method promise and states the known limit. tasks: T12 drops the
   unknown-method row of `TestCore_TestAdapterAndProfileNeedNoCoreChange` and changes
   from `(blocked: Q20)` to `(shaped: Q20)`.
+
+## Q21 — Can Go's transport send one client request upstream more than once?
+- Status: answered     Level: technical
+- Blocks / shapes: spec.md "No retries"; AC29 (`TestProxy_NoRetry`)
+- Context: 2026-09-26. The final branch review of 001 found that `internal/core/proxy.go`
+  uses a stock `http.Transport`, which replays some requests on its own, while the spec
+  says one client request is at most one upstream request. `TestProxy_NoRetry` only
+  sends a POST with a body on a fresh connection, so it cannot see this. From the Go
+  1.25 source (`net/http` `Request.isReplayable`, `persistConn.shouldRetryRequest`,
+  `Transport.roundTrip`):
+  - A request is replayed only when it failed on a reused connection; a fresh
+    connection is never retried.
+  - If nothing was written before the failure, a request with no body (any method) is
+    replayed; upstream never saw the first try.
+  - If the request was written, it is replayed only when it has no body and is GET,
+    HEAD, OPTIONS or TRACE, or carries `Idempotency-Key` or `X-Idempotency-Key`.
+  - The loop is not capped at one replay: it goes on while each failure is on a reused
+    connection.
+  - With HTTP/2 (`ForceAttemptHTTP2`), a request whose body has not been sent yet can be
+    retried after a refused stream or GOAWAY; upstream never processed it.
+  - The gateway's outgoing request has no `GetBody`, so a request with a body that was
+    written is never replayed.
+- Question: is this replay acceptable under the no-retry rule?
+- Answer (2026-09-26, owner): yes. A POST with a body that reached upstream is never
+  resent, so no billed request is duplicated; the replays are bodyless idempotent
+  requests or requests upstream never saw. The spec states the exception.
+- Outcome: spec: one clause on the "No retries" rule naming the transport's replay of
+  a bodyless idempotent request on a failed reused connection.
