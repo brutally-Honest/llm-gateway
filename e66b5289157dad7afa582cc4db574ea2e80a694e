@@ -1,0 +1,3 @@
+Spec: specs/001-core-and-anthropic-passthrough/spec.md (AC2, AC39)
+Why: the T15 review noted two weak spots in cmd/gateway/run_proxy_test.go. The override check used strings.Contains("127.0.0.1:1"), which would also match a gateway port starting with 1; it is now the regexp 127\.0\.0\.1:1\b, whose word boundary rules out a longer port. The stderr reader leaked when the test failed before the explicit w.Close; readStderr (sync.Once) now restores os.Stderr, closes the pipe and waits for the reader, and t.Cleanup calls it, running after the gateways' own cleanups (LIFO) so nothing writes to the pipe afterwards.
+Verified by: go test -race -count=3 on both tests; make verify
