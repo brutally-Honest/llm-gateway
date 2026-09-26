@@ -413,6 +413,12 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   requests or requests upstream never saw. The spec states the exception.
 - Outcome: spec: one clause on the "No retries" rule naming the transport's replay of
   a bodyless idempotent request on a failed reused connection.
+- Correction (2026-09-26, owner): the first clause listed GET, HEAD, OPTIONS, TRACE
+  and `Idempotency-Key`, which read as complete but left out `X-Idempotency-Key`, a
+  request that failed before anything was written, and an HTTP/2 retry after a refused
+  stream or GOAWAY. The clause now reads "except Go's transport replaying a request
+  upstream never saw, or a bodyless idempotent one (research Q21)"; the cases are
+  listed in the Context above.
 
 ## Q22 — Should a `Trailer` header reach the client when the spec calls it hop-by-hop?
 - Status: answered     Level: technical

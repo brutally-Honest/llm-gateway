@@ -110,9 +110,8 @@ Still local only. There is still no gateway auth, so the default bind stays
     The Anthropic envelope is
     `{"type":"error","error":{"type":"api_error","message":"gateway: <reason>"}}`.
   - **No retries.** The gateway never retries: one client request is at most one
-    upstream request, except Go's transport replaying a bodyless idempotent request
-    (GET, HEAD, OPTIONS, TRACE, or one with an `Idempotency-Key`) on a failed reused
-    connection (research Q21).
+    upstream request, except Go's transport replaying a request upstream never saw,
+    or a bodyless idempotent one (research Q21).
   - **Client disconnects mid-request:** the upstream request is cancelled.
   - **Upstream fails after response headers were sent:** the client connection is
     aborted. No event is invented.
