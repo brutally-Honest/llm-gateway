@@ -1,0 +1,4 @@
+Spec: specs/001-core-and-anthropic-passthrough/spec.md (No retries; AC29), research Q21
+Why: the cleanup review found the d738191 clause narrower than Q21's own findings: it omitted X-Idempotency-Key, a request that failed before anything was written, and an HTTP/2 retry after a refused stream or GOAWAY. The owner chose the broader wording.
+Alternatives rejected: extending the parenthesised list, which would keep implying it was exhaustive.
+Verified by: make verify; Q21 gets a dated correction line, and no earlier line is edited
