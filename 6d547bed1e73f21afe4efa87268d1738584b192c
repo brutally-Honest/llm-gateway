@@ -1,0 +1,4 @@
+Spec: specs/001-core-and-anthropic-passthrough/spec.md (no AC; plan "Files and packages touched")
+ADR: docs/decisions/0003-reverseproxy-with-rewrite-as-proxy-engine.md
+Why this approach: the engine has shipped through T1-T18, so the proposed ADR is confirmed; the PLAN row uses the same "Decided ([ADR NNNN](...))" form as the config row for ADR 0002.
+Verified by: git diff shows exactly two changed lines (ADR front matter status, PLAN.md §8 proxy engine status cell) plus the T19 tick in tasks.md; make verify.
