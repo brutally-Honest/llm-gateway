@@ -330,7 +330,7 @@ leak check (a goroutine-profile stack scan, no new dependency) before it returns
   (`ManualDocs_ClaudeCodePage` is this read, checked by the reviewer against the AC's
   four items), and `make verify` passes. Commit:
   `docs(claude-code): add the claude code setup page` (AC46)
-- [ ] T21 — `internal/protocols/anthropic/golden_test.go`: a fake upstream serves
+- [x] T21 — `internal/protocols/anthropic/golden_test.go`: a fake upstream serves
   `testdata/stream.sse` with `testdata/stream.headers`, flushing at each blank-line event
   boundary, through the real adapter and `server.New`; the client's bytes must equal the
   file. The fixture is recorded and committed by the owner, not by the implementer
