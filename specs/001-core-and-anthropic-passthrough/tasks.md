@@ -287,7 +287,7 @@ leak check (a goroutine-profile stack scan, no new dependency) before it returns
   route). Done: those three pass under `-race`, and the log line for an unknown user
   agent has `client: unknown`. Commit: `feat(server): mount the anthropic adapter in run`
   (AC2, AC36, AC37, AC38, AC39)
-- [ ] T16 — `cmd/gateway/run_shutdown_test.go`: a guard over behaviour the earlier
+- [x] T16 — `cmd/gateway/run_shutdown_test.go`: a guard over behaviour the earlier
   tasks built, with no production change. Test: `TestRun_ShutdownWaitsForStream` (a real
   proxied stream, through `run` with the default `shutdown_timeout`; shutdown starts
   mid-stream; the stream reaches its end and the process exits `0`). It passes on
