@@ -1,0 +1,5 @@
+Spec: specs/001-core-and-anthropic-passthrough/spec.md (AC43)
+Why this approach: the test parses docker-compose.yml with go.yaml.in/yaml/v3 (already in go.mod) into a minimal struct, reads services.gateway.stop_grace_period with time.ParseDuration and requires it to be at least config.Defaults().ShutdownTimeout, so raising the default without the compose file fails the build.
+Alternatives rejected: an exact-equality check (AC43 says "at least", and a longer grace period is harmless); shelling out to docker compose config (Docker is not guaranteed in make verify).
+Trade-off / known limit: time.ParseDuration accepts the Go subset of compose's duration syntax (e.g. 10m, 1m30s); a bare integer would fail the test even though compose would read it as seconds.
+Verified by: TestCompose_StopGracePeriodMatchesShutdownTimeout failed first with "gateway service has no stop_grace_period", passes after the edit; docker compose config parses the file and shows stop_grace_period: 10m0s; make verify.
