@@ -348,44 +348,17 @@ leak check (a goroutine-profile stack scan, no new dependency) before it returns
 
 - [ ] T22 — Smoke Claude Code through the gateway, in both auth modes. The implementer
   reports NEEDS-HUMAN: it has no Claude Code login, no API key, and no way to run an
-  interactive session. Nothing is built here; nothing is committed. Run this, in this
-  order, after T1–T21 are ticked. AC44's API-key half needs an API key that research
-  Q4 says is not yet available.
+  interactive session. Nothing is built here; nothing is committed. Run it after
+  T1–T21 are ticked. AC44's API-key half needs an API key that research Q4 says is not
+  yet available.
 
-  Setup, once. Terminal A: `make run 2>&1 | tee /tmp/llmgw-smoke.log` (the log is JSON
-  lines). Terminal B, in a scratch directory that holds a few files:
-  `export ANTHROPIC_BASE_URL=http://127.0.0.1:7197/anthropic`.
-
-  Run the same seven steps for each mode.
-  1. Set the mode. API key (AC44): `export ANTHROPIC_API_KEY=<your key>`. Subscription
-     (AC45): `unset ANTHROPIC_API_KEY`, start `claude`, run `/login` with the claude.ai
-     account, then `/exit`.
-  2. Tool-call turn: `claude -p "Use the Bash tool to run ls and tell me how many
-     entries there are." --allowedTools Bash`. It exits `0`, runs the tool and answers
-     correctly.
-  3. Streamed turn: `claude`, then ask `Write 200 words about lighthouses.` The text
-     appears as it is generated, not in one lump at the end. Then `/exit`.
-  4. Direct baseline: repeat steps 2 and 3 once with `env -u ANTHROPIC_BASE_URL claude
-     …` and note that they behave the same (same success, same streaming).
-  5. Session start: `jq -c 'select(.msg=="request" and .method=="HEAD")'
-     /tmp/llmgw-smoke.log`. In an interactive session there is one line for
-     `/anthropic/api/hello` (research Q1; `-p` mode may not send it), with upstream's
-     status and `client: unknown`.
-  6. Messages lines: `jq -c 'select(.msg=="request" and (.path|endswith("/v1/messages")))
-     | {path,status,protocol,client,auth,stream,ttfb_ms}' /tmp/llmgw-smoke.log`. Every
-     line shows `protocol: anthropic` and `client: claude-code`; `auth` is `api_key`
-     in AC44's run and `bearer` in AC45's; `stream: true` for the streamed turn.
-  7. Secrets: `grep -c "$ANTHROPIC_API_KEY" /tmp/llmgw-smoke.log` (API-key mode) and
-     `grep -ci 'sk-ant\|bearer ' /tmp/llmgw-smoke.log` (both modes) print `0`.
-
-  Evidence to paste into the PR, per mode: the gateway sha (`git rev-parse --short
-  HEAD`); one line for step 2 and one for step 3 each saying what happened and that it
-  matches the direct run; the step 5 and step 6 output; the step 7 counts. Redact
-  nothing else and never paste a key or token. Then append a dated answer line under
-  Q4 in `research.md` with the API-key mode result and set its Status to answered, so
-  the task's `(blocked: Q4)` becomes `(shaped: Q4)`. If any step fails, do not
-  work around it: add an open query and a fix task. (AC44, AC45) (shaped: Q3)
-  (blocked: Q4) (needs-human)
+  The setup, the seven steps and the evidence to record are in
+  `docs/clients/claude-code.md` §3 (Smoke checklist); that page is the one copy. Run
+  them once per mode: API key for AC44, subscription for AC45. Paste the evidence into
+  the PR. Then append a dated answer line under Q4 in `research.md` with the API-key
+  mode result and set its Status to answered, so the task's `(blocked: Q4)` becomes
+  `(shaped: Q4)`. If any step fails, do not work around it: add an open query and a fix
+  task. (AC44, AC45) (shaped: Q3) (blocked: Q4) (needs-human)
 
 ## Coverage check
 
