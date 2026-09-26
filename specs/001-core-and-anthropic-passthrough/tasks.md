@@ -313,7 +313,7 @@ leak check (a goroutine-profile stack scan, no new dependency) before it returns
   identifier, each flagged, and a clean file passes) and `TestFixtures_NoIdentifiers`
   (the real tree; passes vacuously until T21 adds a fixture). Done: both pass. Commit:
   `test(repo): fail on identifiers in test fixtures` (AC25)
-- [ ] T19 — `docs/decisions/0003-reverseproxy-with-rewrite-as-proxy-engine.md`: `status:
+- [x] T19 — `docs/decisions/0003-reverseproxy-with-rewrite-as-proxy-engine.md`: `status:
   approved`. `PLAN.md` §8, the "Proxy engine" row: `Proposed` becomes `Decided
   ([ADR 0003](docs/decisions/0003-reverseproxy-with-rewrite-as-proxy-engine.md))`, in the
   same commit. No other line of `PLAN.md` changes. Done: `git diff` shows exactly those
