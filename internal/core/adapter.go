@@ -25,7 +25,8 @@ type Adapter interface {
 	Name() string
 	// Prefix is where the adapter is mounted: a leading slash and no trailing one.
 	Prefix() string
-	// DefaultBaseURL is the upstream's default; config validates it like any other.
+	// DefaultBaseURL is the upstream's default. Config only checks that it parses
+	// (url.Parse); the base_url rules for file and env values are not applied to it.
 	DefaultBaseURL() string
 	// AuthKind reports which kind of credential the request headers carry.
 	AuthKind(h http.Header) AuthKind
