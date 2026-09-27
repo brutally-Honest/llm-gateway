@@ -72,6 +72,12 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   base URL, and does it behave as it does direct?
 - Answer: untested.
 - Outcome: to be run as part of the manual checks (AC44–AC46).
+- 2026-09-27: AC45 (subscription) passed on `c2846ad`. The tool-call turn and the
+  streamed turn match the direct run. `HEAD /api/hello` is logged with
+  `client: unknown`. The `/v1/messages` lines show `protocol: anthropic`,
+  `client: claude-code`, `auth: bearer`, `stream: true`. The secret grep prints `0`.
+  One upstream `429` was passed through verbatim and Claude Code recovered on its own.
+  AC44 (API key) is deferred until a key is available, so Q4 stays open.
 
 ## Q5 — Does `ReverseProxy` with `Rewrite` forward the request exactly as the client sent it?
 - Status: answered     Level: technical

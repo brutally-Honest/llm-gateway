@@ -360,6 +360,8 @@ leak check (a goroutine-profile stack scan, no new dependency) before it returns
   `(shaped: Q4)`. If any step fails, do not work around it: add an open query and a fix
   task. (AC44, AC45) (shaped: Q3) (blocked: Q4) (needs-human)
 
+  2026-09-27: AC45 (subscription) done on `c2846ad`; AC44 (API key) deferred (Q4).
+
 ## Coverage check
 
 Every AC in `spec.md` (AC1–AC48) maps to at least one task:
