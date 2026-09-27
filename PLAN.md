@@ -74,7 +74,7 @@ v1 runs **on my machine, for me only**. It must be able to grow into a team or h
 | Plain apps / scripts | any supported protocol | base URL in the SDK | free once the protocol exists |
 
 **Known client limits (inherent, not bugs):**
-- **Claude Code:** fast-mode checks and the WebFetch domain check call `api.anthropic.com` directly, so they never reach the gateway.
+- **Claude Code:** fast-mode checks and the WebFetch domain check call `api.anthropic.com` directly, so they never reach the gateway. Through a custom base URL, Claude Code does not load claude.ai connectors (Gmail, Calendar, Drive), so the gateway sees no request for them.
 - **Cursor:** Tab autocomplete and inline edit (Cmd+K) always use Cursor's own backend and are invisible to the gateway. Agent-mode and sub-agent coverage is unconfirmed (see OQ-6). Cursor's servers see the traffic before the gateway does.
 - **All clients:** the gateway sees what the model *asked for* and what the harness *reported back*, not the real file-system or network side effects. Phase 7 addresses this.
 

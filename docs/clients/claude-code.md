@@ -54,7 +54,8 @@ Run this to check Claude Code through the gateway, once per auth mode.
 
 Setup, once:
 
-- Terminal A: `make run 2>&1 | tee /tmp/llmgw-smoke.log` (the log is JSON lines).
+- Terminal A: `make run 2>&1 | tee /tmp/llmgw-smoke.log`. The log is JSON lines after
+  make's own output, so steps 5 and 6 keep only lines that start with `{`.
 - Terminal B, in a scratch directory that holds a few files:
   `export ANTHROPIC_BASE_URL=http://127.0.0.1:7197/anthropic`.
 
@@ -72,11 +73,11 @@ Then, in terminal B, run the same seven steps for each mode:
 4. **Direct baseline.** Repeat steps 2 and 3 once with `env -u ANTHROPIC_BASE_URL claude …`
    and check that they behave the same (same success, same streaming).
 5. **Session start.**
-   `jq -c 'select(.msg=="request" and .method=="HEAD")' /tmp/llmgw-smoke.log`.
+   `grep '^{' /tmp/llmgw-smoke.log | jq -c 'select(.msg=="request" and .method=="HEAD")'`.
    An interactive session shows one line for `/anthropic/api/hello`, with upstream's
    status and `client: unknown` (`-p` mode may not send it).
 6. **Messages lines.**
-   `jq -c 'select(.msg=="request" and (.path|endswith("/v1/messages"))) | {path,status,protocol,client,auth,stream,ttfb_ms}' /tmp/llmgw-smoke.log`.
+   `grep '^{' /tmp/llmgw-smoke.log | jq -c 'select(.msg=="request" and (.path|endswith("/v1/messages"))) | {path,status,protocol,client,auth,stream,ttfb_ms}'`.
    Every line shows `protocol: anthropic` and `client: claude-code`; `auth` is
    `api_key` in API-key mode and `bearer` in subscription mode; `stream: true` for
    the streamed turn.
