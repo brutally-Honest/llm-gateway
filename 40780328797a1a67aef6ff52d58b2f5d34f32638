@@ -1,0 +1,4 @@
+Spec: specs/001-core-and-anthropic-passthrough/spec.md (AC44, AC45), research.md Q4, tasks.md T22
+Evidence: subscription smoke run on c2846ad, 2026-09-27, following docs/clients/claude-code.md §3 with the grep '^{' filter from f2fbb5e.
+Notable: one upstream 429 passed through verbatim; Claude Code retried and recovered without gateway help.
+Trade-off / known limit: Q4 stays open and T22 stays unticked until AC44 runs with an API key.
