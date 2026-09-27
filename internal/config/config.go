@@ -16,6 +16,7 @@ type Config struct {
 	ListenAddr      string
 	LogLevel        string // one of debug, info, warn, error (lower-cased)
 	ShutdownTimeout time.Duration
+	Upstreams       map[string]Upstream // by adapter name; nil when Options.Upstreams is empty
 }
 
 // Options says where Load looks.
@@ -23,6 +24,7 @@ type Options struct {
 	Path        string // -config; "" = look for DefaultPath
 	DefaultPath string // "config.yaml"
 	LookupEnv   func(string) (string, bool)
+	Upstreams   []UpstreamSpec // the registered adapters; one upstreams.<name> block each
 }
 
 // Source says where the loaded values came from, for the startup line.
@@ -71,6 +73,7 @@ const (
 	reasonInvalidDuration   = "invalid duration"
 	reasonInvalidLevel      = "invalid level"
 	reasonInvalidAddress    = "invalid address"
+	reasonInvalidURL        = "invalid url"
 )
 
 // Defaults is the configuration with no file and no env.
@@ -78,7 +81,7 @@ func Defaults() Config {
 	return Config{
 		ListenAddr:      "127.0.0.1:7197",
 		LogLevel:        "info",
-		ShutdownTimeout: 30 * time.Second,
+		ShutdownTimeout: 10 * time.Minute,
 	}
 }
 
@@ -89,16 +92,27 @@ type setting struct {
 	apply func(c *Config, v string) string
 }
 
-// settings are applied in this order. Every yaml tag on fileConfig has one.
-var settings = []setting{
-	{"listen_addr", setListenAddr},
-	{"log_level", setLogLevel},
-	{"shutdown_timeout", setShutdownTimeout},
+// settingsFor lists the settings in the order they are applied: the flat ones, then
+// each spec's upstream fields. Every key fileValues returns has one.
+func settingsFor(specs []UpstreamSpec) []setting {
+	s := []setting{
+		{"listen_addr", setListenAddr},
+		{"log_level", setLogLevel},
+		{"shutdown_timeout", setShutdownTimeout},
+	}
+	for _, spec := range specs {
+		s = append(s, upstreamSettings(spec.Name)...)
+	}
+	return s
 }
 
-// envName is the env var that overrides key.
+// envNameReplacer maps the characters of a dotted key that an env var cannot hold.
+var envNameReplacer = strings.NewReplacer(".", "_", "-", "_")
+
+// envName is the env var that overrides key: "upstreams.anthropic.base_url" is
+// GATEWAY_UPSTREAMS_ANTHROPIC_BASE_URL.
 func envName(key string) string {
-	return "GATEWAY_" + strings.ToUpper(key)
+	return "GATEWAY_" + strings.ToUpper(envNameReplacer.Replace(key))
 }
 
 func setListenAddr(c *Config, v string) string {
@@ -126,10 +140,16 @@ func setLogLevel(c *Config, v string) string {
 	return reasonInvalidLevel
 }
 
-func setShutdownTimeout(c *Config, v string) string {
+// parseDuration is Go duration syntax, and must be > 0: a zero timeout would make every
+// wait an immediate timeout.
+func parseDuration(v string) (time.Duration, bool) {
 	d, err := time.ParseDuration(v)
-	// A zero timeout would make every shutdown an immediate timeout.
-	if err != nil || d <= 0 {
+	return d, err == nil && d > 0
+}
+
+func setShutdownTimeout(c *Config, v string) string {
+	d, ok := parseDuration(v)
+	if !ok {
 		return reasonInvalidDuration
 	}
 	c.ShutdownTimeout = d

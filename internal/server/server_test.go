@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -245,11 +246,43 @@ func TestRecoverer_HeadersAlreadyWritten(t *testing.T) {
 		t.Errorf("got %d %q, want 202 \"partial\"", resp.StatusCode, body)
 	}
 	line := h.waitLines("panic recovered", 1)[0]
-	if line["level"] != "error" || line["panic"] != "late" || line["request_id"] != resp.Header.Get(requestIDHeader) {
+	if line["level"] != "error" || line["panic_type"] != "string" || line["request_id"] != resp.Header.Get(requestIDHeader) {
 		t.Errorf("panic line = %v", line)
 	}
 	if stack, _ := line["stack"].(string); !strings.Contains(stack, "goroutine") {
 		t.Errorf("stack field = %q, want a goroutine trace", stack)
+	}
+	if _, ok := line["panic"]; ok {
+		t.Errorf("panic line carries a panic field: %v", line)
+	}
+}
+
+// AC41: the panic value can hold request data, so only its type and a stack are logged.
+func TestRecoverer_LogsPanicTypeNotValue(t *testing.T) {
+	const secret = "PANICVALUE-sk-ant-7f3a"
+	h := start(t, func(r chi.Router) {
+		r.Get("/panic", func(http.ResponseWriter, *http.Request) { panic(secret) })
+		r.Get("/panic-err", func(http.ResponseWriter, *http.Request) { panic(errors.New(secret)) })
+	})
+	for _, path := range []string{"/panic", "/panic-err"} {
+		if resp, body := h.get(path); resp.StatusCode != http.StatusInternalServerError || strings.Contains(body, secret) {
+			t.Errorf("%s: got %d %q", path, resp.StatusCode, body)
+		}
+	}
+	lines := h.waitLines("panic recovered", 2)
+	if lines[0]["panic_type"] != "string" || lines[1]["panic_type"] != "*errors.errorString" {
+		t.Errorf("panic_type = %v, %v", lines[0]["panic_type"], lines[1]["panic_type"])
+	}
+	for _, l := range lines {
+		if stack, _ := l["stack"].(string); !strings.Contains(stack, "goroutine") {
+			t.Errorf("stack = %q, want a goroutine trace", stack)
+		}
+		if _, ok := l["panic"]; ok {
+			t.Errorf("line has a panic field: %v", l)
+		}
+	}
+	if strings.Contains(h.logs.String(), secret) {
+		t.Errorf("secret appears in the log output:\n%s", h.logs.String())
 	}
 }
 
@@ -276,7 +309,8 @@ func TestRecoverer_PanicGives500(t *testing.T) {
 }
 
 // http.ErrAbortHandler is re-panicked: net/http drops the connection without a
-// response, nothing is logged, and the request still leaves the in-flight count.
+// response, recoverer logs nothing (the access line is the only line, Q8), and the
+// request still leaves the in-flight count.
 func TestRecoverer_AbortHandler(t *testing.T) {
 	h := start(t, func(r chi.Router) {
 		r.Get("/abort", func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) })
@@ -287,8 +321,11 @@ func TestRecoverer_AbortHandler(t *testing.T) {
 		t.Fatalf("got a response (%d), want the connection aborted", resp.StatusCode)
 	}
 	h.waitInFlight(0)
-	if out := h.logs.String(); out != "" {
-		t.Errorf("abort was logged, want silence\n%s", out)
+	h.waitLines("request", 1)
+	for _, l := range h.lines() {
+		if l["msg"] != "request" {
+			t.Errorf("abort logged more than its access line: %v\n%s", l, h.logs.String())
+		}
 	}
 }
 

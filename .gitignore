@@ -39,3 +39,6 @@ data/
 # and each feature's run log
 /tmp/
 specs/*/run.log
+
+# Claude Code session worktrees
+.claude/worktrees/

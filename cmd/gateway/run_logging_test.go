@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -154,8 +156,11 @@ func TestRun_PanicRecovered(t *testing.T) {
 		t.Errorf("stderr = %q, want empty", out)
 	}
 	for _, l := range g.lines() {
-		if l["msg"] == "panic recovered" && (l["level"] != "error" || l["panic"] != "boom") {
+		if l["msg"] == "panic recovered" && (l["level"] != "error" || l["panic_type"] != "string") {
 			t.Errorf("panic line = %v", l)
 		}
+	}
+	if strings.Contains(fmt.Sprint(g.lines()), "boom") {
+		t.Errorf("panic value appears in the output")
 	}
 }

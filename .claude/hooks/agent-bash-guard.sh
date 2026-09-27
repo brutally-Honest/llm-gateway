@@ -50,13 +50,16 @@ implementer)
 	;;
 reviewer)
 	case "$cmd" in
-		*--output*) decide deny "reviewer may not write files" ;;
+		*--output* | *'-o '* | *-o=* | *-outputdir* | *-coverprofile* | *-cpuprofile* | \
+			*-memprofile* | *-trace* | *-exec* | *-toolexec*)
+			decide deny "reviewer may not write files or run other programs"
+			;;
 		'make verify' | 'git status' | 'git status '* | 'git diff' | 'git diff '* | \
-			'git show '* | 'git log' | 'git log '* | 'git notes show '*)
+			'git show '* | 'git log' | 'git log '* | 'git notes show '* | 'go test '*)
 			decide allow "reviewer read-only command"
 			;;
 	esac
-	decide deny "reviewer is read-only: git diff/show/log/status, git notes show and make verify only"
+	decide deny "reviewer is read-only: git diff/show/log/status, git notes show, go test and make verify only"
 	;;
 *)
 	exit 0

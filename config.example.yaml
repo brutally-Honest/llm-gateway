@@ -12,6 +12,28 @@ listen_addr: 127.0.0.1:7197
 # Env: GATEWAY_LOG_LEVEL
 log_level: info
 
-# How long shutdown waits for in-flight requests. Go duration syntax; must be > 0.
+# How long shutdown waits for in-flight requests, so streams can finish. Go duration
+# syntax; must be > 0. A second signal still stops the gateway at once.
 # Env: GATEWAY_SHUTDOWN_TIMEOUT
-shutdown_timeout: 30s
+shutdown_timeout: 10m
+
+# One block per upstream, named after its adapter. An unknown name or key is an error.
+# There is no timeout on a request as a whole: streams run as long as upstream sends.
+upstreams:
+  anthropic:
+    # Where requests are forwarded. A path is joined in front of the request's path.
+    # Env: GATEWAY_UPSTREAMS_ANTHROPIC_BASE_URL
+    base_url: https://api.anthropic.com
+
+    # How long to wait to connect (DNS and TCP). Go duration syntax; must be > 0.
+    # Env: GATEWAY_UPSTREAMS_ANTHROPIC_CONNECT_TIMEOUT
+    connect_timeout: 10s
+
+    # How long to wait for the TLS handshake. Go duration syntax; must be > 0.
+    # Env: GATEWAY_UPSTREAMS_ANTHROPIC_TLS_HANDSHAKE_TIMEOUT
+    tls_handshake_timeout: 10s
+
+    # How long to wait for upstream's response headers after the request is sent. Go
+    # duration syntax; must be > 0.
+    # Env: GATEWAY_UPSTREAMS_ANTHROPIC_RESPONSE_HEADER_TIMEOUT
+    response_header_timeout: 10m

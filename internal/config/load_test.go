@@ -2,8 +2,10 @@ package config
 
 import (
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -48,8 +50,8 @@ func loadErr(t *testing.T, opts Options) *Error {
 
 // AC5: with no config, the listen address is loopback on 7197.
 func TestDefaults(t *testing.T) {
-	want := Config{ListenAddr: "127.0.0.1:7197", LogLevel: "info", ShutdownTimeout: 30 * time.Second}
-	if got := Defaults(); got != want {
+	want := Config{ListenAddr: "127.0.0.1:7197", LogLevel: "info", ShutdownTimeout: 10 * time.Minute}
+	if got := Defaults(); !reflect.DeepEqual(got, want) {
 		t.Errorf("Defaults() = %+v, want %+v", got, want)
 	}
 
@@ -57,7 +59,7 @@ func TestDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg != want {
+	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("Load() = %+v, want %+v", cfg, want)
 	}
 	if src.File != "" || src.EnvOverrides == nil || len(src.EnvOverrides) != 0 {
@@ -68,11 +70,11 @@ func TestDefaults(t *testing.T) {
 // Every known file key must have a setting, or its value would be silently ignored.
 func TestSettingsCoverFileKeys(t *testing.T) {
 	var keys []string
-	for key := range fileValues(&fileConfig{}) {
+	for key := range fileValues(&fileConfig{Upstreams: map[string]upstreamFile{"anthropic": {}}}) {
 		keys = append(keys, key)
 	}
 	var covered []string
-	for _, s := range settings {
+	for _, s := range settingsFor([]UpstreamSpec{{Name: "anthropic"}}) {
 		covered = append(covered, s.key)
 	}
 	slices.Sort(keys)
@@ -125,7 +127,7 @@ func TestLoad_Precedence(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := Config{ListenAddr: "127.0.0.1:2", LogLevel: "warn", ShutdownTimeout: 7 * time.Second}
-	if cfg != want {
+	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("Load() = %+v, want %+v", cfg, want)
 	}
 	if got, want := src.EnvOverrides, []string{"listen_addr", "shutdown_timeout"}; !slices.Equal(got, want) {
@@ -181,10 +183,12 @@ func TestLoad_ErrorsNeverContainValue(t *testing.T) {
 		{name: "invalid_level_env", env: []string{"GATEWAY_LOG_LEVEL", sentinel}, reason: reasonInvalidLevel},
 		{name: "invalid_address_file", file: "listen_addr: " + sentinel + "\n", reason: reasonInvalidAddress},
 		{name: "invalid_address_env", env: []string{"GATEWAY_LISTEN_ADDR", sentinel}, reason: reasonInvalidAddress},
+		{name: "invalid_url_file", file: "upstreams:\n  anthropic:\n    base_url: ftp://" + sentinel + "\n", reason: reasonInvalidURL},
+		{name: "invalid_url_env", env: []string{"GATEWAY_UPSTREAMS_ANTHROPIC_BASE_URL", "http://" + sentinel}, reason: reasonInvalidURL},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			opts := Options{Path: tc.path, LookupEnv: env(tc.env...)}
+			opts := Options{Path: tc.path, LookupEnv: env(tc.env...), Upstreams: []UpstreamSpec{{Name: "anthropic", DefaultBaseURL: "https://api.anthropic.com"}}}
 			if tc.file != "" {
 				opts.Path = writeConfig(t, tc.file)
 			}
@@ -232,7 +236,7 @@ func TestLoad_EmptyFile(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if cfg != Defaults() || src.File != path {
+			if !reflect.DeepEqual(cfg, Defaults()) || src.File != path {
 				t.Errorf("Load() = %+v from %q, want defaults from %q", cfg, src.File, path)
 			}
 		})
@@ -246,17 +250,27 @@ func TestLoad_ExampleFileIsDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := writeConfig(t, string(b))
-	cfg, src, err := Load(Options{Path: path})
+	specs := []UpstreamSpec{{Name: "anthropic", DefaultBaseURL: "https://api.anthropic.com"}}
+	cfg, src, err := Load(Options{Path: path, Upstreams: specs})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg != Defaults() || src.File != path {
+	want := Defaults()
+	want.Upstreams = map[string]Upstream{"anthropic": {
+		BaseURL:               &url.URL{Scheme: "https", Host: "api.anthropic.com"},
+		ConnectTimeout:        10 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 10 * time.Minute,
+	}}
+	if !reflect.DeepEqual(cfg, want) || src.File != path {
 		t.Errorf("Load() = %+v from %q, want defaults from %q", cfg, src.File, path)
 	}
-	// Every key is shown, so the example also documents each env name.
-	for _, s := range settings {
-		if !strings.Contains(string(b), s.key+":") || !strings.Contains(string(b), envName(s.key)) {
-			t.Errorf("config.example.yaml does not show %s and %s", s.key, envName(s.key))
+	// Every key is shown, so the example also documents each env name. A nested key
+	// is shown by its last segment, under its block.
+	for _, s := range settingsFor(specs) {
+		leaf := s.key[strings.LastIndex(s.key, ".")+1:]
+		if !strings.Contains(string(b), leaf+":") || !strings.Contains(string(b), envName(s.key)) {
+			t.Errorf("config.example.yaml does not show %s and %s", leaf, envName(s.key))
 		}
 	}
 }

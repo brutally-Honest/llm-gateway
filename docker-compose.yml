@@ -5,6 +5,8 @@ services:
       context: .
       args:
         VERSION: ${VERSION:-dev}
+    # Docker's default 10s would kill in-flight streams; match shutdown_timeout (10m).
+    stop_grace_period: 10m
     # Loopback only on the host: the gateway has no auth yet (spec 000, Do).
     ports:
       - "127.0.0.1:7197:7197"

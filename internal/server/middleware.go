@@ -5,11 +5,13 @@ import (
 	"crypto/rand"
 	"errors"
 	"net/http"
-	"runtime/debug"
 	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"go.uber.org/zap"
+
+	"github.com/brutally-honest/llm-gateway/internal/core"
+	"github.com/brutally-honest/llm-gateway/internal/logging"
 )
 
 // requestIDHeader is the response header that carries the request ID.
@@ -37,24 +39,68 @@ func requestID(next http.Handler) http.Handler {
 
 // accessLog logs one line per request. It logs r.URL.Path only, never the query,
 // because some providers put keys there, and no headers or body.
+//
+// It puts a core.Meta in the context before the handler chain and logs from a defer,
+// so a handler that ends in http.ErrAbortHandler (the proxy's only abort) still gets
+// its line; the panic carries on to net/http untouched. The proxy fields are added
+// only when a proxy set Meta.Protocol, so every other line is exactly 000's.
 func accessLog(log *zap.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
+			ctx, meta := core.WithMeta(r.Context())
+			r = r.WithContext(ctx)
 			// Keeps http.Flusher, which 001's streams need.
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+			defer func() {
+				meta.Settle(r.Context())
+				fields := []zap.Field{
+					zap.String("request_id", RequestID(r.Context())),
+					zap.String("method", r.Method),
+					zap.String("path", r.URL.Path),
+					zap.Int("status", ww.Status()),
+					zap.Int("bytes", ww.BytesWritten()),
+					zap.Float64("duration_ms", millis(time.Since(start))),
+					zap.String("remote_addr", r.RemoteAddr),
+				}
+				log.Info("request", append(fields, proxyFields(meta)...)...)
+			}()
 			next.ServeHTTP(ww, r)
-			log.Info("request",
-				zap.String("request_id", RequestID(r.Context())),
-				zap.String("method", r.Method),
-				zap.String("path", r.URL.Path),
-				zap.Int("status", ww.Status()),
-				zap.Int("bytes", ww.BytesWritten()),
-				zap.Float64("duration_ms", float64(time.Since(start).Microseconds())/1000),
-				zap.String("remote_addr", r.RemoteAddr),
-			)
 		})
 	}
+}
+
+// proxyFields are the access-line fields a proxy adds through Meta: none unless it
+// set Protocol, and the optional ones only when set or true. Never a header, body,
+// query or model.
+func proxyFields(m *core.Meta) []zap.Field {
+	if m.Protocol == "" {
+		return nil
+	}
+	f := []zap.Field{
+		zap.String("protocol", m.Protocol),
+		zap.String("client", m.Client),
+		zap.String("auth", string(m.Auth)),
+		zap.Bool("stream", m.Stream),
+	}
+	if m.HasTTFB {
+		f = append(f, zap.Float64("ttfb_ms", millis(m.TTFB)))
+	}
+	if m.GatewayError != "" {
+		f = append(f, zap.String("gateway_error", m.GatewayError))
+	}
+	if m.ClientDisconnected {
+		f = append(f, zap.Bool("client_disconnected", true))
+	}
+	if m.UpstreamAborted {
+		f = append(f, zap.Bool("upstream_aborted", true))
+	}
+	return f
+}
+
+// millis is d in milliseconds with microsecond precision.
+func millis(d time.Duration) float64 {
+	return float64(d.Microseconds()) / 1000
 }
 
 // recoverer turns a handler panic into one error line and, if nothing has been
@@ -75,11 +121,8 @@ func recoverer(log *zap.Logger) func(http.Handler) http.Handler {
 				if err, ok := v.(error); ok && errors.Is(err, http.ErrAbortHandler) {
 					panic(v)
 				}
-				log.Error("panic recovered",
-					zap.String("request_id", RequestID(r.Context())),
-					zap.Any("panic", v),
-					zap.String("stack", string(debug.Stack())),
-				)
+				logging.LogPanic(log, "panic recovered", v,
+					zap.String("request_id", RequestID(r.Context())))
 				if ww.Status() == 0 {
 					ww.WriteHeader(http.StatusInternalServerError)
 				}
