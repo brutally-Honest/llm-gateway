@@ -1,0 +1,4 @@
+Spec: specs/001-core-and-anthropic-passthrough/spec.md (AC44, AC45), research.md Q4
+Why: 8842ed8 set status: done on every 001 file without saying AC44 had not run; AGENTS.md tells agents to skip done specs, so the gap needed a pointer from outside the folder.
+Alternatives rejected: reopening 001 (the code is merged; only a manual check is missing); making AC44 a task of the next feature (owner's call: keep it tracked by Q4).
+Trade-off / known limit: Phase 1's done condition stays half met until someone runs AC44 with an API key and answers Q4.
