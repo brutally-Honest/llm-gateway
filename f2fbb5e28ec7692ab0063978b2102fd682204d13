@@ -1,0 +1,4 @@
+Spec: specs/001-core-and-anthropic-passthrough/spec.md (AC44, AC45), tasks.md T22
+Why: found during the T22 subscription smoke run on c2846ad — jq aborted on make's banner line.
+Placement: the connectors limit went into PLAN.md §3 (Claude Code entry), the one home of the known-limits list that docs/clients/claude-code.md §2 points at, instead of a second copy in the client doc.
+Verified by: the smoke run itself, with the grep '^{' filter.
