@@ -1,0 +1,5 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (AC1-AC60)
+Research: specs/002-capture-and-canonical-events/research.md (Q1, Q2, Q3, Q4, Q5, Q6)
+Why this approach: spec edits only; no plan, tasks or ADRs yet. Q1 (answered, mitmproxy 2026-09-27): real streams are gzip SSE, so one protocol-neutral decoding helper, shared by the parser and gateway dump, decodes identity, gzip, deflate, br and zstd. Q4 (answered, limit): HEAD /api/hello stays unknown, since matching Bun would mislabel other Bun apps; the limit goes in PLAN.md §3. Request presence flags use canonical names (cache_hints, reasoning_requested).
+Trade-off / known limit: raw request storage grows quadratically per session; only parsed content (blocks, system, tools) is deduplicated. Hash exclusions such as cache_control are declared by the adapter, not core. Q3 (open, non-blocking) is answered by the AC58 manual smoke; Q5 and Q6 are open owner decisions.
+Verified by: block and delta type names checked against platform.claude.com docs on 2026-09-27 (Q2); AC numbering checked sequential 1-60.
