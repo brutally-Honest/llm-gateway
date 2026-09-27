@@ -9,7 +9,9 @@ It is **not** a harness — it never runs agents, executes tools or edits files 
 is not tied to one vendor.
 
 Status: **Phase 0** done; the gateway serves `/healthz` (see `specs/000-foundation/`).
-**Phase 1** is next.
+Status: **Phase 1** done; Claude Code proxies through the gateway to Anthropic,
+streams included (see `specs/001-core-and-anthropic-passthrough/`). **Phase 2**
+(capture) is next.
 
 - `PLAN.md` — the one-page source of intent: goals, phases, stack rationale, open
   questions, commit conventions.

@@ -1,5 +1,5 @@
 ---
-status: approved
+status: done
 branch: feat/001-core-and-anthropic-passthrough
 ---
 

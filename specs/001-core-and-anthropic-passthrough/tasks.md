@@ -1,5 +1,5 @@
 ---
-status: approved
+status: done
 spec: ./spec.md
 plan: ./plan.md
 research: ./research.md
