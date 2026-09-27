@@ -1,0 +1,5 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (AC1-AC56)
+Research: specs/002-capture-and-canonical-events/research.md (Q1, Q2, Q3)
+Why this approach: review items 1-13 applied as spec edits only; no plan, tasks or ADRs yet.
+Trade-off / known limit: raw request storage grows quadratically per session; only parsed content is deduplicated.
+Verified by: block and delta type names checked against platform.claude.com docs on 2026-09-27 (Q2).
