@@ -78,6 +78,8 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   `client: claude-code`, `auth: bearer`, `stream: true`. The secret grep prints `0`.
   One upstream `429` was passed through verbatim and Claude Code recovered on its own.
   AC44 (API key) is deferred until a key is available, so Q4 stays open.
+- 2026-09-27: 001 is closed today with AC44 (the API-key smoke) deferred
+  until an API key is available. AC45 passed on `c2846ad`. Status stays open.
 
 ## Q5 — Does `ReverseProxy` with `Rewrite` forward the request exactly as the client sent it?
 - Status: answered     Level: technical

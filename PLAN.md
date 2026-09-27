@@ -116,7 +116,7 @@ Each phase maps to one or more features, and each feature gets its own spec fold
 | # | Phase | Goal | Done when |
 |---|---|---|---|
 | 0 | Foundation | Repo, AGENTS.md, spec templates, docker-compose, local gate (`make verify`: lint, test, `-race`; pre-push hook), logging, `/healthz` | On a fresh clone, after `make setup`, `make verify` passes, and a push containing a malformed commit subject or a failing check is rejected |
-| 1 | Core + first protocol | Adapter/profile interfaces; Anthropic Messages passthrough (`/v1/messages`, `count_tokens`, `/v1/models`, `HEAD /api/hello`); Claude Code profile | A real Claude Code session (API key **and** subscription) runs through the gateway with no behaviour difference |
+| 1 | Core + first protocol | Adapter/profile interfaces; Anthropic Messages passthrough (`/v1/messages`, `count_tokens`, `/v1/models`, `HEAD /api/hello`); Claude Code profile | A real Claude Code session (API key **and** subscription) runs through the gateway with no behaviour difference<br>API-key half pending: AC44 deferred, tracked in `specs/001-core-and-anthropic-passthrough/research.md` Q4. |
 | 2 | Capture + canonical events | Async raw capture with redaction; Anthropic parser → canonical events | Every exchange is stored and parsed; killing the store doesn't break the client |
 | 3 | Second protocol (the agnosticism proof) | OpenAI Chat Completions adapter + Cursor profile; gateway token auth; documented tunnel setup | Cursor traffic produces the **same canonical events**, with zero changes to the core or the Anthropic adapter |
 | 4 | Sessions & timeline | Group requests into sessions using client-profile IDs (with a fallback); viewer | Sessions from both clients replay as ordered timelines: prompt → tool calls → results |
