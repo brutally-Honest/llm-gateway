@@ -411,34 +411,6 @@ Layout the tasks assume:
   `TestParse_UpstreamError` gains `sse_error_event` from `stream_error.sse`. Done: those
   pass under `-race`. Commit: `feat(anthropic): reassemble streamed responses` (AC30,
   AC31, AC35, AC36, AC37, AC38, AC39, AC40, AC41, AC42, AC43, AC44) (shaped: Q1, Q2, Q7)
-- [ ] T23 — Tool turns, against the recorded fixtures. Needs T19's `tool_turn` and
-  `server_tool` files; if they are absent, report BLOCKED on T19 and never fake a
-  recording. Build the two assembled fixtures from recorded blocks, each block's bytes
-  unchanged and each README entry saying so: `testdata/tool_order/response.sse`
-  (`synthetic`: text, `tool_use`, text, from `tool_turn`'s blocks) and
-  `testdata/server_tool/response.sse` (`synthetic (assembled from recorded blocks)`: the
-  `server_tool_use` and `web_search_tool_result` from `websearch.sse`, plus a client
-  `tool_use` from `tool_turn`). Tests first: `TestParse_ToolUseTurn` (`tool_turn`:
-  `tool_call` events with id, name, input, `executed_by: client`, `source: response`; in
-  `next_request.json` the same calls as `source: request_history`, and `tool_result`
-  events with the matching `tool_call_id`), `TestParse_MessageKeepsToolBlockOrder`
-  (blocks `text`, `tool_call`, `text`, and the block's `tool_call_id` matches its
-  event), `TestParse_ServerToolUse` (`executed_by: provider` for the server call and
-  result, `client` for the client call, IDs line up). Done: those pass, and
-  `TestFixtures_NoIdentifiers` passes over the new files. Commit: `feat(anthropic): map
-  tool calls and results by origin` (AC32, AC33, AC34, AC53) (shaped: Q2, Q5, Q8)
-- [ ] T24 — Dedup through the real pipeline and store, in
-  `internal/protocols/anthropic/pipeline_test.go`. Needs T19's `tool_turn`. Tests first:
-  `TestStore_BlockContentDedup` (two requests resending one message store its content
-  once), `TestStore_ResponseMessageDedupsWithNextRequest` (`tool_turn`'s response
-  message and its copy in `next_request.json` share one content hash and one stored
-  copy), `TestStore_SystemAndToolsStoredOnce`,
-  `TestStore_ExclusionNotAppliedInsideToolInput` (two tool inputs differing only in a
-  nested `cache_control` get different hashes, both stored). A failure here is a bug in
-  T4 or T20 to fix in this task, or, for AC50 on real data, a finding for Q3. Done:
-  those pass. Commit: `test(anthropic): prove captured content deduplicates` (AC49,
-  AC50, AC51, AC52) (shaped: Q8)
-
 ## `gateway dump`
 
 - [ ] T25 — `cmd/gateway/dump.go`: `run` hands `args[0] == "dump"` to `runDump`, whose
@@ -483,6 +455,34 @@ Layout the tasks assume:
   compose config` parses the file if Docker is present (if not, say so in the note).
   Commit: `build(deploy): keep captures on a named volume` (no AC; spec Config) (no
   research link)
+
+- [ ] T23 — Tool turns, against the recorded fixtures. Needs T19's `tool_turn` and
+  `server_tool` files; if they are absent, report BLOCKED on T19 and never fake a
+  recording. Build the two assembled fixtures from recorded blocks, each block's bytes
+  unchanged and each README entry saying so: `testdata/tool_order/response.sse`
+  (`synthetic`: text, `tool_use`, text, from `tool_turn`'s blocks) and
+  `testdata/server_tool/response.sse` (`synthetic (assembled from recorded blocks)`: the
+  `server_tool_use` and `web_search_tool_result` from `websearch.sse`, plus a client
+  `tool_use` from `tool_turn`). Tests first: `TestParse_ToolUseTurn` (`tool_turn`:
+  `tool_call` events with id, name, input, `executed_by: client`, `source: response`; in
+  `next_request.json` the same calls as `source: request_history`, and `tool_result`
+  events with the matching `tool_call_id`), `TestParse_MessageKeepsToolBlockOrder`
+  (blocks `text`, `tool_call`, `text`, and the block's `tool_call_id` matches its
+  event), `TestParse_ServerToolUse` (`executed_by: provider` for the server call and
+  result, `client` for the client call, IDs line up). Done: those pass, and
+  `TestFixtures_NoIdentifiers` passes over the new files. Commit: `feat(anthropic): map
+  tool calls and results by origin` (AC32, AC33, AC34, AC53) (shaped: Q2, Q5, Q8)
+- [ ] T24 — Dedup through the real pipeline and store, in
+  `internal/protocols/anthropic/pipeline_test.go`. Needs T19's `tool_turn`. Tests first:
+  `TestStore_BlockContentDedup` (two requests resending one message store its content
+  once), `TestStore_ResponseMessageDedupsWithNextRequest` (`tool_turn`'s response
+  message and its copy in `next_request.json` share one content hash and one stored
+  copy), `TestStore_SystemAndToolsStoredOnce`,
+  `TestStore_ExclusionNotAppliedInsideToolInput` (two tool inputs differing only in a
+  nested `cache_control` get different hashes, both stored). A failure here is a bug in
+  T4 or T20 to fix in this task, or, for AC50 on real data, a finding for Q3. Done:
+  those pass. Commit: `test(anthropic): prove captured content deduplicates` (AC49,
+  AC50, AC51, AC52) (shaped: Q8)
 
 ## Manual evidence (no commit; output goes into the PR)
 
