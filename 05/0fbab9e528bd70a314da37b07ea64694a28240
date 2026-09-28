@@ -1,0 +1,7 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (ADRs section; no AC)
+ADR: docs/decisions/0004-capture-store.md, docs/decisions/0005-secrets-in-captured-content.md (both proposed; T27 flips them with PLAN.md)
+Research: Q1 (br and zstd decoding), Q9 (mode=ro creates -wal/-shm), Q10 (write after unlink succeeds, hence the inode check), Q11 (other stat errors)
+Why this approach: the ADRs pin versions before any go get, so T3 and T10 add each module at a recorded version with its licence checked.
+Alternatives rejected: ncruces/go-sqlite3 (own Go VFS); mattn/go-sqlite3 and the cgo zstd/brotli bindings (cgo); Postgres and MongoDB (servers to run); masking or encryption now (fidelity, key management).
+Trade-off / known limit: raw request storage grows quadratically with session length; only parsed content dedups.
+Verified by: versions and licences read with go list -m -json outside go.mod (modernc.org/sqlite v1.59.0 BSD-3-Clause, klauspost/compress v1.20.1 BSD-3-Clause for zstd, andybalholm/brotli v1.2.5 MIT); go.mod unchanged; make verify passes.
