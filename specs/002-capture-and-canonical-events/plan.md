@@ -211,7 +211,9 @@ The wire names live only in this package. Core's purity denylist gains them (AC5
 `contentcoding.Decode(encoding string, body []byte, limit int64) ([]byte, Status)`.
 The caller passes `capture.max_body_bytes` as `limit` (Q7); there is no new config.
 - The header value is split on commas and decoded in reverse order, as HTTP stacks
-  codings; any token it doesn't know makes the result `Unsupported`.
+  codings; any token it doesn't know makes the result `Unsupported`, with the body
+  returned unchanged. Tokens are trimmed and matched case-insensitively; empty list
+  elements are skipped, so an empty header is `identity`.
 - `deflate` checks for a zlib header (`CMF` method 8 and `(CMF<<8|FLG) % 31 == 0`)
   and otherwise reads raw DEFLATE.
 - A reader error part-way (`io.ErrUnexpectedEOF` and the like) returns what was

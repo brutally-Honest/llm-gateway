@@ -72,7 +72,7 @@ Layout the tasks assume:
 
 ## Content decoding
 
-- [ ] T3 — `go get github.com/klauspost/compress@<version>` and
+- [x] T3 — `go get github.com/klauspost/compress@<version>` and
   `github.com/andybalholm/brotli@<version>`, at the versions ADR 0004 pins.
   `internal/contentcoding/decode.go`: `Decode(encoding, body, limit) ([]byte, Status)`
   with `Complete`, `CutShort`, `Unsupported`. The header value is split on commas and
