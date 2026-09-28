@@ -1,0 +1,7 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (AC1-AC63; unchanged)
+Plan: specs/002-capture-and-canonical-events/plan.md (inode-check split for Q11; Budget.Peak and memory_peak_bytes for Q12; dependencies added by the importing task)
+Tasks: specs/002-capture-and-canonical-events/tasks.md (status: draft; T1-T31; no task carries a blocked link)
+Research: Q11 answered (only ENOENT or a changed device/inode is the permanent deleted-or-replaced state; other stat errors log one "store file unreadable" warning and the write decides); Q12 answered (Budget tracks its peak by CAS max; the capture stopped line logs memory_peak_bytes; T29's evidence answers the spec's size-defaults question).
+Why this approach: one reviewable commit per task, tests first, each dependency landing with its first import so go.mod never holds an unused module; T1 is ADRs only, with versions pinned in ADR 0004.
+Needs-human: T19 (record tool_turn and WebSearch fixtures), T29 (AC61 smoke, answers Q3 and the size defaults), T30 (AC62), T31 (AC63).
+Verified by: every AC1-AC63 appears in the coverage table; line widths checked outside tables.
