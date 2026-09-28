@@ -1,0 +1,5 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (Config; AC1, AC2, AC3, AC4)
+Why this approach: the capture block is walked like upstreams (one level, scalar values, unknown keys rejected) through a shared walkFields helper; Dir stays "" so Defaults() reads no environment and the default is resolved by the caller via DefaultCaptureDir(lookupEnv).
+Alternatives rejected: a pointer capture block in fileConfig (TestSettingsCoverFileKeys would stop seeing capture keys); os.UserHomeDir for HOME (tests could not control it).
+Trade-off / known limit: a relative HOME is treated as unset (a relative capture dir is forbidden), recorded in plan.md; booleans accept only lower-case true/false. 000's TestDefaults and TestLoad_Precedence compare whole Config literals, so their expected values gained the capture defaults.
+Verified by: make verify; TestLoad_CaptureDefaults, TestLoad_CaptureEnvOverridesFile, TestLoad_InvalidCaptureValues, TestLoad_CaptureBlockShape, TestLoad_ErrorsNeverContainValue (invalid_value rows), TestLoad_ExampleFileIsDefaults unchanged; new tests first failed to build on the missing symbols.
