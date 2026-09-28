@@ -30,7 +30,7 @@ Layout the tasks assume:
 
 ## Decisions and dependencies
 
-- [ ] T1 — `docs/decisions/0004-capture-store.md` and
+- [x] T1 — `docs/decisions/0004-capture-store.md` and
   `docs/decisions/0005-secrets-in-captured-content.md`, from `0000-template.md`,
   `status: proposed` (T27 flips them when PLAN.md changes).
   - 0004 records: SQLite index and events, plus zstd content-addressed blob files
