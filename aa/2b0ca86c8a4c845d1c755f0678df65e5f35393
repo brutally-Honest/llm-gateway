@@ -1,0 +1,7 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (AC1-AC63)
+Plan: specs/002-capture-and-canonical-events/plan.md (status: draft)
+Research: specs/002-capture-and-canonical-events/research.md (Q7, Q8, Q9, Q10 opened; Q3, Q5, Q6 cited)
+Why this approach: capture hooks 001's existing seams (Rewrite, the response writer, Meta.Settle), so nothing new sits on the byte path beyond two copy-through tees; the queue, store, decoder and parser live outside core.
+Alternatives rejected: ncruces/go-sqlite3 (own Go VFS, per-connection Wasm sandbox) and mattn/go-sqlite3 (cgo) for modernc.org/sqlite; cgo zstd and brotli bindings for klauspost/compress and andybalholm/brotli.
+Trade-off / known limit: worker memory (joined, decoded bodies) sits outside capture.memory_limit (Q7). Deviations: a Dockerfile change for volume ownership; an unresolvable default capture.dir fails with invalid value.
+Verified by: every AC mapped to a test or manual check; AC32-AC36, AC50, AC25 db_deleted and AC57 wait on Q8, Q10 and Q9. Driver facts checked against the ncruces/go-sqlite3 README and pkg.go.dev/modernc.org/sqlite on 2026-09-28.
