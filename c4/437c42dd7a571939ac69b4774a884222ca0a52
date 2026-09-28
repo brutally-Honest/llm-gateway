@@ -1,0 +1,7 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (AC12 changed; AC1-AC63, count unchanged)
+Plan: specs/002-capture-and-canonical-events/plan.md (status: draft)
+Research: Q7 answered (decode cap at capture.max_body_bytes, CutShort -> partial); Q8 answered (tool_turn, tool_order, server_tool recorded from Claude Code; non_streaming and error fixtures synthetic; no OAuth token extraction); Q9 and Q10 stay open with decision rules recorded (no immutable=1, narrower dump rule; inode check before each write transaction).
+Changed ACs: AC12 gains subtest request_read_after_seal (request_incomplete set). AC58's plan row now also walks internal/capture, internal/store and internal/contentcoding for provider and client names. No AC added; TestDecode gains a cap subtest and TestSink_SubmitAfterCloseReturnsFalse is added, neither an AC.
+Why this approach: spikes run before ADR 0004 so the ADR records a verified driver; the AC5 wrapper asserts at least one captured exchange so capture can't be silently off.
+Trade-off / known limit: worst-case unbudgeted worker memory is workers x 4 x max_body_bytes (~256 MiB at defaults). Deviations (Dockerfile volume ownership, unresolvable default dir) accepted by the owner.
+Verified by: review only; no code in this commit.
