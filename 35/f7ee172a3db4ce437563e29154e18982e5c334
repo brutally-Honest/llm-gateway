@@ -1,0 +1,7 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (AC1-AC63)
+Research: specs/002-capture-and-canonical-events/research.md (Q3 dated lines)
+New ACs: AC33 TestParse_MessageKeepsToolBlockOrder; AC52 TestStore_ExclusionNotAppliedInsideToolInput.
+Changed ACs: AC1 (subtest relative_xdg_ignored); AC11 (subtest non_streamed_json_parses_partial); AC32 (tool_call source: response, resent calls source: request_history). Renumbered: old AC33-AC50 are now AC34-AC51, old AC51-AC61 are now AC53-AC63; cross-references (agnosticism check -> AC58, AC50 -> AC61, open questions -> AC61) updated. 001's AC34 reference is unchanged.
+Why this approach: tool events stay the source of truth, and message blocks only reference them by tool_call_id, so the ordered message view costs no duplicated tool data. Exclusions stay out of tool payloads because a cache_control key there is user data.
+Trade-off / known limit: cache_control on blocks nested in a tool_result's content is hashed, so such a resent tool_result may not dedup; recorded in research Q3 for the AC61 smoke.
+Verified by: AC numbering checked sequential 1-63 by script; every cross-reference checked against its target.
