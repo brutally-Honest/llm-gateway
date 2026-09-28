@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 spec: ./spec.md
 plan: ./plan.md
 research: ./research.md
