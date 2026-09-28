@@ -1,0 +1,4 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (Parser seam; supports AC22, AC59)
+Why this approach: types copied from plan.md "Interfaces introduced or changed" as written; SecretDeclarer and ParsingAdapter are separate optional interfaces found by type assertion, so 001 adapters and their tests stay unchanged.
+Alternatives rejected: adding the methods to core.Adapter (would force every adapter, including 001's test adapter, to change); adding them to 001's testAdapter (would alter its behaviour once redaction reads SecretHeaders) - a separate parsingAdapter that embeds it is used instead.
+Verified by: make verify; TestLocalPrincipal_AlwaysLocal and the compile-time assertions in internal/core/parser_test.go (both failed to compile before parser.go and principal.go existed); 001's tests pass unchanged.
