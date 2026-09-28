@@ -1,0 +1,6 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (AC1, AC2, AC3, AC4)
+Plan: specs/002-capture-and-canonical-events/plan.md (Config; unchanged)
+Why this approach: capture is a one-level block walked by a shared walkFields helper, which upstreams.<name> now reuses, so unknown keys, types and lines behave exactly as they do under upstreams. Config.Capture.Dir stays "" and DefaultCaptureDir(lookupEnv) resolves it later, so Defaults() stays pure.
+Alternatives rejected: resolving the default dir inside Load (would make Defaults environment-dependent and break the DeepEqual checks); accepting YAML's True/TRUE for enabled (the task says true or false only).
+Trade-off / known limit: DefaultCaptureDir also ignores a relative HOME (returns not-ok), consistent with capture.dir having to be absolute; the spec only names the relative XDG_DATA_HOME case. TestDefaults and TestLoad_Precedence gain the capture defaults in their literal wants.
+Verified by: TestLoad_CaptureDefaults (xdg_absolute, relative_xdg_ignored, home_only, neither), TestLoad_CaptureEnvOverridesFile, TestLoad_InvalidCaptureValues, TestLoad_ErrorsNeverContainValue (invalid_value_file, invalid_value_env) failed first on missing symbols and pass now; TestLoad_ExampleFileIsDefaults passes unchanged; make verify passes.
