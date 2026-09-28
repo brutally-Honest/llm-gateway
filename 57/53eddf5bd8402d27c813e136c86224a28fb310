@@ -1,0 +1,7 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (ADRs; Open questions resolved here)
+ADR: docs/decisions/0004-capture-store.md, docs/decisions/0005-secrets-in-captured-content.md
+Research: specs/002-capture-and-canonical-events/research.md (Q1, Q9, Q10)
+Why this approach: dependencies must be decided before any task imports them; versions were looked up with go list -m outside the repo so go.mod stays unchanged until T3 and T10.
+Alternatives rejected: ncruces/go-sqlite3 (own Go VFS, not SQLite's), mattn/go-sqlite3, DataDog/zstd, valyala/gozstd, google/brotli bindings (all cgo); Postgres, MongoDB; masking or encrypting body secrets in v1.
+Trade-off / known limit: raw request storage grows quadratically with session length; klauspost/compress's module also carries Apache-2.0 (gzhttp) and MIT (s2 filepathx) code, not imported; zstd is BSD-3-Clause.
+Verified by: make verify; go.mod and go.sum unchanged; licences read from the module cache (modernc.org/sqlite v1.59.0, klauspost/compress v1.20.1, andybalholm/brotli v1.2.5).
