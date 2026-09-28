@@ -90,7 +90,7 @@ Layout the tasks assume:
 
 ## Core
 
-- [ ] T4 — `internal/core/event.go` and `canonical.go`: the canonical event types
+- [x] T4 — `internal/core/event.go` and `canonical.go`: the canonical event types
   exactly as the plan's Interfaces list them (`EventKind`, `Source`, `ExecutedBy`,
   `BlockType`, `Block`, `RequestEvent`, `MessageEvent`, `ToolCallEvent`,
   `ToolResultEvent`, `UsageEvent`, `ErrorEvent`, `Event`, `SchemaVersion = 1`), and

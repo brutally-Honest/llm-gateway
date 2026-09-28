@@ -159,6 +159,27 @@ each block's type and hash in order. A `tool_call` block contributes the hash of
 content_hash}`. `stop_reason` is not part of it, since a resent copy has none. This is
 what makes turn N's response message and its copy in turn N+1 share a hash (AC50) and
 what AC61's manual step compares (Q3).
+- A tool block's `{id, name, input_hash}` or `{tool_call_id, is_error, content_hash}`
+  comes from the first tool event with that id after the message. A block with no
+  such event is a parser contract violation, and `Canonicalize` returns an error, as
+  it does for an event whose `Kind` has no matching payload or for invalid JSON.
+- The message's content object (`{role, blocks: [{type, hash}]}`) and each tool
+  block's reference object are stored as `Content` too, so every hash resolves.
+
+**Payload.** Each `StoredEvent.Payload` is canonical JSON with snake_case keys:
+`schema_version`, `kind`, `partial`, plus per kind:
+- `request`: `model`, `stream`, `max_tokens`, `system_hash`, `tools_hash`,
+  `has_system`, `has_tools`, `cache_hints`, `reasoning_requested`, `tool_names`;
+- `message`: `index`, `role`, `source`, `stop_reason`, `content_hash`, `blocks`
+  (`type`, `hash`, and `redacted` and `tool_call_id` when set);
+- `tool_call`: `id`, `name`, `input_hash`, `executed_by`, `source`, `raw_hash`;
+- `tool_result`: `tool_call_id`, `is_error`, `content_hash`, `executed_by`, `source`,
+  `raw_hash`;
+- `usage`: the four token counters (`null` when not reported) and `detail`, inline;
+- `error`: `status`, `type`, `message`.
+
+An empty hash means the value was absent. `Seq` is the event's index in the parser's
+list.
 
 ### Anthropic parser
 
