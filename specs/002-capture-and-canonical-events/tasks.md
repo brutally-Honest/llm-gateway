@@ -108,7 +108,7 @@ Layout the tasks assume:
   it; a reordered block does), `TestCanonicalize_Seq` (events keep their order). Done:
   those pass. Commit: `feat(core): add canonical events and their encoding` (supports
   AC45, AC49, AC50, AC51, AC52) (shaped: Q5)
-- [ ] T5 — `internal/core/parser.go` and `principal.go`: `Parser` (`Parse`,
+- [x] T5 — `internal/core/parser.go` and `principal.go`: `Parser` (`Parse`,
   `HashExcludedFields`), `ParseInput` (with `DecodeLimit`), `ParseResult`, `ParseStatus`
   and its five values; the optional adapter interfaces `SecretDeclarer` and
   `ParsingAdapter`; `PrincipalResolver`, `LocalPrincipal`, `PrincipalLocal`. Nothing
