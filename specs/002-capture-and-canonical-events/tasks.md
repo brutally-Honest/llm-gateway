@@ -116,7 +116,7 @@ Layout the tasks assume:
   assertion that the test adapter can implement both optional interfaces. Done: both
   pass, and 001's tests pass unchanged. Commit: `feat(core): add the parser seam and
   principal resolver` (supports AC22, AC59) (no research link)
-- [ ] T6 — `internal/core/capture.go` (`Budget`, `Body`) and `tee.go`. `Budget`:
+- [x] T6 — `internal/core/capture.go` (`Budget`, `Body`) and `tee.go`. `Budget`:
   `TryReserve`, `Release`, `InUse`, atomic, and `Peak()`, raised by a compare-and-swap
   max on each successful reservation (Q12). `teeReader`: copies each `Read`'s bytes as a
   chunk after reserving; checks `max_body_bytes` first and flags `truncated` at the cap;

@@ -49,7 +49,9 @@ imports no adapter. `cmd/gateway` stays the only package that imports an adapter
   it creates the `Meta`, so core never imports `server`.
 - **Request body.** `Rewrite` wraps `pr.Out.Body` in a request tee, under 001's
   watcher: `watcher(tee(body))`. The tee copies what each `Read` returns, which is
-  what the transport sends. It never sets `GetBody` (AC8). It also snapshots
+  what the transport sends. It never sets `GetBody` (AC8). A nil body or
+  `http.NoBody` is not wrapped, since a wrapped `NoBody` would change how the
+  transport frames the request (`teeRequestBody` returns nil). It also snapshots
   `pr.Out.Header` after 001's five steps: the request headers as they went upstream.
   It records whether a `Read` returned `io.EOF` before the seal. If not, the
   exchange gets `request_incomplete` (spec, Exchange record), for example when
@@ -57,8 +59,9 @@ imports no adapter. `cmd/gateway` stays the only package that imports an adapter
   `request_read_after_seal`).
 - **Response body.** `ServeHTTP` hands `ReverseProxy` a `teeWriter` around `w`. It
   copies each `Write` after the inner `Write` returns, and records the status and a
-  header snapshot at `WriteHeader`. It embeds `http.ResponseWriter` and adds
-  `Unwrap()`, so `http.NewResponseController` still reaches chi's `Flush` (001 Q7).
+  header snapshot at `WriteHeader` (the first status of 200 or more; a 1xx is
+  forwarded, not recorded; a `Write` with no `WriteHeader` records 200). It embeds
+  `http.ResponseWriter` and adds `Unwrap()`, so `http.NewResponseController` still reaches chi's `Flush` (001 Q7).
   001's AC23 guards that: a writer that hides `Flush` fails it. The error handler
   writes through the same writer, so a gateway `502` body is captured (AC12).
 - **End.** `Meta.Settle` already runs from `accessLog`'s `defer` for every exchange,
@@ -87,7 +90,10 @@ reservation. `Peak()` is logged as `memory_peak_bytes` in the `capture stopped` 
    truncated body is never dropped for memory (spec, Memory bound).
 3. **Refuse.** When `TryReserve` fails, the exchange releases everything both tees
    hold at once, marks itself `dropped_memory`, and copies nothing more. Forwarding
-   carries on (AC24).
+   carries on (AC24). Both tees reserve through one per-exchange `reservation`
+   (mutex, bytes held, dropped flag) in `capture.go`: the refusal gives back the
+   exchange's whole reservation there, and the other tee discards its chunk slices
+   the next time it is written or sealed.
 4. **Transfer.** At `finishCapture` the reservation moves to the `Exchange`. If
    `Submit` refuses it (queue full, sink closed), it is released there and then.
 5. **Release.** The worker calls `ex.Release()` once the pipeline is done, whatever
