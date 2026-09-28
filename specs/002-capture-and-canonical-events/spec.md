@@ -99,6 +99,12 @@ doesn't break the client.
       turn N's stream and its resent copy in turn N+1's request serialize differently
       and never dedup. Core takes the exclusion list as given and names no wire field
       itself.
+    - **Exclusion scope:** excluded fields are removed only from the top-level keys
+      of a content block, a system entry or a tool definition. They are never removed
+      from inside tool input or tool result content, where the same key name is
+      ordinary data.
+    - The stored parsed content is this canonical form. The raw body keeps the
+      original.
   - **Where content lives:**
     - Content up to 4 KiB (a constant in v1, not config) is stored inline in SQLite.
     - Larger content goes to a blob file, named by its hash
@@ -135,6 +141,10 @@ doesn't break the client.
   `executed_by: client | provider`. `client` means the harness ran the tool. `provider`
   means the provider ran it on its own side. This is protocol-neutral; later
   protocols with hosted tools use `provider` too.
+- **Event source in the canonical model.** `message`, `tool_call` and `tool_result`
+  carry `source: request_history | response`. `request_history` means the event was
+  parsed from the messages the client sent; `response` means it came from the
+  provider's reply to this exchange.
 - **Message history per exchange.** Each exchange's `message` events cover the full
   request history, not only what is new since the last turn.
   - Content is deduplicated by hash, so the cost is small rows.
@@ -175,20 +185,26 @@ doesn't break the client.
         `thinking` field whose `type` is anything other than `disabled` (so
         `enabled`, `adaptive` and unknown future types are true). It is false when
         `thinking` is absent or has `type: "disabled"` (research Q6).
-    - `message`: one per message in the request (with its index) and one for the
-      response's assistant message, which also carries `stop_reason`. Content blocks
-      are typed `text`, `reasoning`, `media` or `unknown`. Each block's content is
-      stored by hash, so a message resent on every turn is stored once.
+    - `message`: one per message in the request (with its index,
+      `source: request_history`) and one for the response's assistant message
+      (`source: response`), which also carries `stop_reason`. Content blocks are
+      typed `text`, `reasoning`, `media`, `tool_call`, `tool_result` or `unknown`, in
+      the order they were sent, so a message keeps its ordered view of text,
+      reasoning, tool calls and tool results. Each block's content is stored by hash,
+      so a message resent on every turn is stored once.
+      - A `tool_call` or `tool_result` block references its event by id
+        (`tool_call_id`). The `tool_call` and `tool_result` events stay the source of
+        truth for tool data; the block holds only the reference.
       - `thinking` → `reasoning`.
       - `redacted_thinking` → `reasoning` with `redacted: true`, its opaque `data`
         kept as sent, since it is needed to replay the turn.
-    - `tool_call`, with its id, name and input (stored by hash), and the raw block
-      JSON:
+    - `tool_call`, with its id, name, input (stored by hash), `source` and the raw
+      block JSON:
       - `tool_use` → `executed_by: client`;
       - `server_tool_use` and `mcp_tool_use` → `executed_by: provider`.
     - `tool_result`, with `tool_call_id` (the canonical link to its `tool_call`, set
-      from the wire's `tool_use_id`), `is_error`, the content (stored by hash) and the
-      raw block JSON (research Q5):
+      from the wire's `tool_use_id`), `is_error`, the content (stored by hash),
+      `source` and the raw block JSON (research Q5):
       - `tool_result` → `executed_by: client`;
       - `mcp_tool_result`, and any block type ending in `_tool_result` that carries a
         `tool_use_id` (for example `web_search_tool_result`,
@@ -216,12 +232,17 @@ doesn't break the client.
   - **Hashed payload:** a block's hash covers its content (text, reasoning text and
     signature, redacted reasoning data, tool input, tool result content). The adapter
     declares `cache_control` as its hash-excluded field through the parser seam, so it
-    is left out of block, system and tools hashes alike. It stays in the raw body.
+    is left out of block, system and tools hashes alike, under the exclusion scope
+    above: a `cache_control` key nested inside a tool input or tool result content
+    is data and stays hashed. It stays in the raw body either way.
   - **Tolerance:**
     - An unknown content-block type, other than the tool types above, or an unknown
       field, becomes `unknown` with its raw JSON kept, never a parse failure.
     - A truncated or aborted stream parses as far as it goes, and the events are
       flagged `partial`.
+    - A body flagged `truncated` (streamed or not) parses as far as it can, and the
+      exchange is `partial`, never `failed`. `failed` is kept for a body that is
+      malformed without being truncated.
   - **Per-exchange status:** each exchange records `parse`: `ok`, `partial`, `skipped`,
     `unsupported_encoding` or `failed`. A failure keeps the raw bodies and is logged
     and counted.
@@ -253,6 +274,9 @@ doesn't break the client.
   - `capture.dir` must be absolute. A relative path fails with `invalid value`, naming
     the key and source, so a second store never appears silently when the binary runs
     from another folder.
+  - A relative `XDG_DATA_HOME` is ignored and the `~/.local/share` fallback is used,
+    as the XDG Base Directory spec requires. Only an explicit relative `capture.dir`
+    fails.
   - `capture.enabled: false` means no tee, no queue and no store. The gateway then
     proxies exactly as it does in 001.
   - `config.example.yaml` gains these keys at their defaults. `capture.dir`'s default
@@ -269,10 +293,10 @@ doesn't break the client.
 - **ADRs.**
   - ADR 0004: capture store (OQ-1), covering SQLite plus zstd blob files and the two
     new dependencies: a pure-Go SQLite driver (no cgo) and a zstd library, plus
-    `andybalholm/brotli` (pure Go) for decoding `br` in the shared content decoder. `zstd` decoding
-    reuses the blob library. It records the trade-off: raw bodies are stored whole for fidelity and re-parsing, so raw
-    request storage grows quadratically with session length, and only parsed content
-    is deduplicated.
+    `andybalholm/brotli` (pure Go) for decoding `br` in the shared content decoder.
+    `zstd` decoding reuses the blob library. It records the trade-off: raw bodies are
+    stored whole for fidelity and re-parsing, so raw request storage grows
+    quadratically with session length, and only parsed content is deduplicated.
   - ADR 0005: secrets in captured content (OQ-5).
   - PLAN.md §8 and §9 are updated in the same PR.
 - **`gateway dump`.** A read-only subcommand that shows one exchange.
@@ -330,6 +354,8 @@ doesn't break the client.
 
 ## Do
 - Keep 001's fidelity intact. Every 001 test passes unchanged with capture on.
+- Point every test's `capture.dir` at a temp directory. No test reads or writes the
+  default data dir, including 001's tests run with capture on (AC5).
 - Tee on the side: the forward path never waits on the capture copy, the queue, the
   store or the parser.
 - Drop and count rather than block, and make every drop visible in a log line.
@@ -374,7 +400,7 @@ types are protocol-agnostic by construction, and PLAN.md §2 puts the event mode
 the centre of core. The `Store` implementation lives outside core. Two tests keep it
 honest:
 - 001's AC34 purity test still passes, now also covers the new files, and its denylist
-  gains the Anthropic wire names core must not spell (AC56).
+  gains the Anthropic wire names core must not spell (AC58).
 - A test-only adapter with a test-only parser is captured, redacted and turned into
   canonical events with no change to core.
 
@@ -388,7 +414,9 @@ honest:
 ## Acceptance criteria
 Config
 - **AC1** `TestLoad_CaptureDefaults` — the six `capture.*` keys have the defaults in the
-  table, `capture.dir` included.
+  table, `capture.dir` included. Subtest `relative_xdg_ignored`: a relative
+  `XDG_DATA_HOME` is ignored, `capture.dir` falls back to `~/.local/share/llm-gateway`,
+  and loading doesn't fail.
 - **AC2** `TestLoad_CaptureEnvOverridesFile` — each `GATEWAY_CAPTURE_*` var overrides
   the file value.
 - **AC3** `TestLoad_InvalidCaptureValues` — each fails with `invalid value`, naming the
@@ -416,7 +444,8 @@ Capture and store
   compressed, byte-identical.
 - **AC11** `TestCapture_BodyOverCapTruncated` — a body over `max_body_bytes` is
   forwarded whole. The stored copy is exactly the cap long and the exchange is flagged
-  `truncated`.
+  `truncated`. Subtest `non_streamed_json_parses_partial`: a truncated non-streamed
+  JSON body gives `parse: partial`, not `failed`.
 - **AC12** `TestCapture_AbortedExchangesRecorded` — each produces an exchange with the
   matching flag and the bytes seen. Subtests: `client_disconnect`, `upstream_abort`,
   `gateway_502`.
@@ -475,80 +504,89 @@ Anthropic parser
   test and marked `Content-Encoding: gzip`, yields the same events as the
   identity-encoded golden.
 - **AC32** `TestParse_ToolUseTurn` — a tool-use fixture yields `tool_call` events with
-  id, name, input and `executed_by: client`, and the next request's `tool_result`
-  events carry the matching `tool_call_id`, set from the wire's `tool_use_id`.
-- **AC33** `TestParse_ServerToolUse` — a new scrubbed fixture: a streamed turn with one
+  id, name, input, `executed_by: client` and `source: response`. In the next request,
+  the same calls resent in the history are `tool_call` events with
+  `source: request_history`, and its `tool_result` events carry the matching
+  `tool_call_id`, set from the wire's `tool_use_id`.
+- **AC33** `TestParse_MessageKeepsToolBlockOrder` — an assistant message of `text`,
+  `tool_use`, `text` yields a `message` whose blocks are `text`, `tool_call`, `text`,
+  in that order, and the `tool_call` block's `tool_call_id` matches its `tool_call`
+  event.
+- **AC34** `TestParse_ServerToolUse` — a new scrubbed fixture: a streamed turn with one
   `server_tool_use`, its `web_search_tool_result`, and one client `tool_use`. It yields
   `executed_by: provider` for the server tool's call and result, `executed_by: client`
   for the client call, and the IDs line up.
-- **AC34** `TestParse_NonStreaming` — a JSON response yields the same events as its
+- **AC35** `TestParse_NonStreaming` — a JSON response yields the same events as its
   streamed equivalent.
-- **AC35** `TestParse_UpstreamError` — each yields an `error` event with the provider's
+- **AC36** `TestParse_UpstreamError` — each yields an `error` event with the provider's
   type and message. Subtests: `status_429`, `sse_error_event`.
-- **AC36** `TestParse_UnknownBlockAndEventKept` — an unknown content-block type becomes
+- **AC37** `TestParse_UnknownBlockAndEventKept` — an unknown content-block type becomes
   `unknown` with its raw JSON, and an unknown SSE event is skipped. Parse is `ok`.
-- **AC37** `TestParse_ToolInputSplitAcrossDeltas` — a tool input split over several
+- **AC38** `TestParse_ToolInputSplitAcrossDeltas` — a tool input split over several
   `input_json_delta` events is joined and parsed once, at `content_block_stop`.
-- **AC38** `TestParse_ThinkingSignatureKept` — a reasoning block has its joined
+- **AC39** `TestParse_ThinkingSignatureKept` — a reasoning block has its joined
   thinking text and the `signature_delta` signature.
-- **AC39** `TestParse_RedactedThinkingKept` — a `redacted_thinking` block becomes a
+- **AC40** `TestParse_RedactedThinkingKept` — a `redacted_thinking` block becomes a
   `reasoning` block with `redacted: true` and its `data` kept byte-identical.
-- **AC40** `TestParse_UsageLastValueWins` — each usage counter holds the last value the
+- **AC41** `TestParse_UsageLastValueWins` — each usage counter holds the last value the
   stream reported.
-- **AC41** `TestParse_TruncatedStreamPartial` — a stream cut mid-block yields events up
+- **AC42** `TestParse_TruncatedStreamPartial` — a stream cut mid-block yields events up
   to the cut, flagged `partial`. Subtests: `identity`, `gzip` (the cut falls inside the
   compressed body).
-- **AC42** `TestParse_TruncatedToolInputPartial` — a stream cut inside a tool input
+- **AC43** `TestParse_TruncatedToolInputPartial` — a stream cut inside a tool input
   keeps the raw joined string on the block, and the exchange is `partial`, not
   `failed`.
-- **AC43** `TestParse_ContentEncodings` — a table test. Subtests `gzip`,
+- **AC44** `TestParse_ContentEncodings` — a table test. Subtests `gzip`,
   `deflate_zlib`, `deflate_raw`, `br` and `zstd` are each decoded and parsed with
   `parse: ok`; `unknown_encoding` is stored raw and marked `unsupported_encoding`.
-- **AC44** `TestParse_SystemChangeChangesHash` — two requests that differ only in
+- **AC45** `TestParse_SystemChangeChangesHash` — two requests that differ only in
   `system` have different `system_hash` values and the same `tools_hash`; two that
   differ only in `cache_control` on the system array have the same `system_hash`.
-- **AC45** `TestParse_ReasoningRequestedFlag` — `reasoning_requested` follows the
+- **AC46** `TestParse_ReasoningRequestedFlag` — `reasoning_requested` follows the
   request's top-level `thinking` field. Subtests: `absent` (false), `disabled` (false),
   `enabled` (true), `unknown_type` (true).
-- **AC46** `TestParse_OtherPathsSkipped` — `count_tokens`, `/v1/models` and
+- **AC47** `TestParse_OtherPathsSkipped` — `count_tokens`, `/v1/models` and
   `HEAD /api/hello` are stored with `parse: skipped`.
-- **AC47** `TestParse_FailureKeepsRaw` — a malformed body gives `parse: failed` and a
+- **AC48** `TestParse_FailureKeepsRaw` — a malformed body gives `parse: failed` and a
   `capture_failed` line with `stage: parse`, and the raw bodies are stored.
-- **AC48** `TestStore_BlockContentDedup` — two requests resending the same message
+- **AC49** `TestStore_BlockContentDedup` — two requests resending the same message
   store its content once.
-- **AC49** `TestStore_ResponseMessageDedupsWithNextRequest` — verified against fixtures:
+- **AC50** `TestStore_ResponseMessageDedupsWithNextRequest` — verified against fixtures:
   turn N's response message and its copy in turn N+1's request share one content hash
   and one stored copy. Whether real Claude Code resends the message unchanged is
-  AC59's check (research Q3).
-- **AC50** `TestStore_SystemAndToolsStoredOnce` — two turns with the same system and
+  AC61's check (research Q3).
+- **AC51** `TestStore_SystemAndToolsStoredOnce` — two turns with the same system and
   tools give one stored copy of each.
-- **AC51** `TestFixtures_NoIdentifiers` — still passes over the new fixtures.
+- **AC52** `TestStore_ExclusionNotAppliedInsideToolInput` — two tool inputs that
+  differ only in a nested `cache_control` key get different content hashes, and both
+  are stored.
+- **AC53** `TestFixtures_NoIdentifiers` — still passes over the new fixtures.
 
 `gateway dump`
-- **AC52** `TestDump_PrintsExchange` — prints the row's fields, both bodies and the
+- **AC54** `TestDump_PrintsExchange` — prints the row's fields, both bodies and the
   canonical events as JSON lines, in that order. Subtests: `streamed`, `non_streamed`,
   `gzip` (decoded), `br` (decoded), `zstd` (decoded), `raw_flag` (left encoded),
   `unsupported_encoding` (raw bytes plus a one-line notice, exit zero).
-- **AC53** `TestDump_Last` — `--last` prints the most recent exchange.
-- **AC54** `TestDump_UnknownIDFails` — exits non-zero with the reason. Subtests:
+- **AC55** `TestDump_Last` — `--last` prints the most recent exchange.
+- **AC56** `TestDump_UnknownIDFails` — exits non-zero with the reason. Subtests:
   `unknown_id`, `missing_store`.
-- **AC55** `TestDump_NeverWritesStore` — a fresh directory stays empty, and an existing
+- **AC57** `TestDump_NeverWritesStore` — a fresh directory stays empty, and an existing
   database's mtime is unchanged.
 
 Agnosticism
-- **AC56** `TestCore_NoProviderOrClientIdentifiers` — still passes, covering the new
+- **AC58** `TestCore_NoProviderOrClientIdentifiers` — still passes, covering the new
   core files. Its denylist, kept in the test, is extended beyond provider and client
   names with the Anthropic wire names core must not spell: block, delta and event
   type names, and the adapter's hash-excluded field. Canonical names are never on it.
-- **AC57** `TestCore_TestParserNeedsNoCoreChange` — a test-only adapter and parser,
+- **AC59** `TestCore_TestParserNeedsNoCoreChange` — a test-only adapter and parser,
   registered from the test, are captured, redacted and turned into canonical events.
 
 Logging and secrets
-- **AC58** `TestCapture_SecretsNotLogged` — sentinels in auth headers, the query and the
+- **AC60** `TestCapture_SecretsNotLogged` — sentinels in auth headers, the query and the
   body appear in no log line, across a stored, a dropped and a failed capture.
 
 Manual (evidence recorded in the PR)
-- **AC59** `ManualSmoke_ClaudeCodeCaptured` — a real Claude Code session with a tool
+- **AC61** `ManualSmoke_ClaudeCodeCaptured` — a real Claude Code session with a tool
   call, run through the gateway, shows in `gateway.db` one exchange per request, with
   `tool_call` and `tool_result` events that line up. No auth value appears, checked by
   `grep` over `gateway dump` output for every exchange. The PR records the session's
@@ -558,10 +596,10 @@ Manual (evidence recorded in the PR)
     content hash. The result is recorded as research Q3's answer. If they don't, a
     follow-up fix (not this spec) adjusts the canonical encoding or the adapter's hash
     exclusions.
-- **AC60** `ManualSmoke_KillStoreMidSession` — deleting or `chmod 000`-ing
+- **AC62** `ManualSmoke_KillStoreMidSession` — deleting or `chmod 000`-ing
   `capture.dir` mid-session leaves Claude Code working normally, with `capture_failed`
   lines in the log.
-- **AC61** `ManualDocs_CapturePage` — `docs/capture.md` covers the location, contents,
+- **AC63** `ManualDocs_CapturePage` — `docs/capture.md` covers the location, contents,
   redaction scope, and inspection with `gateway dump` first and `sqlite3` second.
 
 ## Open questions
@@ -569,6 +607,6 @@ Manual (evidence recorded in the PR)
   defaults right for real Claude Code sessions? Measure during the manual smoke test,
   and log the peak `capture.memory_limit` usage during it.
 - [OPEN] Does Claude Code resend an assistant message's blocks unchanged, apart from
-  the fields the Anthropic adapter excludes from the hash? Answered by AC59's manual
+  the fields the Anthropic adapter excludes from the hash? Answered by AC61's manual
   smoke step (research Q3). It doesn't block approval; a mismatch is a follow-up fix,
   not a change to this spec.

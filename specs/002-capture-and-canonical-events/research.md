@@ -111,6 +111,15 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   its resent copy share one content hash; that result is Q3's answer. AC48 is verified
   against fixtures only. If the hashes differ, a follow-up fix (not this spec) adjusts
   the canonical encoding or the adapter's hash exclusions.
+- 2026-09-28: after the review-gap edits the ACs are renumbered. AC48 (fixture dedup)
+  is now AC50, and the manual Claude Code smoke that answers this question is AC61.
+  Q6's AC45 `TestParse_ReasoningRequestedFlag` is now AC46.
+- 2026-09-28 (owner): hash exclusions now apply only to the top-level keys of a
+  content block, a system entry or a tool definition, never inside tool input or tool
+  result content (AC52). Related doubt for the same smoke: the Messages API allows
+  `cache_control` on blocks nested in a `tool_result`'s content. If Claude Code puts
+  it there, that resent `tool_result` would not dedup across turns. The AC61 step
+  compares assistant messages; compare a resent `tool_result` too while there.
 
 ## Q4 — Why is Claude Code's `HEAD /api/hello` labelled `unknown`?
 - Status: answered     Level: limit
