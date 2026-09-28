@@ -1,0 +1,7 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (AC25, AC62; no spec change)
+Plan: specs/002-capture-and-canonical-events/plan.md (status: draft)
+Research: Q10 (its fallback's behaviour after a mismatch)
+Changed ACs: plan rows only. AC25 db_deleted gains subtest deleted_logged_once (one "store file deleted or replaced" line across several exchanges, each exchange capture_failed stage: store, no new gateway.db). AC62's manual expectation now covers chmod 000: open handles still work, inline-only exchanges may be stored, blob-needing ones fail.
+Why this approach: a sticky failed state after the first mismatch gives one actionable line instead of one per exchange, and never reopening avoids silently starting a second, empty store mid-run.
+Trade-off / known limit: after chmod 000, a client with only small requests can keep being captured for a while; recorded in Risks.
+Verified by: review only; no code in this commit.
