@@ -98,7 +98,9 @@ The forces that bound the choice:
   need a different store.
 - **Reversing.** The engine sits behind the `Store` interface and the content hash is
   engine-independent, so another store is a new implementation plus a migration of
-  the data. Dropping a dependency means replacing its one import site
-  (`internal/store` or `internal/contentcoding`).
+  the data. Dropping a dependency means replacing it at its import sites:
+  `modernc.org/sqlite` in `internal/store`, `andybalholm/brotli` in
+  `internal/contentcoding`, and `klauspost/compress` in both (blob compression in
+  `internal/store`, the `zstd` content coding in `internal/contentcoding`).
 - PLAN.md §8's "Capture pipeline" and "Capture store" rows become Decided, and §9
   marks OQ-1 resolved, both linking this ADR.
