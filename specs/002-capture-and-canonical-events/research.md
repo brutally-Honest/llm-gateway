@@ -238,9 +238,15 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   one streamed turn, and Claude Code's WebSearch may send the server tool in a
   request of its own; AC33 wants a message of text, `tool_use`, text, and a model
   turn usually stops at its last `tool_use`.
+- 2026-09-28 (owner): AC33's fixture may be synthetic, hand-built from recorded
+  blocks, because it tests the parser's ordering, not upstream behaviour. AC34's may
+  be assembled: the recorded WebSearch request's `server_tool_use` and
+  `web_search_tool_result`, plus a client `tool_use` spliced in from `tool_turn`; its
+  README says "synthetic (assembled from recorded blocks)". Outcome (→ plan): the
+  fixture table says so.
 
 ## Q9 — Can `gateway dump` read a WAL database without writing a file?
-- Status: open     Level: technical
+- Status: answered     Level: technical
 - Blocks / shapes: nothing yet (tasks.md not written); shapes AC57 and the dump
   command's open path
 - Context: 2026-09-28, drafting plan.md. The spec says dump never writes a file. The
@@ -259,9 +265,28 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   `immutable=1` is rejected, since it gives torn reads while the gateway writes. If a
   `mode=ro` open creates `-wal` or `-shm`, the spec's dump rule becomes "never
   writes `gateway.db` or a blob", and AC57 is unchanged.
+- 2026-09-28 Answer (spike):
+  Spike: a throwaway module outside the repo (`go mod init spike`,
+  `go get modernc.org/sqlite@latest` → v1.59.0, SQLite 3.53.4, go1.25.4, Linux amd64),
+  `go run .`; not committed. The writer DSN is
+  `file:<db>?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)`
+  with `SetMaxOpenConns(1)`; the reader DSN is `file:<db>?mode=ro`.
+  - Stopped gateway: after the writer's clean close only `gateway.db` is left. A
+    `mode=ro` open and `SELECT` succeed (2 rows) and create `gateway.db-wal` and
+    `gateway.db-shm`, which stay after the reader closes. `gateway.db`'s mtime is
+    unchanged. The created files get the database's mode (`0600`, pre-created as the
+    store will); `-wal` is 0 bytes and `-shm` 32 KiB.
+  - Running gateway (writer still open): `mode=ro` reads the committed rows,
+    including rows still in the `-wal`, and sees a later insert by the writer. No new
+    file is created; `gateway.db`'s mtime is unchanged; the writer is not blocked.
+- 2026-09-28 Outcome (→ spec, → plan): the decision rule fires. The spec's dump rule
+  becomes "never writes `gateway.db` or a blob"; SQLite's `-wal` and `-shm` may be
+  created next to a stopped gateway's database. AC57 is unchanged: a fresh directory
+  stays empty because dump checks for `gateway.db` before opening, and the
+  database's mtime doesn't change. `immutable=1` stays rejected.
 
 ## Q10 — Does the driver fail a write after the database file is deleted?
-- Status: open     Level: technical
+- Status: answered     Level: technical
 - Blocks / shapes: nothing yet (tasks.md not written); shapes AC25 `db_deleted` and
   AC62, and the driver choice
 - Context: 2026-09-28, drafting plan.md. On Linux an unlinked file stays writable
@@ -279,3 +304,18 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   write after unlink doesn't fail, the store compares `gateway.db`'s inode (device and
   inode number) with the one it opened before each write transaction, and treats a
   mismatch or a missing file as a store failure. AC25 is unchanged either way.
+- 2026-09-28 Answer (spike, same module as Q9):
+  Spike: a throwaway module outside the repo (`go mod init spike`,
+  `go get modernc.org/sqlite@latest` → v1.59.0, SQLite 3.53.4, go1.25.4, Linux amd64),
+  `go run .`; not committed. The writer DSN is
+  `file:<db>?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)`
+  with `SetMaxOpenConns(1)`; the reader DSN is `file:<db>?mode=ro`.
+  - After one write, `gateway.db` is unlinked; `-wal` and `-shm` remain. `BEGIN`,
+    `INSERT` and `COMMIT` all return no error, and so does a second autocommit
+    `INSERT`. No `SQLITE_READONLY_DBMOVED` or any other error: writes go on silently
+    into the unlinked file.
+- 2026-09-28 Outcome (→ plan): the fallback fires. The store records `gateway.db`'s
+  device and inode at open and compares them with a fresh `os.Stat` before each write
+  transaction; a mismatch or a missing file is a store failure (AC25 `db_deleted`).
+  The plan's dependency row no longer credits the driver with detecting this. AC25
+  is unchanged.

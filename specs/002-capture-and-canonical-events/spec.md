@@ -315,8 +315,9 @@ doesn't break the client.
        encoding prints the raw bytes plus a one-line notice, and dump does not fail;
     3. the exchange's canonical events, as JSON lines, content hashes included.
   - **Read-only:** it opens the database read-only, never creates or migrates it, and
-    never writes a file. A missing store or an unknown ID exits non-zero with the
-    reason.
+    never writes `gateway.db` or a blob. A read-only open can create SQLite's own
+    `-wal` and `-shm` files next to a stopped gateway's database (research Q9); that
+    is allowed. A missing store or an unknown ID exits non-zero with the reason.
   - It finds the store through the same config sources as the gateway.
   - It knows no wire format: it prints stored bytes and canonical events only. Content
     decoding is generic HTTP, not provider logic.

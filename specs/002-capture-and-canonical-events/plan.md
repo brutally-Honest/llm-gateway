@@ -22,9 +22,8 @@ the canonical event types and the canonical encoding. The queue and the pipeline
 (`internal/capture`), the SQLite store (`internal/store`), the content decoder
 (`internal/contentcoding`) and the Anthropic parser live outside core.
 
-Where this plan cites research queries, the answers are in `research.md`. Q9 and Q10 stay
-open until their spikes run; each has a decision rule recorded already, and each
-entry below that depends on one says so.
+Where this plan cites research queries, the answers are in `research.md`. All of
+Q1–Q10 are answered except Q3, which the manual smoke answers (AC61).
 
 ### Package layout
 
@@ -164,8 +163,8 @@ what AC61's manual step compares (Q3).
 `anthropic.Adapter` gains `SecretHeaders() = [x-api-key]`, `SecretQueryParams() =
 []`, and `Parser()`. The parser:
 - Returns `skipped` for anything but `POST /v1/messages` (AC47).
-- Decodes both bodies with `contentcoding.Decode`, limited to `DecodeLimit`. `Unsupported` →
-  `unsupported_encoding`, `CutShort` → `partial` (AC44, AC42).
+- Decodes both bodies with `contentcoding.Decode`, limited to `DecodeLimit`.
+  `Unsupported` → `unsupported_encoding`, `CutShort` → `partial` (AC44, AC42).
 - **Request.** A `json.Decoder` over the decoded body, `UseNumber`, into a struct
   with `json.RawMessage` fields: unknown fields are kept in the raw content, never an
   error.
@@ -238,15 +237,17 @@ binds (AC16).
 
 **Readers.** `store.OpenReader(dir)` checks that `gateway.db` exists, never creates
 it, and opens `mode=ro`. `immutable=1` is never used: it gives torn reads while the
-gateway writes (Q9). Whether `mode=ro` creates `-wal` or `-shm` is what the Q9 spike
-settles. If it does, the spec's dump rule becomes "never writes `gateway.db` or a
-blob", and AC57 is unchanged.
+gateway writes. The Q9 spike showed that `mode=ro` on a stopped gateway's database
+creates `-wal` and `-shm` (with the database's `0600` mode) and leaves `gateway.db`'s
+mtime alone. So the spec's dump rule is "never writes `gateway.db` or a blob", and
+AC57 checks exactly that.
 
-**A deleted database (Q10).** If the Q10 spike shows a write after `gateway.db` is
-unlinked still succeeds, the store records the file's device and inode at open. It
-compares them with a fresh `os.Stat` before each write transaction, and a mismatch or
-a missing file is a store failure (AC25 `db_deleted`). If the driver already fails
-the write, the check is left out.
+**A deleted database (Q10).** The Q10 spike showed that writes after `gateway.db` is
+unlinked succeed silently. So the store records the file's device and inode at open
+(`syscall.Stat_t` from `os.Stat`). It compares them with a fresh `os.Stat` before each
+write transaction, and a mismatch or a missing file is a store failure (AC25
+`db_deleted`). The check is one `stat` per transaction, next to a transaction that
+already `fsync`s.
 
 **Schema versioning.** Migrations are an ordered list of SQL strings in Go.
 - At open, inside `BEGIN IMMEDIATE`, `PRAGMA user_version` is read, the missing steps
@@ -413,10 +414,10 @@ Deviations.
 
 ### Build order (input to tasks.md)
 
-1. **Spikes, first.** Q9 and Q10, in a throwaway module outside the repo using
-   `modernc.org/sqlite`, with nothing committed but the results in `research.md`.
-   A result that triggers a recorded decision rule applies it (the spec's dump rule,
-   the inode check).
+1. **Spikes, first (done 2026-09-28).** Q9 and Q10 ran in a throwaway module outside
+   the repo on `modernc.org/sqlite` v1.59.0 (SQLite 3.53.4). Both decision rules
+   fired: the spec's narrower dump rule and the store's inode check, as applied
+   above.
 2. **ADRs, before any dependency.** ADR 0004 (store, pipeline confirmation,
    dependencies), written after the spikes so it records a verified driver, and ADR
    0005 (secrets in content). `go get` the three dependencies in the same task as
@@ -694,7 +695,7 @@ runs `go get`, and the ADR records them and their licences.
 
 | Need | Choice | Why | Rejected |
 |---|---|---|---|
-| SQLite, no cgo | **`modernc.org/sqlite`** | SQLite's C source transpiled to Go. It uses SQLite's own unix VFS, so file-level behaviour (WAL, locking, `SQLITE_READONLY_DBMOVED`, Q10) is upstream SQLite's. It is a plain `database/sql` driver (`"sqlite"`), widely used, BSD-3-Clause. Its docs put it about 1.3× slower than C on indexed work, far below what one local user's capture needs. | **`ncruces/go-sqlite3`:** also cgo-free (a Wasm build of SQLite translated to Go with wasm2go), MIT, and competitive in speed. But it replaces SQLite's OS layer with its own Go VFS, so the file behaviour AC25 and AC62 lean on is a second implementation's, and each connection runs in its own Wasm sandbox with higher memory. **`mattn/go-sqlite3`:** needs cgo, which the spec forbids. |
+| SQLite, no cgo | **`modernc.org/sqlite`** | SQLite's C source transpiled to Go. It uses SQLite's own unix VFS, so file-level behaviour (WAL, locking) is upstream SQLite's; the Q9 and Q10 spikes ran against v1.59.0 (SQLite 3.53.4). A write after unlink is not detected (Q10), so the store checks the inode itself. It is a plain `database/sql` driver (`"sqlite"`), widely used, BSD-3-Clause. Its docs put it about 1.3× slower than C on indexed work, far below what one local user's capture needs. | **`ncruces/go-sqlite3`:** also cgo-free (a Wasm build of SQLite translated to Go with wasm2go), MIT, and competitive in speed. But it replaces SQLite's OS layer with its own Go VFS, so the file behaviour the store and dump rely on would be a second implementation's, and each connection runs in its own Wasm sandbox with higher memory. **`mattn/go-sqlite3`:** needs cgo, which the spec forbids. |
 | zstd (blobs; the `zstd` coding) | **`github.com/klauspost/compress/zstd`** | Pure Go, the de-facto Go zstd. `EncodeAll` and `DecodeAll` suit whole blobs; one decoder serves both blobs and the `zstd` content coding. | **`DataDog/zstd`, `valyala/gozstd`:** cgo. |
 | brotli (the `br` coding) | **`github.com/andybalholm/brotli`** | Pure Go, decoder only is used. Named in the spec. | **`google/brotli` Go bindings:** cgo. |
 
@@ -789,7 +790,7 @@ loopback. Stores live in `t.TempDir()`.
 | 22 | `TestCapture_PrincipalLocal` | `cmd/gateway/run_capture_test.go` |
 | 23 | `TestCapture_QueueFullDrops` | `internal/capture/capture_test.go` |
 | 24 | `TestCapture_MemoryLimitDrops` (`Budget.InUse` before and after) | `internal/core/capture_test.go` |
-| 25 | `TestCapture_StoreDeadClientUnaffected` (`db_deleted` depends on Q10) | `internal/capture/capture_test.go` |
+| 25 | `TestCapture_StoreDeadClientUnaffected` (`db_deleted` caught by the store's inode check, Q10) | `internal/capture/capture_test.go` |
 | 26 | `TestCapture_ShutdownDrainsQueue` (`deps.openStore` injects a slow store) | `cmd/gateway/run_capture_test.go` |
 | 27 | `TestRedact_AuthHeaders` (scans the database and every decompressed blob) | same |
 | 28 | `TestRedact_ForwardedTrafficUntouched` | same |
@@ -797,8 +798,8 @@ loopback. Stores live in `t.TempDir()`.
 | 30 | `TestParse_GoldenStream` | `internal/protocols/anthropic/parser_test.go` |
 | 31 | `TestParse_GoldenStreamGzip` | same |
 | 32 | `TestParse_ToolUseTurn` (fixture: `tool_turn`, recorded) | same |
-| 33 | `TestParse_MessageKeepsToolBlockOrder` (fixture: `tool_order`, recorded) | same |
-| 34 | `TestParse_ServerToolUse` (fixture: `server_tool`, recorded) | same |
+| 33 | `TestParse_MessageKeepsToolBlockOrder` (fixture: `tool_order`, synthetic from recorded blocks) | same |
+| 34 | `TestParse_ServerToolUse` (fixture: `server_tool`, assembled from recorded blocks) | same |
 | 35 | `TestParse_NonStreaming` (fixture: `non_streaming`, synthetic) | same |
 | 36 | `TestParse_UpstreamError` (fixtures: `error/*`, synthetic) | same |
 | 37 | `TestParse_UnknownBlockAndEventKept` | `internal/protocols/anthropic/stream_test.go` |
@@ -821,7 +822,7 @@ loopback. Stores live in `t.TempDir()`.
 | 54 | `TestDump_PrintsExchange` | `cmd/gateway/dump_test.go` |
 | 55 | `TestDump_Last` | same |
 | 56 | `TestDump_UnknownIDFails` | same |
-| 57 | `TestDump_NeverWritesStore` (both store states; Q9) | same |
+| 57 | `TestDump_NeverWritesStore` (both store states; `-wal`/`-shm` allowed, Q9) | same |
 | 58 | `TestCore_NoProviderOrClientIdentifiers`: the full denylist, wire names included, over `internal/core`; the provider and client names only over `internal/capture`, `internal/store` and `internal/contentcoding` | `internal/core/purity_test.go` |
 | 59 | `TestCore_TestParserNeedsNoCoreChange` (test adapter and parser through the real sink and store) | `internal/core/capture_pipeline_test.go` |
 | 60 | `TestCapture_SecretsNotLogged` (stored, dropped, failed) | `cmd/gateway/run_capture_test.go` |
@@ -829,10 +830,8 @@ loopback. Stores live in `t.TempDir()`.
 | 62 | Manual: delete, then `chmod 000`, `capture.dir` mid-session | PR |
 | 63 | Manual: `docs/capture.md` read against the AC | PR |
 
-**Unmapped ACs:** none. Two wait on a spike for their final shape: AC25 `db_deleted`
-on Q10 and AC57 on Q9. Both have their decision rules recorded, and neither AC
-changes. AC33 and AC34 depend on what the recording session yields (Q8, 2026-09-28
-outcome line).
+**Unmapped ACs:** none. Every fixture source is settled (Q8), and the spikes behind
+AC25 and AC57 have run (Q9, Q10).
 
 **Tests no AC names.**
 - `TestDecode_*` in `internal/contentcoding`: each coding, stacked codings,
@@ -856,14 +855,16 @@ date, model, method and what was scrubbed, as in 001, and says `recorded` or
 | File | For | Source |
 |---|---|---|
 | `tool_turn/response.sse`, `tool_turn/next_request.json` | AC32, AC50 | `recorded`: a Claude Code turn that calls a tool, and the next request |
-| `tool_order/response.sse` | AC33 | `recorded`: a Claude Code message of text, `tool_use`, text |
-| `server_tool/response.sse` | AC34 | `recorded`: Claude Code's WebSearch, which is the API's server tool |
+| `tool_order/response.sse` | AC33 | `synthetic`: hand-built from recorded blocks (text, `tool_use`, text), since it tests the parser's ordering, not upstream behaviour |
+| `server_tool/response.sse` | AC34 | `synthetic (assembled from recorded blocks)`: the recorded WebSearch request's `server_tool_use` and `web_search_tool_result`, plus a client `tool_use` spliced in from `tool_turn` |
 | `non_streaming/request.json`, `response.json` | AC35 | `synthetic`, from Anthropic's documented shapes |
 | `error/response_429.json`, `error/stream_error.sse` | AC36 | `synthetic`, from Anthropic's documented shapes |
 
-The OAuth token is never extracted to call the API directly. If a recording session
-can't produce what AC33 or AC34 asks for in one message or one turn, that goes back
-to the owner as a research query. It is not made up by editing a recording.
+The OAuth token is never extracted to call the API directly. AC33 and AC34 are
+built from recorded blocks by owner decision (Q8), because a real message or turn
+rarely has that exact shape. Each block keeps its recorded bytes, only their
+arrangement is synthetic, and the README says so. No other fixture is edited beyond
+scrubbing.
 
 - **How they're recorded.** 001's throwaway recording proxy, extended to save the
   request body as well, with `Accept-Encoding: identity` forced as in 001 Q10.
@@ -892,9 +893,10 @@ to the owner as a research query. It is not made up by editing a recording.
   case outside `capture.memory_limit` is `workers × 4 × max_body_bytes`: about
   256 MiB at the defaults (2 workers, 32 MiB). The parser's own structures come on
   top, in proportion to the decoded bodies.
-- **SQLite file behaviour.** Q9 (read-only open writing `-shm`) and Q10 (writes after
-  unlink) are checked by the first build step's spikes, before ADR 0004. Their
-  fallbacks are recorded: the narrower dump rule, and the inode check.
+- **SQLite file behaviour.** The spikes settled both: a read-only open writes `-wal`
+  and `-shm` (Q9, allowed by the spec's dump rule), and a write after unlink succeeds
+  (Q10, caught by the inode check). A later driver upgrade could change either; AC25
+  and AC57 guard them.
 - **Canonical encoding and dedup.** AC50 holds on fixtures; real Claude Code resends
   are Q3, answered by AC61. `cache_control` nested in a `tool_result`'s content
   blocks is hashed, per the spec's exclusion scope, so such a resent result won't
@@ -921,6 +923,5 @@ Both deviations below were accepted by the owner on 2026-09-28.
   `XDG_DATA_HOME`) fails with `invalid value` for `capture.dir` from source `default`.
   The spec doesn't cover this case.
 
-Nothing else. `request_incomplete` isn't a deviation: the spec's Exchange record and
-AC12 gained it in the same commit as this plan change. If a Q9 or Q10 spike triggers
-its decision rule, the spec edit goes in with the result.
+Nothing else. `request_incomplete` isn't a deviation, and neither is the narrower
+dump rule: each spec edit went in with the plan change it matches.
