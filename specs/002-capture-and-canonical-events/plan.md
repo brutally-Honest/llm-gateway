@@ -249,6 +249,16 @@ write transaction, and a mismatch or a missing file is a store failure (AC25
 `db_deleted`). The check is one `stat` per transaction, next to a transaction that
 already `fsync`s.
 
+After a mismatch:
+- On the first one, the store logs one error line, `store file deleted or replaced;
+  restart the gateway to resume capture`, with the database's `path`. The path is
+  the store's own, not request data.
+- The store then marks itself failed, sticky for the rest of the run. Every later
+  write returns an error at once, without another `stat`. Each exchange then fails
+  with `capture_failed` and `stage: store` and is counted, as with any store failure.
+- The store never recreates or reopens the database mid-run. Capture resumes only
+  after a restart, which opens or creates the store as at startup.
+
 **Schema versioning.** Migrations are an ordered list of SQL strings in Go.
 - At open, inside `BEGIN IMMEDIATE`, `PRAGMA user_version` is read, the missing steps
   are applied, and `user_version` is set.
@@ -790,7 +800,7 @@ loopback. Stores live in `t.TempDir()`.
 | 22 | `TestCapture_PrincipalLocal` | `cmd/gateway/run_capture_test.go` |
 | 23 | `TestCapture_QueueFullDrops` | `internal/capture/capture_test.go` |
 | 24 | `TestCapture_MemoryLimitDrops` (`Budget.InUse` before and after) | `internal/core/capture_test.go` |
-| 25 | `TestCapture_StoreDeadClientUnaffected` (`db_deleted` caught by the store's inode check, Q10) | `internal/capture/capture_test.go` |
+| 25 | `TestCapture_StoreDeadClientUnaffected` (`db_deleted` caught by the store's inode check, Q10). `db_deleted` has a subtest, `deleted_logged_once`: across several exchanges after the delete, exactly one `store file deleted or replaced` line, every exchange gets `capture_failed` with `stage: store`, and no new `gateway.db` appears | `internal/capture/capture_test.go` |
 | 26 | `TestCapture_ShutdownDrainsQueue` (`deps.openStore` injects a slow store) | `cmd/gateway/run_capture_test.go` |
 | 27 | `TestRedact_AuthHeaders` (scans the database and every decompressed blob) | same |
 | 28 | `TestRedact_ForwardedTrafficUntouched` | same |
@@ -827,7 +837,7 @@ loopback. Stores live in `t.TempDir()`.
 | 59 | `TestCore_TestParserNeedsNoCoreChange` (test adapter and parser through the real sink and store) | `internal/core/capture_pipeline_test.go` |
 | 60 | `TestCapture_SecretsNotLogged` (stored, dropped, failed) | `cmd/gateway/run_capture_test.go` |
 | 61 | Manual: a Claude Code session with a tool call and ≥3 turns; the hash comparison recorded as Q3's answer. Evidence in the PR | PR |
-| 62 | Manual: delete, then `chmod 000`, `capture.dir` mid-session | PR |
+| 62 | Manual: delete, then `chmod 000`, `capture.dir` mid-session. Expected: after the delete, one `store file deleted or replaced` line, then `capture_failed` per exchange. After `chmod 000`, open handles still work, so an exchange whose content all fits inline may still be stored; one that needs a blob fails with `stage: store`. Real Claude Code requests are over 4 KiB and need blobs, so `capture_failed` lines appear. Claude Code keeps working in both cases | PR |
 | 63 | Manual: `docs/capture.md` read against the AC | PR |
 
 **Unmapped ACs:** none. Every fixture source is settled (Q8), and the spikes behind
@@ -906,6 +916,13 @@ scrubbing.
   wire names stay core-only. "Cursor" is a common database word, so store code and
   comments must avoid it. The test flags it rather than the list growing an
   exception.
+- **`chmod 000` on `capture.dir` mid-run is only partly visible.** The open database,
+  `-wal` and `-shm` handles keep working, so an exchange whose content all fits
+  inline (4 KiB or less per item) can still be stored. Only exchanges that need a new
+  blob fail, with `stage: store`. Real Claude Code requests always need blobs, so the
+  failure shows up at once in practice (AC62). A small-request client could see
+  capture carry on for a while. The spec asks only that requests are unaffected and
+  failures logged, which holds either way.
 - **Docker volume ownership.** Without the Dockerfile change, compose fails fast at
   startup because `nonroot` can't write the volume. This is caught the first time
   compose runs, not by `make verify`.
