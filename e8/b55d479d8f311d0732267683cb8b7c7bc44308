@@ -1,0 +1,7 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (Content decoding; supports AC44, AC54)
+ADR: docs/decisions/0004-capture-store.md
+Research: specs/002-capture-and-canonical-events/research.md (Q1, Q7)
+Why this approach: every token is checked before any decoding, so an unknown coding returns the raw body as Unsupported; each layer reads through io.LimitReader(limit+1), so a bomb never holds more than the cap plus one read, and a read error part-way keeps the decoded prefix as CutShort.
+Alternatives rejected: zstd.DecodeAll on a shared decoder (no streaming cap on output); treating an empty header as unsupported (an absent Content-Encoding is identity).
+Trade-off / known limit: a zstd decoder is built per call with concurrency 1 rather than shared; empty list elements are skipped and tokens match case-insensitively (recorded in plan.md). go mod tidy adds brotli's test-only xyproto/randomstring to go.sum only.
+Verified by: make verify; go test -race ./internal/contentcoding (TestDecode table incl. TestDecode_CapsOutput for gzip, br, zstd); tests first failed to build with no package.
