@@ -184,3 +184,71 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   AC45 `TestParse_ReasoningRequestedFlag` covers it (subtests `absent`, `disabled`,
   `enabled`, `unknown_type`); the open question is removed from the spec. ACs from the
   old AC45 on shift by one: AC48 is now AC49, AC55 is AC56, AC58 is AC59.
+
+## Q7 — Is the decoded size of a captured body capped?
+- Status: open     Level: technical
+- Blocks / shapes: nothing yet (tasks.md not written); shapes the plan's content
+  decoder and worker memory
+- Context: 2026-09-28, drafting plan.md. `capture.memory_limit` bounds the tee buffers
+  and queued exchanges. Decoding happens later, in the worker, on a copy the budget
+  doesn't cover. A compressed body can inflate far past `capture.max_body_bytes`
+  (SSE text compresses well; a hostile or broken upstream could send a bomb). The
+  spec sets no limit on decoded output.
+- Question: should the shared decoder stop at a size limit, and if so which one
+  (`capture.max_body_bytes`, a multiple of it, or a new constant), and is a body cut
+  there `partial`?
+- How to resolve: owner decision.
+- Answer: open.
+- Outcome: the plan's decoder signature takes the limit, or the risk is accepted in
+  the plan's Risks.
+
+## Q8 — Which new parser fixtures can be recorded from real traffic?
+- Status: open     Level: flow
+- Blocks / shapes: nothing yet (tasks.md not written); shapes AC32–AC36 fixtures
+- Context: 2026-09-28, drafting plan.md. The spec asks for new scrubbed fixtures: a
+  tool-use turn, a server-tool turn, a non-streaming response and an upstream error.
+  001's golden stream was recorded through a throwaway proxy with a Claude Code
+  subscription login (001 Q10); no API key is assumed (001 Q4). AC34 needs one
+  streamed turn holding a `server_tool_use`, its `web_search_tool_result` and a
+  client `tool_use` together, which Claude Code may never send in one turn. A
+  non-streamed `/v1/messages` call, a `429` and an SSE `error` event can't be
+  produced on demand through Claude Code either.
+- Question: for each fixture, is it recorded (through Claude Code, or a direct API
+  call with a key), or built by hand from a recorded one following Anthropic's
+  documented shapes, with its README saying so?
+- How to resolve: owner decision; try a recording session first.
+- Answer: open.
+- Outcome: the plan's Fixtures section names the source of each file.
+
+## Q9 — Can `gateway dump` read a WAL database without writing a file?
+- Status: open     Level: technical
+- Blocks / shapes: nothing yet (tasks.md not written); shapes AC57 and the dump
+  command's open path
+- Context: 2026-09-28, drafting plan.md. The spec says dump never writes a file. The
+  store runs in WAL mode. SQLite's docs say a read-only connection to a WAL database
+  can be opened if the `-wal` and `-shm` files exist or can be created; after a clean
+  shutdown SQLite removes them, so a `mode=ro` open may create them. `immutable=1`
+  avoids that but is only safe while nothing writes.
+- Question: with the chosen driver, does a `mode=ro` open of a stopped gateway's
+  database create `-wal` or `-shm`? If so, is `immutable=1` when no `-wal` exists an
+  acceptable fallback?
+- How to resolve: a throwaway program against the chosen driver, in both states
+  (gateway running, gateway stopped).
+- Answer: open.
+- Outcome: the plan's dump open path, and possibly AC57's wording (→ spec).
+
+## Q10 — Does the driver fail a write after the database file is deleted?
+- Status: open     Level: technical
+- Blocks / shapes: nothing yet (tasks.md not written); shapes AC25 `db_deleted` and
+  AC62, and the driver choice
+- Context: 2026-09-28, drafting plan.md. On Linux an unlinked file stays writable
+  through an open descriptor, so a deleted `gateway.db` could keep taking writes
+  silently. SQLite's unix VFS reports `SQLITE_READONLY_DBMOVED` for that case.
+  `modernc.org/sqlite` uses SQLite's unix VFS; `ncruces/go-sqlite3` replaces it with
+  its own Go VFS.
+- Question: with `modernc.org/sqlite`, does a write after `gateway.db` is deleted
+  fail, so the worker logs `capture_failed` with `stage: store`?
+- How to resolve: a throwaway program, before the store task.
+- Answer: open.
+- Outcome: if it doesn't fail, the store checks the file's identity itself before
+  each write transaction (→ plan), or AC25 is reshaped (→ spec).

@@ -1,0 +1,869 @@
+---
+status: draft
+spec: ./spec.md
+---
+
+# 002 — Implementation plan
+
+> Agent-drafted against the spec, human-approved. Written in a separate session, after
+> the spec is approved. Do not write this file at the same time as the spec.
+
+## Approach
+
+Capture hangs off 001's proxy at the three places it already owns: `Rewrite` (the
+request body), the response writer, and `Meta.Settle` (the end of every exchange,
+aborts included). Nothing new sits on the byte path except two read-through or
+write-through copies. Everything after `Settle` runs off the request goroutine: a
+bounded queue, worker goroutines, a store, a parser.
+
+Core gains the protocol-neutral parts the spec's Agnosticism check lists: the tee,
+the memory budget, `CaptureSink`, the principal resolver, redaction, the parser seam,
+the canonical event types and the canonical encoding. The queue and the pipeline
+(`internal/capture`), the SQLite store (`internal/store`), the content decoder
+(`internal/contentcoding`) and the Anthropic parser live outside core.
+
+Where this plan cites research queries, the answers are in `research.md`. Q7–Q10 are
+open; each entry below that depends on one says so.
+
+### Package layout
+
+| Package | Holds | Imports |
+|---|---|---|
+| `internal/core` | Tee, `Budget`, `Exchange`, `CaptureSink`, `PrincipalResolver`, redaction, `Parser` seam, canonical events, canonical encoding and hashing | `config`, `logging` (as today) |
+| `internal/capture` | `Sink`: the bounded queue and workers; the pipeline (store raw, parse, canonicalise, store events); the `Store` interface it writes through | `core`, `logging` |
+| `internal/store` | The SQLite store: schema and migrations, content (inline or blob), writer and read-only reader | `core`, the SQLite driver, `zstd` |
+| `internal/contentcoding` | `Decode`: `identity`, `gzip`, `deflate` (zlib and raw), `br`, `zstd` | stdlib, `brotli`, `zstd` |
+| `internal/protocols/anthropic` | Redaction lists, `HashExcludedFields`, the parser (JSON and SSE) | `core`, `contentcoding` |
+| `internal/config` | The `capture.*` keys; `DefaultCaptureDir` | (unchanged) |
+| `internal/server` | The access line's `capture` field; `Meta.RequestID` | `core` (unchanged) |
+| `cmd/gateway` | Wiring, startup and shutdown order; the `dump` subcommand | all of the above |
+
+`internal/core` imports none of `capture`, `store` or `contentcoding`. `capture`
+imports no adapter. `cmd/gateway` stays the only package that imports an adapter.
+
+### Where an exchange begins and ends
+
+- **Start.** `Proxy.ServeHTTP` fills three new `Meta` fields next to 001's: the
+  `PrincipalID` from the resolver, and, when capture is on, a `capture` state holding
+  the two tees. `accessLog` already has the request ID; it sets `Meta.RequestID` when
+  it creates the `Meta`, so core never imports `server`.
+- **Request body.** `Rewrite` wraps `pr.Out.Body` in a request tee, under 001's
+  watcher: `watcher(tee(body))`. The tee copies what each `Read` returns, which is
+  what the transport sends. It never sets `GetBody` (AC8). It also snapshots
+  `pr.Out.Header` after 001's five steps: the request headers as they went upstream.
+- **Response body.** `ServeHTTP` hands `ReverseProxy` a `teeWriter` around `w`. It
+  copies each `Write` after the inner `Write` returns, and records the status and a
+  header snapshot at `WriteHeader`. It embeds `http.ResponseWriter` and adds
+  `Unwrap()`, so `http.NewResponseController` still reaches chi's `Flush` (001 Q7).
+  001's AC23 guards that: a writer that hides `Flush` fails it. The error handler
+  writes through the same writer, so a gateway `502` body is captured (AC12).
+- **End.** `Meta.Settle` already runs from `accessLog`'s `defer` for every exchange,
+  including `http.ErrAbortHandler` aborts. After it decides the abort flags, it calls
+  `m.finishCapture()`. That seals both tees, builds the `Exchange`, redacts it,
+  submits it, and sets `Meta.Capture` to `queued`, `dropped_queue_full`,
+  `dropped_memory` or `off`. `accessLog` logs `capture` when `Protocol` is set
+  (AC7, AC23, AC24). The value is decided before the line is written, as the spec
+  requires.
+
+The request tee is written by the transport's goroutine and sealed on the handler's,
+so it holds a mutex. A `Read` after the seal is passed through and not copied. The
+response tee and `Meta` are only touched on the handler's goroutine, as in 001.
+
+### Memory: reserve, transfer, release
+
+One `core.Budget` per process: `limit` from `capture.memory_limit`, an atomic
+`inUse`.
+1. **Reserve.** Each tee chunk calls `TryReserve(n)` before copying `n` bytes. A
+   chunk is a copy of that `Read` or `Write`, appended to a list of chunks, so the
+   bytes held equal the bytes reserved: no slice doubling behind the budget's back.
+2. **Cap first.** Before reserving, a tee checks `capture.max_body_bytes`. It copies
+   up to the cap, reserves only that, flags `truncated`, and stops copying. A
+   truncated body is never dropped for memory (spec, Memory bound).
+3. **Refuse.** When `TryReserve` fails, the exchange releases everything both tees
+   hold at once, marks itself `dropped_memory`, and copies nothing more. Forwarding
+   carries on (AC24).
+4. **Transfer.** At `finishCapture` the reservation moves to the `Exchange`. If
+   `Submit` refuses it (queue full, sink closed), it is released there and then.
+5. **Release.** The worker calls `ex.Release()` once the pipeline is done, whatever
+   the outcome. `Release` is idempotent.
+
+Header snapshots, the parser's working copies and decoded bodies are not budgeted:
+headers are small, and the rest is bounded by `capture.workers` (see Risks and Q7).
+
+### Data flow
+
+```
+client ─► teeReader ─► transport ─► upstream         (request, transport goroutine)
+upstream ─► ReverseProxy ─► teeWriter ─► client      (response, handler goroutine)
+        │ chunks, reserved from Budget
+        ▼
+Meta.Settle ─► finishCapture: seal, build Exchange, redact headers and query
+        │ CaptureSink.Submit (never blocks; false = dropped_queue_full)
+        ▼
+capture.Sink queue (capture.queue_size) ─► worker (capture.workers, logging.Go)
+        1. Store.SaveExchange   raw row + both bodies (content-addressed)
+        2. Parser.Parse         (nil parser → parse: skipped)
+        3. core.Canonicalize    hashes, exclusions, stored content
+        4. Store.SaveParse      events + content + the exchange's parse status
+        5. ex.Release()
+```
+- A failure in step 1 logs `capture_failed` with `stage: store` and stops: there is no
+  row for events to hang from.
+- A parser panic is recovered in the worker and becomes `parse: failed`.
+- A `failed` status logs `capture_failed` with `stage: parse`. A failure in step 4
+  logs `stage: store`, and the raw capture from step 1 stays (spec, Ordering).
+- Every drop and failure is also counted (`dropped_queue_full`, `dropped_memory`,
+  `store_failed`, `parse_failed`), and the counts are logged in the shutdown line.
+  Prometheus is Phase 9.
+
+### Redaction (AC27–AC29)
+
+`finishCapture` redacts before `Submit`, so nothing unredacted reaches the queue.
+- **Headers.** A clone of each snapshot, with the value of every header on the list
+  set to `[REDACTED]`. The list is core's four (`Authorization`,
+  `Proxy-Authorization`, `Cookie`, `Set-Cookie`) plus the adapter's
+  `SecretHeaders()`. Names are matched case-insensitively and kept.
+- **Query.** The raw query is split on `&` and on the first `=` by hand, not with
+  `url.ParseQuery`, which would reorder and re-escape it. A parameter whose unescaped
+  name is on the adapter's `SecretQueryParams()` keeps its name and gets `[REDACTED]`
+  as its value. Everything else stays byte-identical.
+- The forwarded request and response are never touched. The snapshots are clones.
+
+### Canonical encoding and hashing
+
+`core.Canonicalize(events []Event, excluded []string) ([]StoredEvent, []Content,
+error)` is the one place content becomes hashes. Every JSON content value is decoded
+with `UseNumber`, re-encoded with sorted keys (`map[string]any` through
+`encoding/json`), compact, with `SetEscapeHTML(false)`, then hashed with sha256 and
+kept as a `Content{Hash, Bytes}`. Only the exclusion scope differs:
+
+| Content | Exclusions applied |
+|---|---|
+| A message block (`Block.Content`) | to the block object's top-level keys |
+| The system array, the tools array | to each entry's top-level keys |
+| Tool input, tool result content | none (spec, Exclusion scope; AC52) |
+| A tool event's raw block JSON | none; it is the record of what was sent |
+
+The stored parsed content is the canonical form. The raw body keeps the original.
+
+**Message hash.** A message's content is its canonical list of blocks: role, then
+each block's type and hash in order. A `tool_call` block contributes the hash of
+`{id, name, input_hash}` and a `tool_result` block `{tool_call_id, is_error,
+content_hash}`. `stop_reason` is not part of it, since a resent copy has none. This is
+what makes turn N's response message and its copy in turn N+1 share a hash (AC50) and
+what AC61's manual step compares (Q3).
+
+### Anthropic parser
+
+`anthropic.Adapter` gains `SecretHeaders() = [x-api-key]`, `SecretQueryParams() =
+[]`, and `Parser()`. The parser:
+- Returns `skipped` for anything but `POST /v1/messages` (AC47).
+- Decodes both bodies with `contentcoding.Decode`. `Unsupported` →
+  `unsupported_encoding`, `CutShort` → `partial` (AC44, AC42).
+- **Request.** A `json.Decoder` over the decoded body, `UseNumber`, into a struct
+  with `json.RawMessage` fields: unknown fields are kept in the raw content, never an
+  error.
+  - `cache_hints`: any `cache_control` key at any depth of the request (a walk of the
+    decoded tree).
+  - `reasoning_requested`: a top-level `thinking` whose `type` isn't `disabled` (Q6).
+  - Tool names come from `tools[].name`.
+  - Each message becomes a `message` event (`source: request_history`), followed by a
+    `tool_call` or `tool_result` event for each tool block in order, and a
+    `tool_call` or `tool_result` block referencing it by `tool_call_id` (Q5).
+- **Response, JSON.** The same block mapping, `source: response`, plus `stop_reason`
+  and `usage`.
+- **Response, SSE.** A line reader over the decoded body, event by event. There is no
+  buffering problem here: it reads a stored copy. Per block index it holds a builder:
+  - `text_delta` and `thinking_delta` are joined;
+  - `partial_json` is joined and parsed only at `content_block_stop`;
+  - `signature_delta` is set on the block, and `citations_delta` is appended.
+  
+  `message_start` gives the id, model and usage; `message_delta` gives `stop_reason`
+  and usage, last value per counter wins (AC41). `ping` and unknown events are
+  skipped (AC37). An `error` event becomes an `error` event (AC36). A block with no
+  `content_block_stop`, or joined JSON that won't parse, keeps its raw string and the
+  status becomes `partial` (AC42, AC43).
+- **Upstream error.** A non-2xx status with a JSON error body becomes one `error`
+  event with the provider's type and message (AC36).
+- **Truncated bodies.** A body flagged `truncated` parses as far as it goes and gives
+  `partial`, never `failed`. For JSON that means a tolerant pass that keeps the
+  complete messages and blocks before the cut. `failed` is left for a body that is
+  malformed without being truncated (AC11, AC48).
+- **Tool origin.** `tool_use` gives `executed_by: client`. `server_tool_use` and
+  `mcp_tool_use` give `executed_by: provider`, as do `mcp_tool_result` and any
+  `*_tool_result` that carries a `tool_use_id` (AC34).
+- **Block types.** `thinking` and `redacted_thinking` map to `reasoning`
+  (`redacted: true`, `data` kept; AC39, AC40). `image` and `document` map to `media`.
+  Anything else maps to `unknown`, `search_result` and `container_upload` included.
+- `HashExcludedFields() = [cache_control]`.
+
+The wire names live only in this package. Core's purity denylist gains them (AC58).
+
+### Content decoding (Q7 open)
+
+`contentcoding.Decode(encoding string, body []byte) ([]byte, Status)`.
+- The header value is split on commas and decoded in reverse order, as HTTP stacks
+  codings; any token it doesn't know makes the result `Unsupported`.
+- `deflate` checks for a zlib header (`CMF` method 8 and `(CMF<<8|FLG) % 31 == 0`)
+  and otherwise reads raw DEFLATE.
+- A reader error part-way (`io.ErrUnexpectedEOF` and the like) returns what was
+  decoded, with `CutShort`.
+- Whether output is capped is Q7. Until it's answered the signature has no limit,
+  and the task that builds it stays blocked on Q7.
+
+### SQLite store
+
+**Opening (`store.Open(dir)`).**
+1. `os.MkdirAll(dir, 0700)`, then `Chmod(0700)`, since the umask can narrow
+   `MkdirAll` but not widen it.
+2. Create `gateway.db` with `O_CREATE|0600` if it's absent, before the driver opens
+   it. SQLite gives `-wal` and `-shm` the database file's mode, so all three stay
+   `0600`. Blobs are written through `os.CreateTemp` (`0600`) and renamed (AC15).
+3. Open one writer handle: `SetMaxOpenConns(1)`, with the pragmas
+   `journal_mode=WAL`, `busy_timeout=5000`, `synchronous=NORMAL`,
+   `foreign_keys=ON`.
+4. Migrate.
+
+Any failure returns an error naming the path. `run` logs it and exits `1` before it
+binds (AC16).
+
+**Readers.** `store.OpenReader(dir)` checks that `gateway.db` exists, never creates
+it, and opens `mode=ro`. Whether that alone keeps dump from writing `-wal` or `-shm`
+is Q9.
+
+**Schema versioning.** Migrations are an ordered list of SQL strings in Go.
+- At open, inside `BEGIN IMMEDIATE`, `PRAGMA user_version` is read, the missing steps
+  are applied, and `user_version` is set.
+- A database newer than the binary fails fast with `reason: schema newer than
+  gateway`.
+- Canonical events carry their own `schema_version`, `core.SchemaVersion = 1`, which
+  is separate from the database's.
+
+**Tables (migration 1).**
+```sql
+CREATE TABLE content (
+  hash     TEXT PRIMARY KEY,          -- sha256, lowercase hex
+  size     INTEGER NOT NULL,          -- bytes before zstd
+  location TEXT NOT NULL CHECK (location IN ('inline', 'blob')),
+  data     BLOB,                      -- the bytes when inline, else NULL
+  CHECK ((location = 'inline') = (data IS NOT NULL))
+) WITHOUT ROWID;
+
+CREATE TABLE exchanges (
+  request_id          TEXT PRIMARY KEY,
+  principal_id        TEXT NOT NULL,
+  protocol            TEXT NOT NULL,
+  client              TEXT NOT NULL,
+  auth                TEXT NOT NULL,
+  method              TEXT NOT NULL,
+  path                TEXT NOT NULL,   -- prefix stripped
+  query               TEXT NOT NULL,   -- raw, redacted
+  request_headers     TEXT NOT NULL,   -- JSON {name: [values]}, redacted
+  response_headers    TEXT NOT NULL,
+  status              INTEGER NOT NULL,
+  started_at          INTEGER NOT NULL, -- unix nanoseconds
+  ttfb_ns             INTEGER,          -- NULL: no response headers
+  ended_at            INTEGER NOT NULL,
+  stream              INTEGER NOT NULL,
+  request_truncated   INTEGER NOT NULL,
+  response_truncated  INTEGER NOT NULL,
+  truncated           INTEGER GENERATED ALWAYS AS (request_truncated OR response_truncated) VIRTUAL,
+  client_disconnected INTEGER NOT NULL,
+  upstream_aborted    INTEGER NOT NULL,
+  gateway_error       TEXT,
+  request_body        TEXT REFERENCES content(hash),  -- NULL: no body
+  response_body       TEXT REFERENCES content(hash),
+  parse               TEXT CHECK (parse IN ('ok','partial','skipped','unsupported_encoding','failed'))
+                                                      -- NULL until the parse is stored
+);
+CREATE INDEX exchanges_started_at ON exchanges(started_at);
+CREATE INDEX exchanges_principal ON exchanges(principal_id, started_at);
+
+CREATE TABLE events (
+  request_id     TEXT NOT NULL REFERENCES exchanges(request_id),
+  seq            INTEGER NOT NULL,     -- order within the exchange
+  kind           TEXT NOT NULL,        -- request, message, tool_call, tool_result, usage, error
+  schema_version INTEGER NOT NULL,
+  principal_id   TEXT NOT NULL,
+  source         TEXT,                 -- request_history | response; NULL for other kinds
+  partial        INTEGER NOT NULL,
+  content_hash   TEXT REFERENCES content(hash), -- message content, tool input or result
+  tool_call_id   TEXT,
+  payload        TEXT NOT NULL,        -- the canonical event as JSON; content by hash
+  PRIMARY KEY (request_id, seq)
+) WITHOUT ROWID;
+CREATE INDEX events_content ON events(content_hash);
+CREATE INDEX events_tool_call ON events(tool_call_id);
+CREATE INDEX events_principal ON events(principal_id, kind);
+```
+`truncated` is the spec's one flag. The two columns say which body, which the
+parser needs.
+
+**Inline and blob content.** Content of 4096 bytes or less is stored in `data`, with
+`location = 'inline'`. Larger content is zstd-compressed to
+`<dir>/blobs/<hash[0:2]>/<hash[2:]>`, with `location = 'blob'` and `data` NULL. Raw
+bodies and parsed content share the table: the hash is the key either way (AC13,
+AC18, AC19, AC49). Each write goes in order:
+1. Skip if the row exists.
+2. Otherwise write the blob to a temp file in the target directory, `fsync`, rename.
+3. Insert the row (`INSERT OR IGNORE`) in the same transaction as the exchange or
+   events that reference it.
+
+A crash or failure between steps 2 and 3 leaves an orphan blob and never a row
+without a blob (AC14). Two workers writing the same blob rename identical bytes over
+each other, which is harmless.
+
+**Writes.** `SaveExchange` and `SaveParse` each run in one transaction on the single
+writer connection, after their blobs are on disk. Workers parse concurrently and wait
+their turn for the connection, which gives no `SQLITE_BUSY` from the gateway's own
+writers (AC20). A reader in WAL mode doesn't block the writer (AC21).
+
+### Config
+
+The `capture` block is parsed like `upstreams`: one level, fields read as scalars,
+unknown keys rejected. The new reason `invalid value` is used for a bool that isn't
+`true` or `false`, an integer that doesn't parse or isn't `> 0`, and a relative
+`capture.dir`.
+
+`Config.Capture.Dir` stays `""` unless the file or env sets it. `""` means the
+default location, resolved in `run` by `config.DefaultCaptureDir(lookupEnv)`:
+- `XDG_DATA_HOME` joined with `llm-gateway` when it's set and absolute;
+- a relative `XDG_DATA_HOME` is ignored, per the XDG spec (AC1
+  `relative_xdg_ignored`);
+- otherwise `$HOME/.local/share/llm-gateway`, where `HOME` is read through
+  `lookupEnv`, not `os.UserHomeDir`, so tests control it;
+- with neither set, `run` reports `invalid value` for `capture.dir` from source
+  `default` and exits `2`.
+
+Keeping the default out of `Config` means `Defaults()` needs no environment, so 000's
+`reflect.DeepEqual(cfg, Defaults())` checks and AC4 hold unchanged.
+`config.example.yaml` shows `# dir:` commented out, with its env name.
+
+### `gateway dump`
+
+`run` checks `args[0] == "dump"` before flag parsing and hands the rest to
+`runDump(d)`. Its own flag set takes `-config`, `-raw` and `-last` (Go's flag package
+also accepts `--raw` and `--last`), plus at most one request ID. It loads config
+exactly as `run` does, resolves the directory, and calls `store.OpenReader`. A
+missing store or an unknown ID exits `1` with a reason (AC56).
+
+Output on stdout:
+1. The exchange row as one JSON line.
+2. `== request body` and `== response body`, each followed by the decoded bytes.
+   - The header line says which encoding was decoded; with `-raw`, nothing is
+     decoded.
+   - An unsupported encoding prints the raw bytes, with the header line saying so,
+     and doesn't fail (AC54).
+3. `== events`, then one JSON line per event in `seq` order, content hashes included.
+
+Dump never names a wire format. Decoding is `contentcoding`.
+
+### Startup, shutdown and wiring (`run`)
+
+**Startup,** after config load and before bind:
+1. If `capture.enabled`, resolve the directory, `store.Open`, `capture.NewSink(...)`
+   (which starts the workers through `logging.Go`), and build a `core.Capture{Sink,
+   Budget, MaxBodyBytes, Principal}`.
+2. Pass it to `core.NewRegistry(log, core.WithCapture(c))`. With no `WithCapture`,
+   capture is `off` and the proxy behaves exactly as 001 (AC7).
+3. `LocalPrincipal` is used either way, so `principal_id` is `local` (AC22).
+
+**Shutdown,** after `srv.Shutdown` (successful or timed out):
+1. `sink.Close(ctx)` stops accepting, then drains within whatever is left of the
+   shutdown context, and returns the count left undrained.
+2. `store.Close()`.
+3. One `capture stopped` line with `undrained` and the drop and failure counts.
+
+This follows the spec's four steps: exchanges that end while the HTTP server shuts
+down are still submitted, because the sink is only closed afterwards.
+
+**Docker.** Compose mounts a named volume at `/var/lib/llm-gateway` and sets
+`GATEWAY_CAPTURE_DIR` to it. The distroless image runs as `nonroot` and has no shell,
+and a named volume mounted where the image has no directory is created owned by
+root. So the Dockerfile copies an empty directory there with `--chown=nonroot`, and
+Docker then initialises the volume with that owner. The spec names only compose; see
+Deviations.
+
+### Build order (input to tasks.md)
+
+1. **ADRs, before any dependency.** ADR 0004 (store, pipeline confirmation,
+   dependencies) and ADR 0005 (secrets in content). `go get` the three dependencies
+   in the same task as 0004.
+2. **Spikes.** Resolve Q9 and Q10 against the chosen driver, and Q7 and Q8 with the
+   owner.
+3. **Config:** keys, `DefaultCaptureDir`, the example file (AC1–AC4).
+4. **`internal/contentcoding`** (blocked on Q7).
+5. **Core:** canonical event types, `Canonicalize`, the `Parser` seam and optional
+   adapter interfaces, `PrincipalResolver`, `Budget`, the tees, redaction,
+   `finishCapture`, `WithCapture`, and the access-line field; the purity denylist
+   (AC5, AC8, AC24, AC29, AC58).
+6. **`internal/store`** (AC13–AC19, AC21).
+7. **`internal/capture`**: the sink, workers and pipeline (AC6, AC20, AC23, AC25,
+   AC59).
+8. **`run` wiring and shutdown;** the test data-dir guard (AC7, AC9–AC12, AC16, AC22,
+   AC26–AC28, AC60).
+9. **Anthropic parser and fixtures** (AC30–AC53).
+10. **`gateway dump`** (AC54–AC57).
+11. **Docs:** `docs/capture.md`, the PLAN.md §3, §8 and §9 edits, compose and
+    Dockerfile; then the manual checks (AC61–AC63).
+
+## Files and packages touched
+
+| Path | Why |
+|---|---|
+| `internal/core/capture.go` | `Capture`, `Budget`, `Exchange`, `Body`, `CaptureSink`, `WithCapture`, `finishCapture` |
+| `internal/core/tee.go` | `teeReader` (request, mutex, seal), `teeWriter` (response, `Unwrap`) |
+| `internal/core/redact.go` | Header and raw-query redaction |
+| `internal/core/principal.go` | `PrincipalResolver`, `LocalPrincipal` |
+| `internal/core/parser.go` | `Parser`, `ParseInput`, `ParseResult`, `ParseStatus`, `SecretDeclarer`, `ParsingAdapter` |
+| `internal/core/event.go` | Canonical event types, `SchemaVersion` |
+| `internal/core/canonical.go` | `Canonicalize`, `StoredEvent`, `Content` |
+| `internal/core/meta.go`, `proxy.go`, `registry.go` | `Meta` fields, the tee hooks, `NewRegistry` options |
+| `internal/core/*_test.go` | Tee, budget, redaction, canonical encoding, the AC5 wrapper; `purity_test.go`'s denylist |
+| `internal/capture/sink.go`, `pipeline.go`, `store.go` | Queue, workers, pipeline, `Store` interface |
+| `internal/store/*.go` | `Open`, `OpenReader`, migrations, content, blobs, reads for dump |
+| `internal/contentcoding/decode.go` | `Decode`, `Status` |
+| `internal/protocols/anthropic/adapter.go` | `SecretHeaders`, `SecretQueryParams`, `Parser()` |
+| `internal/protocols/anthropic/parser.go`, `request.go`, `response.go`, `stream.go` | The parser |
+| `internal/protocols/anthropic/testdata/` | New fixtures and README entries |
+| `internal/config/capture.go`, `config.go`, `load.go` | `Capture`, keys, `invalid value`, `DefaultCaptureDir` |
+| `internal/server/middleware.go` | `Meta.RequestID`; the `capture` field |
+| `cmd/gateway/run.go`, `dump.go` | Wiring, shutdown order, `dump`; `deps.openStore` for tests |
+| `cmd/gateway/main_test.go` | `TestMain`: the default data-dir guard |
+| `cmd/gateway/run_test.go`, `binary_test.go` | Helpers set `GATEWAY_CAPTURE_DIR` to a temp dir |
+| `config.example.yaml`, `docker-compose.yml`, `Dockerfile` | Capture keys; volume; volume ownership |
+| `docs/capture.md` | AC63 |
+| `docs/decisions/0004-capture-store.md`, `0005-secrets-in-captured-content.md` | ADRs |
+| `PLAN.md` | §3 known limit (Q4), §8 rows, §9 OQ-1 and OQ-5 resolved |
+| `go.mod`, `go.sum` | Three dependencies, after ADR 0004 |
+
+## Interfaces introduced or changed
+
+```go
+// internal/core — capture
+type Capture struct {
+	Sink         CaptureSink
+	Budget       *Budget
+	MaxBodyBytes int64
+	Principal    PrincipalResolver
+}
+type RegistryOption func(*Registry)
+func WithCapture(c Capture) RegistryOption
+func NewRegistry(log *zap.Logger, opts ...RegistryOption) *Registry // 001 callers unchanged
+
+// CaptureSink takes finished, redacted exchanges. Submit never blocks. It owns ex
+// either way: on false (queue full or closed) it has already released ex's memory.
+type CaptureSink interface {
+	Submit(ex *Exchange) bool
+}
+
+type Budget struct{ /* limit, inUse atomic.Int64 */ }
+func NewBudget(limit int64) *Budget
+func (b *Budget) TryReserve(n int64) bool
+func (b *Budget) Release(n int64)
+func (b *Budget) InUse() int64
+
+type Body struct {
+	Chunks    [][]byte // as captured, still content-encoded
+	Size      int64
+	Truncated bool
+}
+func (b Body) Bytes() []byte // joins the chunks; called in the worker
+
+type Exchange struct {
+	RequestID, PrincipalID, Protocol, Client string
+	Auth                                     AuthKind
+	Method, Path, Query                      string      // Query redacted
+	RequestHeader, ResponseHeader            http.Header // redacted clones
+	Status                                   int
+	Start, End                               time.Time
+	TTFB                                     time.Duration
+	HasTTFB                                  bool
+	Stream, ClientDisconnected, UpstreamAborted bool
+	GatewayError                             string
+	Request, Response                        Body
+	Parser                                   Parser   // nil: parse: skipped
+	Excluded                                 []string // the parser's HashExcludedFields
+	// unexported: the budget and the bytes reserved
+}
+func (ex *Exchange) Release() // idempotent
+
+// Meta (changed): RequestID and PrincipalID (set by accessLog and ServeHTTP), Status,
+// and Capture ("queued", "dropped_queue_full", "dropped_memory", "off"; "" off-proxy).
+
+// internal/core — identity
+const PrincipalLocal = "local"
+type PrincipalResolver interface {
+	Resolve(r *http.Request) string // the principal ID
+}
+type LocalPrincipal struct{} // always PrincipalLocal
+
+// internal/core — adapter extensions, both optional
+type SecretDeclarer interface {
+	SecretHeaders() []string     // redacted on top of core's four
+	SecretQueryParams() []string // query parameters whose values are secrets
+}
+type ParsingAdapter interface {
+	Parser() Parser
+}
+
+// internal/core — parser seam
+type ParseStatus string
+const (
+	ParseOK                  ParseStatus = "ok"
+	ParsePartial             ParseStatus = "partial"
+	ParseSkipped             ParseStatus = "skipped"
+	ParseUnsupportedEncoding ParseStatus = "unsupported_encoding"
+	ParseFailed              ParseStatus = "failed"
+)
+type ParseInput struct {
+	Method, Path, Query                   string
+	Status                                int
+	RequestHeader, ResponseHeader         http.Header
+	RequestBody, ResponseBody             []byte // still content-encoded
+	RequestTruncated, ResponseTruncated   bool
+	Stream                                bool
+}
+type ParseResult struct {
+	Status ParseStatus
+	Events []Event
+}
+type Parser interface {
+	Parse(in ParseInput) ParseResult
+	// HashExcludedFields are wire-only keys left out of content hashes, removed from
+	// the top level of a block, a system entry or a tool definition only.
+	HashExcludedFields() []string
+}
+
+// internal/core — canonical events
+const SchemaVersion = 1
+type EventKind string   // request, message, tool_call, tool_result, usage, error
+type Source string      // request_history, response
+type ExecutedBy string  // client, provider
+type BlockType string   // text, reasoning, media, tool_call, tool_result, unknown
+type Block struct {
+	Type       BlockType
+	Content    json.RawMessage // the block object; nil for tool_call / tool_result
+	Redacted   bool
+	ToolCallID string // tool_call and tool_result blocks
+}
+type RequestEvent struct {
+	Model                        string
+	Stream                       bool
+	MaxTokens                    *int64
+	System, Tools                json.RawMessage // hashed to system_hash, tools_hash
+	HasSystem, HasTools          bool
+	CacheHints, ReasoningRequested bool
+	ToolNames                    []string
+}
+type MessageEvent struct {
+	Index      int // -1 for the response message
+	Role       string
+	Source     Source
+	StopReason string
+	Blocks     []Block
+}
+type ToolCallEvent struct {
+	ID, Name   string
+	Input      json.RawMessage
+	ExecutedBy ExecutedBy
+	Source     Source
+	Raw        json.RawMessage
+}
+type ToolResultEvent struct {
+	ToolCallID string
+	IsError    bool
+	Content    json.RawMessage
+	ExecutedBy ExecutedBy
+	Source     Source
+	Raw        json.RawMessage
+}
+type UsageEvent struct {
+	InputTokens, OutputTokens, CacheWriteTokens, CacheReadTokens *int64
+	Detail json.RawMessage // any finer breakdown, as sent
+}
+type ErrorEvent struct {
+	Status        int
+	Type, Message string
+}
+type Event struct {
+	Kind    EventKind
+	Partial bool
+	// exactly one of these is set, matching Kind
+	Request    *RequestEvent
+	Message    *MessageEvent
+	ToolCall   *ToolCallEvent
+	ToolResult *ToolResultEvent
+	Usage      *UsageEvent
+	Error      *ErrorEvent
+}
+type Content struct {
+	Hash  string // sha256, lowercase hex
+	Bytes []byte // canonical form
+}
+type StoredEvent struct {
+	Seq                   int
+	Kind                  EventKind
+	Source                Source
+	Partial               bool
+	ContentHash, ToolCallID string
+	Payload               []byte // canonical JSON with content by hash
+}
+func Canonicalize(events []Event, excluded []string) ([]StoredEvent, []Content, error)
+
+// internal/capture
+type Store interface {
+	SaveExchange(ctx context.Context, ex *core.Exchange) error
+	SaveParse(ctx context.Context, requestID string, principalID string,
+		status core.ParseStatus, events []core.StoredEvent, contents []core.Content) error
+	Close() error
+}
+type Config struct{ QueueSize, Workers int }
+type Sink struct{ /* chan *core.Exchange, counters */ }
+func NewSink(cfg Config, st Store, log *zap.Logger) *Sink // starts workers via logging.Go
+func (s *Sink) Submit(ex *core.Exchange) bool             // satisfies core.CaptureSink
+func (s *Sink) Close(ctx context.Context) (undrained int)
+func (s *Sink) Counts() Counts
+
+// internal/store
+func Open(dir string) (*Store, error)        // satisfies capture.Store
+func OpenReader(dir string) (*Reader, error) // read-only; never creates (Q9)
+func (r *Reader) Exchange(id string) (ExchangeRow, error)
+func (r *Reader) Last() (ExchangeRow, error)
+func (r *Reader) Content(hash string) ([]byte, error)
+func (r *Reader) Events(id string) ([]EventRow, error)
+var ErrNotFound = errors.New("not found")
+
+// internal/contentcoding
+type Status int
+const (
+	Complete Status = iota
+	CutShort
+	Unsupported
+)
+func Decode(encoding string, body []byte) ([]byte, Status) // limit: Q7
+
+// internal/config
+type Capture struct {
+	Enabled      bool
+	Dir          string // "" = DefaultCaptureDir
+	QueueSize    int
+	Workers      int
+	MaxBodyBytes int64
+	MemoryLimit  int64
+}
+func DefaultCaptureDir(lookupEnv func(string) (string, bool)) (string, bool)
+```
+
+## New dependencies
+
+Each one lands only after ADR 0004 is written. Versions are pinned when the ADR task
+runs `go get`, and the ADR records them and their licences.
+
+| Need | Choice | Why | Rejected |
+|---|---|---|---|
+| SQLite, no cgo | **`modernc.org/sqlite`** | SQLite's C source transpiled to Go. It uses SQLite's own unix VFS, so file-level behaviour (WAL, locking, `SQLITE_READONLY_DBMOVED`, Q10) is upstream SQLite's. It is a plain `database/sql` driver (`"sqlite"`), widely used, BSD-3-Clause. Its docs put it about 1.3× slower than C on indexed work, far below what one local user's capture needs. | **`ncruces/go-sqlite3`:** also cgo-free (a Wasm build of SQLite translated to Go with wasm2go), MIT, and competitive in speed. But it replaces SQLite's OS layer with its own Go VFS, so the file behaviour AC25 and AC62 lean on is a second implementation's, and each connection runs in its own Wasm sandbox with higher memory. **`mattn/go-sqlite3`:** needs cgo, which the spec forbids. |
+| zstd (blobs; the `zstd` coding) | **`github.com/klauspost/compress/zstd`** | Pure Go, the de-facto Go zstd. `EncodeAll` and `DecodeAll` suit whole blobs; one decoder serves both blobs and the `zstd` content coding. | **`DataDog/zstd`, `valyala/gozstd`:** cgo. |
+| brotli (the `br` coding) | **`github.com/andybalholm/brotli`** | Pure Go, decoder only is used. Named in the spec. | **`google/brotli` Go bindings:** cgo. |
+
+`gzip`, `zlib` and raw `flate` are the standard library's.
+
+## ADRs and PLAN.md
+
+- **ADR 0004** (`docs/decisions/0004-capture-store.md`), build-order step 1:
+  - SQLite plus zstd content-addressed blobs (OQ-1);
+  - the three dependencies above;
+  - the quadratic raw-storage trade-off;
+  - the confirmation of PLAN.md §8's "Proposed" capture pipeline, which the spec
+    makes.
+- **ADR 0005** (`docs/decisions/0005-secrets-in-captured-content.md`), the same step:
+  secrets in content are stored as-is, with `0700`/`0600` permissions, and masking is
+  a later opt-in (OQ-5).
+- Both are written `proposed` and become `approved` when this plan is, as ADR 0003
+  did.
+- **PLAN.md, in build-order step 11:**
+  - §8 "Capture pipeline" → Decided (ADR 0004); §8 "Capture store" → the choice,
+    Decided (ADR 0004);
+  - §9 OQ-1 and OQ-5 marked resolved with their ADR links;
+  - §3's Claude Code known-limits entry gains the `HEAD /api/hello` line (Q4).
+
+## Testing strategy
+
+Everything in `make verify`, under `-race`, with no live API and no network beyond
+loopback. Stores live in `t.TempDir()`.
+
+**No test touches the default data dir (spec, Do).**
+- `run`'s test helper (`startGateway`) puts `GATEWAY_CAPTURE_DIR=<t.TempDir()>` into
+  the env map it hands `run`, unless the test sets its own. `binary_test.go` does the
+  same for the child's environment.
+- `cmd/gateway/main_test.go` gets a `TestMain` that points `HOME` and `XDG_DATA_HOME`
+  at a temp directory before `m.Run()`. Afterwards it fails the package if
+  `<that dir>/llm-gateway` exists: a forgotten override is caught rather than writing
+  into the real `~/.local/share`.
+- `internal/config` tests resolve the default only through an injected `lookupEnv`.
+- No other package resolves the default at all.
+
+**How 001's tests run with capture on (AC5).**
+- **`cmd/gateway`.** `capture.enabled` defaults to `true`, and the helper now gives
+  each run a temp directory. So every 001 end-to-end test runs with capture on, a
+  real store and the real parser, with its test body unchanged.
+- **`internal/core` and `internal/protocols/anthropic`.** Their helpers build the
+  proxy through one function. `TestCapture_ForwardingUnchanged` lists 001's
+  forwarding, streaming, compression and error test functions (AC8, AC12, AC14–AC24,
+  AC26–AC31, AC47, AC48 in 001's numbering) and runs each as a subtest. The helper
+  turns capture on, with a recording sink and a real `Budget`, when `t.Name()` starts
+  with `TestCapture_ForwardingUnchanged/`. The name test is crude, but it reaches
+  nested subtests, which a registry keyed by `*testing.T` wouldn't, and the 001
+  functions themselves stay unchanged.
+
+**Shared helpers.**
+- A recording sink (`core` tests) keeps submitted exchanges for inspection.
+- A blocking store and a failing store (`capture` tests) let a test hold or break the
+  pipeline at will.
+- 001's stream helper and leak check are reused. Every capture test that ends with a
+  cancel, abort or shutdown runs the leak check, now also looking for stacks through
+  `internal/capture`.
+
+### AC evidence
+
+| AC | Test | File |
+|---|---|---|
+| 1 | `TestLoad_CaptureDefaults`, with `DefaultCaptureDir` subtests incl. `relative_xdg_ignored` | `internal/config/load_capture_test.go` |
+| 2 | `TestLoad_CaptureEnvOverridesFile` | same |
+| 3 | `TestLoad_InvalidCaptureValues` | same |
+| 4 | `TestLoad_ExampleFileIsDefaults` (existing, unchanged) | `internal/config/load_test.go` |
+| 5 | `TestCapture_ForwardingUnchanged` (wrapper over 001's tests); `cmd/gateway`'s 001 tests with capture on by default | `internal/core/capture_fidelity_test.go`, `internal/protocols/anthropic/capture_fidelity_test.go` |
+| 6 | `TestCapture_StreamNotDelayed` (blocking store behind the real sink) | `internal/capture/capture_test.go` |
+| 7 | `TestCapture_DisabledIsPassthrough` | `cmd/gateway/run_capture_test.go` |
+| 8 | `TestCapture_OutgoingRequestHasNoGetBody` | `internal/core/tee_test.go` |
+| 9 | `TestCapture_ExchangeStored` | `cmd/gateway/run_capture_test.go` |
+| 10 | `TestCapture_EncodedBodyStoredAsSent` | same |
+| 11 | `TestCapture_BodyOverCapTruncated`, incl. `non_streamed_json_parses_partial` | same |
+| 12 | `TestCapture_AbortedExchangesRecorded` | same |
+| 13 | `TestStore_BlobDedup` | `internal/store/store_test.go` |
+| 14 | `TestStore_BlobBeforeRow` (a fault hook between blob and row, via `export_test.go`) | same |
+| 15 | `TestStore_Permissions` (under a `0022` and a `0000` umask) | same |
+| 16 | `TestStore_OpenFailsFast` (through `run`: exit code and line) | `cmd/gateway/run_capture_test.go` |
+| 17 | `TestStore_MigratesFromEmpty` | `internal/store/store_test.go` |
+| 18 | `TestStore_SmallContentInline` | same |
+| 19 | `TestStore_LargeContentBlob` | same |
+| 20 | `TestStore_ConcurrentWorkersNoBusyErrors` (real sink and store) | `internal/capture/sink_test.go` |
+| 21 | `TestStore_OpenReaderDoesNotFailWrites` | `internal/store/store_test.go` |
+| 22 | `TestCapture_PrincipalLocal` | `cmd/gateway/run_capture_test.go` |
+| 23 | `TestCapture_QueueFullDrops` | `internal/capture/capture_test.go` |
+| 24 | `TestCapture_MemoryLimitDrops` (`Budget.InUse` before and after) | `internal/core/capture_test.go` |
+| 25 | `TestCapture_StoreDeadClientUnaffected` (`db_deleted` depends on Q10) | `internal/capture/capture_test.go` |
+| 26 | `TestCapture_ShutdownDrainsQueue` (`deps.openStore` injects a slow store) | `cmd/gateway/run_capture_test.go` |
+| 27 | `TestRedact_AuthHeaders` (scans the database and every decompressed blob) | same |
+| 28 | `TestRedact_ForwardedTrafficUntouched` | same |
+| 29 | `TestRedact_AdapterQueryParams` (test adapter) | `internal/core/redact_test.go` |
+| 30 | `TestParse_GoldenStream` | `internal/protocols/anthropic/parser_test.go` |
+| 31 | `TestParse_GoldenStreamGzip` | same |
+| 32 | `TestParse_ToolUseTurn` (fixture: Q8) | same |
+| 33 | `TestParse_MessageKeepsToolBlockOrder` (fixture: Q8) | same |
+| 34 | `TestParse_ServerToolUse` (fixture: Q8) | same |
+| 35 | `TestParse_NonStreaming` (fixture: Q8) | same |
+| 36 | `TestParse_UpstreamError` (fixtures: Q8) | same |
+| 37 | `TestParse_UnknownBlockAndEventKept` | `internal/protocols/anthropic/stream_test.go` |
+| 38 | `TestParse_ToolInputSplitAcrossDeltas` | same |
+| 39 | `TestParse_ThinkingSignatureKept` | same |
+| 40 | `TestParse_RedactedThinkingKept` | `internal/protocols/anthropic/parser_test.go` |
+| 41 | `TestParse_UsageLastValueWins` | `internal/protocols/anthropic/stream_test.go` |
+| 42 | `TestParse_TruncatedStreamPartial` | same |
+| 43 | `TestParse_TruncatedToolInputPartial` | same |
+| 44 | `TestParse_ContentEncodings` | `internal/protocols/anthropic/parser_test.go` |
+| 45 | `TestParse_SystemChangeChangesHash` | same |
+| 46 | `TestParse_ReasoningRequestedFlag` | same |
+| 47 | `TestParse_OtherPathsSkipped` | same |
+| 48 | `TestParse_FailureKeepsRaw` (through the pipeline, real store) | `internal/protocols/anthropic/pipeline_test.go` |
+| 49 | `TestStore_BlockContentDedup` | same |
+| 50 | `TestStore_ResponseMessageDedupsWithNextRequest` (fixture: Q8) | same |
+| 51 | `TestStore_SystemAndToolsStoredOnce` | same |
+| 52 | `TestStore_ExclusionNotAppliedInsideToolInput` | same |
+| 53 | `TestFixtures_NoIdentifiers` (existing, unchanged) | `test/conventions/fixtures_test.go` |
+| 54 | `TestDump_PrintsExchange` | `cmd/gateway/dump_test.go` |
+| 55 | `TestDump_Last` | same |
+| 56 | `TestDump_UnknownIDFails` | same |
+| 57 | `TestDump_NeverWritesStore` (both store states; Q9) | same |
+| 58 | `TestCore_NoProviderOrClientIdentifiers` (denylist extended in the test) | `internal/core/purity_test.go` |
+| 59 | `TestCore_TestParserNeedsNoCoreChange` (test adapter and parser through the real sink and store) | `internal/core/capture_pipeline_test.go` |
+| 60 | `TestCapture_SecretsNotLogged` (stored, dropped, failed) | `cmd/gateway/run_capture_test.go` |
+| 61 | Manual: a Claude Code session with a tool call and ≥3 turns; the hash comparison recorded as Q3's answer. Evidence in the PR | PR |
+| 62 | Manual: delete, then `chmod 000`, `capture.dir` mid-session | PR |
+| 63 | Manual: `docs/capture.md` read against the AC | PR |
+
+**Unmapped ACs:** none. Five are mapped but wait on an open query for their input:
+AC32–AC36 and AC50 on Q8 (fixture sources), AC25 `db_deleted` on Q10, AC57 on Q9.
+
+**Tests no AC names.**
+- `TestDecode_*` in `internal/contentcoding`: each coding, stacked codings,
+  `CutShort`, `Unsupported`.
+- `TestCanonicalize_*` in `internal/core`: key order, `UseNumber`, HTML characters
+  kept, exclusions only at top level, the message hash.
+- `TestRedact_QueryKeepsBytes`: unredacted parameters are byte-identical.
+- `TestTeeWriter_Unwrap`: `http.NewResponseController(tw).Flush()` reaches the inner
+  flusher.
+
+## Fixtures
+
+New files in `internal/protocols/anthropic/testdata/`, each with a README entry for
+date, model, method and what was scrubbed, as in 001:
+
+| File | For | Source (Q8 open) |
+|---|---|---|
+| `tool_turn/response.sse`, `tool_turn/next_request.json` | AC32, AC50 | Recorded: a Claude Code turn that calls a tool, and the next request |
+| `tool_order/response.sse` | AC33 | Recorded if Claude Code produces text, `tool_use`, text in one message; else hand-built from `tool_turn` |
+| `server_tool/response.sse` | AC34 | Q8: recorded via a direct API call with a key, or hand-built |
+| `non_streaming/request.json`, `response.json` | AC35 | Q8 |
+| `error/response_429.json`, `error/stream_error.sse` | AC36 | Q8; a real `4xx` is recordable without a key, a `429` and an SSE error aren't on demand |
+
+- **How they're recorded.** 001's throwaway recording proxy, extended to save the
+  request body as well, with `Accept-Encoding: identity` forced as in 001 Q10.
+  AC31 and AC44 gzip and encode in the test.
+- **Scrubbing.** As in 001, plus request bodies: system prompts and tool
+  descriptions are trimmed to what the tests need; file paths, user names and any
+  secrets in tool results are removed.
+- AC53 (`TestFixtures_NoIdentifiers`) checks every new file unchanged.
+- Small synthetic bodies (unknown block types, split deltas, truncation) are built in
+  the test files, not stored as fixtures.
+
+## Risks and unknowns
+
+- **Buffering on the response path.** `teeWriter` sits between `ReverseProxy` and
+  the socket. Missing `Unwrap` would turn streams into one lump with every functional
+  test green. Caught by 001's AC23 run under AC5, and by AC6 with a store that never
+  returns.
+- **Request tee lifetime.** The transport can still be reading the request body when
+  the handler returns, for example after an early upstream error. The seal plus
+  mutex keeps the copy consistent, and `-race` checks it. A late read after the seal
+  is forwarded, not captured, so a body can be short in the store when upstream
+  answered early. This is not flagged separately; `truncated` means the cap only.
+- **Unbudgeted worker memory.** Each worker holds a joined body, a decoded copy and
+  the parser's structures, up to about `workers × (2 × max_body_bytes + decoded)`.
+  With the defaults (2 workers, 32 MiB) that is roughly 128 MiB plus decoded output,
+  outside `capture.memory_limit`. Q7 decides whether decoded output is capped.
+- **SQLite file behaviour.** Q9 (read-only open writing `-shm`) and Q10 (writes after
+  unlink) are checked by throwaway programs before the store and dump tasks.
+- **Canonical encoding and dedup.** AC50 holds on fixtures; real Claude Code resends
+  are Q3, answered by AC61. `cache_control` nested in a `tool_result`'s content
+  blocks is hashed, per the spec's exclusion scope, so such a resent result won't
+  dedup (Q3, 2026-09-28 line).
+- **The purity denylist covers `internal/core` only.** `capture`, `store` and
+  `contentcoding` are provider-free by review, as the spec asks no more.
+- **Docker volume ownership.** Without the Dockerfile change, compose fails fast at
+  startup because `nonroot` can't write the volume. This is caught the first time
+  compose runs, not by `make verify`.
+- **Shutdown time.** The drain gets only what `shutdown_timeout` has left after the
+  HTTP server. A long stream can leave none, and then the queue is counted, not
+  stored, as the spec accepts.
+
+## Deviations from the spec
+
+- **`Dockerfile`** gains an empty, `nonroot`-owned `/var/lib/llm-gateway`. The spec
+  names only `docker-compose.yml`, but its volume can't be written without this.
+- **A default directory that can't be resolved** (no `HOME`, no absolute
+  `XDG_DATA_HOME`) fails with `invalid value` for `capture.dir` from source `default`.
+  The spec doesn't cover this case.
+
+Nothing else. Q7–Q10 may add deviations; each would be recorded here and in the spec
+if it changes an AC.
