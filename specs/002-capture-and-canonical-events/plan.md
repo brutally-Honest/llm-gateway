@@ -370,7 +370,8 @@ default location, resolved in `run` by `config.DefaultCaptureDir(lookupEnv)`:
 - a relative `XDG_DATA_HOME` is ignored, per the XDG spec (AC1
   `relative_xdg_ignored`);
 - otherwise `$HOME/.local/share/llm-gateway`, where `HOME` is read through
-  `lookupEnv`, not `os.UserHomeDir`, so tests control it;
+  `lookupEnv`, not `os.UserHomeDir`, so tests control it. A relative `HOME` counts as
+  unset, since it would give a relative directory;
 - with neither set, `run` reports `invalid value` for `capture.dir` from source
   `default` and exits `2`.
 

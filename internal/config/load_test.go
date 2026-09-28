@@ -48,9 +48,12 @@ func loadErr(t *testing.T, opts Options) *Error {
 	return e
 }
 
+// defaultCaptureWant is the capture block with no file and no env (spec 002, Config).
+var defaultCaptureWant = Capture{Enabled: true, QueueSize: 256, Workers: 2, MaxBodyBytes: 32 << 20, MemoryLimit: 256 << 20}
+
 // AC5: with no config, the listen address is loopback on 7197.
 func TestDefaults(t *testing.T) {
-	want := Config{ListenAddr: "127.0.0.1:7197", LogLevel: "info", ShutdownTimeout: 10 * time.Minute}
+	want := Config{ListenAddr: "127.0.0.1:7197", LogLevel: "info", ShutdownTimeout: 10 * time.Minute, Capture: defaultCaptureWant}
 	if got := Defaults(); !reflect.DeepEqual(got, want) {
 		t.Errorf("Defaults() = %+v, want %+v", got, want)
 	}
@@ -126,7 +129,7 @@ func TestLoad_Precedence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Config{ListenAddr: "127.0.0.1:2", LogLevel: "warn", ShutdownTimeout: 7 * time.Second}
+	want := Config{ListenAddr: "127.0.0.1:2", LogLevel: "warn", ShutdownTimeout: 7 * time.Second, Capture: defaultCaptureWant}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("Load() = %+v, want %+v", cfg, want)
 	}
@@ -185,6 +188,8 @@ func TestLoad_ErrorsNeverContainValue(t *testing.T) {
 		{name: "invalid_address_env", env: []string{"GATEWAY_LISTEN_ADDR", sentinel}, reason: reasonInvalidAddress},
 		{name: "invalid_url_file", file: "upstreams:\n  anthropic:\n    base_url: ftp://" + sentinel + "\n", reason: reasonInvalidURL},
 		{name: "invalid_url_env", env: []string{"GATEWAY_UPSTREAMS_ANTHROPIC_BASE_URL", "http://" + sentinel}, reason: reasonInvalidURL},
+		{name: "invalid_value_file", file: "capture:\n  dir: " + sentinel + "\n", reason: reasonInvalidValue},
+		{name: "invalid_value_env", env: []string{"GATEWAY_CAPTURE_QUEUE_SIZE", sentinel}, reason: reasonInvalidValue},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

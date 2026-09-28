@@ -52,7 +52,7 @@ Layout the tasks assume:
 
 ## Config
 
-- [ ] T2 — `internal/config`: the `capture` block, parsed like `upstreams` (one level,
+- [x] T2 — `internal/config`: the `capture` block, parsed like `upstreams` (one level,
   scalars, unknown keys rejected). `Config.Capture{Enabled, Dir, QueueSize, Workers,
   MaxBodyBytes, MemoryLimit}` with the spec's defaults; `Dir` stays `""` unless set. New
   fixed reason `invalid value`: a bool other than `true`/`false`, an integer that

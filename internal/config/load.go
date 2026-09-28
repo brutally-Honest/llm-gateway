@@ -22,6 +22,7 @@ type fileConfig struct {
 	ShutdownTimeout *string `yaml:"shutdown_timeout"`
 
 	Upstreams map[string]upstreamFile `yaml:"upstreams"`
+	Capture   captureFile             `yaml:"capture"`
 }
 
 // upstreamFile is one upstreams.<name> block. Like fileConfig, its tags are the known
@@ -31,6 +32,16 @@ type upstreamFile struct {
 	ConnectTimeout        *string `yaml:"connect_timeout"`
 	TLSHandshakeTimeout   *string `yaml:"tls_handshake_timeout"`
 	ResponseHeaderTimeout *string `yaml:"response_header_timeout"`
+}
+
+// captureFile is the capture block. Like fileConfig, its tags are the known keys.
+type captureFile struct {
+	Enabled      *string `yaml:"enabled"`
+	Dir          *string `yaml:"dir"`
+	QueueSize    *string `yaml:"queue_size"`
+	Workers      *string `yaml:"workers"`
+	MaxBodyBytes *string `yaml:"max_body_bytes"`
+	MemoryLimit  *string `yaml:"memory_limit"`
 }
 
 // yamlKey is the yaml key of a struct field.
@@ -52,13 +63,17 @@ func stringFields(s any) map[string]*string {
 	return values
 }
 
-// fileValues returns f's fields by dotted key: "log_level", "upstreams.x.base_url".
+// fileValues returns f's fields by dotted key: "log_level", "upstreams.x.base_url",
+// "capture.workers".
 func fileValues(f *fileConfig) map[string]*string {
 	values := stringFields(f)
 	for name, u := range f.Upstreams {
 		for field, p := range stringFields(&u) {
 			values[upstreamKey(name, field)] = p
 		}
+	}
+	for field, p := range stringFields(&f.Capture) {
+		values[captureKey(field)] = p
 	}
 	return values
 }
@@ -162,6 +177,7 @@ func parseFile(path string, data []byte, specs []UpstreamSpec) (map[string]*stri
 
 	known := stringFields(&fileConfig{})
 	knownFields := stringFields(&upstreamFile{})
+	knownCapture := stringFields(&captureFile{})
 	names := map[string]bool{}
 	for _, spec := range specs {
 		names[spec.Name] = true
@@ -182,6 +198,23 @@ func parseFile(path string, data []byte, specs []UpstreamSpec) (map[string]*stri
 	}
 	// A null value (`key:` or `key: ~`) sets nothing, at any depth.
 	isNull := func(n *yaml.Node) bool { return n.Kind == yaml.ScalarNode && n.Tag == "!!null" }
+	// walkFields checks a block of scalar fields: each key known under that block, each
+	// value a scalar. key gives a field's dotted key.
+	walkFields := func(v *yaml.Node, key func(string) string, fields map[string]*string) error {
+		for j := 0; j+1 < len(v.Content); j += 2 {
+			fk, fv := v.Content[j], v.Content[j+1]
+			dotted := key(fk.Value)
+			_, isKnown := fields[fk.Value]
+			if err := entry(dotted, fk, isKnown); err != nil {
+				return err
+			}
+			if fv.Kind != yaml.ScalarNode {
+				return fail(dotted, reasonInvalidType, fk.Line)
+			}
+			lines[dotted] = fk.Line
+		}
+		return nil
+	}
 	// walkUpstreams checks the block under `upstreams`: names, then their fields.
 	walkUpstreams := func(k, v *yaml.Node) error {
 		if isNull(v) {
@@ -202,20 +235,26 @@ func parseFile(path string, data []byte, specs []UpstreamSpec) (map[string]*stri
 			if nv.Kind != yaml.MappingNode {
 				return fail(nameKey, reasonInvalidType, nk.Line)
 			}
-			for j := 0; j+1 < len(nv.Content); j += 2 {
-				fk, fv := nv.Content[j], nv.Content[j+1]
-				dotted := upstreamKey(nk.Value, fk.Value)
-				_, isKnown := knownFields[fk.Value]
-				if err := entry(dotted, fk, isKnown); err != nil {
-					return err
-				}
-				if fv.Kind != yaml.ScalarNode {
-					return fail(dotted, reasonInvalidType, fk.Line)
-				}
-				lines[dotted] = fk.Line
+			key := func(field string) string { return upstreamKey(nk.Value, field) }
+			if err := walkFields(nv, key, knownFields); err != nil {
+				return err
 			}
 		}
 		return nil
+	}
+	// walkCapture checks the block under `capture`: one level of fields.
+	walkCapture := func(k, v *yaml.Node) error {
+		if isNull(v) {
+			return nil
+		}
+		if v.Kind != yaml.MappingNode {
+			return fail(k.Value, reasonInvalidType, k.Line)
+		}
+		return walkFields(v, captureKey, knownCapture)
+	}
+	blocks := map[string]func(k, v *yaml.Node) error{
+		"upstreams": walkUpstreams,
+		"capture":   walkCapture,
 	}
 	if root := documentRoot(&doc); root != nil {
 		if root.Kind != yaml.MappingNode {
@@ -224,11 +263,12 @@ func parseFile(path string, data []byte, specs []UpstreamSpec) (map[string]*stri
 		for i := 0; i+1 < len(root.Content); i += 2 {
 			k, v := root.Content[i], root.Content[i+1]
 			_, isKnown := known[k.Value]
-			if err := entry(k.Value, k, isKnown || k.Value == "upstreams"); err != nil {
+			walk, isBlock := blocks[k.Value]
+			if err := entry(k.Value, k, isKnown || isBlock); err != nil {
 				return nil, nil, err
 			}
-			if k.Value == "upstreams" {
-				if err := walkUpstreams(k, v); err != nil {
+			if isBlock {
+				if err := walk(k, v); err != nil {
 					return nil, nil, err
 				}
 				continue
