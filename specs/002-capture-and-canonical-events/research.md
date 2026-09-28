@@ -186,7 +186,7 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   old AC45 on shift by one: AC48 is now AC49, AC55 is AC56, AC58 is AC59.
 
 ## Q7 — Is the decoded size of a captured body capped?
-- Status: open     Level: technical
+- Status: answered     Level: technical
 - Blocks / shapes: nothing yet (tasks.md not written); shapes the plan's content
   decoder and worker memory
 - Context: 2026-09-28, drafting plan.md. `capture.memory_limit` bounds the tee buffers
@@ -201,9 +201,17 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
 - Answer: open.
 - Outcome: the plan's decoder signature takes the limit, or the risk is accepted in
   the plan's Risks.
+- 2026-09-28 (owner): `contentcoding.Decode` caps decoded output at
+  `capture.max_body_bytes`, passed in by the caller; no new config. Output past the
+  cap is dropped and the result is `CutShort`, so the exchange is `partial`.
+- 2026-09-28 Outcome (→ plan, → spec): the decoder takes the limit and its task is
+  unblocked; a `TestDecode` subtest covers the cap (no AC change). The plan's Risks
+  state the worst-case unbudgeted worker memory as `workers × 4 × max_body_bytes`
+  (about 256 MiB at the defaults). The spec's Content decoding section gains one
+  clause for the cap.
 
 ## Q8 — Which new parser fixtures can be recorded from real traffic?
-- Status: open     Level: flow
+- Status: answered     Level: flow
 - Blocks / shapes: nothing yet (tasks.md not written); shapes AC32–AC36 fixtures
 - Context: 2026-09-28, drafting plan.md. The spec asks for new scrubbed fixtures: a
   tool-use turn, a server-tool turn, a non-streaming response and an upstream error.
@@ -219,6 +227,17 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
 - How to resolve: owner decision; try a recording session first.
 - Answer: open.
 - Outcome: the plan's Fixtures section names the source of each file.
+- 2026-09-28 (owner): recorded from Claude Code: `tool_turn`, `tool_order` and
+  `server_tool` (Claude Code's WebSearch is the API's server tool). Hand-built from
+  Anthropic's documented shapes: `non_streaming`, `error/response_429.json` and
+  `error/stream_error.sse`. Every fixture's README entry says `recorded` or
+  `synthetic`. The OAuth token is never extracted to call the API directly.
+- 2026-09-28 Outcome (→ plan): the Fixtures table names each source. Two things to
+  check while recording, and to bring back to the owner if they fail, not to
+  paper over: AC34 wants a `server_tool_use`, its result and a client `tool_use` in
+  one streamed turn, and Claude Code's WebSearch may send the server tool in a
+  request of its own; AC33 wants a message of text, `tool_use`, text, and a model
+  turn usually stops at its last `tool_use`.
 
 ## Q9 — Can `gateway dump` read a WAL database without writing a file?
 - Status: open     Level: technical
@@ -236,6 +255,10 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   (gateway running, gateway stopped).
 - Answer: open.
 - Outcome: the plan's dump open path, and possibly AC57's wording (→ spec).
+- 2026-09-28 (owner): stays open until the spike runs. Decision rule, recorded now:
+  `immutable=1` is rejected, since it gives torn reads while the gateway writes. If a
+  `mode=ro` open creates `-wal` or `-shm`, the spec's dump rule becomes "never
+  writes `gateway.db` or a blob", and AC57 is unchanged.
 
 ## Q10 — Does the driver fail a write after the database file is deleted?
 - Status: open     Level: technical
@@ -252,3 +275,7 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
 - Answer: open.
 - Outcome: if it doesn't fail, the store checks the file's identity itself before
   each write transaction (→ plan), or AC25 is reshaped (→ spec).
+- 2026-09-28 (owner): stays open until the spike runs. Fallback, recorded now: if a
+  write after unlink doesn't fail, the store compares `gateway.db`'s inode (device and
+  inode number) with the one it opened before each write transaction, and treats a
+  mismatch or a missing file as a store failure. AC25 is unchanged either way.

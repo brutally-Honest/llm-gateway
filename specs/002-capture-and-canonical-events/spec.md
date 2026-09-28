@@ -42,7 +42,10 @@ doesn't break the client.
   - method, path (prefix stripped) and query;
   - request and response headers (redacted, below);
   - status; start time, TTFB and end time;
-  - `stream`, `truncated`, `client_disconnected`, `upstream_aborted`, `gateway_error`;
+  - `stream`, `truncated`, `request_incomplete`, `client_disconnected`,
+    `upstream_aborted`, `gateway_error`. `request_incomplete` means the request copy
+    was sealed before the client's body reached its end, for example when upstream
+    answered early;
   - the request and response bodies, by reference to their blobs.
 
   An exchange that ends badly (the client left, upstream aborted, the gateway made the
@@ -129,6 +132,9 @@ doesn't break the client.
     raw bytes.
   - A truncated compressed body decodes as far as it can, and the helper reports that
     it was cut short.
+  - Decoded output is capped at `capture.max_body_bytes`, which the caller passes in
+    (research Q7). Output past the cap is dropped and reported as cut short, so the
+    exchange is `partial`.
   - It only ever reads the captured copy. Forwarded bytes are never decoded.
   - Content coding is generic HTTP, so the helper knows no provider or wire format.
 - **Parser seam.** An adapter may implement an optional parser that turns one stored
@@ -448,7 +454,8 @@ Capture and store
   JSON body gives `parse: partial`, not `failed`.
 - **AC12** `TestCapture_AbortedExchangesRecorded` — each produces an exchange with the
   matching flag and the bytes seen. Subtests: `client_disconnect`, `upstream_abort`,
-  `gateway_502`.
+  `gateway_502`, `request_read_after_seal` (upstream answers before the request body
+  is fully read; the exchange has `request_incomplete`).
 - **AC13** `TestStore_BlobDedup` — two exchanges with identical request bodies store
   that body once.
 - **AC14** `TestStore_BlobBeforeRow` — a failure between blob and row leaves no row
