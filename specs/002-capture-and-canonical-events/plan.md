@@ -76,7 +76,9 @@ response tee and `Meta` are only touched on the handler's goroutine, as in 001.
 ### Memory: reserve, transfer, release
 
 One `core.Budget` per process: `limit` from `capture.memory_limit`, an atomic
-`inUse`.
+`inUse`, and an atomic `peak`, raised by a compare-and-swap max on each successful
+reservation. `Peak()` is logged as `memory_peak_bytes` in the `capture stopped` line
+(Q12).
 1. **Reserve.** Each tee chunk calls `TryReserve(n)` before copying `n` bytes. A
    chunk is a copy of that `Read` or `Write`, appended to a list of chunks, so the
    bytes held equal the bytes reserved: no slice doubling behind the budget's back.
@@ -245,11 +247,19 @@ AC57 checks exactly that.
 **A deleted database (Q10).** The Q10 spike showed that writes after `gateway.db` is
 unlinked succeed silently. So the store records the file's device and inode at open
 (`syscall.Stat_t` from `os.Stat`). It compares them with a fresh `os.Stat` before each
-write transaction, and a mismatch or a missing file is a store failure (AC25
-`db_deleted`). The check is one `stat` per transaction, next to a transaction that
-already `fsync`s.
+write transaction (Q11):
+- A missing file (`ENOENT`) or a changed device or inode is a store failure (AC25
+  `db_deleted`), handled as below.
+- Any other stat error, such as permission denied after `chmod 000` on
+  `capture.dir`, is not. The store logs it once per run as a warning, `store file
+  unreadable: <err>`, with the `path`, and lets the write itself decide. So an
+  exchange that fits inline can still be stored through the open handles, and one
+  that needs a blob fails (AC62).
 
-After a mismatch:
+The check is one `stat` per transaction, next to a transaction that already
+`fsync`s.
+
+After a missing file or a changed inode:
 - On the first one, the store logs one error line, `store file deleted or replaced;
   restart the gateway to resume capture`, with the database's `path`. The path is
   the store's own, not request data.
@@ -410,7 +420,8 @@ Dump never names a wire format. Decoding is `contentcoding`, with the loaded
      after their current item, and what is left in the channel is counted and
      released.
 2. `store.Close()`.
-3. One `capture stopped` line with `undrained` and the drop and failure counts.
+3. One `capture stopped` line with `undrained`, the drop and failure counts, and
+   `memory_peak_bytes` from `Budget.Peak()` (Q12).
 
 This follows the spec's four steps: exchanges that end while the HTTP server shuts
 down are still submitted, because the sink is only closed afterwards.
@@ -429,9 +440,11 @@ Deviations.
    fired: the spec's narrower dump rule and the store's inode check, as applied
    above.
 2. **ADRs, before any dependency.** ADR 0004 (store, pipeline confirmation,
-   dependencies), written after the spikes so it records a verified driver, and ADR
-   0005 (secrets in content). `go get` the three dependencies in the same task as
-   0004.
+   dependencies, with pinned versions and licences), written after the spikes so it
+   records a verified driver, and ADR 0005 (secrets in content). No `go get` here:
+   each dependency is added, at the version 0004 pins, by the task that first imports
+   it (`klauspost/compress` and `andybalholm/brotli` with the decoder,
+   `modernc.org/sqlite` with the store).
 3. **Config:** keys, `DefaultCaptureDir`, the example file (AC1–AC4).
 4. **`internal/contentcoding`**, with the decode cap (Q7).
 5. **Core:** canonical event types, `Canonicalize`, the `Parser` seam and optional
@@ -498,11 +511,12 @@ type CaptureSink interface {
 	Submit(ex *Exchange) bool
 }
 
-type Budget struct{ /* limit, inUse atomic.Int64 */ }
+type Budget struct{ /* limit, inUse and peak atomic.Int64 */ }
 func NewBudget(limit int64) *Budget
 func (b *Budget) TryReserve(n int64) bool
 func (b *Budget) Release(n int64)
 func (b *Budget) InUse() int64
+func (b *Budget) Peak() int64 // highest InUse seen; raised by CAS max
 
 type Body struct {
 	Chunks    [][]byte // as captured, still content-encoded
@@ -700,8 +714,9 @@ func DefaultCaptureDir(lookupEnv func(string) (string, bool)) (string, bool)
 
 ## New dependencies
 
-Each one lands only after ADR 0004 is written. Versions are pinned when the ADR task
-runs `go get`, and the ADR records them and their licences.
+Each one lands only after ADR 0004 is written, which pins its version and records
+its licence. It is added to `go.mod` by the task that first imports it, at that
+version.
 
 | Need | Choice | Why | Rejected |
 |---|---|---|---|

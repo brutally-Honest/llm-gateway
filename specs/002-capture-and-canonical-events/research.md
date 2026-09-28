@@ -319,3 +319,51 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   transaction; a mismatch or a missing file is a store failure (AC25 `db_deleted`).
   The plan's dependency row no longer credits the driver with detecting this. AC25
   is unchanged.
+
+## Q11 — What does the inode check do when `capture.dir` is `chmod 000`?
+- Status: answered     Level: technical
+- Blocks / shapes: T10 (the store's inode check), T30 (AC62's expectation)
+- Context: 2026-09-28, drafting tasks.md. The Q10 fallback compares `gateway.db`'s
+  device and inode with a fresh `os.Stat` before each write transaction, and treats a
+  mismatch or a missing file as a store failure. After `chmod 000` on `capture.dir`,
+  `os.Stat` of `gateway.db` fails with permission denied, since the directory can no
+  longer be searched. The plan's AC62 row and Risks entry say inline-only exchanges
+  may still be stored after `chmod 000`, which assumes the check passes. If a stat
+  error counts as a missing file, every write fails at once instead, and the one log
+  line says "deleted or replaced" for a permission change.
+- Question: is any `os.Stat` error a store failure (and if so, should the line read
+  "deleted, replaced or unreadable"), or only `ENOENT` and a changed inode, with other
+  stat errors left to the write itself?
+- How to resolve: owner decision.
+- Answer: open.
+- Outcome: the plan's inode-check paragraph, AC62 row and Risks entry, and T10 and T30
+  (→ plan).
+- 2026-09-28 (owner): option (b). Only a missing file (`ENOENT`) or a changed device
+  or inode puts the store into the permanent "deleted or replaced" state with its one
+  error line. Any other stat error, such as permission denied after `chmod 000`, does
+  not: it is logged once as a warning, `store file unreadable: <err>`, with the path,
+  and the write itself decides.
+- 2026-09-28 Outcome (→ plan): the plan's inode-check paragraph says so; the AC62 row
+  and Risks entry stay as written. T10 gains the subtest
+  `stat_permission_denied_not_deleted`, and T30's expectation follows.
+
+## Q12 — How does the manual smoke read the peak `capture.memory_limit` usage?
+- Status: answered     Level: flow
+- Blocks / shapes: T29 (AC61 evidence); the spec's open question on the
+  `max_body_bytes` and `memory_limit` defaults
+- Context: 2026-09-28, drafting tasks.md. The spec's open question asks to "log the
+  peak `capture.memory_limit` usage" during the manual smoke. The plan's `Budget` has
+  `InUse` only, and the `capture stopped` line logs `undrained` and the drop and
+  failure counts. Nothing reports a peak.
+- Question: should `Budget` track its peak and the `capture stopped` line log it (for
+  example `memory_peak_bytes`), or is the peak read another way (process RSS)?
+- How to resolve: owner decision.
+- Answer: open.
+- Outcome: T6 and T16 gain the field if chosen (→ plan), and T29's evidence names it.
+- 2026-09-28 (owner): accepted as suggested. `Budget` tracks its peak with an atomic
+  compare-and-swap max and exposes `Peak()`; the `capture stopped` line logs
+  `memory_peak_bytes`.
+- 2026-09-28 Outcome (→ plan): the plan's Memory section, Interfaces and shutdown
+  line gain it; T6 and T16 build it, and T29's evidence includes the value. The
+  spec's open question on the size defaults is answered by T29's evidence, and stays
+  open in the spec until then.
