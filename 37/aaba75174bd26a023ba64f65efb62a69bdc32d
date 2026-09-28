@@ -1,0 +1,6 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (gateway dump Read-only rule; ACs unchanged, AC1-AC63)
+Plan: specs/002-capture-and-canonical-events/plan.md (status: draft)
+Research: Q9 answered (mode=ro on a stopped gateway's WAL db creates -wal and -shm at 0600, db mtime unchanged; with a writer open nothing is created); Q10 answered (BEGIN/INSERT/COMMIT after unlinking gateway.db all succeed, no SQLITE_READONLY_DBMOVED); Q8 dated line: AC33 synthetic from recorded blocks, AC34 assembled from recorded blocks.
+Why this approach: both decision rules recorded in the previous commit fired, so they are applied as written: the narrower dump rule (spec) and the per-transaction inode check (plan). The dependency row no longer credits the driver with unlink detection.
+Alternatives rejected: immutable=1 for dump (torn reads while the gateway writes).
+Verified by: a throwaway module outside the repo, modernc.org/sqlite v1.59.0, SQLite 3.53.4, go1.25.4 linux/amd64; go run . and one go test for file modes; not committed.
