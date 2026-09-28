@@ -1,0 +1,4 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (ADRs; cost of reversing)
+ADR: docs/decisions/0004-capture-store.md
+Why this approach: review of T1 found the ADR named one import site per dependency, contradicting its own table and the spec (zstd decoding reuses the blob library); each dependency now lists its sites.
+Verified by: make verify; ADR text checked against plan.md package table (internal/store, internal/contentcoding).
