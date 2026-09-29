@@ -335,6 +335,23 @@ Details fixed in T11:
 - `SaveParse` for an exchange the store doesn't hold returns `ErrNotFound` and
   writes nothing (the `ErrNotFound` T12's reader also uses).
 
+Details fixed in T12:
+- `OpenReader` stats `gateway.db` before the driver sees it; a missing file (or
+  directory) is an error wrapping `fs.ErrNotExist` that names the path, and nothing is
+  created. The reader DSN is `mode=ro` plus `busy_timeout`, built with `url.URL`.
+- A reader never migrates: a `user_version` newer than the binary fails with `schema
+  newer than gateway`, an older one (including an unmigrated file) with `schema older
+  than gateway`.
+- `Last()` is the exchange with the greatest `started_at`, ties to the one stored
+  last (`rowid`).
+- `ExchangeRow` and `EventRow` carry JSON tags named after the columns, so dump
+  prints a row as one JSON line; a NULL reads as `""` (`ttfb_ns` as `null`).
+- `Content(hash)` returns `ErrNotFound` for a hash that isn't 64 lowercase hex
+  characters, so no caller string reaches a blob path. A blob whose decoded size
+  differs from the row's `size` is an error.
+- `Events(id)` is `ErrNotFound` for an unknown exchange and empty for one with no
+  parse stored.
+
 After a missing file or a changed inode:
 - On the first one, the store logs one error line, `store file deleted or replaced;
   restart the gateway to resume capture`, with the database's `path`. The path is

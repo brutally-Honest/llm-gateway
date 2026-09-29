@@ -223,7 +223,7 @@ Layout the tasks assume:
   transaction on a second connection, writes keep succeeding). Done: those pass under
   `-race`. Commit: `feat(store): store exchanges and content by hash` (AC13, AC14, AC18,
   AC19, AC21) (no research link)
-- [ ] T12 — `internal/store`: `OpenReader(dir)` (checks `gateway.db` exists first, never
+- [x] T12 — `internal/store`: `OpenReader(dir)` (checks `gateway.db` exists first, never
   creates it, `mode=ro`, never `immutable=1`), `Exchange(id)`, `Last()`, `Content(hash)`
   (inline or blob, decompressed), `Events(id)` in `seq` order, `ErrNotFound`. Tests
   first: `TestReader_MissingStoreNotCreated` (a fresh directory stays empty),
