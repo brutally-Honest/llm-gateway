@@ -26,21 +26,32 @@ var forwardingHeaders = []string{"Forwarded", "X-Forwarded-For", "X-Forwarded-Ho
 // Proxy forwards one adapter's requests to its upstream and streams the response
 // back. It is protocol-agnostic: everything protocol-shaped comes from the Adapter.
 type Proxy struct {
-	rp       *httputil.ReverseProxy
-	adapter  Adapter
-	identify func(*http.Request) string
+	rp        *httputil.ReverseProxy
+	adapter   Adapter
+	identify  func(*http.Request) string
+	principal PrincipalResolver
+	capture   *captureConfig // nil: capture off, the proxy is 001's
 }
 
-// NewProxy builds the proxy for adapter a in front of up. identify names the client
-// that sent a request.
+// NewProxy builds the proxy for adapter a in front of up, with capture off. identify
+// names the client that sent a request.
 func NewProxy(a Adapter, up config.Upstream, identify func(*http.Request) string, log *zap.Logger) *Proxy {
+	return newProxy(a, up, identify, log, nil)
+}
+
+// newProxy is NewProxy with capture on when c is not nil.
+func newProxy(a Adapter, up config.Upstream, identify func(*http.Request) string, log *zap.Logger, c *Capture) *Proxy {
 	prefix := a.Prefix()
 	base := up.BaseURL
-	p := &Proxy{adapter: a, identify: identify}
+	p := &Proxy{adapter: a, identify: identify, principal: LocalPrincipal{}, capture: newCaptureConfig(a, c)}
+	if p.capture != nil {
+		p.principal = p.capture.Principal
+	}
 	p.rp = &httputil.ReverseProxy{
 		Transport: newTransport(up),
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			rewrite(pr, prefix, base)
+			teeRequest(pr)
 			watchRequestBody(pr)
 		},
 		ModifyResponse: modifyResponse,
@@ -74,6 +85,9 @@ const statusClientClosedRequest = 499
 func (p *Proxy) handleError(w http.ResponseWriter, r *http.Request, err error) {
 	m := MetaFrom(r.Context())
 	status, reason := classify(r.Context(), m, err)
+	if m != nil {
+		m.Status = status
+	}
 	if reason == "" {
 		if m != nil {
 			m.ClientDisconnected = true
@@ -126,13 +140,16 @@ func watchRequestBody(pr *httputil.ProxyRequest) {
 	}
 }
 
-// ServeHTTP labels the request for the access log, then forwards it.
+// ServeHTTP labels the request for the access log, starts its capture, then forwards
+// it. With capture on, the response goes out through the response tee.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if m := MetaFrom(r.Context()); m != nil {
 		m.Protocol = p.adapter.Name()
 		m.Client = p.identify(r)
 		m.Auth = p.adapter.AuthKind(r.Header)
+		m.PrincipalID = p.principal.Resolve(r)
 		m.start = time.Now()
+		w = p.capture.startCapture(m, w, r)
 	}
 	// net/http sniffs a Content-Type for a response that has none when its first
 	// body write goes out with the headers. ReverseProxy's initial header flush
@@ -154,6 +171,7 @@ func modifyResponse(res *http.Response) error {
 	// (research Q6). A differently named request-id is not touched.
 	res.Header.Del("X-Request-Id")
 	if m := MetaFrom(res.Request.Context()); m != nil {
+		m.Status = res.StatusCode
 		m.Stream = isEventStream(res.Header.Get("Content-Type"))
 		m.TTFB = time.Since(m.start)
 		m.HasTTFB = true

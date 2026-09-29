@@ -367,6 +367,7 @@ func TestCapture_OutgoingRequestHasNoGetBody(t *testing.T) {
 			t.Fatal("http.NoBody was wrapped, which would change how the transport frames it")
 		}
 	})
+	t.Run("through_proxy", outgoingRequestHasNoGetBodyThroughProxy)
 }
 
 func TestReservation_RefusalFreesOtherTeeAtOnce(t *testing.T) {

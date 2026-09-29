@@ -176,11 +176,17 @@ func (t *teeWriter) WriteHeader(code int) {
 	t.ResponseWriter.WriteHeader(code)
 }
 
-// record snapshots the status and headers, before the inner writer sends them.
+// record snapshots the status and headers, before the inner writer sends them. An
+// entry with no value is not sent, so it is left out.
 func (t *teeWriter) record(code int) {
 	t.wroteHeader = true
 	t.status = code
 	t.header = t.ResponseWriter.Header().Clone()
+	for name, values := range t.header {
+		if len(values) == 0 {
+			delete(t.header, name)
+		}
+	}
 }
 
 // Write forwards p, then copies what the inner writer accepted.

@@ -144,27 +144,28 @@ Layout the tasks assume:
   untouched), `TestRedact_HeaderNamesKept`, `TestRedact_QueryKeepsBytes` (`;`, `%zz`,
   repeated and empty parameters byte-identical). Done: those pass. Commit: `feat(core):
   redact captured headers and query` (supports AC27, AC29) (no research link)
-- [ ] T8 — Wire capture into the proxy. `Capture{Sink, Budget, MaxBodyBytes,
+- [x] T8 — Wire capture into the proxy. `Capture{Sink, Budget, MaxBodyBytes,
   Principal}`, `WithCapture`, `NewRegistry(log, opts...)` (001 callers unchanged);
   `CaptureSink` and `Exchange` (with `RequestIncomplete`, `Parser`, `Excluded`,
   idempotent `Release`). `Meta` gains `RequestID`, `PrincipalID`, `Status`, `Capture`.
   `ServeHTTP` sets the principal, wraps `w` in the `teeWriter`; `Rewrite` wraps the body
   as `watcher(tee(body))` and snapshots `pr.Out.Header`. `Settle` calls `finishCapture`:
   seal both tees, build the `Exchange`, redact, `Submit`, set `Meta.Capture` (`queued`,
-  `dropped_queue_full`, `dropped_memory`, `off`). With no `WithCapture` the proxy is
+  `dropped_queue_full`, `dropped_memory`, `off`); a `dropped_memory` drop never reaches
+  the sink, so it is counted there, in `Budget.Dropped()`. With no `WithCapture` the proxy is
   001's and `Capture` is `off`. `internal/server`: `accessLog` sets `Meta.RequestID`;
   `proxyFields` adds `capture`. Tests first, with a recording sink in
   `internal/core/capture_test.go`: `TestCapture_MemoryLimitDrops` (`over_limit`,
   `crosses_limit_mid_stream`: forwarded whole, `capture: dropped_memory`, `Budget.InUse`
-  back to its prior value), `TestRedact_AdapterQueryParams` (a test adapter's secret
+  back to its prior value, `Budget.Dropped` 1), `TestRedact_AdapterQueryParams` (a test adapter's secret
   query parameter redacted in the submitted exchange, forwarded unchanged),
   `TestCapture_ExchangeFields` (every `Exchange` field from a streamed and a
   non-streamed request, `principal_id: local`, `request_incomplete` when upstream
   answers before reading the body), `TestCapture_OutgoingRequestHasNoGetBody` (rerun
   through the proxy), `TestAccessLog_CaptureField` (`off` with no capture; no `capture`
   field off-proxy). Done: those pass under `-race`, and every 001 test passes unchanged.
-  Commit: `feat(core): capture exchanges at the end of each request` (AC8, AC22, AC24,
-  AC29, supports AC7, AC12) (no research link)
+  Commit: `feat(core): capture exchanges at the end of each request` (AC8, AC24,
+  supports AC7, AC12, AC22, AC29) (no research link)
 - [ ] T9 — The AC5 wrappers, test-only. `internal/core/capture_fidelity_test.go` and
   `internal/protocols/anthropic/capture_fidelity_test.go`:
   `TestCapture_ForwardingUnchanged` lists 001's forwarding, streaming, compression and
@@ -266,8 +267,12 @@ Layout the tasks assume:
   `TestCapture_ParsePanicIsFailed`, and `TestCore_TestParserNeedsNoCoreChange`
   (`internal/core/capture_pipeline_test.go`: a test adapter and test parser, registered
   from the test, captured, redacted and turned into canonical events in a real store,
-  with no edit to `internal/core`). Done: those pass under `-race`. Commit:
-  `feat(capture): parse and store captured exchanges` (AC20, AC25, AC59) (shaped: Q10)
+  with no edit to `internal/core`), and T8's `TestRedact_AdapterQueryParams` gains
+  subtest `in_store` (the same test adapter through the real sink and store: the
+  exchange row's query has the name with `[REDACTED]`, the sentinel appears nowhere in
+  the database or any decompressed blob, upstream got it unchanged). Done: those pass
+  under `-race`. Commit: `feat(capture): parse and store captured exchanges` (AC20,
+  AC25, AC29, AC59) (shaped: Q10)
 - [ ] T15 — `internal/core/purity_test.go`: `TestCore_NoProviderOrClientIdentifiers`
   gains the wire names in its denylist (`cache_control`, `tool_use`, `tool_use_id`,
   `content_block`, `message_delta`, `input_json_delta`, `thinking_delta`; `x-api-key` is
@@ -285,8 +290,9 @@ Layout the tasks assume:
   error logs the path and a fixed reason and exits `1`), `capture.NewSink`,
   `core.WithCapture` with `LocalPrincipal`. `deps` gains `openStore` for tests. Shutdown
   after `srv.Shutdown`: `sink.Close` with what is left of the shutdown context,
-  `store.Close`, one `capture stopped` line with `undrained`, the counts and
-  `memory_peak_bytes` from `Budget.Peak()` (Q12). The test data-dir guard:
+  `store.Close`, one `capture stopped` line with `undrained`, the sink's counts,
+  `dropped_memory` from `Budget.Dropped()` and `memory_peak_bytes` from `Budget.Peak()`
+  (Q12). The test data-dir guard:
   `startGateway` puts `GATEWAY_CAPTURE_DIR=<t.TempDir()>` in the env map unless the test
   sets one; `binary_test.go` does the same for the child; `cmd/gateway/main_test.go`
   adds a `TestMain` pointing `HOME` and `XDG_DATA_HOME` at a temp dir and failing if
@@ -297,7 +303,7 @@ Layout the tasks assume:
   and event has `principal_id: local`), `TestCapture_ShutdownDrainsQueue`
   (`queued_stored`, `stream_ends_during_server_shutdown`, `undrained_counted` with a
   slow store through `deps.openStore`; the line carries `memory_peak_bytes` above zero
-  after a captured request), `TestRun_DefaultCaptureDirUnresolvable`. Proved for the
+  after a captured request, and `dropped_memory`), `TestRun_DefaultCaptureDirUnresolvable`. Proved for the
   guard: drop the helper's env line for a moment, see `TestMain` fail. Done: those pass,
   and every 001 `cmd/gateway` test passes with capture on and unchanged bodies. Commit:
   `feat(capture): open the store and drain it on shutdown` (AC5, AC7, AC16, AC22, AC26,
@@ -550,7 +556,7 @@ Every AC in `spec.md` (AC1–AC63) maps to at least one task:
 | AC5 | T9, T16 | AC26 | T13, T16 | AC47 | T20 |
 | AC6 | T13 | AC27 | T7, T18 | AC48 | T21 |
 | AC7 | T8, T16 | AC28 | T18 | AC49 | T4, T24 |
-| AC8 | T6, T8 | AC29 | T7, T8 | AC50 | T4, T24 |
+| AC8 | T6, T8 | AC29 | T7, T8, T14 | AC50 | T4, T24 |
 | AC9 | T17 | AC30 | T22 | AC51 | T4, T24 |
 | AC10 | T17 | AC31 | T22 | AC52 | T4, T24 |
 | AC11 | T6, T17, T21 | AC32 | T19, T23 | AC53 | T19, T21, T23 |

@@ -71,6 +71,20 @@ imports no adapter. `cmd/gateway` stays the only package that imports an adapter
   `dropped_memory` or `off`. `accessLog` logs `capture` when `Protocol` is set
   (AC7, AC23, AC24). The value is decided before the line is written, as the spec
   requires.
+- **Details fixed in T8.**
+  - `NewProxy` keeps 001's signature and builds a proxy with capture off; the
+    registry builds its proxies through an unexported constructor that takes the
+    `Capture`. Tests reach it through `export_test.go`.
+  - The exchange's `Path` is the inbound `r.URL.Path` with the adapter prefix
+    stripped, as the access line logs it, not the upstream path with `base_url`'s
+    path joined on.
+  - `Meta.Status` is set in `modifyResponse` (upstream's status) and in the error
+    handler (the status it writes). The exchange takes the response tee's recorded
+    status and falls back to `Meta.Status` when nothing was written.
+  - The response header snapshot leaves out entries with no value, such as the
+    empty `Content-Type` entry `ServeHTTP` adds to stop sniffing: it is never sent.
+  - The access line carries `capture` whenever `Meta.Capture` is set, which every
+    proxy does (`off` included), so a line off the proxy keeps exactly 000's keys.
 
 The request tee is written by the transport's goroutine and sealed on the handler's,
 so it holds a mutex. A `Read` after the seal is passed through and not copied. The
@@ -81,7 +95,9 @@ response tee and `Meta` are only touched on the handler's goroutine, as in 001.
 One `core.Budget` per process: `limit` from `capture.memory_limit`, an atomic
 `inUse`, and an atomic `peak`, raised by a compare-and-swap max on each successful
 reservation. `Peak()` is logged as `memory_peak_bytes` in the `capture stopped` line
-(Q12).
+(Q12). An atomic `dropped` counts the exchanges dropped for memory: `finishCapture`
+returns before `Submit` for those, so the sink never sees them, and `Dropped()` is
+where the `dropped_memory` count comes from.
 1. **Reserve.** Each tee chunk calls `TryReserve(n)` before copying `n` bytes. A
    chunk is a copy of that `Read` or `Write`, appended to a list of chunks, so the
    bytes held equal the bytes reserved: no slice doubling behind the budget's back.
@@ -127,6 +143,8 @@ capture.Sink queue (capture.queue_size) ─► worker (capture.workers, logging.
   logs `stage: store`, and the raw capture from step 1 stays (spec, Ordering).
 - Every drop and failure is also counted (`dropped_queue_full`, `dropped_memory`,
   `store_failed`, `parse_failed`), and the counts are logged in the shutdown line.
+  `dropped_memory` is counted by the `Budget` at the drop site in `finishCapture`
+  (`Budget.Dropped()`); the others by the sink (`Sink.Counts()`).
   Prometheus is Phase 9.
 
 ### Redaction (AC27–AC29)
@@ -455,7 +473,8 @@ Dump never names a wire format. Decoding is `contentcoding`, with the loaded
      after their current item, and what is left in the channel is counted and
      released.
 2. `store.Close()`.
-3. One `capture stopped` line with `undrained`, the drop and failure counts, and
+3. One `capture stopped` line with `undrained`, the drop and failure counts
+   (`Sink.Counts()`, plus `dropped_memory` from `Budget.Dropped()`), and
    `memory_peak_bytes` from `Budget.Peak()` (Q12).
 
 This follows the spec's four steps: exchanges that end while the HTTP server shuts
@@ -546,12 +565,13 @@ type CaptureSink interface {
 	Submit(ex *Exchange) bool
 }
 
-type Budget struct{ /* limit, inUse and peak atomic.Int64 */ }
+type Budget struct{ /* limit; inUse, peak and dropped atomic.Int64 */ }
 func NewBudget(limit int64) *Budget
 func (b *Budget) TryReserve(n int64) bool
 func (b *Budget) Release(n int64)
 func (b *Budget) InUse() int64
 func (b *Budget) Peak() int64 // highest InUse seen; raised by CAS max
+func (b *Budget) Dropped() int64 // exchanges dropped for memory (dropped_memory)
 
 type Body struct {
 	Chunks    [][]byte // as captured, still content-encoded
@@ -849,12 +869,12 @@ loopback. Stores live in `t.TempDir()`.
 | 21 | `TestStore_OpenReaderDoesNotFailWrites` | `internal/store/store_test.go` |
 | 22 | `TestCapture_PrincipalLocal` | `cmd/gateway/run_capture_test.go` |
 | 23 | `TestCapture_QueueFullDrops` | `internal/capture/capture_test.go` |
-| 24 | `TestCapture_MemoryLimitDrops` (`Budget.InUse` before and after) | `internal/core/capture_test.go` |
+| 24 | `TestCapture_MemoryLimitDrops` (`Budget.InUse` before and after; `Budget.Dropped` counts the drop) | `internal/core/capture_test.go` |
 | 25 | `TestCapture_StoreDeadClientUnaffected` (`db_deleted` caught by the store's inode check, Q10). `db_deleted` has a subtest, `deleted_logged_once`: across several exchanges after the delete, exactly one `store file deleted or replaced` line, every exchange gets `capture_failed` with `stage: store`, and no new `gateway.db` appears | `internal/capture/capture_test.go` |
 | 26 | `TestCapture_ShutdownDrainsQueue` (`deps.openStore` injects a slow store) | `cmd/gateway/run_capture_test.go` |
 | 27 | `TestRedact_AuthHeaders` (scans the database and every decompressed blob) | same |
 | 28 | `TestRedact_ForwardedTrafficUntouched` | same |
-| 29 | `TestRedact_AdapterQueryParams` (test adapter) | `internal/core/redact_test.go` |
+| 29 | `TestRedact_AdapterQueryParams` (test adapter): the submitted exchange (T8), and subtest `in_store` through the real sink and store (T14) | `internal/core/capture_test.go`, `internal/core/capture_pipeline_test.go` |
 | 30 | `TestParse_GoldenStream` | `internal/protocols/anthropic/parser_test.go` |
 | 31 | `TestParse_GoldenStreamGzip` | same |
 | 32 | `TestParse_ToolUseTurn` (fixture: `tool_turn`, recorded) | same |

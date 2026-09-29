@@ -6,6 +6,10 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"time"
+
+	"go.uber.org/zap"
+
+	"github.com/brutally-honest/llm-gateway/internal/config"
 )
 
 // Test-only doors to the unexported body watchers, for package core_test. The proxy
@@ -61,3 +65,15 @@ func TeeWriterCopied(t *TeeWriter) int64 { return t.copy.size() }
 
 func RedactHeader(h http.Header, secret []string) http.Header { return redactHeader(h, secret) }
 func RedactQuery(raw string, secret []string) string          { return redactQuery(raw, secret) }
+
+// NewCapturingProxy is NewProxy with capture on, for a test that must reach the
+// proxy itself rather than go through a Registry.
+func NewCapturingProxy(a Adapter, up config.Upstream, identify func(*http.Request) string, log *zap.Logger, c Capture) *Proxy {
+	return newProxy(a, up, identify, log, &c)
+}
+
+// WrapTransport puts wrap around the proxy's transport, so a test can see the
+// outgoing request as the transport gets it.
+func WrapTransport(p *Proxy, wrap func(http.RoundTripper) http.RoundTripper) {
+	p.rp.Transport = wrap(p.rp.Transport)
+}
