@@ -56,3 +56,8 @@ func TeeRequestBody(pr *httputil.ProxyRequest, r *Reservation, maxBytes int64) *
 // TeeReaderCopied and TeeWriterCopied are the bytes each tee's copy holds now.
 func TeeReaderCopied(t *TeeReader) int64 { return t.copy.size() }
 func TeeWriterCopied(t *TeeWriter) int64 { return t.copy.size() }
+
+// Test-only doors to redaction.
+
+func RedactHeader(h http.Header, secret []string) http.Header { return redactHeader(h, secret) }
+func RedactQuery(raw string, secret []string) string          { return redactQuery(raw, secret) }

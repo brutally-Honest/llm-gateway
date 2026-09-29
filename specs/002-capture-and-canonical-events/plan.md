@@ -140,6 +140,11 @@ capture.Sink queue (capture.queue_size) ─► worker (capture.workers, logging.
   `url.ParseQuery`, which would reorder and re-escape it. A parameter whose unescaped
   name is on the adapter's `SecretQueryParams()` keeps its name and gets `[REDACTED]`
   as its value. Everything else stays byte-identical.
+- Edge cases (T7). Every value of a secret header is replaced, so the value count
+  stays (two `Cookie` lines stay two). Query names are unescaped with
+  `url.QueryUnescape` (`+` is a space) and matched case-sensitively; a name that does
+  not unescape is compared as sent. A parameter with no `=` has no value and is kept
+  as sent; `key=` becomes `key=[REDACTED]`.
 - The forwarded request and response are never touched. The snapshots are clones.
 
 ### Canonical encoding and hashing

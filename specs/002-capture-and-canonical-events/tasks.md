@@ -135,7 +135,7 @@ Layout the tasks assume:
   `httputil.ProxyRequest` built by hand; T8 reruns it through the proxy). Done: those
   pass under `-race`. Commit: `feat(core): add the capture tees and memory budget` (AC8,
   supports AC11, AC12, AC24, AC61) (shaped: Q12)
-- [ ] T7 — `internal/core/redact.go`: header redaction (a clone; core's four,
+- [x] T7 — `internal/core/redact.go`: header redaction (a clone; core's four,
   `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, plus the adapter's
   `SecretHeaders()`; case-insensitive; value becomes `[REDACTED]`, name kept) and raw
   query redaction (split by hand on `&` and the first `=`; a parameter whose unescaped
