@@ -315,7 +315,7 @@ Layout the tasks assume:
   and every 001 `cmd/gateway` test passes with capture on and unchanged bodies. Commit:
   `feat(capture): open the store and drain it on shutdown` (AC5, AC7, AC16, AC26,
   supports AC22, AC61) (shaped: Q12, Q15, Q16, Q17)
-- [ ] T17 — `cmd/gateway/run_capture_test.go`, end-to-end through `run` with a real
+- [x] T17 — `cmd/gateway/run_capture_test.go`, end-to-end through `run` with a real
   store and a fake upstream (a guard over T8–T16, plus the fixes it finds):
   `TestCapture_ExchangeStored` (`streamed`, `non_streamed`: every Scope field of the
   exchange record, bodies byte-identical to the wire),

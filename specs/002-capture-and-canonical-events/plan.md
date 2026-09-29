@@ -85,6 +85,12 @@ imports no adapter. `cmd/gateway` stays the only package that imports an adapter
     empty `Content-Type` entry `ServeHTTP` adds to stop sniffing: it is never sent.
   - The access line carries `capture` whenever `Meta.Capture` is set, which every
     proxy does (`off` included), so a line off the proxy keeps exactly 000's keys.
+- **Details fixed in T17.**
+  - A gateway-made error before upstream read anything (a refused dial) leaves the
+    request copy sealed empty, so that exchange has `request_incomplete` as well as
+    `gateway_error`, and no request body: the copy holds only what the transport read.
+  - `ended_at` is taken when the handler returns, which can be after the client has
+    read the whole response; tests bound only `started_at` by the client's clock.
 
 The request tee is written by the transport's goroutine and sealed on the handler's,
 so it holds a mutex. A `Read` after the seal is passed through and not copied. The
