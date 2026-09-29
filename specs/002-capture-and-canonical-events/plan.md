@@ -324,6 +324,17 @@ Details fixed in T10:
 - A replaced file (same path, new inode) takes the same "deleted or replaced" path as
   an unlinked one.
 
+Details fixed in T11:
+- `write(ctx, items, fn)` now takes the content: inode check, then every blob on
+  disk, then one transaction that inserts the content rows and runs `fn`. A
+  test-only hook between the blobs and the transaction proves the order (AC14).
+- A blob's directory is `fsync`ed after the rename too, so the rename is durable
+  before the row that references it commits.
+- An empty body is stored as no body (`request_body` / `response_body` NULL).
+  Headers are stored as `{}` when there are none.
+- `SaveParse` for an exchange the store doesn't hold returns `ErrNotFound` and
+  writes nothing (the `ErrNotFound` T12's reader also uses).
+
 After a missing file or a changed inode:
 - On the first one, the store logs one error line, `store file deleted or replaced;
   restart the gateway to resume capture`, with the database's `path`. The path is

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/klauspost/compress/zstd"
 	"go.uber.org/zap"
 
 	// The pure-Go SQLite driver, registered as "sqlite" (ADR 0004).
@@ -38,7 +39,12 @@ type Store struct {
 	path string
 	db   *sql.DB
 	log  *zap.Logger
-	id   fileID // the database file's device and inode at open
+	id   fileID        // the database file's device and inode at open
+	enc  *zstd.Encoder // blobs; EncodeAll is safe for concurrent use
+
+	// beforeRows, when set (tests only), runs after a write's blobs are on disk and
+	// before its transaction; an error from it fails the write there.
+	beforeRows func() error
 
 	mu     sync.Mutex
 	failed bool // sticky: the file was deleted or replaced
@@ -87,8 +93,14 @@ func Open(dir string, log *zap.Logger) (*Store, error) {
 	db.SetConnMaxLifetime(0)
 	db.SetConnMaxIdleTime(0)
 
-	s := &Store{dir: dir, path: path, db: db, log: log}
+	enc, err := zstd.NewWriter(nil)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("open store %s: %w", path, err)
+	}
+	s := &Store{dir: dir, path: path, db: db, log: log, enc: enc}
 	if err := s.init(context.Background()); err != nil {
+		_ = enc.Close()
 		_ = db.Close()
 		return nil, fmt.Errorf("open store %s: %w", path, err)
 	}
@@ -126,21 +138,37 @@ func writerDSN(path string) string {
 
 // Close closes the writer connection.
 func (s *Store) Close() error {
+	_ = s.enc.Close()
 	if err := s.db.Close(); err != nil {
 		return fmt.Errorf("close store %s: %w", s.path, err)
 	}
 	return nil
 }
 
-// write runs fn in one transaction on the writer connection, after checking that
-// the database file is still the one the store opened (research Q10, Q11).
-func (s *Store) write(ctx context.Context, fn func(*sql.Tx) error) error {
+// write stores items and runs fn in one transaction on the writer connection. It
+// first checks that the database file is still the one the store opened (research
+// Q10, Q11), then puts every blob on disk, and only then opens the transaction that
+// inserts the content rows and runs fn: a row never points at a missing blob.
+func (s *Store) write(ctx context.Context, items []content, fn func(*sql.Tx) error) error {
 	if err := s.checkFile(); err != nil {
 		return err
+	}
+	items = dedup(items)
+	if err := s.writeBlobs(ctx, items); err != nil {
+		return fmt.Errorf("store %s: %w", s.path, err)
+	}
+	if s.beforeRows != nil {
+		if err := s.beforeRows(); err != nil {
+			return fmt.Errorf("store %s: %w", s.path, err)
+		}
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("store %s: begin: %w", s.path, err)
+	}
+	if err := insertContent(ctx, tx, items); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("store %s: %w", s.path, err)
 	}
 	if err := fn(tx); err != nil {
 		_ = tx.Rollback()

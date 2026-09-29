@@ -8,12 +8,19 @@ import (
 // WriteInlineForTest stores one inline content row through the store's write path:
 // the file check, then one transaction on the writer connection.
 func (s *Store) WriteInlineForTest(ctx context.Context, hash string, data []byte) error {
-	return s.write(ctx, func(tx *sql.Tx) error {
+	return s.write(ctx, nil, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx,
 			`INSERT OR IGNORE INTO content (hash, size, location, data) VALUES (?, ?, 'inline', ?)`,
 			hash, len(data), data)
 		return err
 	})
+}
+
+// SetBeforeRowsHookForTest sets a hook that runs after a write's blobs are on disk
+// and before its rows are written; an error from it fails the write there. nil
+// removes it.
+func (s *Store) SetBeforeRowsHookForTest(fn func() error) {
+	s.beforeRows = fn
 }
 
 // PragmasForTest reads the writer connection's pragmas.

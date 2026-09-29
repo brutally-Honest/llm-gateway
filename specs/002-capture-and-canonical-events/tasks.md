@@ -208,7 +208,7 @@ Layout the tasks assume:
   succeeds through the open handles). Done: those pass under `-race`. Commit:
   `feat(store): open and migrate the capture database` (AC15, AC16, AC17, supports AC25,
   AC62) (shaped: Q10, Q11)
-- [ ] T11 — `internal/store`: content and writes. `SaveExchange` and `SaveParse` (the
+- [x] T11 — `internal/store`: content and writes. `SaveExchange` and `SaveParse` (the
   `capture.Store` shape from the plan; the interface itself lands in T13), each one
   transaction on the writer after its blobs are on disk. Content of 4096 bytes or less
   inline in `data`; larger zstd-compressed to `blobs/<hash[0:2]>/<hash[2:]>` via temp

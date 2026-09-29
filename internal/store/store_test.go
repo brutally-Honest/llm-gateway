@@ -213,6 +213,10 @@ func TestStore_Permissions(t *testing.T) {
 			if err := s.WriteInlineForTest(t.Context(), "aa", []byte("x")); err != nil {
 				t.Fatalf("write: %v", err)
 			}
+			// A body over the inline limit adds blobs/<ab>/ and a blob file.
+			if err := s.SaveExchange(t.Context(), exchange("r1", noise(inlineMax+1, 9), nil)); err != nil {
+				t.Fatalf("SaveExchange: %v", err)
+			}
 
 			fi, err := os.Stat(dir)
 			if err != nil {
