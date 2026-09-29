@@ -83,33 +83,52 @@ func (b Body) Bytes() []byte {
 // request tee reserves on the transport's goroutine and the response tee on the
 // handler's, so it holds a mutex. When the budget refuses a chunk, everything the
 // exchange holds goes back at once and the exchange is dropped: neither tee copies
-// again, and each discards its chunks the next time it is touched.
+// again, and both copies let go of their chunks there and then.
 type reservation struct {
 	budget  *Budget
 	mu      sync.Mutex
 	held    int64
 	dropped bool
+	copies  []*bodyCopy
 }
 
 func newReservation(b *Budget) *reservation {
 	return &reservation{budget: b}
 }
 
-// reserve takes n bytes for the exchange. It returns false once the exchange is
-// dropped, whether by this call or an earlier one.
-func (r *reservation) reserve(n int64) bool {
+// attach registers a tee's copy, so a drop can clear it.
+func (r *reservation) attach(c *bodyCopy) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.copies = append(r.copies, c)
+}
+
+// reserve takes n bytes for from, the copy asking. It returns false once the
+// exchange is dropped, whether by this call or an earlier one. The call that drops
+// it clears every other attached copy before returning; from, whose lock its caller
+// holds, discards its own. The other copies are cleared after r.mu is released, and
+// only one call ever drops, so no two locks are waited on in opposite orders.
+func (r *reservation) reserve(n int64, from *bodyCopy) bool {
+	r.mu.Lock()
 	if r.dropped {
+		r.mu.Unlock()
 		return false
 	}
 	if r.budget.TryReserve(n) {
 		r.held += n
+		r.mu.Unlock()
 		return true
 	}
 	r.budget.Release(r.held)
 	r.held = 0
 	r.dropped = true
+	others := r.copies
+	r.mu.Unlock()
+	for _, c := range others {
+		if c != from {
+			c.clear()
+		}
+	}
 	return false
 }
 

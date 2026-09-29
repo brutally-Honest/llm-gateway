@@ -92,8 +92,8 @@ reservation. `Peak()` is logged as `memory_peak_bytes` in the `capture stopped` 
    hold at once, marks itself `dropped_memory`, and copies nothing more. Forwarding
    carries on (AC24). Both tees reserve through one per-exchange `reservation`
    (mutex, bytes held, dropped flag) in `capture.go`: the refusal gives back the
-   exchange's whole reservation there, and the other tee discards its chunk slices
-   the next time it is written or sealed.
+   exchange's whole reservation there, and clears both tees' chunk copies at once,
+   each under its own copy's mutex.
 4. **Transfer.** At `finishCapture` the reservation moves to the `Exchange`. If
    `Submit` refuses it (queue full, sink closed), it is released there and then.
 5. **Release.** The worker calls `ex.Release()` once the pipeline is done, whatever

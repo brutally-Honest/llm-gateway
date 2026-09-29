@@ -10,18 +10,29 @@ import (
 
 // bodyCopy is the copy half both tees share: it checks capture.max_body_bytes first,
 // then reserves each chunk from the exchange's reservation before copying it, so the
-// bytes held always equal the bytes reserved. It is not safe for concurrent use; each
-// tee guards its own.
+// bytes held always equal the bytes reserved. Its mutex lets the reservation clear
+// it from the other tee's goroutine when the exchange is dropped.
 type bodyCopy struct {
-	res     *reservation
-	max     int64
+	res *reservation
+	max int64
+
+	mu      sync.Mutex
 	body    Body
 	stopped bool // the cap was reached or the exchange was dropped
+}
+
+// newBodyCopy returns a copy attached to res.
+func newBodyCopy(res *reservation, maxBytes int64) *bodyCopy {
+	c := &bodyCopy{res: res, max: maxBytes}
+	res.attach(c)
+	return c
 }
 
 // add copies p as one chunk, up to the cap. It never fails: a refused reservation
 // drops the exchange and the copy, and forwarding is not its concern.
 func (c *bodyCopy) add(p []byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.stopped || len(p) == 0 {
 		return
 	}
@@ -38,7 +49,7 @@ func (c *bodyCopy) add(p []byte) {
 	if n == 0 {
 		return
 	}
-	if !c.res.reserve(n) {
+	if !c.res.reserve(n, c) {
 		c.discard()
 		return
 	}
@@ -48,8 +59,15 @@ func (c *bodyCopy) add(p []byte) {
 	c.body.Size += n
 }
 
+// clear lets go of the chunks when the other tee's chunk dropped the exchange.
+func (c *bodyCopy) clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.discard()
+}
+
 // discard lets go of the chunks of a dropped exchange; the reservation has already
-// given their bytes back to the budget.
+// given their bytes back to the budget. The caller holds c.mu.
 func (c *bodyCopy) discard() {
 	c.body = Body{}
 	c.stopped = true
@@ -57,10 +75,19 @@ func (c *bodyCopy) discard() {
 
 // result is the copy as it stands, or an empty Body if the exchange was dropped.
 func (c *bodyCopy) result() Body {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.res.isDropped() {
 		c.discard()
 	}
 	return c.body
+}
+
+// size is the bytes the copy holds now.
+func (c *bodyCopy) size() int64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.body.Size
 }
 
 // teeReader copies the outbound request body as the transport reads it: what each
@@ -71,13 +98,13 @@ type teeReader struct {
 	rc io.ReadCloser
 
 	mu     sync.Mutex
-	copy   bodyCopy
+	copy   *bodyCopy
 	sealed bool
 	sawEOF bool
 }
 
 func newTeeReader(rc io.ReadCloser, res *reservation, maxBytes int64) *teeReader {
-	return &teeReader{rc: rc, copy: bodyCopy{res: res, max: maxBytes}}
+	return &teeReader{rc: rc, copy: newBodyCopy(res, maxBytes)}
 }
 
 // Read passes every byte and error through unchanged. After the seal it only passes
@@ -129,7 +156,7 @@ func teeRequestBody(pr *httputil.ProxyRequest, res *reservation, maxBytes int64)
 type teeWriter struct {
 	http.ResponseWriter
 
-	copy        bodyCopy
+	copy        *bodyCopy
 	wroteHeader bool
 	status      int
 	header      http.Header
@@ -137,7 +164,7 @@ type teeWriter struct {
 }
 
 func newTeeWriter(w http.ResponseWriter, res *reservation, maxBytes int64) *teeWriter {
-	return &teeWriter{ResponseWriter: w, copy: bodyCopy{res: res, max: maxBytes}}
+	return &teeWriter{ResponseWriter: w, copy: newBodyCopy(res, maxBytes)}
 }
 
 // WriteHeader records the first final status and the headers sent with it. An

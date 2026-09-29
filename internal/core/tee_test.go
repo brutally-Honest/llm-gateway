@@ -368,3 +368,93 @@ func TestCapture_OutgoingRequestHasNoGetBody(t *testing.T) {
 		}
 	})
 }
+
+func TestReservation_RefusalFreesOtherTeeAtOnce(t *testing.T) {
+	t.Run("response_refused_after_request_read", func(t *testing.T) {
+		b := core.NewBudget(8)
+		res := core.NewReservation(b)
+		tr := core.NewTeeReader(newChunkReader("abcdef"), res, 1<<10)
+		_, _ = io.ReadAll(tr)
+		if got := core.TeeReaderCopied(tr); got != 6 {
+			t.Fatalf("request copy holds %d bytes, want 6", got)
+		}
+		tw := core.NewTeeWriter(httptest.NewRecorder(), res, 1<<10)
+		_, _ = tw.Write([]byte("xyz"))
+		if !core.ReservationDropped(res) {
+			t.Fatal("the refused response chunk did not drop the exchange")
+		}
+		if got := core.TeeReaderCopied(tr); got != 0 {
+			t.Fatalf("request copy still holds %d bytes after the drop, before any seal", got)
+		}
+		if b.InUse() != 0 {
+			t.Fatalf("InUse = %d, want 0", b.InUse())
+		}
+	})
+
+	t.Run("request_refused_after_response_write", func(t *testing.T) {
+		b := core.NewBudget(8)
+		res := core.NewReservation(b)
+		tw := core.NewTeeWriter(httptest.NewRecorder(), res, 1<<10)
+		_, _ = tw.Write([]byte("12345"))
+		tr := core.NewTeeReader(newChunkReader("abcdef"), res, 1<<10)
+		_, _ = io.ReadAll(tr)
+		if got := core.TeeWriterCopied(tw); got != 0 {
+			t.Fatalf("response copy still holds %d bytes after the drop, before any write or seal", got)
+		}
+	})
+}
+
+// endlessReader returns one byte per Read, forever.
+type endlessReader struct{}
+
+func (endlessReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	p[0] = 'x'
+	return 1, nil
+}
+
+func (endlessReader) Close() error { return nil }
+
+func TestTeeReader_ConcurrentReadAndSeal(t *testing.T) {
+	b := core.NewBudget(1 << 10)
+	res := core.NewReservation(b)
+	tr := core.NewTeeReader(endlessReader{}, res, 1<<20)
+	tw := core.NewTeeWriter(httptest.NewRecorder(), res, 1<<20)
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	wg.Add(2)
+	go func() { // the transport's goroutine
+		defer wg.Done()
+		p := make([]byte, 1)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_, _ = tr.Read(p)
+			}
+		}
+	}()
+	go func() { // the handler's goroutine, writing until the budget refuses
+		defer wg.Done()
+		for i := 0; i < 2000; i++ {
+			_, _ = tw.Write([]byte("y"))
+		}
+		_ = core.SealTeeWriter(tw)
+	}()
+	for i := 0; i < 100; i++ {
+		_, _ = core.SealTeeReader(tr)
+	}
+	close(stop)
+	wg.Wait()
+	if !core.ReservationDropped(res) {
+		t.Fatal("the budget never refused, so the drop path was not exercised")
+	}
+	if b.InUse() != 0 || core.TeeReaderCopied(tr) != 0 || core.TeeWriterCopied(tw) != 0 {
+		t.Fatalf("after the drop: InUse %d, request copy %d, response copy %d; want 0",
+			b.InUse(), core.TeeReaderCopied(tr), core.TeeWriterCopied(tw))
+	}
+}

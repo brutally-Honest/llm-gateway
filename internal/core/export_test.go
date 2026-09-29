@@ -52,3 +52,7 @@ func TeeWriterResponse(t *TeeWriter) (int, http.Header) { return t.status, t.hea
 func TeeRequestBody(pr *httputil.ProxyRequest, r *Reservation, maxBytes int64) *TeeReader {
 	return teeRequestBody(pr, r, maxBytes)
 }
+
+// TeeReaderCopied and TeeWriterCopied are the bytes each tee's copy holds now.
+func TeeReaderCopied(t *TeeReader) int64 { return t.copy.size() }
+func TeeWriterCopied(t *TeeWriter) int64 { return t.copy.size() }
