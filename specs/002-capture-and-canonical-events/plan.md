@@ -521,6 +521,19 @@ Dump never names a wire format. Decoding is `contentcoding`, with the loaded
 This follows the spec's four steps: exchanges that end while the HTTP server shuts
 down are still submitted, because the sink is only closed afterwards.
 
+**Details fixed in T13.**
+- A `Submit` refused because the sink is closed is counted in
+  `Counts.DroppedQueueFull`, like a full queue: the access line says
+  `dropped_queue_full` for both, and the count matches the lines.
+- A worker that takes an exchange off the queue after the cancel releases it unstored,
+  counts it as undrained and stops, so `Close`'s count is those plus what is left in
+  the queue. The item in flight at the cancel is not undrained: its store call gets
+  the cancelled context and fails (T14 logs and counts that as `stage: store`).
+- `Close` waits for every worker to return after the cancel, so a store call that
+  ignores its context holds shutdown up. A second `Close` returns 0.
+- Workers run as `capture_worker` through `logging.Go`. `Counts` holds only
+  `DroppedQueueFull` until T14 adds the store and parse failure counts.
+
 **Docker.** Compose mounts a named volume at `/var/lib/llm-gateway` and sets
 `GATEWAY_CAPTURE_DIR` to it. The distroless image runs as `nonroot` and has no shell,
 and a named volume mounted where the image has no directory is created owned by

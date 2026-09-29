@@ -367,3 +367,20 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   line gain it; T6 and T16 build it, and T29's evidence includes the value. The
   spec's open question on the size defaults is answered by T29's evidence, and stays
   open in the spec until then.
+
+## Q13 — Is 001's `TestAccessLog_UpstreamAbortedField/completed` flaky under load?
+- Status: open     Level: flow
+- Blocks / shapes: nothing in 002 (found during T13; a 001 test)
+- Context: 2026-09-29, T13. One `make verify` run failed
+  `TestAccessLog_UpstreamAbortedField/completed` in `internal/core` with
+  `client_disconnected = true, want absent`; the next run passed, and 30 runs of the
+  test alone under `-race` passed. T13 touched only the leak check's stack filter in
+  that package. The `completed` case reads the response with `gw.raw`, which closes
+  the connection as soon as the body is read, so the client may be gone before the
+  handler settles and the gateway may then record a disconnect.
+- Question: is this a race in the test (closing before the access line is decided),
+  or in 001's disconnect detection on a finished response?
+- How to resolve: reproduce under load (`go test -race -count=200 -cpu 1,4`), then
+  decide whether the test or `Meta.Settle` changes.
+- Answer: open.
+- Outcome: a `fix/` branch for 001 if it is the proxy; a test fix otherwise.

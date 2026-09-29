@@ -235,7 +235,7 @@ Layout the tasks assume:
 
 ## Capture pipeline
 
-- [ ] T13 — `internal/capture/sink.go` and `store.go`: the `Store` interface, `Config`,
+- [x] T13 — `internal/capture/sink.go` and `store.go`: the `Store` interface, `Config`,
   `Sink` with `NewSink` (workers started through `logging.Go`), `Submit`, `Close`,
   `Counts`. `Submit` holds a read lock, checks `closed`, does a non-blocking send; full
   or closed returns `false` and releases the exchange. `Close` takes the write lock,
