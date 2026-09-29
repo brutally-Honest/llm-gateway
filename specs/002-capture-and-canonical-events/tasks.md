@@ -273,14 +273,16 @@ Layout the tasks assume:
   the database or any decompressed blob, upstream got it unchanged). Done: those pass
   under `-race`. Commit: `feat(capture): parse and store captured exchanges` (AC20,
   AC25, AC29, AC59) (shaped: Q10)
-- [ ] T15 — `internal/core/purity_test.go`: `TestCore_NoProviderOrClientIdentifiers`
+- [x] T15 — `internal/core/purity_test.go`: `TestCore_NoProviderOrClientIdentifiers`
   gains the wire names in its denylist (`cache_control`, `tool_use`, `tool_use_id`,
-  `content_block`, `message_delta`, `input_json_delta`, `thinking_delta`; `x-api-key` is
-  already there) over `internal/core`, and walks `../capture`, `../store` and
+  `content_block`, `message_delta`, `input_json_delta`, `thinking_delta`, `text_delta`,
+  `signature_delta`, `citations_delta`, `message_start`, `message_stop`,
+  `redacted_thinking`; `x-api-key` is already there; core's SSE test fixtures use
+  neutral event names) over `internal/core`, and walks `../capture`, `../store` and
   `../contentcoding` for the provider and client names only. Each directory must hold at
   least one checked file. Proved first against a throwaway file in each directory
   holding a forbidden word, then removed. Done: it passes on the tree. Commit:
-  `test(core): extend the purity check to capture packages` (AC58) (no research link)
+  `test(core): extend the purity check to capture packages` (AC58) (shaped: Q5)
 
 ## Wiring
 
