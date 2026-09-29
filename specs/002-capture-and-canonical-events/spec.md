@@ -360,7 +360,8 @@ doesn't break the client.
 - **Hot config reload.**
 
 ## Do
-- Keep 001's fidelity intact. Every 001 test passes unchanged with capture on.
+- Keep 001's fidelity intact. Every 001 test passes with its assertions unchanged, with
+  capture on; test data may be renamed where AC58 requires it.
 - Point every test's `capture.dir` at a temp directory. No test reads or writes the
   default data dir, including 001's tests run with capture on (AC5).
 - Tee on the side: the forward path never waits on the capture copy, the queue, the

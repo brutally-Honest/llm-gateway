@@ -384,3 +384,24 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   decide whether the test or `Meta.Settle` changes.
 - Answer: open.
 - Outcome: a `fix/` branch for 001 if it is the proxy; a test fix otherwise.
+
+## Q14 — Does renaming SSE event names in 001's test data break "001 tests unchanged"?
+- Status: answered     Level: flow
+- Blocks / shapes: T15 (AC58); the spec's Do line on 001's fidelity
+- Context: 2026-09-29, T15 review escalation. The purity check reads every file under
+  `internal/core`, test files included. Four 001 tests in `internal/core/proxy_test.go`
+  used `message_start` and `message_stop` as SSE event names; commit `1120d42` renamed
+  them to `first` and `last` so AC58 passes.
+- Question: spec.md:363 (001 tests unchanged) conflicts with AC58 (core's banned-word
+  check covers Anthropic event names, and test files are included).
+- How to resolve: owner decision.
+- Answer: (a). "Unchanged" means the assertions, not the test data.
+- Why: the line exists to catch capture changing proxy behaviour, which the assertions
+  cover. The reviewer confirmed all four renamed tests
+  (`TestProxy_StreamsSSEWithoutBuffering`, `TestProxy_ClientDisconnectCancelsUpstream`,
+  `TestProxy_UpstreamDiesMidStreamAbortsClient`, `TestAccessLog_UpstreamAbortedField`)
+  keep every assertion and still fail on buffering, altering or cutting the stream.
+  Narrowing AC58 would let provider names into protocol-agnostic core.
+- Outcome (→ spec): spec.md's Do line now reads "every 001 test passes with its
+  assertions unchanged, with capture on; test data may be renamed where AC58 requires
+  it." `1120d42` stands.
