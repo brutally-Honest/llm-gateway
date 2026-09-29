@@ -1,0 +1,4 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (AC24, memory bound); T6 review fix round 1
+Why this approach: the reservation already sees every refusal, so it is the one place that can clear both copies at the moment of the drop. Each copy clears under its own mutex after the reservation lock is released, and only one call ever drops, so no two locks are taken in opposite orders.
+Alternatives rejected: clearing lazily on the next write or seal (the old behaviour: the freed bytes stayed referenced while the budget counted them as returned); one mutex shared by both tees (it would make the transport's reads and the handler's writes wait on each other); clearing while still holding the reservation lock (two tees dropping at once could deadlock).
+Verified by: make verify; go test -race ./internal/core; TestReservation_RefusalFreesOtherTeeAtOnce and TestTeeReader_ConcurrentReadAndSeal, 50 runs each under -race.
