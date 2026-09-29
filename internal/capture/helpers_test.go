@@ -192,8 +192,14 @@ type gateway struct {
 // capture.Sink, only after the server: the shutdown order of the spec.
 func startGateway(t *testing.T, base *url.URL, log *zap.Logger, logs *syncBuffer, sink core.CaptureSink, budget *core.Budget) *gateway {
 	t.Helper()
+	return startGatewayFor(t, testAdapter{}, base, log, logs, sink, budget)
+}
+
+// startGatewayFor is startGateway with adapter a in place of the test adapter.
+func startGatewayFor(t *testing.T, a core.Adapter, base *url.URL, log *zap.Logger, logs *syncBuffer, sink core.CaptureSink, budget *core.Budget) *gateway {
+	t.Helper()
 	reg := core.NewRegistry(log, core.WithCapture(core.Capture{Sink: sink, Budget: budget, MaxBodyBytes: 1 << 20}))
-	reg.AddAdapter(testAdapter{}, config.Upstream{
+	reg.AddAdapter(a, config.Upstream{
 		BaseURL:               base,
 		ConnectTimeout:        5 * time.Second,
 		TLSHandshakeTimeout:   5 * time.Second,
@@ -219,6 +225,48 @@ func closeSink(s *capture.Sink) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	return s.Close(ctx)
+}
+
+// drainSink closes s with time to store everything queued, and fails the test if
+// anything is left undrained.
+func drainSink(t *testing.T, s *capture.Sink) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if n := s.Close(ctx); n != 0 {
+		t.Fatalf("Close left %d exchanges undrained", n)
+	}
+}
+
+// logLines decodes every log line with message msg.
+func logLines(t *testing.T, logs *syncBuffer, msg string) []map[string]any {
+	t.Helper()
+	var lines []map[string]any
+	for _, raw := range strings.Split(logs.String(), "\n") {
+		if raw == "" {
+			continue
+		}
+		var line map[string]any
+		if err := json.Unmarshal([]byte(raw), &line); err != nil {
+			t.Fatalf("log line is not JSON: %q", raw)
+		}
+		if line["msg"] == msg {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+// captureFailed returns the capture_failed lines for requestID.
+func captureFailed(t *testing.T, logs *syncBuffer, requestID string) []map[string]any {
+	t.Helper()
+	var lines []map[string]any
+	for _, line := range logLines(t, logs, "capture_failed") {
+		if line["request_id"] == requestID {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
 
 // newUpstream is a loopback upstream answering with respond.

@@ -534,6 +534,23 @@ down are still submitted, because the sink is only closed afterwards.
 - Workers run as `capture_worker` through `logging.Go`. `Counts` holds only
   `DroppedQueueFull` until T14 adds the store and parse failure counts.
 
+**Details fixed in T14.**
+- `capture.Config` gains `DecodeLimit` (`capture.max_body_bytes`): the worker is what
+  builds `ParseInput`, and the `Exchange` doesn't carry the cap. `run` sets it (T16).
+- `Counts` gains `StoreFailed` (every failed `SaveExchange` or `SaveParse`) and
+  `ParseFailed` (every exchange whose parse status is `failed`).
+- `capture_failed` lines carry `request_id` and `stage`. A store failure adds the
+  store's error, which names the path and request ID and no request data. A parse
+  failure adds a fixed `reason` (`parser reported failure`, `parser panicked`,
+  `parser returned an unknown status`, `parser events are not canonical`), never the
+  parser's error text or a panic's value: a panic is logged through
+  `logging.LogPanic` (type and stack) as that one `capture_failed` line.
+- A `Canonicalize` error (a parser contract violation) or a status outside the five
+  makes the parse `failed`; with a `Canonicalize` error no events are stored. A
+  parser that returns `failed` with events has them stored.
+- A nil parser still gets `SaveParse` with `skipped` and no events, so every stored
+  exchange ends with a parse status.
+
 **Docker.** Compose mounts a named volume at `/var/lib/llm-gateway` and sets
 `GATEWAY_CAPTURE_DIR` to it. The distroless image runs as `nonroot` and has no shell,
 and a named volume mounted where the image has no directory is created owned by
@@ -784,7 +801,10 @@ type Store interface {
 		status core.ParseStatus, events []core.StoredEvent, contents []core.Content) error
 	Close() error
 }
-type Config struct{ QueueSize, Workers int }
+type Config struct {
+	QueueSize, Workers int
+	DecodeLimit        int64 // capture.max_body_bytes, handed to each parser (T14)
+}
 type Sink struct{ /* chan *core.Exchange, counters */ }
 func NewSink(cfg Config, st Store, log *zap.Logger) *Sink // starts workers via logging.Go
 func (s *Sink) Submit(ex *core.Exchange) bool             // satisfies core.CaptureSink

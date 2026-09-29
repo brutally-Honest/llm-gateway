@@ -253,7 +253,7 @@ Layout the tasks assume:
   `TestSink_CloseCountsUndrained`. Done: those pass under `-race` with the leak check.
   Commit: `feat(capture): add the bounded capture queue` (AC6, AC23, supports AC26) (no
   research link)
-- [ ] T14 — `internal/capture/pipeline.go`: per exchange, `SaveExchange` (on error:
+- [x] T14 — `internal/capture/pipeline.go`: per exchange, `SaveExchange` (on error:
   `capture_failed` with `request_id` and `stage: store`, counted, stop), then the
   exchange's parser (nil: `skipped`; a panic is recovered and becomes `failed`), then
   `core.Canonicalize` with the parser's exclusions, then `SaveParse` with the principal

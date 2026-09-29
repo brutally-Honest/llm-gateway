@@ -12,9 +12,11 @@ import (
 )
 
 // Config sizes the sink: capture.queue_size and capture.workers, both greater than 0
-// (config rejects anything else).
+// (config rejects anything else), and DecodeLimit, capture.max_body_bytes, which the
+// pipeline hands each parser to cap its decoded bodies.
 type Config struct {
 	QueueSize, Workers int
+	DecodeLimit        int64
 }
 
 // Counts are the sink's drop and failure counts, logged in the shutdown line.
@@ -22,12 +24,18 @@ type Counts struct {
 	// DroppedQueueFull is every exchange Submit refused: the queue was full, or the
 	// sink was already closed.
 	DroppedQueueFull int64
+	// StoreFailed is every store call that failed, SaveExchange or SaveParse.
+	StoreFailed int64
+	// ParseFailed is every exchange whose parse status is failed.
+	ParseFailed int64
 }
 
 // Sink is the v1 CaptureSink: a bounded in-process queue drained by worker
 // goroutines. Submit never blocks. Every method is safe for concurrent use.
 type Sink struct {
-	store Store
+	store       Store
+	log         *zap.Logger
+	decodeLimit int64
 
 	// mu orders Submit against Close: Submit sends under the read lock, and Close
 	// sets closed under the write lock before it closes queue, so no send ever
@@ -43,6 +51,8 @@ type Sink struct {
 	workers []<-chan error
 
 	droppedQueueFull atomic.Int64
+	storeFailed      atomic.Int64
+	parseFailed      atomic.Int64
 	// abandoned counts exchanges a worker took off the queue after ctx was
 	// cancelled and gave back unstored: they are undrained, like the ones left in it.
 	abandoned atomic.Int64
@@ -55,10 +65,12 @@ var _ core.CaptureSink = (*Sink)(nil)
 func NewSink(cfg Config, st Store, log *zap.Logger) *Sink {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Sink{
-		store:  st,
-		queue:  make(chan *core.Exchange, cfg.QueueSize),
-		ctx:    ctx,
-		cancel: cancel,
+		store:       st,
+		log:         log,
+		decodeLimit: cfg.DecodeLimit,
+		queue:       make(chan *core.Exchange, cfg.QueueSize),
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 	for range cfg.Workers {
 		s.workers = append(s.workers, logging.Go(log, "capture_worker", s.work))
@@ -122,7 +134,11 @@ wait:
 
 // Counts is a snapshot of the sink's counts.
 func (s *Sink) Counts() Counts {
-	return Counts{DroppedQueueFull: s.droppedQueueFull.Load()}
+	return Counts{
+		DroppedQueueFull: s.droppedQueueFull.Load(),
+		StoreFailed:      s.storeFailed.Load(),
+		ParseFailed:      s.parseFailed.Load(),
+	}
 }
 
 // work is one worker: it takes exchanges off the queue until the queue is closed and
@@ -138,10 +154,4 @@ func (s *Sink) work() error {
 		s.process(ex)
 	}
 	return nil
-}
-
-// process stores one exchange and releases its memory, whatever the outcome.
-func (s *Sink) process(ex *core.Exchange) {
-	defer ex.Release()
-	_ = s.store.SaveExchange(s.ctx, ex)
 }

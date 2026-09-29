@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/brutally-honest/llm-gateway/internal/capture"
+	"github.com/brutally-honest/llm-gateway/internal/core"
+	"github.com/brutally-honest/llm-gateway/internal/store"
 )
 
 // A Submit racing or following Close returns false, releases the exchange and never
@@ -161,4 +163,52 @@ func TestSink_CloseCountsUndrained(t *testing.T) {
 			t.Errorf("DroppedQueueFull = %d, want 0: nothing was refused", got)
 		}
 	})
+}
+
+// AC20: eight workers write 500 exchanges through the one store with no failure: the
+// store's single writer serializes them, so none sees SQLITE_BUSY.
+func TestStore_ConcurrentWorkersNoBusyErrors(t *testing.T) {
+	checkNoLeaksAtEnd(t)
+	const n = 500
+	exs, budget := capturedExchanges(t, n)
+	log, logs := newLogger()
+	dir := t.TempDir()
+	st, err := store.Open(dir, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := capture.NewSink(capture.Config{QueueSize: n, Workers: 8, DecodeLimit: 1 << 20}, st, log)
+	for i, ex := range exs {
+		if !sink.Submit(ex) {
+			t.Fatalf("Submit %d = false with room in the queue", i)
+		}
+	}
+	drainSink(t, sink)
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if lines := logLines(t, logs, "capture_failed"); len(lines) != 0 {
+		t.Errorf("%d capture_failed lines, want none; first: %v", len(lines), lines[0])
+	}
+	if c := sink.Counts(); c.StoreFailed != 0 || c.ParseFailed != 0 {
+		t.Errorf("counts %+v, want no failures", c)
+	}
+	if got := budget.InUse(); got != 0 {
+		t.Errorf("InUse = %d, want 0", got)
+	}
+	r, err := store.OpenReader(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = r.Close() }()
+	for _, ex := range exs {
+		row, err := r.Exchange(ex.RequestID)
+		if err != nil {
+			t.Fatalf("exchange %s: %v", ex.RequestID, err)
+		}
+		if row.Parse != string(core.ParseSkipped) {
+			t.Errorf("exchange %s: parse %q, want %s", ex.RequestID, row.Parse, core.ParseSkipped)
+		}
+	}
 }

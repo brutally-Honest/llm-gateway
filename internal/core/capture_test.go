@@ -203,6 +203,8 @@ func TestRedact_AdapterQueryParams(t *testing.T) {
 		t.Errorf("stored X-Test-Key = %q, want [REDACTED]", got)
 	}
 	ex.Release()
+
+	t.Run("in_store", redactAdapterQueryParamsInStore)
 }
 
 // AC22, AC12 groundwork: every Exchange field, from a streamed and a non-streamed
