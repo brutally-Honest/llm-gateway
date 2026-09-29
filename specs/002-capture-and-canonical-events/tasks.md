@@ -166,11 +166,11 @@ Layout the tasks assume:
   field off-proxy). Done: those pass under `-race`, and every 001 test passes unchanged.
   Commit: `feat(core): capture exchanges at the end of each request` (AC8, AC24,
   supports AC7, AC12, AC22, AC29) (no research link)
-- [ ] T9 — The AC5 wrappers, test-only. `internal/core/capture_fidelity_test.go` and
+- [x] T9 — The AC5 wrappers, test-only. `internal/core/capture_fidelity_test.go` and
   `internal/protocols/anthropic/capture_fidelity_test.go`:
   `TestCapture_ForwardingUnchanged` lists 001's forwarding, streaming, compression and
-  error test functions that send a request through the proxy (001's AC8, AC12,
-  AC14–AC24, AC26–AC31, AC47, AC48) and runs each as a subtest; the shared helper turns
+  error test functions that send a request through the proxy (001's AC8–AC10,
+  AC12–AC24, AC26–AC31, AC47, AC48; AC11 never reaches the proxy) and runs each as a subtest; the shared helper turns
   capture on (recording sink, real `Budget`) when `t.Name()` starts with
   `TestCapture_ForwardingUnchanged/`. After each function returns, its subtest asserts
   the recording sink received at least one exchange. Proved by renaming the wrapper for

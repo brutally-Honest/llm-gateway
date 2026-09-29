@@ -167,13 +167,17 @@ func upstreamConfig(base *url.URL) config.Upstream {
 }
 
 // startGatewayWith is startGateway with the whole upstream config, for the tests
-// that need one timeout short.
+// that need one timeout short. Under TestCapture_ForwardingUnchanged the proxy
+// captures (AC5).
 func startGatewayWith(t *testing.T, up config.Upstream, identify func(*http.Request) string) *gateway {
 	t.Helper()
 	logs := &syncBuffer{}
 	log := logging.New(logs, "debug")
 	a := testAdapter{}
 	p := core.NewProxy(a, up, identify, log)
+	if c, ok := fidelityCapture(t); ok {
+		p = core.NewCapturingProxy(a, up, identify, log, c)
+	}
 	srv := server.New(log, func(r chi.Router) { r.Handle(a.Prefix()+"/*", p) })
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

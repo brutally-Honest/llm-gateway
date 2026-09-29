@@ -114,7 +114,8 @@ func upstreamConfig(base *url.URL) config.Upstream {
 }
 
 // gateway is server.New with a core.Registry holding the Anthropic adapter, mounted
-// as production mounts it, listening on loopback, with its logs in a buffer.
+// as production mounts it, listening on loopback, with its logs in a buffer. Under
+// TestCapture_ForwardingUnchanged the registry captures (AC5).
 type gateway struct {
 	addr string
 	logs *syncBuffer
@@ -124,7 +125,11 @@ func startGateway(t *testing.T, up config.Upstream) *gateway {
 	t.Helper()
 	logs := &syncBuffer{}
 	log := logging.New(logs, "debug")
-	reg := core.NewRegistry(log)
+	var opts []core.RegistryOption
+	if c, ok := fidelityCapture(t); ok {
+		opts = append(opts, core.WithCapture(c))
+	}
+	reg := core.NewRegistry(log, opts...)
 	reg.AddAdapter(anthropic.Adapter{}, up)
 	srv := server.New(log, reg.Mount)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
