@@ -405,3 +405,68 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
 - Outcome (→ spec): spec.md's Do line now reads "every 001 test passes with its
   assertions unchanged, with capture on; test data may be renamed where AC58 requires
   it." `1120d42` stands.
+
+## Q15 — How does `startGateway` keep the default `capture.dir` out of the real data dir?
+- Status: answered     Level: flow
+- Blocks / shapes: T16 (the test data-dir guard; the spec's Do line on the default
+  data dir, AC5)
+- Context: 2026-09-29, T16. The task line has `startGateway` put
+  `GATEWAY_CAPTURE_DIR=<t.TempDir()>` in the env map it hands `run`, and proves the
+  guard by dropping that line and watching `TestMain` fail. Every `GATEWAY_*` variable
+  lands in the startup line's `env_overrides`, and 001's `TestRun_StartupLine` and
+  `TestRun_DefaultsWhenNoConfig` assert that field, so the helper as written changes
+  what 001's assertions see (spec, Do: assertions unchanged). In-process tests also
+  read env from the map, not the process, so dropping the helper's line makes `run`
+  exit `2` on an unresolvable default instead of writing anywhere `TestMain` looks.
+- Question: what does the helper set instead, and what proves the guard?
+- How to resolve: implementer, within the plan's intent; reviewed at T16.
+- Answer: the helper sets `XDG_DATA_HOME=<t.TempDir()>` unless the test sets
+  `GATEWAY_CAPTURE_DIR`, `XDG_DATA_HOME` or `HOME` itself, so the default resolves
+  into a temp dir and `env_overrides` is untouched. `binary_test.go` still puts
+  `GATEWAY_CAPTURE_DIR` in the child's environment, which is a real process. The guard
+  is proved twice: dropping the child's `GATEWAY_CAPTURE_DIR` makes `TestMain` fail
+  naming `<tmp>/llm-gateway`, and dropping the helper's `XDG_DATA_HOME` fails 10 001
+  `run` tests.
+- Why: it keeps 001's assertions unchanged, and `TestMain` still catches the one path
+  that reads the real process environment.
+- Outcome (→ plan): the Testing strategy's data-dir bullets say so; T16's line points
+  here. The T16 reviewer judged the approach acceptable (2026-09-29).
+
+## Q16 — Which task proves the event half of AC22?
+- Status: answered     Level: flow
+- Blocks / shapes: T16, T20 (AC22)
+- Context: 2026-09-29, T16 review. AC22 says every stored exchange and event has
+  `principal_id: local`. At T16 the Anthropic adapter has no parser, so every exchange
+  is parsed `skipped` and has no events: `TestCapture_PrincipalLocal` looped over zero
+  events and passed, and nothing would make it start checking once T20 adds the parser.
+- Question: how is the event half proved, and by which task?
+- How to resolve: implementer; tasks.md only (the spec is unchanged).
+- Answer: T16 proves the exchange half and pins the messages exchange at parse
+  `skipped` with no events, with a request body of one user message. When T20's
+  parser lands that pin fails, and T20 turns it into parse `ok` with at least one
+  event, each `principal_id: local`. T16 now supports AC22; T20 completes it.
+- Why: the event half can't be proved without a parser, and a pin that fails on
+  arrival is the only way to keep the test from passing on zero events after T20.
+- Outcome (→ tasks): T16's line says `supports AC22`; T20's line gains the
+  `TestCapture_PrincipalLocal` change and AC22; the AC table's AC22 row lists T20.
+
+## Q17 — How is AC16 proved when the suite runs as root?
+- Status: answered     Level: flow
+- Blocks / shapes: T16 (AC16)
+- Context: 2026-09-29, T16 review. `TestStore_OpenFailsFast` in `cmd/gateway` made
+  `capture.dir`'s parent `0500` and skipped under root, which ignores directory
+  permissions. As root (containers, some CI) the test reported success with AC16
+  unproven, and `AGENTS.md` says not to skip tests. `internal/store`'s
+  `unwritable_dir` subtest (T10, `5201167`) skips the same way; that is outside T16.
+- Question: what makes an uncreatable `capture.dir` for any user?
+- How to resolve: implementer.
+- Answer: a `capture.dir` whose parent is a regular file. `mkdir` fails with
+  `ENOTDIR` for every user, root included, so the test through `run` (subtest
+  `uncreatable_dir`) checks exit `1`, one line naming the path with reason
+  `not a directory`, nothing created and nothing bound, with no skip. The mapping of
+  every other reason, `permission denied` included, is proved in subtest
+  `fixed_reasons` on built errors, which don't depend on the user.
+- Why: it proves AC16 wherever the suite runs; a real `EACCES` through `run` can't be
+  had as root without dropping privileges.
+- Outcome (→ tasks): T16's line names the two subtests. `internal/store`'s root skip
+  stays for its own task to settle.

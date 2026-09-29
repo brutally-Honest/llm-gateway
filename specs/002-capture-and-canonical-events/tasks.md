@@ -286,7 +286,7 @@ Layout the tasks assume:
 
 ## Wiring
 
-- [ ] T16 — `cmd/gateway/run.go`: after config load and before bind, when
+- [x] T16 — `cmd/gateway/run.go`: after config load and before bind, when
   `capture.enabled`: resolve the directory (`Dir` or `DefaultCaptureDir`; neither gives
   `invalid value` for `capture.dir` from source `default`, exit `2`), `store.Open` (an
   error logs the path and a fixed reason and exits `1`), `capture.NewSink`,
@@ -294,22 +294,27 @@ Layout the tasks assume:
   after `srv.Shutdown`: `sink.Close` with what is left of the shutdown context,
   `store.Close`, one `capture stopped` line with `undrained`, the sink's counts,
   `dropped_memory` from `Budget.Dropped()` and `memory_peak_bytes` from `Budget.Peak()`
-  (Q12). The test data-dir guard:
-  `startGateway` puts `GATEWAY_CAPTURE_DIR=<t.TempDir()>` in the env map unless the test
-  sets one; `binary_test.go` does the same for the child; `cmd/gateway/main_test.go`
-  adds a `TestMain` pointing `HOME` and `XDG_DATA_HOME` at a temp dir and failing if
-  `llm-gateway` appears under it. Tests first, in `cmd/gateway/run_capture_test.go`:
+  (Q12). The test data-dir guard (Q15):
+  `startGateway` puts `XDG_DATA_HOME=<t.TempDir()>` in the env map unless the test
+  sets `GATEWAY_CAPTURE_DIR`, `XDG_DATA_HOME` or `HOME`; `binary_test.go` puts
+  `GATEWAY_CAPTURE_DIR=<t.TempDir()>` in the child's environment;
+  `cmd/gateway/main_test.go` adds a `TestMain` pointing `HOME` and `XDG_DATA_HOME` at
+  a temp dir and failing if `llm-gateway` appears under it. Tests first, in
+  `cmd/gateway/run_capture_test.go`:
   `TestCapture_DisabledIsPassthrough` (no file under `capture.dir`, `capture: off`),
-  `TestStore_OpenFailsFast` (through `run`: an unwritable dir exits non-zero, naming the
-  path and reason, nothing bound), `TestCapture_PrincipalLocal` (every stored exchange
-  and event has `principal_id: local`), `TestCapture_ShutdownDrainsQueue`
+  `TestStore_OpenFailsFast` (`uncreatable_dir`: through `run`, a `capture.dir` under a
+  regular file exits `1`, naming the path and reason, nothing bound, root included;
+  `fixed_reasons`: each open error's fixed reason; Q17), `TestCapture_PrincipalLocal`
+  (every stored exchange has `principal_id: local`; the messages exchange is pinned at
+  parse `skipped` with no events until T20; Q16), `TestCapture_ShutdownDrainsQueue`
   (`queued_stored`, `stream_ends_during_server_shutdown`, `undrained_counted` with a
   slow store through `deps.openStore`; the line carries `memory_peak_bytes` above zero
   after a captured request, and `dropped_memory`), `TestRun_DefaultCaptureDirUnresolvable`. Proved for the
-  guard: drop the helper's env line for a moment, see `TestMain` fail. Done: those pass,
+  guard: drop the child's `GATEWAY_CAPTURE_DIR` for a moment, see `TestMain` fail; drop
+  the helper's `XDG_DATA_HOME`, see 001's `run` tests fail. Done: those pass,
   and every 001 `cmd/gateway` test passes with capture on and unchanged bodies. Commit:
-  `feat(capture): open the store and drain it on shutdown` (AC5, AC7, AC16, AC22, AC26,
-  supports AC61) (shaped: Q12)
+  `feat(capture): open the store and drain it on shutdown` (AC5, AC7, AC16, AC26,
+  supports AC22, AC61) (shaped: Q12, Q15, Q16, Q17)
 - [ ] T17 — `cmd/gateway/run_capture_test.go`, end-to-end through `run` with a real
   store and a fake upstream (a guard over T8–T16, plus the fixes it finds):
   `TestCapture_ExchangeStored` (`streamed`, `non_streamed`: every Scope field of the
@@ -380,9 +385,12 @@ Layout the tasks assume:
   in raw content. Tests first, in `parser_test.go` with request bodies built in the
   test: `TestParse_SystemChangeChangesHash`, `TestParse_ReasoningRequestedFlag`
   (`absent`, `disabled`, `enabled`, `unknown_type`), `TestParse_OtherPathsSkipped`
-  (`count_tokens`, `/v1/models`, `HEAD /api/hello`). Done: those pass. Commit:
-  `feat(anthropic): parse messages requests into canonical events` (AC45, AC46, AC47)
-  (shaped: Q2, Q4, Q5, Q6, Q7)
+  (`count_tokens`, `/v1/models`, `HEAD /api/hello`). T16's pin in
+  `TestCapture_PrincipalLocal` then fails; turn it into: the messages exchange is no
+  longer `skipped` and has at least one event, each with `principal_id: local` (the
+  models exchange stays `skipped` with none). Done: those pass. Commit:
+  `feat(anthropic): parse messages requests into canonical events` (AC22, AC45, AC46,
+  AC47) (shaped: Q2, Q4, Q5, Q6, Q7, Q16)
 - [ ] T21 — `internal/protocols/anthropic/response.go`: a non-streamed JSON response
   (the assistant message, `source: response`, with `stop_reason`, its tool events and
   `usage`), an upstream error status with a JSON error body (one `error` event with type
@@ -551,7 +559,7 @@ Every AC in `spec.md` (AC1–AC63) maps to at least one task:
 
 | AC | Tasks | AC | Tasks | AC | Tasks |
 |---|---|---|---|---|---|
-| AC1 | T2 | AC22 | T8, T16 | AC43 | T22 |
+| AC1 | T2 | AC22 | T8, T16, T20 | AC43 | T22 |
 | AC2 | T2 | AC23 | T13 | AC44 | T3, T22 |
 | AC3 | T2 | AC24 | T6, T8 | AC45 | T4, T20 |
 | AC4 | T2 | AC25 | T10, T14 | AC46 | T20 |

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"syscall"
@@ -12,12 +13,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/brutally-honest/llm-gateway/internal/capture"
 	"github.com/brutally-honest/llm-gateway/internal/clients/claudecode"
 	"github.com/brutally-honest/llm-gateway/internal/config"
 	"github.com/brutally-honest/llm-gateway/internal/core"
 	"github.com/brutally-honest/llm-gateway/internal/logging"
 	"github.com/brutally-honest/llm-gateway/internal/protocols/anthropic"
 	"github.com/brutally-honest/llm-gateway/internal/server"
+	"github.com/brutally-honest/llm-gateway/internal/store"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -30,6 +33,9 @@ type deps struct {
 	stdout    io.Writer
 	listen    func(network, addr string) (net.Listener, error)
 	mount     []func(chi.Router) // test-only routes; nil in main
+	// openStore opens the capture store in dir; nil means store.Open. Tests swap it
+	// to hold up or break the store.
+	openStore func(dir string, log *zap.Logger) (capture.Store, error)
 }
 
 // registered is every protocol adapter and client profile the gateway runs with, in
@@ -102,8 +108,20 @@ func run(ctx context.Context, d deps) int {
 
 	log := logging.New(d.stdout, cfg.LogLevel)
 
+	// The store opens before bind, so a gateway that can't capture never serves
+	// (spec 002, Store: Startup).
+	var capt *captureRun
+	if cfg.Capture.Enabled {
+		var code int
+		if capt, code = startCapture(cfg.Capture, d, log); capt == nil {
+			return code
+		}
+	}
+
 	ln, err := d.listen("tcp", cfg.ListenAddr)
 	if err != nil {
+		// Nothing was served, so nothing was queued: the store just closes.
+		_, _ = capt.close(context.Background())
 		// The address is valid (config checked it), so this is the OS refusing. The
 		// error names the address, so only a fixed reason is logged.
 		reason := "bind failed"
@@ -114,7 +132,7 @@ func run(ctx context.Context, d deps) int {
 		return exitRuntime
 	}
 
-	registry := core.NewRegistry(log)
+	registry := core.NewRegistry(log, capt.options()...)
 	for _, p := range profiles {
 		registry.AddProfile(p)
 	}
@@ -141,12 +159,17 @@ func run(ctx context.Context, d deps) int {
 	case <-ctx.Done():
 	case err := <-serveErr:
 		log.Error("serve failed", zap.Error(err))
+		stopCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		defer cancel()
+		capt.stop(stopCtx, log)
 		return exitRuntime
 	}
 
 	// ctx is already cancelled, so the shutdown deadline needs a fresh context.
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
+	// The server shuts down first, so exchanges that end while it waits for in-flight
+	// streams are still queued; capture then drains in what is left of the timeout.
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			// in_flight counts handlers still running, not open connections.
@@ -155,12 +178,125 @@ func run(ctx context.Context, d deps) int {
 			log.Error("shutdown failed", zap.Error(err))
 		}
 		_ = srv.Close() // cut what is left; its error adds nothing to the exit code
+		capt.stop(shutdownCtx, log)
 		return exitRuntime
 	}
+	capt.stop(shutdownCtx, log)
 	if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Error("serve failed", zap.Error(err))
 		return exitRuntime
 	}
 	log.Info("gateway stopped")
 	return exitOK
+}
+
+// reasonInvalidValue is config's reason for a value it can't use (ADR 0002).
+const reasonInvalidValue = "invalid value"
+
+// captureRun is capture while the gateway runs: the store, the sink draining into
+// it, and the memory budget the proxies reserve from. A nil *captureRun is capture
+// off, and every method is a no-op on it.
+type captureRun struct {
+	store        capture.Store
+	sink         *capture.Sink
+	budget       *core.Budget
+	maxBodyBytes int64
+}
+
+// startCapture resolves capture.dir, opens the store and starts the sink. On failure
+// it logs one line and returns nil and the exit code.
+func startCapture(c config.Capture, d deps, log *zap.Logger) (*captureRun, int) {
+	dir := c.Dir
+	if dir == "" {
+		var ok bool
+		if dir, ok = config.DefaultCaptureDir(d.lookupEnv); !ok {
+			// Neither an absolute XDG_DATA_HOME nor an absolute HOME: no default.
+			log.Error("invalid config",
+				zap.String("key", "capture.dir"),
+				zap.String("source", "default"),
+				zap.String("reason", reasonInvalidValue))
+			return nil, exitConfig
+		}
+	}
+	open := d.openStore
+	if open == nil {
+		open = func(dir string, log *zap.Logger) (capture.Store, error) { return store.Open(dir, log) }
+	}
+	st, err := open(dir, log)
+	if err != nil {
+		// The error can carry driver text, so only the path and a fixed reason are
+		// logged.
+		log.Error("cannot open store",
+			zap.String("key", "capture.dir"),
+			zap.String("path", dir),
+			zap.String("reason", storeOpenReason(err)))
+		return nil, exitRuntime
+	}
+	sink := capture.NewSink(capture.Config{
+		QueueSize:   c.QueueSize,
+		Workers:     c.Workers,
+		DecodeLimit: c.MaxBodyBytes,
+	}, st, log)
+	return &captureRun{store: st, sink: sink, budget: core.NewBudget(c.MemoryLimit), maxBodyBytes: c.MaxBodyBytes}, exitOK
+}
+
+// storeOpenReason is a fixed reason for a failed store open.
+func storeOpenReason(err error) string {
+	switch {
+	case errors.Is(err, fs.ErrPermission):
+		return "permission denied"
+	case errors.Is(err, syscall.EROFS):
+		return "read-only file system"
+	case errors.Is(err, syscall.ENOSPC):
+		return "no space left on device"
+	case errors.Is(err, syscall.ENOTDIR):
+		return "not a directory"
+	default:
+		return "cannot open or migrate"
+	}
+}
+
+// options turns capture on in the registry; with capture off there are none.
+func (c *captureRun) options() []core.RegistryOption {
+	if c == nil {
+		return nil
+	}
+	return []core.RegistryOption{core.WithCapture(core.Capture{
+		Sink:         c.sink,
+		Budget:       c.budget,
+		MaxBodyBytes: c.maxBodyBytes,
+		Principal:    core.LocalPrincipal{},
+	})}
+}
+
+// close stops the sink, then closes the store, and returns how many exchanges were
+// left undrained when ctx ran out.
+func (c *captureRun) close(ctx context.Context) (undrained int, err error) {
+	if c == nil {
+		return 0, nil
+	}
+	undrained = c.sink.Close(ctx)
+	return undrained, c.store.Close()
+}
+
+// stop is close plus the one capture stopped line (spec 002, Shutdown): what was left
+// undrained, every drop and failure count, and the budget's peak (research Q12).
+func (c *captureRun) stop(ctx context.Context, log *zap.Logger) {
+	if c == nil {
+		return
+	}
+	undrained, err := c.close(ctx)
+	if err != nil {
+		// Every write had finished, so nothing is lost; the error names the path.
+		log.Warn("store close failed", zap.Error(err))
+	}
+	counts := c.sink.Counts()
+	log.Info("capture stopped",
+		zap.Int("undrained", undrained),
+		zap.Int64("dropped_queue_full", counts.DroppedQueueFull),
+		zap.Int64("dropped_memory", c.budget.Dropped()),
+		zap.Int64("store_failed", counts.StoreFailed),
+		zap.Int64("parse_failed", counts.ParseFailed),
+		zap.Int64("memory_peak_bytes", c.budget.Peak()),
+	)
 }

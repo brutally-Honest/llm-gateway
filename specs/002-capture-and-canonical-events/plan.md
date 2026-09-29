@@ -551,6 +551,30 @@ down are still submitted, because the sink is only closed afterwards.
 - A nil parser still gets `SaveParse` with `skipped` and no events, so every stored
   exchange ends with a parse status.
 
+**Details fixed in T16.**
+- The capture setup sits between the logger and `listen`. A directory that can't be
+  resolved logs `invalid config` (`capture.dir`, source `default`, `invalid value`)
+  and exits `2`; a failed `store.Open` logs `cannot open store` with `key`, `path` and
+  a fixed `reason` (`permission denied`, `read-only file system`,
+  `no space left on device`, `not a directory`, else `cannot open or migrate`) and
+  exits `1`. Either is the run's only line, and nothing is bound.
+- With `capture.enabled: false` the directory is never resolved, so a machine with no
+  usable `HOME` still starts.
+- A bind failure after the store opened closes the sink and store without a
+  `capture stopped` line: nothing was queued, and 001's bind test expects one line.
+- `capture stopped` is `info`, written after `srv.Shutdown` on both the clean and the
+  timed-out path (and after `serve failed`), before `gateway stopped`. It carries
+  `undrained`, `dropped_queue_full`, `dropped_memory`, `store_failed`,
+  `parse_failed` and `memory_peak_bytes`. Undrained exchanges don't change the exit
+  code. A `store.Close` error is a `store close failed` warning.
+- `cmd/gateway/main_test.go`'s `TestMain` also checks `$HOME/.local/share/llm-gateway`,
+  and hands `go build` in `binary_test.go` the real `HOME`, so the toolchain keeps
+  its caches.
+- AC16 through `run` uses a `capture.dir` under a regular file (`not a directory`),
+  which fails for root too; the other reasons are checked on built errors (Q17).
+- `TestCapture_PrincipalLocal` proves the exchange half of AC22 and pins the messages
+  exchange at `skipped` with no events; T20 flips the pin to require events (Q16).
+
 **Docker.** Compose mounts a named volume at `/var/lib/llm-gateway` and sets
 `GATEWAY_CAPTURE_DIR` to it. The distroless image runs as `nonroot` and has no shell,
 and a named volume mounted where the image has no directory is created owned by
@@ -880,9 +904,12 @@ Everything in `make verify`, under `-race`, with no live API and no network beyo
 loopback. Stores live in `t.TempDir()`.
 
 **No test touches the default data dir (spec, Do).**
-- `run`'s test helper (`startGateway`) puts `GATEWAY_CAPTURE_DIR=<t.TempDir()>` into
-  the env map it hands `run`, unless the test sets its own. `binary_test.go` does the
-  same for the child's environment.
+- `run`'s test helper (`startGateway`) puts `XDG_DATA_HOME=<t.TempDir()>` into the
+  env map it hands `run`, unless the test sets `GATEWAY_CAPTURE_DIR`, `XDG_DATA_HOME`
+  or `HOME` itself, so the default `capture.dir` resolves into a temp dir.
+  `binary_test.go` puts `GATEWAY_CAPTURE_DIR=<t.TempDir()>` in the child's
+  environment. (T16: not `GATEWAY_CAPTURE_DIR` in the helper, because every `GATEWAY_*`
+  variable lands in the startup line's `env_overrides`, which 001's tests assert.)
 - `cmd/gateway/main_test.go` gets a `TestMain` that points `HOME` and `XDG_DATA_HOME`
   at a temp directory before `m.Run()`. Afterwards it fails the package if
   `<that dir>/llm-gateway` exists: a forgotten override is caught rather than writing
