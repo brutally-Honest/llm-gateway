@@ -275,7 +275,7 @@ The caller passes `capture.max_body_bytes` as `limit` (Q7); there is no new conf
 
 ### SQLite store
 
-**Opening (`store.Open(dir)`).**
+**Opening (`store.Open(dir, log)`).** The logger carries the inode check's two lines.
 1. `os.MkdirAll(dir, 0700)`, then `Chmod(0700)`, since the umask can narrow
    `MkdirAll` but not widen it.
 2. Create `gateway.db` with `O_CREATE|0600` if it's absent, before the driver opens
@@ -310,6 +310,19 @@ write transaction (Q11):
 
 The check is one `stat` per transaction, next to a transaction that already
 `fsync`s.
+
+Details fixed in T10:
+- `gateway.db` is `Chmod`ed to `0600` after the pre-create too, so a narrow umask
+  can't leave it unwritable; SQLite then gives `-wal` and `-shm` the same mode.
+- The writer DSN is built with `url.URL` (`file:` plus `_pragma` parameters), so a
+  `?`, `#` or `%` in the path can't be read as part of the query.
+- Migration runs on one `sql.Conn` with a literal `BEGIN IMMEDIATE`; a database
+  newer than the binary is refused without touching its `user_version`.
+- All writes go through one unexported `write(ctx, fn)`: the inode check, then one
+  transaction on the writer. T10's tests reach it through `export_test.go` with an
+  inline `content` insert; T11's `SaveExchange` and `SaveParse` use it.
+- A replaced file (same path, new inode) takes the same "deleted or replaced" path as
+  an unlinked one.
 
 After a missing file or a changed inode:
 - On the first one, the store logs one error line, `store file deleted or replaced;
@@ -738,7 +751,7 @@ func (s *Sink) Close(ctx context.Context) (undrained int) // later Submits retur
 func (s *Sink) Counts() Counts
 
 // internal/store
-func Open(dir string) (*Store, error)        // satisfies capture.Store
+func Open(dir string, log *zap.Logger) (*Store, error) // satisfies capture.Store
 func OpenReader(dir string) (*Reader, error) // read-only; never creates (Q9)
 func (r *Reader) Exchange(id string) (ExchangeRow, error)
 func (r *Reader) Last() (ExchangeRow, error)

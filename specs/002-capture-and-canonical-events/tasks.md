@@ -180,7 +180,7 @@ Layout the tasks assume:
 
 ## Store
 
-- [ ] T10 — `go get modernc.org/sqlite@v1.59.0`, the version ADR 0004 pins.
+- [x] T10 — `go get modernc.org/sqlite@v1.59.0`, the version ADR 0004 pins.
   `internal/store`: `Open(dir, log)`. `MkdirAll(dir, 0700)` then `Chmod(0700)`;
   `gateway.db` pre-created `O_CREATE|0600`; one writer handle, `SetMaxOpenConns(1)`,
   pragmas `journal_mode=WAL`, `busy_timeout=5000`, `synchronous=NORMAL`,
