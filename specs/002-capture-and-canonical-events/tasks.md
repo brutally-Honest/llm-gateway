@@ -334,7 +334,7 @@ Layout the tasks assume:
   `TestRedact_ForwardedTrafficUntouched`, `TestCapture_SecretsNotLogged` (sentinels in
   auth headers, query and body in no log line across a stored, a dropped and a failed
   capture, via `deps.openStore`). Done: those pass. Commit: `feat(anthropic): declare
-  the api key header as secret` (AC27, AC28, AC60) (no research link)
+  the api key header as secret` (AC27, AC28, AC60) (blocked: Q18)
 
 ## Fixtures (human)
 

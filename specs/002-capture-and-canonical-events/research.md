@@ -470,3 +470,30 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   had as root without dropping privileges.
 - Outcome (→ tasks): T16's line names the two subtests. `internal/store`'s root skip
   stays for its own task to settle.
+
+## Q18 — What do AC27 and AC28 require of `Proxy-Authorization`, which 001 strips?
+- Status: open     Level: flow
+- Blocks / shapes: T18 (AC27, AC28)
+- Context: 2026-09-29, T18. AC27 wants a sentinel in `Proxy-Authorization` to appear
+  nowhere in the store *and* the header's name to be present with `[REDACTED]`. AC28
+  wants "the same sentinels" to reach upstream and the client byte-identical. But
+  001's spec (Forwarding, Request and Response; AC8) makes every `Proxy-*` header
+  hop-by-hop, and 002's Do line keeps 001's assertions unchanged. In the code,
+  `rewrite` strips `Proxy-*` before `teeRequest` snapshots the request headers "as
+  sent upstream" (plan, Capture flow), and ReverseProxy plus `modifyResponse` strip
+  them from the response before the response tee sees its header. So a
+  `Proxy-Authorization` sentinel never reaches upstream (AC28 as written fails) and
+  its name is never in the stored copy in either direction (AC27's "names present"
+  fails). Core's redaction list still covers it, as `TestRedact` (T7) proves on a
+  built header.
+- Question: which does the spec mean?
+  (a) AC27 and AC28 exclude hop-by-hop headers: `Proxy-Authorization`'s sentinel is
+  checked absent from the store and the logs, and neither its forwarding nor its
+  stored name is asserted (spec edit to both ACs' wording);
+  (b) the request snapshot is taken from the inbound headers before hop-by-hop
+  stripping, so `Proxy-Authorization` is stored as `[REDACTED]` (plan and core
+  change; the stored headers would no longer be "as sent upstream"), with AC28
+  excluding hop-by-hop;
+  (c) something else.
+- How to resolve: owner decision; the answer edits spec.md (and plan.md for (b)).
+- Answer: open.
