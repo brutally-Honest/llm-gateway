@@ -1,0 +1,6 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (Docs; AC63)
+ADR: docs/decisions/0005-secrets-in-captured-content.md (linked for the body redaction scope)
+Why this approach: one page in five sections matching AC63's items plus the store-failure behaviour the task names. Every fact was read from the code, not the spec: schema columns from internal/store/migrate.go, timestamps as Unix nanoseconds (exchange.go), dump flags, output headers and exit codes from cmd/gateway/dump.go and run.go, log messages from internal/store/store.go, internal/capture/pipeline.go and run.go's capture stopped line.
+Alternatives rejected: repeating the capture config table (it lives in config.example.yaml; the page links it, one home per rule); restating ADR 0005's reasoning (the page states the effect and links the ADR); documenting the Docker volume (T28 has not landed).
+Trade-off / known limit: the two sqlite3 queries were checked against a migrated store through the modernc driver in a throwaway test (sqlite3 CLI is not installed here), so column names and json_extract are verified, the CLI's -readonly flag is not. T31 (needs-human) still reads the page against AC63.
+Verified by: make verify; throwaway test running both example queries against store.Open's schema (removed, not committed).
