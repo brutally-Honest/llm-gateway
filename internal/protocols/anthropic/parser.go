@@ -23,19 +23,16 @@ func (Adapter) Parser() core.Parser { return parser{} }
 // is a caching annotation the client moves between turns, not content.
 func (parser) HashExcludedFields() []string { return []string{"cache_control"} }
 
-// Parse reads one exchange. Anything but POST /v1/messages is skipped. Both bodies
-// are decoded first: an encoding the decoder doesn't know makes the parse
+// Parse reads one exchange. Anything but POST /v1/messages is skipped. Each body is
+// decoded before it is read: an encoding the decoder doesn't know makes the parse
 // unsupported_encoding, and a body cut short (truncated by the capture cap, or past
-// the decode limit) makes it partial.
+// the decode limit) makes it partial. A response the gateway wrote is not read.
 func (parser) Parse(in core.ParseInput) core.ParseResult {
 	if in.Method != http.MethodPost || in.Path != messagesPath {
 		return core.ParseResult{Status: core.ParseSkipped}
 	}
 	reqBody, reqStatus := decodeBody(in.RequestHeader, in.RequestBody, in.RequestTruncated, in.DecodeLimit)
-	// The response is decoded so its encoding and completeness count towards the
-	// status; its events are not parsed yet.
-	_, respStatus := decodeBody(in.ResponseHeader, in.ResponseBody, in.ResponseTruncated, in.DecodeLimit)
-	status := worse(reqStatus, respStatus)
+	status := reqStatus
 
 	var events []core.Event
 	if reqStatus != core.ParseUnsupportedEncoding {
@@ -48,6 +45,21 @@ func (parser) Parse(in core.ParseInput) core.ParseResult {
 		default:
 			status = core.ParseFailed
 		}
+	}
+	// A response the gateway wrote itself (its own error, or a bare 499 when the
+	// client left first) is not the provider's: it has no response events, and above
+	// all no error event, since the exchange's flags already say how it ended.
+	if in.GatewayResponse {
+		return core.ParseResult{Status: status, Events: events}
+	}
+	respBody, respStatus := decodeBody(in.ResponseHeader, in.ResponseBody, in.ResponseTruncated, in.DecodeLimit)
+	status = worse(status, respStatus)
+	// A streamed response is the stream parser's; until then its events are not
+	// read, and its decoded status stands.
+	if respStatus != core.ParseUnsupportedEncoding && !in.Stream {
+		evs, st := parseJSONResponse(in.Status, respBody, respStatus == core.ParsePartial)
+		events = append(events, evs...)
+		status = worse(status, st)
 	}
 	return core.ParseResult{Status: status, Events: events}
 }

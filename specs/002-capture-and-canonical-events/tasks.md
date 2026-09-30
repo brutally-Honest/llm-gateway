@@ -393,7 +393,7 @@ Layout the tasks assume:
   models exchange stays `skipped` with none). Done: those pass. Commit:
   `feat(anthropic): parse messages requests into canonical events` (AC22, AC45, AC46,
   AC47) (shaped: Q2, Q4, Q5, Q6, Q7, Q16)
-- [ ] T21 — `internal/protocols/anthropic/response.go`: a non-streamed JSON response
+- [x] T21 — `internal/protocols/anthropic/response.go`: a non-streamed JSON response
   (the assistant message, `source: response`, with `stop_reason`, its tool events and
   `usage`), an upstream error status with a JSON error body (one `error` event with type
   and message), and the truncated-JSON path (a body flagged `truncated` keeps the

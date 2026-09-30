@@ -275,6 +275,30 @@ list.
     has no `type`, so none that is `disabled`.
   - The response body is decoded, so its encoding and completeness count towards the
     status; its events come with T21 (JSON) and T22 (SSE).
+- **Details fixed in T21.**
+  - A response is read as JSON when the exchange isn't a stream (`ParseInput.Stream`,
+    the response's `text/event-stream` content type); a stream is left to T22.
+  - A 2xx body is read token by token (`json.Decoder`), so a cut body keeps `role`,
+    `stop_reason` and every content block complete before the cut. With a cut, every
+    response event is `partial`; a body cut before its object began gives none. The
+    same error with no cut (bad JSON, a non-object, data after the object) is `failed`.
+  - The usage event takes the four counters from `input_tokens`, `output_tokens`,
+    `cache_creation_input_tokens` and `cache_read_input_tokens`; every other key of the
+    usage object is its `detail`. A counter that isn't an integer is unreported.
+  - A response the gateway wrote itself is not an upstream error. When upstream sent
+    no response headers (`Exchange.HasTTFB` false), the pipeline sets
+    `ParseInput.GatewayResponse`, and the parser reads no response events from it:
+    no `error` event for a gateway-made 400, 502 or 504 (the adapter's own
+    `ErrorBody`), nor for a bare 499 when the client left before upstream answered.
+    The exchange's `gateway_error` and `client_disconnected` flags say how it ended;
+    the request events stand.
+  - A non-2xx status from upstream is always one `error` event with the status. The type and message
+    come from Anthropic's error envelope; a body that isn't one (an HTML page from a
+    proxy) leaves them empty and the parse `failed`, or `partial` if the body was cut.
+    An empty body is the status alone, `ok`.
+  - An empty 2xx body has nothing to parse: no response events, `ok`.
+  - `TestParse_NonStreaming` compares with `testdata/non_streaming/events.golden.json`,
+    rewritten by `go test -update`.
 
 The wire names live only in this package. Core's purity denylist gains them (AC58).
 

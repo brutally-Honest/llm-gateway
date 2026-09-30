@@ -4,7 +4,11 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"flag"
 	"net/http"
+	"os"
+	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/brutally-honest/llm-gateway/internal/core"
@@ -414,5 +418,328 @@ func TestParse_MalformedRequest(t *testing.T) {
 	in.RequestTruncated = true
 	if res := parser(t).Parse(in); res.Status != core.ParsePartial {
 		t.Errorf("truncated: status %q, want partial", res.Status)
+	}
+}
+
+// update rewrites the golden event files instead of comparing against them.
+var update = flag.Bool("update", false, "rewrite testdata golden files")
+
+// readFixture reads a file under testdata.
+func readFixture(t *testing.T, name string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("testdata", filepath.FromSlash(name)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// parseExchange parses one POST /v1/messages exchange with a non-streamed JSON
+// response of the given status.
+func parseExchange(t *testing.T, reqBody, resBody []byte, status int, resTruncated bool) core.ParseResult {
+	t.Helper()
+	return parser(t).Parse(core.ParseInput{
+		Method:            http.MethodPost,
+		Path:              "/v1/messages",
+		Status:            status,
+		RequestHeader:     http.Header{"Content-Type": {"application/json"}},
+		ResponseHeader:    http.Header{"Content-Type": {"application/json"}},
+		RequestBody:       reqBody,
+		ResponseBody:      resBody,
+		ResponseTruncated: resTruncated,
+		DecodeLimit:       decodeLimit,
+	})
+}
+
+// goldenEvent is a stored event as the golden files hold it.
+type goldenEvent struct {
+	Seq         int             `json:"seq"`
+	Kind        core.EventKind  `json:"kind"`
+	Source      core.Source     `json:"source,omitempty"`
+	Partial     bool            `json:"partial"`
+	ContentHash string          `json:"content_hash,omitempty"`
+	ToolCallID  string          `json:"tool_call_id,omitempty"`
+	Payload     json.RawMessage `json:"payload"`
+}
+
+// canonical canonicalizes events with the parser's exclusions, as the pipeline does.
+func canonical(t *testing.T, events []core.Event) []core.StoredEvent {
+	t.Helper()
+	stored, _, err := core.Canonicalize(events, parser(t).HashExcludedFields())
+	if err != nil {
+		t.Fatalf("Canonicalize: %v", err)
+	}
+	return stored
+}
+
+// checkGolden compares the stored events with the golden file, or rewrites it under
+// -update.
+func checkGolden(t *testing.T, name string, stored []core.StoredEvent) {
+	t.Helper()
+	gold := make([]goldenEvent, 0, len(stored))
+	for _, se := range stored {
+		gold = append(gold, goldenEvent{
+			Seq: se.Seq, Kind: se.Kind, Source: se.Source, Partial: se.Partial,
+			ContentHash: se.ContentHash, ToolCallID: se.ToolCallID, Payload: se.Payload,
+		})
+	}
+	got, err := json.MarshalIndent(gold, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = append(got, '\n')
+	path := filepath.Join("testdata", filepath.FromSlash(name))
+	if *update {
+		if err := os.WriteFile(path, got, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("%v (run with -update to create it)", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("events differ from %s:\n got: %s\nwant: %s", path, got, want)
+	}
+}
+
+// AC35: a non-streamed JSON response yields the response message with its stop
+// reason, its tool events and the usage. Until the SSE half lands (T22) the events
+// are compared with a golden file.
+func TestParse_NonStreaming(t *testing.T) {
+	res := parseExchange(t, readFixture(t, "non_streaming/request.json"),
+		readFixture(t, "non_streaming/response.json"), http.StatusOK, false)
+	if res.Status != core.ParseOK {
+		t.Fatalf("status = %q, want ok", res.Status)
+	}
+	var kinds []core.EventKind
+	for _, ev := range res.Events {
+		kinds = append(kinds, ev.Kind)
+		if ev.Partial {
+			t.Errorf("%s event is partial", ev.Kind)
+		}
+	}
+	want := []core.EventKind{core.KindRequest, core.KindMessage, core.KindMessage, core.KindToolCall, core.KindUsage}
+	if !slices.Equal(kinds, want) {
+		t.Fatalf("event kinds = %v, want %v", kinds, want)
+	}
+
+	msg := res.Events[2].Message
+	if msg.Index != -1 || msg.Role != "assistant" || msg.Source != core.SourceResponse || msg.StopReason != "tool_use" {
+		t.Errorf("response message = index %d, role %q, source %q, stop_reason %q; want -1, assistant, response, tool_use",
+			msg.Index, msg.Role, msg.Source, msg.StopReason)
+	}
+	if len(msg.Blocks) != 2 || msg.Blocks[0].Type != core.BlockText ||
+		msg.Blocks[1].Type != core.BlockToolCall || msg.Blocks[1].ToolCallID != "toolu_01SyntheticRead" {
+		t.Errorf("response blocks = %+v, want text then the tool_call toolu_01SyntheticRead", msg.Blocks)
+	}
+	call := res.Events[3].ToolCall
+	if call.ID != "toolu_01SyntheticRead" || call.Name != "Read" || string(call.Input) != `{"file_path":"notes.txt"}` ||
+		call.ExecutedBy != core.ExecutedByClient || call.Source != core.SourceResponse {
+		t.Errorf("tool_call = %+v", call)
+	}
+	u := res.Events[4].Usage
+	counters := []*int64{u.InputTokens, u.OutputTokens, u.CacheWriteTokens, u.CacheReadTokens}
+	wantCounts := []int64{12, 58, 0, 41642}
+	for i, c := range counters {
+		if c == nil || *c != wantCounts[i] {
+			t.Fatalf("usage counters = %v, want %v", counters, wantCounts)
+		}
+	}
+	var detail map[string]json.RawMessage
+	if err := json.Unmarshal(u.Detail, &detail); err != nil {
+		t.Fatalf("usage detail %s: %v", u.Detail, err)
+	}
+	if _, ok := detail["cache_creation"]; !ok || string(detail["service_tier"]) != `"standard"` {
+		t.Errorf("usage detail = %s, want the cache_creation breakdown and service_tier", u.Detail)
+	}
+	if _, ok := detail["output_tokens"]; ok {
+		t.Errorf("usage detail = %s repeats a counter", u.Detail)
+	}
+
+	checkGolden(t, "non_streaming/events.golden.json", canonical(t, res.Events))
+}
+
+// AC36: an upstream error status with Anthropic's error body is one error event with
+// the provider's type and message. sse_error_event lands with the stream parser (T22).
+func TestParse_UpstreamError(t *testing.T) {
+	t.Run("status_429", func(t *testing.T) {
+		res := parseExchange(t, readFixture(t, "non_streaming/request.json"),
+			readFixture(t, "error/response_429.json"), http.StatusTooManyRequests, false)
+		if res.Status != core.ParseOK {
+			t.Fatalf("status = %q, want ok", res.Status)
+		}
+		var errs []*core.ErrorEvent
+		for _, ev := range res.Events {
+			switch ev.Kind {
+			case core.KindError:
+				errs = append(errs, ev.Error)
+			case core.KindUsage:
+				t.Error("an error response has a usage event")
+			case core.KindMessage:
+				if ev.Message.Source == core.SourceResponse {
+					t.Error("an error response has a response message")
+				}
+			}
+		}
+		if len(errs) != 1 {
+			t.Fatalf("got %d error events, want 1", len(errs))
+		}
+		want := core.ErrorEvent{Status: http.StatusTooManyRequests, Type: "rate_limit_error",
+			Message: "Number of request tokens has exceeded your per-minute rate limit."}
+		if *errs[0] != want {
+			t.Errorf("error event = %+v, want %+v", *errs[0], want)
+		}
+		if res.Events[len(res.Events)-1].Kind != core.KindError {
+			t.Error("the error event is not after the request events")
+		}
+		canonical(t, res.Events)
+	})
+}
+
+// A non-streamed body flagged truncated keeps the blocks complete before the cut and
+// is partial; the same bytes not flagged truncated are malformed, so failed.
+func TestParse_TruncatedJSONResponse(t *testing.T) {
+	req := readFixture(t, "non_streaming/request.json")
+	full := readFixture(t, "non_streaming/response.json")
+	cut := full[:bytes.Index(full, []byte(`"name":"Read"`))]
+
+	res := parseExchange(t, req, cut, http.StatusOK, true)
+	if res.Status != core.ParsePartial {
+		t.Fatalf("truncated: status = %q, want partial", res.Status)
+	}
+	var msg *core.MessageEvent
+	for _, ev := range res.Events {
+		switch {
+		case ev.Kind == core.KindMessage && ev.Message.Source == core.SourceResponse:
+			msg = ev.Message
+			if !ev.Partial {
+				t.Error("the response message of a truncated body is not partial")
+			}
+		case ev.Kind == core.KindToolCall, ev.Kind == core.KindUsage:
+			t.Errorf("a %s event from past the cut", ev.Kind)
+		}
+	}
+	if msg == nil {
+		t.Fatal("no response message from the truncated body")
+	}
+	if len(msg.Blocks) != 1 || msg.Blocks[0].Type != core.BlockText ||
+		string(msg.Blocks[0].Content) != `{"type":"text","text":"I'll read the file."}` {
+		t.Errorf("blocks = %+v, want only the text block complete before the cut", msg.Blocks)
+	}
+	if msg.Role != "assistant" {
+		t.Errorf("role = %q, want assistant, read before the cut", msg.Role)
+	}
+	canonical(t, res.Events)
+
+	if res := parseExchange(t, req, cut, http.StatusOK, false); res.Status != core.ParseFailed {
+		t.Errorf("malformed, not truncated: status = %q, want failed", res.Status)
+	}
+	if res := parseExchange(t, req, append(bytes.Clone(full), `{}`...), http.StatusOK, false); res.Status != core.ParseFailed {
+		t.Errorf("data after the body: status = %q, want failed", res.Status)
+	}
+	if res := parseExchange(t, req, []byte(`[1]`), http.StatusOK, false); res.Status != core.ParseFailed {
+		t.Errorf("not an object: status = %q, want failed", res.Status)
+	}
+}
+
+// An error status whose body is not Anthropic's error envelope still yields an error
+// event with the status; the body is malformed, so the parse is failed, or partial
+// when it was truncated.
+func TestParse_UpstreamErrorBodyUnreadable(t *testing.T) {
+	req := readFixture(t, "non_streaming/request.json")
+	for _, tc := range []struct {
+		name      string
+		body      string
+		truncated bool
+		want      core.ParseStatus
+	}{
+		{"html", `<html>bad gateway</html>`, false, core.ParseFailed},
+		{"truncated", `{"type":"error","error":{"type":"overloaded_er`, true, core.ParsePartial},
+		{"empty", ``, false, core.ParseOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := parseExchange(t, req, []byte(tc.body), http.StatusBadGateway, tc.truncated)
+			if res.Status != tc.want {
+				t.Errorf("status = %q, want %q", res.Status, tc.want)
+			}
+			last := res.Events[len(res.Events)-1]
+			if last.Kind != core.KindError || *last.Error != (core.ErrorEvent{Status: http.StatusBadGateway}) {
+				t.Errorf("last event = %+v, want an error event with status 502 only", last)
+			}
+		})
+	}
+}
+
+// A streamed response is left to the stream parser: no response events from it yet,
+// and it is not read as JSON.
+func TestParse_StreamedResponseNotReadAsJSON(t *testing.T) {
+	in := core.ParseInput{
+		Method:         http.MethodPost,
+		Path:           "/v1/messages",
+		Status:         http.StatusOK,
+		RequestHeader:  http.Header{},
+		ResponseHeader: http.Header{"Content-Type": {"text/event-stream"}},
+		RequestBody:    readFixture(t, "non_streaming/request.json"),
+		ResponseBody:   readFixture(t, "stream.sse"),
+		Stream:         true,
+		DecodeLimit:    decodeLimit,
+	}
+	if res := parser(t).Parse(in); res.Status == core.ParseFailed {
+		t.Errorf("status = %q for an SSE body", res.Status)
+	}
+}
+
+// A response the gateway wrote itself is not an upstream error: upstream sent no
+// status and no body, so the parser reads no error event and no response events from
+// it, whatever the status. The request events stand.
+func TestParse_GatewayMadeResponseNoError(t *testing.T) {
+	req := readFixture(t, "non_streaming/request.json")
+	envelope := func(reason string) []byte {
+		_, body := anthropic.Adapter{}.ErrorBody(reason)
+		return body
+	}
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   []byte
+	}{
+		{"client_left_499", 499, nil},
+		{"upstream_unreachable_502", http.StatusBadGateway, envelope("upstream_unreachable")},
+		{"upstream_timeout_504", http.StatusGatewayTimeout, envelope("upstream_timeout")},
+		{"client_body_400", http.StatusBadRequest, envelope("client_body")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := parser(t).Parse(core.ParseInput{
+				Method:          http.MethodPost,
+				Path:            "/v1/messages",
+				Status:          tc.status,
+				RequestHeader:   http.Header{"Content-Type": {"application/json"}},
+				ResponseHeader:  http.Header{"Content-Type": {"application/json"}},
+				RequestBody:     req,
+				ResponseBody:    tc.body,
+				GatewayResponse: true,
+				DecodeLimit:     decodeLimit,
+			})
+			if res.Status != core.ParseOK {
+				t.Errorf("status = %q, want ok", res.Status)
+			}
+			var sawRequest bool
+			for _, ev := range res.Events {
+				switch {
+				case ev.Kind == core.KindRequest:
+					sawRequest = true
+				case ev.Kind == core.KindError:
+					t.Errorf("a gateway-made response has an error event: %+v", *ev.Error)
+				case ev.Kind == core.KindUsage,
+					ev.Kind == core.KindMessage && ev.Message.Source == core.SourceResponse:
+					t.Errorf("a gateway-made response has a %s response event", ev.Kind)
+				}
+			}
+			if !sawRequest {
+				t.Error("the request event is missing")
+			}
+		})
 	}
 }

@@ -45,6 +45,11 @@ type ParseInput struct {
 	RequestBody, ResponseBody           []byte // still content-encoded
 	RequestTruncated, ResponseTruncated bool
 	Stream                              bool
+	// GatewayResponse means upstream sent no response: no status, no header, no body.
+	// The gateway wrote the response itself, because it made an error (the exchange's
+	// gateway_error) or the client left before upstream answered (a bare 499). Status
+	// and ResponseBody are then the gateway's, never the provider's.
+	GatewayResponse bool
 	// DecodeLimit caps each decoded body (capture.max_body_bytes); the parser passes
 	// it to the content decoder.
 	DecodeLimit int64

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -800,6 +801,64 @@ func TestCapture_BodyOverCapTruncated(t *testing.T) {
 	if ex.RequestIncomplete {
 		t.Error("request_incomplete is set for a body read to its end; truncated means the cap only")
 	}
+
+	// A non-streamed JSON response cut by the cap parses as far as it goes: the block
+	// complete before the cut is kept, and the parse is partial, not failed.
+	t.Run("non_streamed_json_parses_partial", func(t *testing.T) {
+		const first = `{"type":"text","text":"kept"}`
+		resBody := `{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[` + first +
+			`,{"type":"text","text":"` + strings.Repeat("x", 2*limit) + `"}],"stop_reason":"end_turn"}`
+		dir := t.TempDir()
+		up := newBodyUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, resBody)
+		})
+		g, url := servedAgainst(t, dir, up.URL, map[string]string{"GATEWAY_CAPTURE_MAX_BODY_BYTES": fmt.Sprint(limit)})
+
+		res, err := http.Post(url+path, "application/json",
+			strings.NewReader(`{"model":"m","max_tokens":8,"messages":[{"role":"user","content":"hi"}]}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		if err != nil || string(body) != resBody {
+			t.Fatalf("client got %d bytes (%v), want all %d", len(body), err, len(resBody))
+		}
+
+		ex, r := storedExchange(t, g, dir, path)
+		if !ex.ResponseTruncated || ex.Parse != string(core.ParsePartial) {
+			t.Fatalf("response_truncated %v, parse %q; want true and partial", ex.ResponseTruncated, ex.Parse)
+		}
+		evs, err := r.Events(ex.RequestID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var blocks []string
+		for _, ev := range evs {
+			if ev.Kind != string(core.KindMessage) || ev.Source != string(core.SourceResponse) {
+				continue
+			}
+			var p struct {
+				Blocks []struct {
+					Hash string `json:"hash"`
+				} `json:"blocks"`
+			}
+			if err := json.Unmarshal(ev.Payload, &p); err != nil {
+				t.Fatal(err)
+			}
+			if !ev.Partial {
+				t.Error("response message is not partial")
+			}
+			for _, b := range p.Blocks {
+				blocks = append(blocks, string(storedBody(t, r, b.Hash)))
+			}
+		}
+		// Stored in canonical form: keys sorted.
+		if len(blocks) != 1 || blocks[0] != `{"text":"kept","type":"text"}` {
+			t.Errorf("response message blocks = %q, want only %s", blocks, first)
+		}
+	})
 }
 
 // AC12: an exchange that ends badly is still stored, with the flag saying how it
