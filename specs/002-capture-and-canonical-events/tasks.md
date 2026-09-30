@@ -435,7 +435,7 @@ Layout the tasks assume:
   AC38, AC39, AC40, AC41, AC42, AC43, AC44) (shaped: Q1, Q2, Q7, Q19)
 ## `gateway dump`
 
-- [ ] T25 — `cmd/gateway/dump.go`: `run` hands `args[0] == "dump"` to `runDump`, whose
+- [x] T25 — `cmd/gateway/dump.go`: `run` hands `args[0] == "dump"` to `runDump`, whose
   flag set takes `-config`, `-raw`, `-last` and at most one request ID. It loads config
   as `run` does, resolves the directory, and opens `store.OpenReader`; a missing store
   or unknown ID exits `1` with the reason. Output: the exchange row as one JSON line;

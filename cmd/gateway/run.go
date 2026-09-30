@@ -62,9 +62,56 @@ const (
 	exitConfig  = 2 // bad flags or invalid config; nothing was bound
 )
 
+// loadConfig loads config from path, the default file and the environment, and logs
+// one line on boot when it is invalid.
+func loadConfig(boot *zap.Logger, path string, lookupEnv func(string) (string, bool),
+	adapters []core.Adapter) (config.Config, config.Source, bool) {
+	cfg, src, err := config.Load(config.Options{Path: path, DefaultPath: "config.yaml", LookupEnv: lookupEnv, Upstreams: upstreamSpecs(adapters)})
+	if err != nil {
+		var ce *config.Error
+		if errors.As(err, &ce) {
+			// Built from the error's fields, never err.Error() of a parser (ADR 0002).
+			fields := []zap.Field{
+				zap.String("key", ce.Key),
+				zap.String("source", ce.Source),
+				zap.String("reason", ce.Reason),
+			}
+			if ce.Line > 0 {
+				fields = append(fields, zap.Int("line", ce.Line))
+			}
+			boot.Error("invalid config", fields...)
+		} else {
+			boot.Error("invalid config")
+		}
+		return config.Config{}, config.Source{}, false
+	}
+	return cfg, src, true
+}
+
+// captureDir is capture.dir, or the default location when it is unset. With neither
+// it logs one invalid config line and returns false.
+func captureDir(c config.Capture, lookupEnv func(string) (string, bool), log *zap.Logger) (string, bool) {
+	if c.Dir != "" {
+		return c.Dir, true
+	}
+	dir, ok := config.DefaultCaptureDir(lookupEnv)
+	if !ok {
+		// Neither an absolute XDG_DATA_HOME nor an absolute HOME: no default.
+		log.Error("invalid config",
+			zap.String("key", "capture.dir"),
+			zap.String("source", "default"),
+			zap.String("reason", reasonInvalidValue))
+	}
+	return dir, ok
+}
+
 // run starts the gateway and serves until ctx is cancelled. It returns the exit code.
 func run(ctx context.Context, d deps) int {
 	boot := logging.Bootstrap(d.stdout)
+
+	if len(d.args) > 0 && d.args[0] == "dump" {
+		return runDump(d)
+	}
 
 	fs := flag.NewFlagSet("gateway", flag.ContinueOnError)
 	fs.SetOutput(io.Discard) // the flag package never prints usage text
@@ -86,23 +133,8 @@ func run(ctx context.Context, d deps) int {
 	}
 
 	adapters, profiles := registered()
-	cfg, src, err := config.Load(config.Options{Path: *configPath, DefaultPath: "config.yaml", LookupEnv: d.lookupEnv, Upstreams: upstreamSpecs(adapters)})
-	if err != nil {
-		var ce *config.Error
-		if errors.As(err, &ce) {
-			// Built from the error's fields, never err.Error() of a parser (ADR 0002).
-			fields := []zap.Field{
-				zap.String("key", ce.Key),
-				zap.String("source", ce.Source),
-				zap.String("reason", ce.Reason),
-			}
-			if ce.Line > 0 {
-				fields = append(fields, zap.Int("line", ce.Line))
-			}
-			boot.Error("invalid config", fields...)
-		} else {
-			boot.Error("invalid config")
-		}
+	cfg, src, ok := loadConfig(boot, *configPath, d.lookupEnv, adapters)
+	if !ok {
 		return exitConfig
 	}
 
@@ -206,17 +238,9 @@ type captureRun struct {
 // startCapture resolves capture.dir, opens the store and starts the sink. On failure
 // it logs one line and returns nil and the exit code.
 func startCapture(c config.Capture, d deps, log *zap.Logger) (*captureRun, int) {
-	dir := c.Dir
-	if dir == "" {
-		var ok bool
-		if dir, ok = config.DefaultCaptureDir(d.lookupEnv); !ok {
-			// Neither an absolute XDG_DATA_HOME nor an absolute HOME: no default.
-			log.Error("invalid config",
-				zap.String("key", "capture.dir"),
-				zap.String("source", "default"),
-				zap.String("reason", reasonInvalidValue))
-			return nil, exitConfig
-		}
+	dir, ok := captureDir(c, d.lookupEnv, log)
+	if !ok {
+		return nil, exitConfig
 	}
 	open := d.openStore
 	if open == nil {

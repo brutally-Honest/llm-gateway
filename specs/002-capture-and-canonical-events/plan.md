@@ -579,6 +579,22 @@ Output on stdout:
 Dump never names a wire format. Decoding is `contentcoding`, with the loaded
 `capture.max_body_bytes` as its limit.
 
+Details fixed in T25:
+- `run` and `runDump` share `loadConfig` and `captureDir`, so dump reads the same
+  file, env and default directory as the gateway. `capture.enabled` is ignored: dump
+  reads whatever store the directory holds.
+- Bad dump arguments (none, an ID with `-last`, two IDs, an unknown flag) log
+  `invalid flags` with a fixed reason and exit `2`, like the gateway's own flags.
+- Failures log one `dump failed` line with the `path` and a fixed reason: `store not
+  found`, `exchange not found` (the typed ID is not logged) or `cannot read store`
+  (with the error).
+- Body header lines: `== request body (none)` for no body; no note without
+  `Content-Encoding`; otherwise `(content-encoding <value>, decoded)`, `(..., decoded,
+  cut short at N bytes)`, `(..., not decoded: -raw)` or `(..., unsupported: raw
+  bytes)`. A body not ending in a newline gets one, so the next header starts a line.
+- The whole output is built in memory and written once, so a read error part-way
+  prints only the failure line.
+
 ### Startup, shutdown and wiring (`run`)
 
 **Startup,** after config load and before bind:
