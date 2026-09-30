@@ -1,0 +1,7 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (ADRs; Open questions resolved here; no AC)
+ADR: docs/decisions/0004-capture-store.md, docs/decisions/0005-secrets-in-captured-content.md
+Research: Q4 (HEAD /api/hello stays unknown; the limit lives in PLAN.md §3, 2026-09-28 correction)
+Why this approach: edits exactly the five PLAN.md spots plan.md's "ADRs and PLAN.md" lists, plus the two ADR status lines. The new §8 "Capture store" row follows the table's columns (choice, why, rejected), with reasons and rejected options taken from ADR 0004. OQ-1 and OQ-5 keep their text and gain a "Resolved:" line, so the history of the question stays.
+Alternatives rejected: rewriting §2's Storage row and §5's "open question (OQ-5)" wording (outside the task's named edits; left for the owner).
+Trade-off / known limit: PLAN.md §5 still calls OQ-5 an open question and §2's Storage row still says "see OQ-1"; both now point at resolved entries.
+Verified by: git diff (PLAN.md, the two ADRs, tasks.md tick only); make verify.
