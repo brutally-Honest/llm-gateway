@@ -1,0 +1,5 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (Canonical events: message; Streams: message-level fields); research Q19; AC35, AC58
+Why this approach: the response model is the model that actually answered, and cost tracking prices on it; the response id is the key for matching resent assistant blocks (Q3). Both are provider-neutral (OpenAI has them too), so AC58 holds.
+Alternatives rejected: (a) keep id and model only in the raw body, which forces every later consumer to re-parse provider JSON.
+Trade-off / known limit: changes core's canonical MessageEvent. Store schema unchanged: the fields live in the events.payload JSON like stop_reason, so no column or migration; core.SchemaVersion stays 1 because 002 has not shipped.
+Verified by: docs only; make verify passes. Code and TestParse_ResponseIDAndModel land in the T22 fix round.
