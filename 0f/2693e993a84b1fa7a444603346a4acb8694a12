@@ -1,0 +1,7 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (message event: response_id, model; Streams: message-level fields, citations_delta); AC35, AC38, AC58
+Research: Q19 (owner decision (b), recorded in 918085a)
+Why this approach: T22 fix round for reviewer ESCALATE on 146bfb4. assistantEvents now takes a wireResponse (id, model, role, stop_reason, content, usage), so the JSON reader and the stream state feed one struct into one builder and cannot diverge. core.MessageEvent gains generic ResponseID and Model; the canonical payload gains response_id and model, empty on history messages like stop_reason.
+Alternatives rejected: two more positional parameters on assistantEvents (seven in all); omitting the keys from history payloads (stop_reason is always present, so kept consistent).
+Trade-off / known limit: goldens gain the two keys; no content hash changed, as response_id and model are outside the message content hash (TestCanonicalize_MessageHash now sets both on the response and still matches its resent copy). No store migration: fields live in events.payload.
+Verified by: TestParse_ResponseIDAndModel (json and stream subtests, equal values, stored payload), TestParse_CitationsDeltaAppended (fails when the append is removed), TestCanonicalize_MessageHash, make verify.
+Review range: 146bfb4^..HEAD (T22 = 146bfb4 + this commit; 918085a between them is the owner's Q19 docs commit).
