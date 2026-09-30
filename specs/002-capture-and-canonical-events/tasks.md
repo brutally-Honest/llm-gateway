@@ -454,7 +454,7 @@ Layout the tasks assume:
 
 ## Docs and deployment
 
-- [ ] T26 — `docs/capture.md`: where the store lives (`capture.dir`, its default and the
+- [x] T26 — `docs/capture.md`: where the store lives (`capture.dir`, its default and the
   XDG rule), what is in it (exchanges, events, content inline or in blobs), what is and
   isn't redacted (auth headers and declared query parameters; bodies stored as-is, ADR
   0005), and how to inspect it: `gateway dump` first, then `sqlite3` with two example
