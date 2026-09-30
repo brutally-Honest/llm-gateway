@@ -469,7 +469,7 @@ Layout the tasks assume:
   approved`. Done: `git diff` shows only those edits, and `make verify` passes. Commit:
   `docs(repo): record the capture decisions in the plan` (no AC; spec ADRs and Docs)
   (shaped: Q4)
-- [ ] T28 — `docker-compose.yml` mounts a named volume at `/var/lib/llm-gateway` and
+- [x] T28 — `docker-compose.yml` mounts a named volume at `/var/lib/llm-gateway` and
   sets `GATEWAY_CAPTURE_DIR=/var/lib/llm-gateway`; the `Dockerfile` copies an empty
   directory there `--chown=nonroot` from the build stage. Test first, in
   `test/conventions/compose_test.go`: `TestCompose_CaptureDirOnVolume` (the env value is

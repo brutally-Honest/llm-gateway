@@ -14,3 +14,10 @@ services:
       # A container's own loopback is unreachable from the host, so inside it the
       # gateway listens on every interface; the publish above keeps it local.
       GATEWAY_LISTEN_ADDR: 0.0.0.0:7197
+      # Captures live on the named volume below, so they outlive the container.
+      GATEWAY_CAPTURE_DIR: /var/lib/llm-gateway
+    volumes:
+      - captures:/var/lib/llm-gateway
+
+volumes:
+  captures:
