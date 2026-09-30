@@ -1,0 +1,6 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (ADRs, Docs); T27 follow-up
+ADR: docs/decisions/0005-secrets-in-captured-content.md
+Why this approach: resolves the T27 escalation (reviewer on 0006360). After T27, PLAN.md §5 called OQ-5 open while §9 marked it resolved by ADR 0005. The owner approved rewording all of §5's secrets bullet and narrowing AGENTS.md's hard rule the same way, since it literally said "Secrets never land in storage". Wording is the owner's approved decision.
+Alternatives rejected: rewording only §5's last sentence (owner chose the whole line); leaving AGENTS.md as is (it contradicted ADR 0005).
+Trade-off / known limit: the rule now guarantees only credentials stay out of storage; body secrets rely on 0700/0600 permissions until the masking opt-in. §2's Storage row ("see OQ-1") left unchanged by owner decision.
+Review range: T27 = 0006360 + this commit (new commit, not amended).
