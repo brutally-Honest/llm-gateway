@@ -472,7 +472,7 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   stays for its own task to settle.
 
 ## Q18 — What do AC27 and AC28 require of `Proxy-Authorization`, which 001 strips?
-- Status: open     Level: flow
+- Status: answered     Level: flow
 - Blocks / shapes: T18 (AC27, AC28)
 - Context: 2026-09-29, T18. AC27 wants a sentinel in `Proxy-Authorization` to appear
   nowhere in the store *and* the header's name to be present with `[REDACTED]`. AC28
@@ -496,4 +496,14 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   excluding hop-by-hop;
   (c) something else.
 - How to resolve: owner decision; the answer edits spec.md (and plan.md for (b)).
-- Answer: open.
+- Answer: 2026-09-30, owner: (a). AC27 and AC28 cover only headers that are forwarded
+  upstream; hop-by-hop headers, every `Proxy-*` header included, are left out. For a
+  `Proxy-Authorization` sentinel the test only checks that it never appears in the
+  store or the logs. No code changes.
+- Why: stored headers are defined as what was sent upstream, and 001 already strips
+  `Proxy-*`, so the secret is never forwarded; core's redaction list still covers it,
+  as T7's `TestRedact` proves. Option (b) would redefine stored headers and still need
+  AC28 edited.
+- Trade-off: the store has no record that the client sent the header. A client-side
+  header view is possible future scope.
+- Outcome (→ spec, tasks): AC27 and AC28 reworded; T18's line matches them.

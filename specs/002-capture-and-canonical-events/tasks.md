@@ -329,12 +329,14 @@ Layout the tasks assume:
 - [ ] T18 — `internal/protocols/anthropic/adapter.go` implements `SecretDeclarer`
   (`SecretHeaders() = [x-api-key]`, `SecretQueryParams()` empty). Tests first, in
   `cmd/gateway/run_capture_test.go` through `run`: `TestRedact_AuthHeaders` (sentinels
-  in `Authorization`, `x-api-key`, `Cookie`, `Set-Cookie`, `Proxy-Authorization` appear
-  nowhere in the database or any decompressed blob; names present with `[REDACTED]`),
-  `TestRedact_ForwardedTrafficUntouched`, `TestCapture_SecretsNotLogged` (sentinels in
+  in the forwarded `Authorization`, `x-api-key`, `Cookie`, `Set-Cookie` appear nowhere
+  in the database or any decompressed blob; names present with `[REDACTED]`; a
+  hop-by-hop `Proxy-Authorization` sentinel only checked absent from the store and the
+  logs), `TestRedact_ForwardedTrafficUntouched` (forwarded headers only),
+  `TestCapture_SecretsNotLogged` (sentinels in
   auth headers, query and body in no log line across a stored, a dropped and a failed
   capture, via `deps.openStore`). Done: those pass. Commit: `feat(anthropic): declare
-  the api key header as secret` (AC27, AC28, AC60) (blocked: Q18)
+  the api key header as secret` (AC27, AC28, AC60) (shaped: Q18)
 
 ## Fixtures (human)
 

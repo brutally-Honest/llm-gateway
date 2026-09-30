@@ -498,11 +498,15 @@ Capture never blocks
     one final line.
 
 Redaction
-- **AC27** `TestRedact_AuthHeaders` — sentinels in `Authorization`, `x-api-key`,
-  `Cookie`, `Set-Cookie` and `Proxy-Authorization` appear nowhere in the database or in
-  any decompressed blob. The header names are present with `[REDACTED]`.
-- **AC28** `TestRedact_ForwardedTrafficUntouched` — the same sentinels still reach
-  upstream and the client byte-identical.
+- **AC27** `TestRedact_AuthHeaders` — sentinels in the forwarded headers
+  `Authorization`, `x-api-key`, `Cookie` and `Set-Cookie` appear nowhere in the
+  database or in any decompressed blob. The header names are present with
+  `[REDACTED]`. Hop-by-hop headers, including every `Proxy-*` header (001 strips them
+  before forwarding), are left out: for a sentinel in `Proxy-Authorization` the test
+  only checks that it never appears in the store or the logs.
+- **AC28** `TestRedact_ForwardedTrafficUntouched` — the same sentinels, in headers that
+  are forwarded, still reach upstream and the client byte-identical. Hop-by-hop headers
+  are left out, as in AC27.
 - **AC29** `TestRedact_AdapterQueryParams` — a test adapter's declared secret query
   parameter is redacted in the store, and forwarded unchanged.
 
