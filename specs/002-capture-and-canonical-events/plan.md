@@ -205,8 +205,9 @@ what AC61's manual step compares (Q3).
 `schema_version`, `kind`, `partial`, plus per kind:
 - `request`: `model`, `stream`, `max_tokens`, `system_hash`, `tools_hash`,
   `has_system`, `has_tools`, `cache_hints`, `reasoning_requested`, `tool_names`;
-- `message`: `index`, `role`, `source`, `stop_reason`, `content_hash`, `blocks`
-  (`type`, `hash`, and `redacted` and `tool_call_id` when set);
+- `message`: `index`, `role`, `source`, `stop_reason`, `response_id`, `model`,
+  `content_hash`, `blocks` (`type`, `hash`, and `redacted` and `tool_call_id` when
+  set); `response_id` and `model` are set on the response message only (Q19);
 - `tool_call`: `id`, `name`, `input_hash`, `executed_by`, `source`, `raw_hash`;
 - `tool_result`: `tool_call_id`, `is_error`, `content_hash`, `executed_by`, `source`,
   `raw_hash`;
@@ -233,15 +234,16 @@ list.
   - Each message becomes a `message` event (`source: request_history`), followed by a
     `tool_call` or `tool_result` event for each tool block in order, and a
     `tool_call` or `tool_result` block referencing it by `tool_call_id` (Q5).
-- **Response, JSON.** The same block mapping, `source: response`, plus `stop_reason`
-  and `usage`.
+- **Response, JSON.** The same block mapping, `source: response`, plus `stop_reason`,
+  `response_id` and `model` (the body's `id` and `model`), and `usage`.
 - **Response, SSE.** A line reader over the decoded body, event by event. There is no
   buffering problem here: it reads a stored copy. Per block index it holds a builder:
   - `text_delta` and `thinking_delta` are joined;
   - `partial_json` is joined and parsed only at `content_block_stop`;
   - `signature_delta` is set on the block, and `citations_delta` is appended.
   
-  `message_start` gives the id, model and usage; `message_delta` gives `stop_reason`
+  `message_start` gives the id and model (the response message's `response_id` and
+  `model`, Q19) and usage; `message_delta` gives `stop_reason`
   and usage, last value per counter wins (AC41). `ping` and unknown events are
   skipped (AC37). An `error` event becomes an `error` event (AC36). A block with no
   `content_block_stop`, or joined JSON that won't parse, keeps its raw string and the
@@ -318,8 +320,12 @@ list.
     that text as a JSON string, and the parse is `partial`. An empty join keeps the
     start's `input`.
   - The JSON and SSE paths share one builder (`assistantEvents`), so a response yields
-    the same events either way (AC35). `message_start`'s id and model have no
-    canonical field and stay in the raw body.
+    the same events either way (AC35). The builder also sets the response message's
+    `response_id` and `model`, from the JSON body's `id` and `model` or from
+    `message_start`'s, so both paths give equal values (Q19).
+  - Store: `response_id` and `model` live in the `events.payload` JSON, like
+    `stop_reason`; no new column and no migration. `core.SchemaVersion` stays `1`:
+    the fields are added before 002 ships, so no stored event lacks them.
   - Usage: every key of `message_start`'s and each `message_delta`'s usage is merged,
     the last value winning; a `null` is not a report.
   - Status: `partial` when the body was cut, a message began but never reached
@@ -849,6 +855,8 @@ type MessageEvent struct {
 	Role       string
 	Source     Source
 	StopReason string
+	ResponseID string // response message only; "" when absent (Q19)
+	Model      string // the model that answered; response message only (Q19)
 	Blocks     []Block
 }
 type ToolCallEvent struct {

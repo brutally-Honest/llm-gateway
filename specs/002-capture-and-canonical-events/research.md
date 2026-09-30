@@ -507,3 +507,28 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
 - Trade-off: the store has no record that the client sent the header. A client-side
   header view is possible future scope.
 - Outcome (→ spec, tasks): AC27 and AC28 reworded; T18's line matches them.
+
+## Q19 — Where do the response's id and model go in the canonical `message` event?
+- Status: answered     Level: flow
+- Blocks / shapes: T22 (T21)
+- Context: 2026-09-30, T22 escalation. The spec says `message_start` "gives the id,
+  model and initial usage", but the canonical `message` event has no field for the id
+  or the model, so both T21 (JSON) and T22 (SSE) drop them; the plan noted they stay
+  in the raw body.
+- Question: does the canonical `message` event carry the response id and model?
+  (a) no: they stay only in the raw body;
+  (b) yes: the event gains provider-neutral `response_id` and `model` fields.
+- How to resolve: owner decision; the answer edits spec.md, plan.md and tasks.md.
+- Answer: 2026-09-30, owner: (b). The response `message` event gains `response_id` and
+  `model`, filled by the shared builder on both the JSON and SSE paths. No code in
+  this change; the T22 fix round does it.
+- Why: the response model is the model that actually answered, and cost tracking
+  prices on it; the response id is the key for matching resent assistant blocks (Q3).
+  Both are provider-neutral (OpenAI has them too), so AC58 holds.
+- Rejected: (a), since keeping them only in the raw body forces every later consumer
+  to re-parse provider JSON.
+- Trade-off: it changes core's canonical event. The fields live in `events.payload`,
+  so the store schema is unchanged.
+- Outcome (→ spec, plan, tasks): the spec's `message` event lists both fields; the
+  plan's payload, `MessageEvent` and T22 details replace the "dropped" note; T22's line
+  covers filling them with a stream-vs-JSON equality test.

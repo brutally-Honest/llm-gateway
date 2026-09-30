@@ -193,7 +193,10 @@ doesn't break the client.
         `thinking` is absent or has `type: "disabled"` (research Q6).
     - `message`: one per message in the request (with its index,
       `source: request_history`) and one for the response's assistant message
-      (`source: response`), which also carries `stop_reason`. Content blocks are
+      (`source: response`), which also carries `stop_reason`, `response_id` (the
+      provider's id for the response) and `model` (the model that answered, which
+      may differ from the one requested), both filled from the JSON body or the
+      stream alike (research Q19). Content blocks are
       typed `text`, `reasoning`, `media`, `tool_call`, `tool_result` or `unknown`, in
       the order they were sent, so a message keeps its ordered view of text,
       reasoning, tool calls and tool results. Each block's content is stored by hash,
@@ -233,7 +236,8 @@ doesn't break the client.
       joined JSON is invalid, the block keeps its raw joined string and the exchange
       is `partial`, not `failed`.
     - **Message-level fields:** `message_start` gives the id, model and initial
-      usage. `message_delta` gives `stop_reason` and updated usage.
+      usage; the id and model become the response message's `response_id` and
+      `model`. `message_delta` gives `stop_reason` and updated usage.
     - **Usage:** for each counter, the last value the stream reported wins.
   - **Hashed payload:** a block's hash covers its content (text, reasoning text and
     signature, redacted reasoning data, tool input, tool result content). The adapter

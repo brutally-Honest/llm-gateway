@@ -426,9 +426,13 @@ Layout the tasks assume:
   `TestParse_TruncatedToolInputPartial`, `TestParse_ContentEncodings` (`gzip`,
   `deflate_zlib`, `deflate_raw`, `br`, `zstd`, `unknown_encoding`); T21's
   `TestParse_NonStreaming` now compares against the streamed equivalent, and
-  `TestParse_UpstreamError` gains `sse_error_event` from `stream_error.sse`. Done: those
-  pass under `-race`. Commit: `feat(anthropic): reassemble streamed responses` (AC30,
-  AC31, AC35, AC36, AC37, AC38, AC39, AC40, AC41, AC42, AC43, AC44) (shaped: Q1, Q2, Q7)
+  `TestParse_UpstreamError` gains `sse_error_event` from `stream_error.sse`. The shared
+  builder (`assistantEvents`) also fills the response message's `response_id` and
+  `model` on both paths, from the JSON body's `id` and `model` or `message_start`'s;
+  `TestParse_ResponseIDAndModel` proves the stream and JSON versions of one response
+  give equal, non-empty values. Done: those pass under `-race`. Commit:
+  `feat(anthropic): reassemble streamed responses` (AC30, AC31, AC35, AC36, AC37,
+  AC38, AC39, AC40, AC41, AC42, AC43, AC44) (shaped: Q1, Q2, Q7, Q19)
 ## `gateway dump`
 
 - [ ] T25 — `cmd/gateway/dump.go`: `run` hands `args[0] == "dump"` to `runDump`, whose
