@@ -411,7 +411,7 @@ Layout the tasks assume:
   `cmd/gateway`. Done: those pass, and `TestFixtures_NoIdentifiers` passes. Commit:
   `feat(anthropic): parse json responses and upstream errors` (AC11, AC35, AC36, AC48)
   (shaped: Q2, Q8)
-- [ ] T22 — `internal/protocols/anthropic/stream.go`: SSE reassembly per the plan
+- [x] T22 — `internal/protocols/anthropic/stream.go`: SSE reassembly per the plan
   (`text_delta` and `thinking_delta` joined, `partial_json` joined and parsed only at
   `content_block_stop`, `signature_delta` set, `citations_delta` appended;
   `message_start` and `message_delta` for id, model, `stop_reason` and usage, last value

@@ -1,0 +1,106 @@
+[
+  {
+    "seq": 0,
+    "kind": "request",
+    "partial": false,
+    "payload": {
+      "cache_hints": false,
+      "has_system": false,
+      "has_tools": false,
+      "kind": "request",
+      "max_tokens": 64,
+      "model": "claude-sonnet-5",
+      "partial": false,
+      "reasoning_requested": false,
+      "schema_version": 1,
+      "stream": true,
+      "system_hash": "",
+      "tool_names": [],
+      "tools_hash": ""
+    }
+  },
+  {
+    "seq": 1,
+    "kind": "message",
+    "source": "request_history",
+    "partial": false,
+    "content_hash": "2a81451b1ad0617c87f7be22200bbc0914672701c5b9a41bfd7f96d16b198320",
+    "payload": {
+      "blocks": [
+        {
+          "hash": "ffccbbc847611cd71792ed9cbbb834f691e5a9582fd41a8c45e98406446450f6",
+          "type": "text"
+        }
+      ],
+      "content_hash": "2a81451b1ad0617c87f7be22200bbc0914672701c5b9a41bfd7f96d16b198320",
+      "index": 0,
+      "kind": "message",
+      "partial": false,
+      "role": "user",
+      "schema_version": 1,
+      "source": "request_history",
+      "stop_reason": ""
+    }
+  },
+  {
+    "seq": 2,
+    "kind": "message",
+    "source": "response",
+    "partial": false,
+    "content_hash": "4df2ee969856c7b3798c63fa47ff58b0634f95ca37b9f0df132d3a9c2cee417f",
+    "payload": {
+      "blocks": [
+        {
+          "hash": "77a4ede2a8c5bbfa7c7b5c053b63ac1c01fbba992b6010cb7ab69f04ece34487",
+          "type": "text"
+        }
+      ],
+      "content_hash": "4df2ee969856c7b3798c63fa47ff58b0634f95ca37b9f0df132d3a9c2cee417f",
+      "index": -1,
+      "kind": "message",
+      "partial": false,
+      "role": "assistant",
+      "schema_version": 1,
+      "source": "response",
+      "stop_reason": "end_turn"
+    }
+  },
+  {
+    "seq": 3,
+    "kind": "usage",
+    "partial": false,
+    "payload": {
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 41642,
+      "detail": {
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 41642,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "not_available",
+        "iterations": [
+          {
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 41642,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "cache_creation_input_tokens": 41642,
+            "cache_read_input_tokens": 0,
+            "input_tokens": 2,
+            "output_tokens": 12,
+            "type": "message"
+          }
+        ],
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        },
+        "service_tier": "standard"
+      },
+      "input_tokens": 2,
+      "kind": "usage",
+      "output_tokens": 12,
+      "partial": false,
+      "schema_version": 1
+    }
+  }
+]

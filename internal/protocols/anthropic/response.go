@@ -49,23 +49,32 @@ func parseJSONResponse(status int, body []byte, cut bool) ([]core.Event, core.Pa
 		return nil, core.ParsePartial
 	}
 	partial := err != nil || cut
-	events := messageEvents(-1, resp.Role, nil, core.SourceResponse)
+	return assistantEvents(resp.Role, resp.StopReason, resp.Content, resp.Usage, partial), bodyStatus(partial)
+}
+
+// assistantEvents is the response's assistant message (source response) with its
+// stop reason and blocks, then the tool event each tool block references, then the
+// usage when there is a usage object. Every event is flagged partial or not alike.
+// The JSON and the stream parser both end here, so a response yields the same
+// events either way.
+func assistantEvents(role, stopReason string, blocks []json.RawMessage, usage json.RawMessage, partial bool) []core.Event {
+	events := messageEvents(-1, role, nil, core.SourceResponse)
 	msg := events[0].Message
-	msg.StopReason = resp.StopReason
-	for _, raw := range resp.Content {
+	msg.StopReason = stopReason
+	for _, raw := range blocks {
 		b, tool := mapBlock(raw, core.SourceResponse)
 		msg.Blocks = append(msg.Blocks, b)
 		if tool != nil {
 			events = append(events, *tool)
 		}
 	}
-	if u, ok := usageEvent(resp.Usage); ok {
+	if u, ok := usageEvent(usage); ok {
 		events = append(events, core.Event{Kind: core.KindUsage, Usage: u})
 	}
 	for i := range events {
 		events[i].Partial = partial
 	}
-	return events, bodyStatus(partial)
+	return events
 }
 
 // parseErrorResponse is one error event for a non-2xx status, with the provider's

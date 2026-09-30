@@ -2,14 +2,21 @@ package anthropic_test
 
 import (
 	"bytes"
+	"compress/flate"
 	"compress/gzip"
+	"compress/zlib"
 	"encoding/json"
 	"flag"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
+
+	"github.com/andybalholm/brotli"
+	"github.com/klauspost/compress/zstd"
 
 	"github.com/brutally-honest/llm-gateway/internal/core"
 	"github.com/brutally-honest/llm-gateway/internal/protocols/anthropic"
@@ -505,8 +512,8 @@ func checkGolden(t *testing.T, name string, stored []core.StoredEvent) {
 }
 
 // AC35: a non-streamed JSON response yields the response message with its stop
-// reason, its tool events and the usage. Until the SSE half lands (T22) the events
-// are compared with a golden file.
+// reason, its tool events and the usage: the same events as its streamed equivalent,
+// testdata/non_streaming/response.sse. The golden file pins what they are.
 func TestParse_NonStreaming(t *testing.T) {
 	res := parseExchange(t, readFixture(t, "non_streaming/request.json"),
 		readFixture(t, "non_streaming/response.json"), http.StatusOK, false)
@@ -558,11 +565,34 @@ func TestParse_NonStreaming(t *testing.T) {
 		t.Errorf("usage detail = %s repeats a counter", u.Detail)
 	}
 
-	checkGolden(t, "non_streaming/events.golden.json", canonical(t, res.Events))
+	stored := canonical(t, res.Events)
+	checkGolden(t, "non_streaming/events.golden.json", stored)
+
+	in := streamInput(readFixture(t, "non_streaming/response.sse"), "", false)
+	in.RequestBody = readFixture(t, "non_streaming/request.json")
+	streamed := parser(t).Parse(in)
+	if streamed.Status != core.ParseOK {
+		t.Fatalf("streamed equivalent: status = %q, want ok", streamed.Status)
+	}
+	if got := canonical(t, streamed.Events); !slices.EqualFunc(got, stored, storedEqual) {
+		t.Errorf("streamed equivalent's events differ from the JSON response's:\n got: %s\nwant: %s",
+			payloads(got), payloads(stored))
+	}
+}
+
+// payloads lists the stored events' payloads, for a failure message.
+func payloads(stored []core.StoredEvent) string {
+	var b strings.Builder
+	for _, se := range stored {
+		b.Write(se.Payload)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 // AC36: an upstream error status with Anthropic's error body is one error event with
-// the provider's type and message. sse_error_event lands with the stream parser (T22).
+// the provider's type and message: from an error status's body, or from a stream that
+// ends with an error event.
 func TestParse_UpstreamError(t *testing.T) {
 	t.Run("status_429", func(t *testing.T) {
 		res := parseExchange(t, readFixture(t, "non_streaming/request.json"),
@@ -593,6 +623,26 @@ func TestParse_UpstreamError(t *testing.T) {
 		}
 		if res.Events[len(res.Events)-1].Kind != core.KindError {
 			t.Error("the error event is not after the request events")
+		}
+		canonical(t, res.Events)
+	})
+	t.Run("sse_error_event", func(t *testing.T) {
+		res := parseStream(t, readFixture(t, "error/stream_error.sse"), "", false)
+		// The text block never got its content_block_stop.
+		if res.Status != core.ParsePartial {
+			t.Fatalf("status = %q, want partial", res.Status)
+		}
+		last := res.Events[len(res.Events)-1]
+		if last.Kind != core.KindError {
+			t.Fatalf("last event = %s, want the error event", last.Kind)
+		}
+		want := core.ErrorEvent{Status: http.StatusOK, Type: "overloaded_error", Message: "Overloaded"}
+		if *last.Error != want {
+			t.Errorf("error event = %+v, want %+v", *last.Error, want)
+		}
+		msg, _ := responseEvents(t, res)
+		if len(msg.Blocks) != 1 || !jsonEqual(t, msg.Blocks[0].Content, []byte(`{"type":"text","text":"Hello"}`)) {
+			t.Errorf("blocks = %+v, want the text before the error", msg.Blocks)
 		}
 		canonical(t, res.Events)
 	})
@@ -672,8 +722,7 @@ func TestParse_UpstreamErrorBodyUnreadable(t *testing.T) {
 	}
 }
 
-// A streamed response is left to the stream parser: no response events from it yet,
-// and it is not read as JSON.
+// A streamed response is read by the stream parser, never as JSON.
 func TestParse_StreamedResponseNotReadAsJSON(t *testing.T) {
 	in := core.ParseInput{
 		Method:         http.MethodPost,
@@ -742,4 +791,148 @@ func TestParse_GatewayMadeResponseNoError(t *testing.T) {
 			}
 		})
 	}
+}
+
+// AC30: the committed golden stream yields the request, the user message, the
+// reassembled assistant message and the usage, with parse ok.
+func TestParse_GoldenStream(t *testing.T) {
+	res := parseStream(t, readFixture(t, "stream.sse"), "", false)
+	if res.Status != core.ParseOK {
+		t.Fatalf("status = %q, want ok", res.Status)
+	}
+	var kinds []core.EventKind
+	for _, ev := range res.Events {
+		kinds = append(kinds, ev.Kind)
+		if ev.Partial {
+			t.Errorf("%s event is partial", ev.Kind)
+		}
+	}
+	want := []core.EventKind{core.KindRequest, core.KindMessage, core.KindMessage, core.KindUsage}
+	if !slices.Equal(kinds, want) {
+		t.Fatalf("event kinds = %v, want %v", kinds, want)
+	}
+	msg := res.Events[2].Message
+	if msg.Index != -1 || msg.Role != "assistant" || msg.Source != core.SourceResponse || msg.StopReason != "end_turn" {
+		t.Errorf("response message = index %d, role %q, source %q, stop_reason %q; want -1, assistant, response, end_turn",
+			msg.Index, msg.Role, msg.Source, msg.StopReason)
+	}
+	if len(msg.Blocks) != 1 || msg.Blocks[0].Type != core.BlockText ||
+		!jsonEqual(t, msg.Blocks[0].Content, []byte(`{"type":"text","text":"Hey there, good to see you!"}`)) {
+		t.Errorf("blocks = %+v, want the joined text", msg.Blocks)
+	}
+	u := res.Events[3].Usage
+	counters := []*int64{u.InputTokens, u.OutputTokens, u.CacheWriteTokens, u.CacheReadTokens}
+	wantCounts := []int64{2, 12, 41642, 0}
+	for i, c := range counters {
+		if c == nil || *c != wantCounts[i] {
+			t.Fatalf("usage counters = %v, want %v", counters, wantCounts)
+		}
+	}
+	checkGolden(t, "stream.events.golden.json", canonical(t, res.Events))
+}
+
+// AC31: the golden stream gzipped, as Anthropic really sends it, yields the same
+// events as the identity-encoded one.
+func TestParse_GoldenStreamGzip(t *testing.T) {
+	body := readFixture(t, "stream.sse")
+	want := canonical(t, parseStream(t, body, "", false).Events)
+	if len(want) != 4 {
+		t.Fatalf("the identity stream gave %d events, want 4", len(want))
+	}
+	res := parseStream(t, gzipped(t, body), "gzip", false)
+	if res.Status != core.ParseOK {
+		t.Fatalf("status = %q, want ok", res.Status)
+	}
+	if got := canonical(t, res.Events); !slices.EqualFunc(got, want, storedEqual) {
+		t.Errorf("gzip events differ from identity:\n got: %s\nwant: %s", payloads(got), payloads(want))
+	}
+}
+
+// AC40: a redacted_thinking block is a reasoning block with redacted set and its
+// data kept byte for byte, streamed (it arrives whole in content_block_start) or not.
+func TestParse_RedactedThinkingKept(t *testing.T) {
+	const block = `{"type":"redacted_thinking","data":"EmwKAhgBEgy3va+/=="}`
+	check := func(t *testing.T, res core.ParseResult) {
+		t.Helper()
+		if res.Status != core.ParseOK {
+			t.Fatalf("status = %q, want ok", res.Status)
+		}
+		msg, _ := responseEvents(t, res)
+		if len(msg.Blocks) != 2 || msg.Blocks[0].Type != core.BlockReasoning || !msg.Blocks[0].Redacted {
+			t.Fatalf("blocks = %+v, want a redacted reasoning block then text", msg.Blocks)
+		}
+		if string(msg.Blocks[0].Content) != block {
+			t.Errorf("block = %s, want %s byte for byte", msg.Blocks[0].Content, block)
+		}
+		canonical(t, res.Events)
+	}
+	t.Run("streamed", func(t *testing.T) {
+		check(t, parseStream(t, streamOf(blockStart("0", block), blockStop("0"),
+			blockStart("1", `{"type":"text","text":""}`),
+			blockDelta("1", `{"type":"text_delta","text":"ok"}`), blockStop("1")), "", false))
+	})
+	t.Run("non_streamed", func(t *testing.T) {
+		resp := `{"type":"message","role":"assistant","content":[` + block +
+			`,{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`
+		check(t, parseExchange(t, []byte(streamRequest), []byte(resp), http.StatusOK, false))
+	})
+}
+
+// AC44: the golden stream in each supported content coding decodes and parses ok,
+// with the identity events; an unknown coding is unsupported_encoding, and no
+// response event is read from its raw bytes.
+func TestParse_ContentEncodings(t *testing.T) {
+	body := readFixture(t, "stream.sse")
+	want := canonical(t, parseStream(t, body, "", false).Events)
+	if len(want) != 4 {
+		t.Fatalf("the identity stream gave %d events, want 4", len(want))
+	}
+	encode := func(t *testing.T, newWriter func(io.Writer) (io.WriteCloser, error)) []byte {
+		t.Helper()
+		var buf bytes.Buffer
+		w, err := newWriter(&buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(body); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return buf.Bytes()
+	}
+	for _, tc := range []struct {
+		name, encoding string
+		newWriter      func(io.Writer) (io.WriteCloser, error)
+	}{
+		{"gzip", "gzip", func(w io.Writer) (io.WriteCloser, error) { return gzip.NewWriter(w), nil }},
+		{"deflate_zlib", "deflate", func(w io.Writer) (io.WriteCloser, error) { return zlib.NewWriter(w), nil }},
+		{"deflate_raw", "deflate", func(w io.Writer) (io.WriteCloser, error) { return flate.NewWriter(w, flate.DefaultCompression) }},
+		{"br", "br", func(w io.Writer) (io.WriteCloser, error) { return brotli.NewWriter(w), nil }},
+		{"zstd", "zstd", func(w io.Writer) (io.WriteCloser, error) { return zstd.NewWriter(w) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := parseStream(t, encode(t, tc.newWriter), tc.encoding, false)
+			if res.Status != core.ParseOK {
+				t.Fatalf("status = %q, want ok", res.Status)
+			}
+			if got := canonical(t, res.Events); !slices.EqualFunc(got, want, storedEqual) {
+				t.Errorf("events differ from identity:\n got: %s\nwant: %s", payloads(got), payloads(want))
+			}
+		})
+	}
+	t.Run("unknown_encoding", func(t *testing.T) {
+		res := parseStream(t, body, "x-custom", false)
+		if res.Status != core.ParseUnsupportedEncoding {
+			t.Fatalf("status = %q, want unsupported_encoding", res.Status)
+		}
+		for _, ev := range res.Events {
+			fromRequest := ev.Kind == core.KindRequest ||
+				ev.Kind == core.KindMessage && ev.Message.Source == core.SourceRequestHistory
+			if !fromRequest {
+				t.Errorf("a %s event read from an undecoded body", ev.Kind)
+			}
+		}
+	})
 }

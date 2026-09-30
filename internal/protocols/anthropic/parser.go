@@ -54,10 +54,17 @@ func (parser) Parse(in core.ParseInput) core.ParseResult {
 	}
 	respBody, respStatus := decodeBody(in.ResponseHeader, in.ResponseBody, in.ResponseTruncated, in.DecodeLimit)
 	status = worse(status, respStatus)
-	// A streamed response is the stream parser's; until then its events are not
-	// read, and its decoded status stands.
-	if respStatus != core.ParseUnsupportedEncoding && !in.Stream {
-		evs, st := parseJSONResponse(in.Status, respBody, respStatus == core.ParsePartial)
+	// A 2xx event stream is reassembled; anything else, an error status included, is
+	// read as JSON.
+	if respStatus != core.ParseUnsupportedEncoding {
+		cut := respStatus == core.ParsePartial
+		var evs []core.Event
+		var st core.ParseStatus
+		if in.Stream && in.Status >= 200 && in.Status <= 299 {
+			evs, st = parseStream(in.Status, respBody, cut)
+		} else {
+			evs, st = parseJSONResponse(in.Status, respBody, cut)
+		}
 		events = append(events, evs...)
 		status = worse(status, st)
 	}

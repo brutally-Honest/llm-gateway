@@ -10,6 +10,10 @@
   Checked for keys, auth tokens, UUIDs, emails and account names.
 - The data lines keep Anthropic's trailing space padding; the replay test relies on it
   staying byte-exact.
+- `stream.events.golden.json` (spec 002): the canonical events the parser makes of
+  `stream.sse` answering the replay test's request (regenerate with `go test
+  ./internal/protocols/anthropic -run TestParse_GoldenStream -update`, then review the
+  diff).
 # Synthetic fixtures (spec 002, research Q8)
 
 Built by hand on 2026-09-30 from Anthropic's documented Messages API shapes, not
@@ -23,6 +27,9 @@ to scrub; message and tool IDs are made up, and `request_id` is `req_scrubbed`.
   `non_streaming/events.golden.json` is the canonical events the parser makes of the
   pair (regenerate with `go test ./internal/protocols/anthropic -run
   TestParse_NonStreaming -update`, then review the diff).
+- `non_streaming/response.sse`: `synthetic`. The streamed equivalent of
+  `non_streaming/response.json`: the same text and `tool_use` blocks (the tool input
+  split over `input_json_delta` events), stop reason and usage, as SSE.
 - `error/response_429.json`: `synthetic`. The error body of a `429`, type
   `rate_limit_error`.
 - `error/stream_error.sse`: `synthetic`. A stream that starts a text block and ends

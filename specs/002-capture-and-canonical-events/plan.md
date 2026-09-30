@@ -299,6 +299,41 @@ list.
   - An empty 2xx body has nothing to parse: no response events, `ok`.
   - `TestParse_NonStreaming` compares with `testdata/non_streaming/events.golden.json`,
     rewritten by `go test -update`.
+- **Details fixed in T22.**
+  - A 2xx response with the `text/event-stream` content type (`ParseInput.Stream`) is
+    reassembled; any other status is read as JSON, as in T21.
+  - The SSE reader splits events at blank lines (LF, CRLF or CR line ends), joins
+    multi-line `data`, and skips comments. Bytes after the last blank line are an event
+    cut off before its end and are dropped, so a cut never reads as malformed data.
+  - An event is named by its `event:` line, else its data's `type`. `ping` and any
+    type other than the seven it reads are skipped without reading their data;
+    unknown delta types are skipped too.
+  - A block no delta touched is kept byte for byte as `content_block_start` sent it
+    (an unknown block, `redacted_thinking`). Otherwise its object gets `text` and
+    `thinking` joined onto the start's, `signature` set, `citations` appended, and
+    `input` the joined JSON; the other keys stay as the start sent them. So a
+    reassembled block canonicalizes like the same block in a JSON response.
+  - A tool input with no `content_block_stop`, or whose joined text isn't JSON, is
+    kept as the raw joined string: the tool event's `input` (and its raw block's) is
+    that text as a JSON string, and the parse is `partial`. An empty join keeps the
+    start's `input`.
+  - The JSON and SSE paths share one builder (`assistantEvents`), so a response yields
+    the same events either way (AC35). `message_start`'s id and model have no
+    canonical field and stay in the raw body.
+  - Usage: every key of `message_start`'s and each `message_delta`'s usage is merged,
+    the last value winning; a `null` is not a report.
+  - Status: `partial` when the body was cut, a message began but never reached
+    `message_stop`, a block never reached its stop or its input isn't JSON, or a delta
+    or stop names a block that never started; the response events are flagged
+    `partial` then. A stream ending in an `error` event after `message_start` is
+    therefore `partial`; one holding only an `error` event is `ok`. `failed` is a
+    known event whose data doesn't read, or a non-empty body with no event, when the
+    body wasn't cut. An `error` event in the stream is an `error` event with the
+    HTTP status, after the message's events, flagged `partial` only when the body was
+    cut.
+  - `TestParse_NonStreaming` keeps its golden and also compares with the streamed
+    equivalent, `testdata/non_streaming/response.sse` (synthetic). The golden stream's
+    events are pinned in `testdata/stream.events.golden.json`.
 
 The wire names live only in this package. Core's purity denylist gains them (AC58).
 
@@ -1084,7 +1119,7 @@ date, model, method and what was scrubbed, as in 001, and says `recorded` or
 | `tool_turn/response.sse`, `tool_turn/next_request.json` | AC32, AC50 | `recorded`: a Claude Code turn that calls a tool, and the next request |
 | `tool_order/response.sse` | AC33 | `synthetic`: hand-built from recorded blocks (text, `tool_use`, text), since it tests the parser's ordering, not upstream behaviour |
 | `server_tool/response.sse` | AC34 | `synthetic (assembled from recorded blocks)`: the recorded WebSearch request's `server_tool_use` and `web_search_tool_result`, plus a client `tool_use` spliced in from `tool_turn` |
-| `non_streaming/request.json`, `response.json` | AC35 | `synthetic`, from Anthropic's documented shapes |
+| `non_streaming/request.json`, `response.json`, `response.sse` | AC35 | `synthetic`, from Anthropic's documented shapes; `response.sse` is the JSON response's streamed equivalent (T22) |
 | `error/response_429.json`, `error/stream_error.sse` | AC36 | `synthetic`, from Anthropic's documented shapes |
 
 The OAuth token is never extracted to call the API directly. AC33 and AC34 are
