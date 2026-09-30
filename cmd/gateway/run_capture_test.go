@@ -1004,3 +1004,240 @@ func waitClosed(t *testing.T, ch <-chan struct{}, what string) {
 		t.Fatalf("timed out waiting for %s", what)
 	}
 }
+
+// redactSentinels is a sentinel per forwarded auth header, sent in both directions.
+// Each value holds sentinel and names its header, so a leak says which one.
+var redactSentinels = map[string]string{
+	"Authorization": "Bearer " + sentinel + "-authorization",
+	"X-Api-Key":     sentinel + "-x-api-key",
+	"Cookie":        "session=" + sentinel + "-cookie",
+	"Set-Cookie":    "id=" + sentinel + "-set-cookie; Path=/",
+}
+
+// proxyAuthSentinel goes in Proxy-Authorization, which 001 strips as hop-by-hop.
+const proxyAuthSentinel = "Basic " + sentinel + "-proxy-authorization"
+
+// padding makes a body larger than store.InlineMax, so it lands in a blob.
+var padding = strings.Repeat("p", 2*store.InlineMax)
+
+// secretUpstream answers with every redactSentinels header and a Proxy-Authorization,
+// and a body big enough for a blob. It keeps the headers each request arrived with.
+type secretUpstream struct {
+	*httptest.Server
+	mu      sync.Mutex
+	headers []http.Header
+}
+
+func newSecretUpstream(t *testing.T) *secretUpstream {
+	t.Helper()
+	u := &secretUpstream{}
+	u.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		u.mu.Lock()
+		u.headers = append(u.headers, r.Header.Clone())
+		u.mu.Unlock()
+		for name, v := range redactSentinels {
+			w.Header().Set(name, v)
+		}
+		w.Header().Set("Proxy-Authorization", proxyAuthSentinel)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"type":"message","pad":"`+padding+`"}`)
+	}))
+	t.Cleanup(u.Close)
+	return u
+}
+
+// received returns the headers of the one request upstream got.
+func (u *secretUpstream) received(t *testing.T) http.Header {
+	t.Helper()
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if len(u.headers) != 1 {
+		t.Fatalf("upstream got %d requests, want 1", len(u.headers))
+	}
+	return u.headers[0]
+}
+
+// sendSecrets posts a blob-sized body to path with every redactSentinels header and a
+// Proxy-Authorization, and returns the response headers once the body is read.
+func sendSecrets(t *testing.T, url, path string) http.Header {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, url+path, strings.NewReader(`{"pad":"`+padding+`"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, v := range redactSentinels {
+		req.Header.Set(name, v)
+	}
+	req.Header.Set("Proxy-Authorization", proxyAuthSentinel)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = io.Copy(io.Discard, res.Body)
+	_ = res.Body.Close()
+	if err != nil || res.StatusCode != http.StatusOK {
+		t.Fatalf("status %d, err %v", res.StatusCode, err)
+	}
+	return res.Header
+}
+
+// scanStore fails the test for every file under dir holding needle: the database
+// files as they are on disk, and each blob decompressed. It returns how many blobs
+// it read, so a caller can tell the blob half was not vacuous.
+func scanStore(t *testing.T, r *store.Reader, dir, needle string) int {
+	t.Helper()
+	blobs := 0
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		var data []byte
+		if parts := strings.Split(rel, string(filepath.Separator)); len(parts) == 3 && parts[0] == "blobs" {
+			data, err = r.Content(parts[1] + parts[2])
+			blobs++
+		} else {
+			data, err = os.ReadFile(path)
+		}
+		if err != nil {
+			return fmt.Errorf("%s: %w", rel, err)
+		}
+		if bytes.Contains(data, []byte(needle)) {
+			t.Errorf("%s holds %q", rel, needle)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan %s: %v", dir, err)
+	}
+	return blobs
+}
+
+// AC27: the forwarded auth headers' sentinels appear nowhere in the database or any
+// decompressed blob, in either direction; their names are kept with [REDACTED].
+// Proxy-Authorization is hop-by-hop and never forwarded, so its sentinel is only
+// checked absent from the store and the logs.
+func TestRedact_AuthHeaders(t *testing.T) {
+	const path = "/anthropic/v1/messages"
+	dir := t.TempDir()
+	up := newSecretUpstream(t)
+	g, url := servedAgainst(t, dir, up.URL, nil)
+	sendSecrets(t, url, path)
+
+	ex, r := storedExchange(t, g, dir, path)
+	if blobs := scanStore(t, r, dir, sentinel); blobs == 0 {
+		t.Error("no blob was scanned; the bodies were meant to land in blobs")
+	}
+	for dirName, h := range map[string]http.Header{"request": ex.RequestHeaders, "response": ex.ResponseHeaders} {
+		for name := range redactSentinels {
+			if got := h.Values(name); !slices.Equal(got, []string{core.Redacted}) {
+				t.Errorf("stored %s header %s = %q, want [%s]", dirName, name, got, core.Redacted)
+			}
+		}
+	}
+	noValue(t, g, sentinel)
+	noValue(t, g, proxyAuthSentinel)
+}
+
+// AC28: the same sentinels, in the headers that are forwarded, reach upstream and the
+// client byte-identical while capture redacts its copy.
+func TestRedact_ForwardedTrafficUntouched(t *testing.T) {
+	const path = "/anthropic/v1/messages"
+	dir := t.TempDir()
+	up := newSecretUpstream(t)
+	g, url := servedAgainst(t, dir, up.URL, nil)
+	got := sendSecrets(t, url, path)
+
+	ex, _ := storedExchange(t, g, dir, path)
+	sent := up.received(t)
+	for name, v := range redactSentinels {
+		if vs := sent.Values(name); !slices.Equal(vs, []string{v}) {
+			t.Errorf("upstream got %s = %q, want [%q]", name, vs, v)
+		}
+		if vs := got.Values(name); !slices.Equal(vs, []string{v}) {
+			t.Errorf("client got %s = %q, want [%q]", name, vs, v)
+		}
+	}
+	// The stored copy was redacted, so the forwarded values above were not the copy.
+	if vs := ex.RequestHeaders.Values("X-Api-Key"); !slices.Equal(vs, []string{core.Redacted}) {
+		t.Errorf("stored x-api-key = %q, want [%s]", vs, core.Redacted)
+	}
+}
+
+// failingStore is the real store with SaveExchange failing for one path.
+type failingStore struct {
+	capture.Store
+	path string
+}
+
+func (s *failingStore) SaveExchange(ctx context.Context, ex *core.Exchange) error {
+	if ex.Path == s.path {
+		return errors.New("injected store failure")
+	}
+	return s.Store.SaveExchange(ctx, ex)
+}
+
+// AC60: sentinels in the auth headers, the query and the body appear in no log line,
+// across a stored, a dropped (dropped_memory) and a failed (store_failed) capture.
+func TestCapture_SecretsNotLogged(t *testing.T) {
+	const (
+		stored  = "/anthropic/v1/messages"
+		dropped = "/anthropic/v1/drop"
+		failed  = "/anthropic/v1/fail"
+		limit   = 64 << 10
+	)
+	dir := t.TempDir()
+	up := jsonUpstream(t)
+	g, url := startCapturing(t, captureEnv(dir, up, map[string]string{
+		"GATEWAY_CAPTURE_MEMORY_LIMIT": fmt.Sprint(limit),
+	}), func(dir string, log *zap.Logger) (capture.Store, error) {
+		st, err := store.Open(dir, log)
+		if err != nil {
+			return nil, err
+		}
+		return &failingStore{Store: st, path: "/v1/fail"}, nil
+	})
+
+	header := map[string]string{}
+	for name, v := range redactSentinels {
+		header[name] = v
+	}
+	query := "?beta=true&key=" + sentinel
+	small := `{"model":"m","messages":[{"role":"user","content":"` + sentinel + `"}]}`
+	big := `{"model":"m","messages":[{"role":"user","content":"` + sentinel +
+		strings.Repeat("b", 2*limit) + `"}]}`
+	for _, c := range []struct{ path, body string }{{stored, small}, {dropped, big}, {failed, small}} {
+		if code, err := do(t, http.MethodPost, url+c.path+query, header, c.body); err != nil || code != http.StatusOK {
+			t.Fatalf("%s: status %d, err %v", c.path, code, err)
+		}
+	}
+	g.waitQueued(stored, 1)
+	g.waitQueued(failed, 1)
+	if l := g.requestLines(dropped); len(l) != 1 || l[0]["capture"] != core.CaptureDroppedMemory {
+		t.Fatalf("dropped line = %v, want capture %s", l, core.CaptureDroppedMemory)
+	}
+	if code := g.stop(); code != exitOK {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+	checkNoCaptureLeaks(t)
+
+	line := stoppedLine(t, g)
+	if line["dropped_memory"] != float64(1) || line["store_failed"] != float64(1) {
+		t.Errorf("capture stopped = %v, want dropped_memory 1 and store_failed 1", line)
+	}
+	if len(linesWith(g, "capture_failed")) == 0 {
+		t.Errorf("no capture_failed line for the failed store\n%s", g.stdout.String())
+	}
+	ids := g.requestIDs(stored)
+	if len(ids) != 1 {
+		t.Fatalf("got %d %s request lines, want 1", len(ids), stored)
+	}
+	if _, err := openReader(t, dir).Exchange(ids[0]); err != nil {
+		t.Errorf("the stored exchange is missing: %v", err)
+	}
+	noValue(t, g, sentinel)
+}

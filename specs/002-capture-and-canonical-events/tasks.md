@@ -326,7 +326,7 @@ Layout the tasks assume:
   Each is proved by breaking the matching code for a moment. Done: those pass under
   `-race` with the leak check. Commit: `test(capture): prove exchanges are stored end to
   end` (AC9, AC10, AC11, AC12) (no research link)
-- [ ] T18 — `internal/protocols/anthropic/adapter.go` implements `SecretDeclarer`
+- [x] T18 — `internal/protocols/anthropic/adapter.go` implements `SecretDeclarer`
   (`SecretHeaders() = [x-api-key]`, `SecretQueryParams()` empty). Tests first, in
   `cmd/gateway/run_capture_test.go` through `run`: `TestRedact_AuthHeaders` (sentinels
   in the forwarded `Authorization`, `x-api-key`, `Cookie`, `Set-Cookie` appear nowhere
