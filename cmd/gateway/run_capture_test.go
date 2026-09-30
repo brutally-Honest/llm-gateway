@@ -228,15 +228,14 @@ func TestRun_DefaultCaptureDirUnresolvable(t *testing.T) {
 	}
 }
 
-// AC22: every stored exchange and event carries principal_id local. The exchange half
-// is proved here; the event half needs the Anthropic parser, so the messages exchange
-// is pinned at parse skipped with no events until T20 flips that pin to require
-// events (research Q16).
+// AC22: every stored exchange and event carries principal_id local. The messages
+// exchange is parsed, so it must yield events and each one's principal is checked;
+// the models exchange has no parser path and stays skipped with none (research Q16).
 func TestCapture_PrincipalLocal(t *testing.T) {
 	dir := t.TempDir()
 	up := jsonUpstream(t)
 	g, url := servedWith(t, captureEnv(dir, up, nil))
-	// One user message: once T20 parses requests, this gives at least one event.
+	// One user message, so the parsed request yields at least one event.
 	body := `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}`
 	if code, err := do(t, http.MethodPost, url+"/anthropic/v1/messages", map[string]string{"x-api-key": "k"}, body); err != nil || code != http.StatusOK {
 		t.Fatalf("messages: status %d, err %v", code, err)
@@ -269,11 +268,15 @@ func TestCapture_PrincipalLocal(t *testing.T) {
 		if err != nil {
 			t.Fatalf("events %s: %v", id, err)
 		}
-		// No parser yet, so neither exchange has events. T20 replaces this for the
-		// messages exchange with parse ok and at least one event.
-		if ex.Parse != string(core.ParseSkipped) || len(events) != 0 {
-			t.Errorf("%s: parse %q with %d events, want skipped with none until the parser lands (T20)",
-				path, ex.Parse, len(events))
+		// The messages exchange is parsed into events, so their principal is checked
+		// too; the models exchange has no parser path and stays skipped with none.
+		if path == "/anthropic/v1/messages" {
+			if ex.Parse == string(core.ParseSkipped) || len(events) == 0 {
+				t.Errorf("%s: parse %q with %d events, want parsed with at least one event",
+					path, ex.Parse, len(events))
+			}
+		} else if ex.Parse != string(core.ParseSkipped) || len(events) != 0 {
+			t.Errorf("%s: parse %q with %d events, want skipped with none", path, ex.Parse, len(events))
 		}
 		for _, ev := range events {
 			if ev.PrincipalID != core.PrincipalLocal {

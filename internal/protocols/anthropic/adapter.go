@@ -1,6 +1,7 @@
 // Package anthropic is the Anthropic Messages protocol adapter. It hands core the
 // values that make a request Anthropic-shaped: a prefix, an upstream default, an auth
-// kind, an error envelope and the headers that carry its secrets. It parses no body.
+// kind, an error envelope and the headers that carry its secrets. Its parser reads
+// only the captured copy of an exchange, off the request path, into canonical events.
 package anthropic
 
 import (

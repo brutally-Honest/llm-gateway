@@ -372,7 +372,7 @@ Layout the tasks assume:
 
 ## Anthropic parser
 
-- [ ] T20 — `internal/protocols/anthropic/parser.go` and `request.go`. The adapter
+- [x] T20 — `internal/protocols/anthropic/parser.go` and `request.go`. The adapter
   implements `ParsingAdapter`; `HashExcludedFields() = [cache_control]`. `Parse` returns
   `skipped` for anything but `POST /v1/messages`; decodes both bodies with
   `contentcoding.Decode` limited to `DecodeLimit` (`Unsupported` →

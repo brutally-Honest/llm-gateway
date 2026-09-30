@@ -1,0 +1,236 @@
+package anthropic
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"io"
+	"strings"
+
+	"github.com/brutally-honest/llm-gateway/internal/core"
+)
+
+// wireRequest is the part of a Messages request the parser reads. Every other field
+// stays in the raw body; an unknown one is never an error.
+type wireRequest struct {
+	Model     string          `json:"model"`
+	Stream    bool            `json:"stream"`
+	MaxTokens *int64          `json:"max_tokens"`
+	System    json.RawMessage `json:"system"`
+	Tools     json.RawMessage `json:"tools"`
+	Thinking  json.RawMessage `json:"thinking"`
+	Messages  []wireMessage   `json:"messages"`
+}
+
+type wireMessage struct {
+	Role    string          `json:"role"`
+	Content json.RawMessage `json:"content"`
+}
+
+// wireBlock is the part of a content block the mapping reads. The block itself is
+// kept as sent.
+type wireBlock struct {
+	Type      string          `json:"type"`
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Input     json.RawMessage `json:"input"`
+	ToolUseID *string         `json:"tool_use_id"`
+	Content   json.RawMessage `json:"content"`
+	IsError   bool            `json:"is_error"`
+}
+
+// parseRequest maps a decoded request body to its request event, then one message
+// event per message (source request_history), each followed by the tool events its
+// blocks reference. An error means the body is not a Messages request.
+func parseRequest(body []byte) ([]core.Event, error) {
+	var req wireRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		return nil, err
+	}
+	hints, err := hasKey(body, "cache_control")
+	if err != nil {
+		return nil, err
+	}
+	system, tools := present(req.System), present(req.Tools)
+	events := []core.Event{{
+		Kind: core.KindRequest,
+		Request: &core.RequestEvent{
+			Model:              req.Model,
+			Stream:             req.Stream,
+			MaxTokens:          req.MaxTokens,
+			System:             system,
+			Tools:              tools,
+			HasSystem:          system != nil,
+			HasTools:           tools != nil,
+			CacheHints:         hints,
+			ReasoningRequested: reasoningRequested(req.Thinking),
+			ToolNames:          toolNames(tools),
+		},
+	}}
+	for i, m := range req.Messages {
+		events = append(events, messageEvents(i, m.Role, m.Content, core.SourceRequestHistory)...)
+	}
+	return events, nil
+}
+
+// present is raw, or nil when the field is absent or null.
+func present(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	return raw
+}
+
+// reasoningRequested is true for a top-level thinking field whose type is anything
+// but disabled (research Q6), and false when it is absent or null.
+func reasoningRequested(raw json.RawMessage) bool {
+	if present(raw) == nil {
+		return false
+	}
+	var t struct {
+		Type string `json:"type"`
+	}
+	_ = json.Unmarshal(raw, &t) // a thinking that isn't an object has no type: not disabled
+	return t.Type != "disabled"
+}
+
+// toolNames lists the name of each tool offered, in order. Entries without a string
+// name are left out.
+func toolNames(tools json.RawMessage) []string {
+	var entries []json.RawMessage
+	if json.Unmarshal(tools, &entries) != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		var t struct {
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(e, &t) == nil && t.Name != "" {
+			names = append(names, t.Name)
+		}
+	}
+	return names
+}
+
+// hasKey reports whether key names an object member anywhere in the JSON body.
+func hasKey(body []byte, key string) (bool, error) {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return false, err
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return false, errors.New("data after the request body")
+	}
+	return walkHasKey(v, key), nil
+}
+
+func walkHasKey(v any, key string) bool {
+	switch t := v.(type) {
+	case map[string]any:
+		for k, e := range t {
+			if k == key || walkHasKey(e, key) {
+				return true
+			}
+		}
+	case []any:
+		for _, e := range t {
+			if walkHasKey(e, key) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// messageEvents is one message event and, after it, a tool_call or tool_result event
+// for each tool block, in block order. A string content is one text block.
+func messageEvents(index int, role string, content json.RawMessage, src core.Source) []core.Event {
+	msg := &core.MessageEvent{Index: index, Role: role, Source: src}
+	events := []core.Event{{Kind: core.KindMessage, Message: msg}}
+	for _, raw := range contentBlocks(content) {
+		b, tool := mapBlock(raw, src)
+		msg.Blocks = append(msg.Blocks, b)
+		if tool != nil {
+			events = append(events, *tool)
+		}
+	}
+	return events
+}
+
+// contentBlocks splits a message's content into its blocks as sent. A string is
+// one text block; any other value that isn't an array is one block, kept as sent.
+func contentBlocks(content json.RawMessage) []json.RawMessage {
+	content = present(content)
+	if content == nil {
+		return nil
+	}
+	var blocks []json.RawMessage
+	if json.Unmarshal(content, &blocks) == nil {
+		return blocks
+	}
+	var text string
+	if json.Unmarshal(content, &text) == nil {
+		b, err := json.Marshal(map[string]string{"type": "text", "text": text})
+		if err == nil {
+			return []json.RawMessage{b}
+		}
+	}
+	return []json.RawMessage{content}
+}
+
+// mapBlock types one content block and, for a tool block, builds the event it
+// references. A block that can't be read, or whose type isn't mapped, is unknown
+// with its JSON kept.
+func mapBlock(raw json.RawMessage, src core.Source) (core.Block, *core.Event) {
+	var w wireBlock
+	if json.Unmarshal(raw, &w) != nil {
+		return core.Block{Type: core.BlockUnknown, Content: raw}, nil
+	}
+	switch w.Type {
+	case "text":
+		return core.Block{Type: core.BlockText, Content: raw}, nil
+	case "thinking":
+		return core.Block{Type: core.BlockReasoning, Content: raw}, nil
+	case "redacted_thinking":
+		return core.Block{Type: core.BlockReasoning, Content: raw, Redacted: true}, nil
+	case "image", "document":
+		return core.Block{Type: core.BlockMedia, Content: raw}, nil
+	case "tool_use":
+		return toolCall(w, raw, core.ExecutedByClient, src)
+	case "server_tool_use", "mcp_tool_use":
+		return toolCall(w, raw, core.ExecutedByProvider, src)
+	case "tool_result":
+		return toolResult(w, raw, core.ExecutedByClient, src)
+	}
+	if w.Type == "mcp_tool_result" || (strings.HasSuffix(w.Type, "_tool_result") && w.ToolUseID != nil) {
+		return toolResult(w, raw, core.ExecutedByProvider, src)
+	}
+	return core.Block{Type: core.BlockUnknown, Content: raw}, nil
+}
+
+func toolCall(w wireBlock, raw json.RawMessage, by core.ExecutedBy, src core.Source) (core.Block, *core.Event) {
+	return core.Block{Type: core.BlockToolCall, ToolCallID: w.ID}, &core.Event{
+		Kind: core.KindToolCall,
+		ToolCall: &core.ToolCallEvent{
+			ID: w.ID, Name: w.Name, Input: present(w.Input),
+			ExecutedBy: by, Source: src, Raw: raw,
+		},
+	}
+}
+
+func toolResult(w wireBlock, raw json.RawMessage, by core.ExecutedBy, src core.Source) (core.Block, *core.Event) {
+	var id string
+	if w.ToolUseID != nil {
+		id = *w.ToolUseID
+	}
+	return core.Block{Type: core.BlockToolResult, ToolCallID: id}, &core.Event{
+		Kind: core.KindToolResult,
+		ToolResult: &core.ToolResultEvent{
+			ToolCallID: id, IsError: w.IsError, Content: present(w.Content),
+			ExecutedBy: by, Source: src, Raw: raw,
+		},
+	}
+}

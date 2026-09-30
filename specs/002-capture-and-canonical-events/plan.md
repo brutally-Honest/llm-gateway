@@ -259,6 +259,22 @@ list.
   (`redacted: true`, `data` kept; AC39, AC40). `image` and `document` map to `media`.
   Anything else maps to `unknown`, `search_result` and `container_upload` included.
 - `HashExcludedFields() = [cache_control]`.
+- **Details fixed in T20.**
+  - A message whose `content` is a string becomes one `text` block,
+    `{"type":"text","text":…}`, so it hashes like the same text sent as a block. The
+    raw body keeps the string.
+  - The status is the worst of the two bodies' (ok, partial, unsupported_encoding,
+    failed), each from `contentcoding.Decode` and the body's `truncated` flag. An
+    unsupported request encoding gives no request events.
+  - A request body that doesn't decode as a Messages request is `failed`, unless it
+    is cut short (truncated or past `DecodeLimit`): then it is `partial` with no
+    request events. Salvaging messages before a cut in the request is not done.
+  - A block that can't be read as an object with the mapped fields (a non-object, or
+    a wrong-typed field) is `unknown` with its JSON kept, not a failure.
+  - `reasoning_requested` is true for a `thinking` that isn't an object as well: it
+    has no `type`, so none that is `disabled`.
+  - The response body is decoded, so its encoding and completeness count towards the
+    status; its events come with T21 (JSON) and T22 (SSE).
 
 The wire names live only in this package. Core's purity denylist gains them (AC58).
 
