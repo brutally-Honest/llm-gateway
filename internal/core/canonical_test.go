@@ -202,8 +202,10 @@ func TestCanonicalize_MessageHash(t *testing.T) {
 	reason := core.Block{Type: core.BlockReasoning, Content: json.RawMessage(`{"type":"r","text":"b"}`)}
 	call := core.Block{Type: core.BlockToolCall, ToolCallID: "c1"}
 
+	answer := msg("end", -1, core.SourceResponse, reason, text, call)
+	answer.Message.ResponseID, answer.Message.Model = "resp-1", "model-a"
 	stored, _ := canonicalize(t, []core.Event{
-		msg("end", -1, core.SourceResponse, reason, text, call),
+		answer,
 		toolCallEvent("c1", `{"q":1}`),
 		msg("", 3, core.SourceRequestHistory, reason, text, call),
 		toolCallEvent("c1", `{"q":1}`),
@@ -217,7 +219,7 @@ func TestCanonicalize_MessageHash(t *testing.T) {
 		t.Fatal("message event has no content hash")
 	}
 	if response.ContentHash != resent.ContentHash {
-		t.Error("the same blocks hashed differently; stop_reason, index or source leaked into the hash")
+		t.Error("the same blocks hashed differently; stop_reason, index, source, response_id or model leaked into the hash")
 	}
 	if response.ContentHash == reordered.ContentHash {
 		t.Error("reordered blocks kept the same hash")

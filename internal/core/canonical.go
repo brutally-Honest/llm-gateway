@@ -40,8 +40,8 @@ type StoredEvent struct {
 // A message's content is its role plus each block's type and hash, in order. A
 // tool_call block's hash covers {id, name, input_hash} and a tool_result block's
 // {tool_call_id, is_error, content_hash}, taken from the first matching tool event
-// after the message. Index, source and stop_reason are not part of it, so a response
-// message and its resent copy in the next request share a hash.
+// after the message. Index, source, stop_reason, response_id and model are not part
+// of it, so a response message and its resent copy in the next request share a hash.
 //
 // The stored events keep the order of events; contents are returned once per hash.
 func Canonicalize(events []Event, excluded []string) ([]StoredEvent, []Content, error) {
@@ -160,6 +160,8 @@ func (c *canonicalizer) message(events []Event, i int, p map[string]any) (string
 	p["role"] = m.Role
 	p["source"] = m.Source
 	p["stop_reason"] = m.StopReason
+	p["response_id"] = m.ResponseID
+	p["model"] = m.Model
 	p["content_hash"] = h
 	p["blocks"] = blocks
 	return h, nil

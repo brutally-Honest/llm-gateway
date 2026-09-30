@@ -580,6 +580,57 @@ func TestParse_NonStreaming(t *testing.T) {
 	}
 }
 
+// Q19: the response message carries the provider's response id and the model that
+// answered, equal whether the response came as JSON or streamed; request history
+// messages carry neither. Both land in the stored payload.
+func TestParse_ResponseIDAndModel(t *testing.T) {
+	const wantID, wantModel = "msg_01SyntheticNonStreaming", "claude-sonnet-5"
+	request := readFixture(t, "non_streaming/request.json")
+	jsonRes := parseExchange(t, request, readFixture(t, "non_streaming/response.json"), http.StatusOK, false)
+	in := streamInput(readFixture(t, "non_streaming/response.sse"), "", false)
+	in.RequestBody = request
+	streamRes := parser(t).Parse(in)
+
+	for name, res := range map[string]core.ParseResult{"json": jsonRes, "stream": streamRes} {
+		t.Run(name, func(t *testing.T) {
+			if res.Status != core.ParseOK {
+				t.Fatalf("status = %q, want ok", res.Status)
+			}
+			msg, _ := responseEvents(t, res)
+			if msg.ResponseID != wantID || msg.Model != wantModel {
+				t.Errorf("response message id, model = %q, %q; want %q, %q", msg.ResponseID, msg.Model, wantID, wantModel)
+			}
+			for _, ev := range res.Events {
+				if ev.Kind == core.KindMessage && ev.Message.Source == core.SourceRequestHistory &&
+					(ev.Message.ResponseID != "" || ev.Message.Model != "") {
+					t.Errorf("history message %d has id %q, model %q; want neither",
+						ev.Message.Index, ev.Message.ResponseID, ev.Message.Model)
+				}
+			}
+			for _, se := range canonical(t, res.Events) {
+				if se.Kind != core.KindMessage || se.Source != core.SourceResponse {
+					continue
+				}
+				var p struct {
+					ResponseID string `json:"response_id"`
+					Model      string `json:"model"`
+				}
+				if err := json.Unmarshal(se.Payload, &p); err != nil {
+					t.Fatalf("payload %s: %v", se.Payload, err)
+				}
+				if p.ResponseID != wantID || p.Model != wantModel {
+					t.Errorf("stored payload %s: want response_id %q and model %q", se.Payload, wantID, wantModel)
+				}
+			}
+		})
+	}
+	jm, _ := responseEvents(t, jsonRes)
+	sm, _ := responseEvents(t, streamRes)
+	if jm.ResponseID != sm.ResponseID || jm.Model != sm.Model {
+		t.Errorf("json gives %q, %q; stream gives %q, %q", jm.ResponseID, jm.Model, sm.ResponseID, sm.Model)
+	}
+}
+
 // payloads lists the stored events' payloads, for a failure message.
 func payloads(stored []core.StoredEvent) string {
 	var b strings.Builder

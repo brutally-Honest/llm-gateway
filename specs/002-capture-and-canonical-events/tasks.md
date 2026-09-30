@@ -421,8 +421,8 @@ Layout the tasks assume:
   built in the test: `TestParse_GoldenStream` (golden JSON of the events, `parse: ok`),
   `TestParse_GoldenStreamGzip`, `TestParse_UnknownBlockAndEventKept`,
   `TestParse_ToolInputSplitAcrossDeltas`, `TestParse_ThinkingSignatureKept`,
-  `TestParse_RedactedThinkingKept`, `TestParse_UsageLastValueWins`,
-  `TestParse_TruncatedStreamPartial` (`identity`, `gzip`),
+  `TestParse_CitationsDeltaAppended`, `TestParse_RedactedThinkingKept`,
+  `TestParse_UsageLastValueWins`, `TestParse_TruncatedStreamPartial` (`identity`, `gzip`),
   `TestParse_TruncatedToolInputPartial`, `TestParse_ContentEncodings` (`gzip`,
   `deflate_zlib`, `deflate_raw`, `br`, `zstd`, `unknown_encoding`); T21's
   `TestParse_NonStreaming` now compares against the streamed equivalent, and

@@ -204,6 +204,45 @@ func TestParse_ThinkingSignatureKept(t *testing.T) {
 	canonical(t, res.Events)
 }
 
+// A text block's citations_delta citations are appended, in order, to the citations
+// content_block_start sent, alongside the joined text.
+func TestParse_CitationsDeltaAppended(t *testing.T) {
+	const (
+		first  = `{"type":"char_location","cited_text":"alpha","document_index":0,"start_char_index":0,"end_char_index":5}`
+		second = `{"type":"char_location","cited_text":"beta","document_index":0,"start_char_index":6,"end_char_index":10}`
+		third  = `{"type":"char_location","cited_text":"gamma","document_index":1,"start_char_index":0,"end_char_index":5}`
+	)
+	body := streamOf(
+		blockStart("0", `{"type":"text","text":"","citations":[`+first+`]}`),
+		blockDelta("0", `{"type":"citations_delta","citation":`+second+`}`),
+		blockDelta("0", `{"type":"text_delta","text":"Alpha and beta"}`),
+		blockDelta("0", `{"type":"citations_delta","citation":`+third+`}`),
+		blockDelta("0", `{"type":"text_delta","text":", then gamma."}`),
+		blockStop("0"),
+		blockStart("1", `{"type":"text","text":"","citations":null}`),
+		blockDelta("1", `{"type":"citations_delta","citation":`+third+`}`),
+		blockStop("1"),
+	)
+	res := parseStream(t, body, "", false)
+	if res.Status != core.ParseOK {
+		t.Fatalf("status = %q, want ok", res.Status)
+	}
+	msg, _ := responseEvents(t, res)
+	if len(msg.Blocks) != 2 {
+		t.Fatalf("blocks = %+v, want two text blocks", msg.Blocks)
+	}
+	want := []string{
+		`{"type":"text","text":"Alpha and beta, then gamma.","citations":[` + first + `,` + second + `,` + third + `]}`,
+		`{"type":"text","text":"","citations":[` + third + `]}`,
+	}
+	for i, w := range want {
+		if msg.Blocks[i].Type != core.BlockText || !jsonEqual(t, msg.Blocks[i].Content, []byte(w)) {
+			t.Errorf("block %d = %s (%s), want text %s", i, msg.Blocks[i].Content, msg.Blocks[i].Type, w)
+		}
+	}
+	canonical(t, res.Events)
+}
+
 // AC41: each usage counter holds the last value the stream reported; message_start
 // gives the first values and every message_delta may update them. A null is not a
 // report. Keys other than the four counters are the detail, last value too.

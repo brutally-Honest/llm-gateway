@@ -59,6 +59,8 @@ type wireStreamEvent struct {
 	Type    string `json:"type"`
 	Index   *int   `json:"index"`
 	Message *struct {
+		ID    string          `json:"id"`
+		Model string          `json:"model"`
 		Role  string          `json:"role"`
 		Usage json.RawMessage `json:"usage"`
 	} `json:"message"`
@@ -105,6 +107,7 @@ type blockBuilder struct {
 
 // streamState is a stream read so far.
 type streamState struct {
+	id, model        string
 	role, stopReason string
 	started, stopped bool
 	blocks           map[int]*blockBuilder
@@ -193,7 +196,7 @@ func (st *streamState) apply(name string, status int, w wireStreamEvent) error {
 			return errors.New("message_start without a message")
 		}
 		st.started = true
-		st.role = w.Message.Role
+		st.id, st.model, st.role = w.Message.ID, w.Message.Model, w.Message.Role
 		st.mergeUsage(w.Message.Usage)
 	case "content_block_start":
 		if w.Index == nil {
@@ -281,11 +284,13 @@ func (st *streamState) events(partial, cut bool) []core.Event {
 		for _, i := range indexes {
 			blocks = append(blocks, st.blocks[i].finish())
 		}
-		var usage json.RawMessage
-		if st.usage != nil {
-			usage, _ = json.Marshal(st.usage)
+		resp := wireResponse{
+			ID: st.id, Model: st.model, Role: st.role, StopReason: st.stopReason, Content: blocks,
 		}
-		events = assistantEvents(st.role, st.stopReason, blocks, usage, partial)
+		if st.usage != nil {
+			resp.Usage, _ = json.Marshal(st.usage)
+		}
+		events = assistantEvents(resp, partial)
 	}
 	for _, e := range st.errors {
 		events = append(events, core.Event{Kind: core.KindError, Error: e, Partial: cut})

@@ -12,6 +12,7 @@ import (
 // wireResponse is the part of a non-streamed Messages response the parser reads.
 // Every other field stays in the raw body.
 type wireResponse struct {
+	ID, Model  string
 	Role       string
 	StopReason string
 	Content    []json.RawMessage
@@ -49,26 +50,26 @@ func parseJSONResponse(status int, body []byte, cut bool) ([]core.Event, core.Pa
 		return nil, core.ParsePartial
 	}
 	partial := err != nil || cut
-	return assistantEvents(resp.Role, resp.StopReason, resp.Content, resp.Usage, partial), bodyStatus(partial)
+	return assistantEvents(resp, partial), bodyStatus(partial)
 }
 
 // assistantEvents is the response's assistant message (source response) with its
-// stop reason and blocks, then the tool event each tool block references, then the
-// usage when there is a usage object. Every event is flagged partial or not alike.
-// The JSON and the stream parser both end here, so a response yields the same
+// id, model, stop reason and blocks, then the tool event each tool block references,
+// then the usage when there is a usage object. Every event is flagged partial or not
+// alike. The JSON and the stream parser both end here, so a response yields the same
 // events either way.
-func assistantEvents(role, stopReason string, blocks []json.RawMessage, usage json.RawMessage, partial bool) []core.Event {
-	events := messageEvents(-1, role, nil, core.SourceResponse)
+func assistantEvents(resp wireResponse, partial bool) []core.Event {
+	events := messageEvents(-1, resp.Role, nil, core.SourceResponse)
 	msg := events[0].Message
-	msg.StopReason = stopReason
-	for _, raw := range blocks {
+	msg.ResponseID, msg.Model, msg.StopReason = resp.ID, resp.Model, resp.StopReason
+	for _, raw := range resp.Content {
 		b, tool := mapBlock(raw, core.SourceResponse)
 		msg.Blocks = append(msg.Blocks, b)
 		if tool != nil {
 			events = append(events, *tool)
 		}
 	}
-	if u, ok := usageEvent(usage); ok {
+	if u, ok := usageEvent(resp.Usage); ok {
 		events = append(events, core.Event{Kind: core.KindUsage, Usage: u})
 	}
 	for i := range events {
@@ -122,6 +123,10 @@ func readResponse(body []byte) (resp wireResponse, opened bool, err error) {
 		}
 		key, _ := tok.(string)
 		switch key {
+		case "id":
+			err = decodeOptional(dec, &resp.ID)
+		case "model":
+			err = decodeOptional(dec, &resp.Model)
 		case "role":
 			err = decodeOptional(dec, &resp.Role)
 		case "stop_reason":

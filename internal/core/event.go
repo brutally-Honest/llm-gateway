@@ -84,6 +84,8 @@ type MessageEvent struct {
 	Role       string
 	Source     Source
 	StopReason string
+	ResponseID string // the provider's id for the response; response message only
+	Model      string // the model that answered; response message only
 	Blocks     []Block
 }
 
