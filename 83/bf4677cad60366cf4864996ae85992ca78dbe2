@@ -1,0 +1,4 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (AC27, AC28); research.md Q18
+Why this approach: stored headers are what was sent upstream; 001 strips Proxy-* so the secret is never forwarded, and core's redaction list still covers it (T7 TestRedact).
+Alternatives rejected: (b) snapshot inbound headers before hop-by-hop stripping — redefines stored headers and still needs AC28 edited.
+Trade-off / known limit: the store has no record that the client sent the header; a client-side header view is possible future scope.
