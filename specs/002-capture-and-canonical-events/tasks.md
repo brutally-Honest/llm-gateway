@@ -461,7 +461,7 @@ Layout the tasks assume:
   queries. It states the store-failure behaviour (deleted or replaced database, restart
   to resume). Done: the page covers AC63's four items, and `make verify` passes. Commit:
   `docs(capture): add the capture page` (AC63) (no research link)
-- [ ] T27 — `PLAN.md` and ADR status, in one commit: §8 "Capture pipeline" becomes
+- [x] T27 — `PLAN.md` and ADR status, in one commit: §8 "Capture pipeline" becomes
   Decided (ADR 0004); §8 "Capture store" gets its choice and Decided (ADR 0004); §9
   marks OQ-1 and OQ-5 resolved with their ADR links; §3's Claude Code known-limits entry
   gains the line that `HEAD /api/hello` sends `User-Agent: Bun/<version>` and no
