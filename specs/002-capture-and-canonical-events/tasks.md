@@ -494,7 +494,7 @@ Layout the tasks assume:
   result, `client` for the client call, IDs line up). Done: those pass, and
   `TestFixtures_NoIdentifiers` passes over the new files. Commit: `feat(anthropic): map
   tool calls and results by origin` (AC32, AC33, AC34, AC53) (shaped: Q2, Q5, Q8, Q20)
-- [ ] T24 — Dedup through the real pipeline and store, in
+- [x] T24 — Dedup through the real pipeline and store, in
   `internal/protocols/anthropic/pipeline_test.go`. Needs T19's `tool_turn`. Tests first:
   `TestStore_BlockContentDedup` (two requests resending one message store its content
   once), `TestStore_ResponseMessageDedupsWithNextRequest` (`tool_turn`'s response

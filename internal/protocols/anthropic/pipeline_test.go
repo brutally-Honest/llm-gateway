@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -231,4 +232,352 @@ func logLines(t *testing.T, logs *syncBuffer) []map[string]any {
 		lines = append(lines, l)
 	}
 	return lines
+}
+
+// okResponse is a small JSON answer for turns whose response the test doesn't read.
+const okResponse = `{"id":"msg_01Ok","type":"message","role":"assistant","model":"m",` +
+	`"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`
+
+// AC49: a message resent in a later request is stored once. Its message event in
+// both exchanges has the same content hash and block hashes, and the store holds one
+// copy of each. The resent message has a block over 4096 bytes, so the blob path is
+// covered too. Subtest cache_control_added resends the message pretty-printed, keys
+// reordered and with a cache_control on its block, as Claude Code moves its cache
+// breakpoint forward: the block's top-level cache_control is excluded from the hash.
+func TestStore_BlockContentDedup(t *testing.T) {
+	big := strings.Repeat("line of notes.txt\\n", 300) // over 4096 bytes once decoded
+	first := `{"model":"m","max_tokens":8,"messages":[{"role":"user","content":[` +
+		`{"type":"text","text":"Count the lines."},{"type":"text","text":"` + big + `"}]}]}`
+	for _, tc := range []struct{ name, resent string }{
+		{"as_sent", `{"role":"user","content":[{"type":"text","text":"Count the lines."},` +
+			`{"type":"text","text":"` + big + `"}]}`},
+		{"cache_control_added", `{
+  "content": [
+    {"text": "Count the lines.", "type": "text"},
+    {"cache_control": {"type": "ephemeral"}, "text": "` + big + `", "type": "text"}
+  ],
+  "role": "user"
+}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			checkNoLeaksAtEnd(t)
+			up := newUpstream(t, jsonResponder(okResponse))
+			g := startCapturingGateway(t, upstreamConfig(up.URL))
+			second := `{"model":"m","max_tokens":8,"messages":[` + tc.resent + `,` +
+				`{"role":"assistant","content":"300 lines."},{"role":"user","content":"Thanks."}]}`
+			ids := []string{g.post(t, first, 1), g.post(t, second, 2)}
+			r := g.drain(t)
+
+			var msgs []messagePayload
+			for _, id := range ids {
+				m := storedMessages(t, r, id, core.SourceRequestHistory)
+				if len(m) == 0 {
+					t.Fatalf("exchange %s stored no request_history message", id)
+				}
+				msgs = append(msgs, m[0])
+			}
+			a, b := msgs[0], msgs[1]
+			if a.ContentHash == "" || a.ContentHash != b.ContentHash {
+				t.Errorf("resent message content_hash %q, first sent %q: want one non-empty hash",
+					b.ContentHash, a.ContentHash)
+			}
+			if len(a.Blocks) != 2 || len(b.Blocks) != 2 {
+				t.Fatalf("blocks %+v and %+v, want two each", a.Blocks, b.Blocks)
+			}
+			for i := range a.Blocks {
+				if a.Blocks[i].Hash == "" || a.Blocks[i].Hash != b.Blocks[i].Hash {
+					t.Errorf("block %d hash %q then %q, want one non-empty hash", i, a.Blocks[i].Hash, b.Blocks[i].Hash)
+				}
+			}
+			for _, h := range []string{a.ContentHash, a.Blocks[0].Hash, a.Blocks[1].Hash} {
+				checkStored(t, r, h)
+			}
+			got, err := r.Content(a.Blocks[1].Hash)
+			if err != nil || !strings.Contains(string(got), "line of notes.txt") ||
+				strings.Contains(string(got), "cache_control") {
+				t.Errorf("stored large block %.80q… (%v), want the text without cache_control", got, err)
+			}
+		})
+	}
+}
+
+// AC50: on the recorded tool turn, turn N's response message (streamed) and its copy
+// in turn N+1's request (resent with a cache_control and without the stream's
+// "caller") share one content hash and one stored copy, and so does the tool input.
+func TestStore_ResponseMessageDedupsWithNextRequest(t *testing.T) {
+	checkNoLeaksAtEnd(t)
+	g, ids := runToolTurn(t)
+	r := g.drain(t)
+
+	resp := storedMessages(t, r, ids[0], core.SourceResponse)
+	if len(resp) != 1 {
+		t.Fatalf("turn 1 stored %d response messages, want 1", len(resp))
+	}
+	var resent *messagePayload
+	for _, m := range storedMessages(t, r, ids[1], core.SourceRequestHistory) {
+		if m.Role == "assistant" {
+			resent = &m
+			break
+		}
+	}
+	if resent == nil {
+		t.Fatal("turn 2 resent no assistant message")
+	}
+	if resp[0].ContentHash == "" || resp[0].ContentHash != resent.ContentHash {
+		t.Errorf("response message content_hash %q, resent copy %q: want one non-empty hash",
+			resp[0].ContentHash, resent.ContentHash)
+	}
+	checkStored(t, r, resp[0].ContentHash)
+
+	inputs := map[string]string{}
+	for i, id := range ids[:2] {
+		for _, tc := range storedToolCalls(t, r, id) {
+			if tc.ID == turnToolID {
+				inputs[[]string{"response", "resent"}[i]] = tc.InputHash
+			}
+		}
+	}
+	if inputs["response"] == "" || inputs["response"] != inputs["resent"] {
+		t.Errorf("tool input_hash %q in the response, %q resent: want one non-empty hash",
+			inputs["response"], inputs["resent"])
+	}
+	checkStored(t, r, inputs["response"])
+}
+
+// AC51: two turns with the same system and tools (the recorded tool turn; turn 1's
+// copy is compacted, turn 2's pretty-printed as recorded) give one system_hash, one
+// tools_hash, and one stored copy of each.
+func TestStore_SystemAndToolsStoredOnce(t *testing.T) {
+	checkNoLeaksAtEnd(t)
+	g, ids := runToolTurn(t)
+	r := g.drain(t)
+
+	var reqs []storedRequestPayload
+	for _, id := range ids {
+		reqs = append(reqs, storedRequest(t, r, id))
+	}
+	a, b := reqs[0], reqs[1]
+	if a.SystemHash == "" || a.SystemHash != b.SystemHash {
+		t.Errorf("system_hash %q then %q, want one non-empty hash", a.SystemHash, b.SystemHash)
+	}
+	if a.ToolsHash == "" || a.ToolsHash != b.ToolsHash {
+		t.Errorf("tools_hash %q then %q, want one non-empty hash", a.ToolsHash, b.ToolsHash)
+	}
+	checkStored(t, r, a.SystemHash)
+	checkStored(t, r, a.ToolsHash)
+}
+
+// AC52: tool inputs are hashed whole. Two inputs that differ only in a cache_control
+// key, nested or at the input's top level, get different input hashes, and both are
+// stored with the key kept.
+func TestStore_ExclusionNotAppliedInsideToolInput(t *testing.T) {
+	for _, tc := range []struct{ name, plain, hinted string }{
+		{"nested", `{"file_path":"/w/notes.txt","opts":{"limit":3}}`,
+			`{"file_path":"/w/notes.txt","opts":{"limit":3,"cache_control":{"type":"ephemeral"}}}`},
+		{"input_top_level", `{"file_path":"/w/notes.txt"}`,
+			`{"file_path":"/w/notes.txt","cache_control":{"type":"ephemeral"}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			checkNoLeaksAtEnd(t)
+			up := newUpstream(t, jsonResponder(okResponse))
+			g := startCapturingGateway(t, upstreamConfig(up.URL))
+			body := `{"model":"m","max_tokens":8,"messages":[` +
+				`{"role":"user","content":"Read it twice."},` +
+				`{"role":"assistant","content":[` +
+				`{"type":"tool_use","id":"toolu_plain","name":"Read","input":` + tc.plain + `},` +
+				`{"type":"tool_use","id":"toolu_hinted","name":"Read","input":` + tc.hinted + `}]},` +
+				`{"role":"user","content":[` +
+				`{"type":"tool_result","tool_use_id":"toolu_plain","content":"3"},` +
+				`{"type":"tool_result","tool_use_id":"toolu_hinted","content":"3"}]}]}`
+			id := g.post(t, body, 1)
+			r := g.drain(t)
+
+			hashes := map[string]string{}
+			for _, c := range storedToolCalls(t, r, id) {
+				hashes[c.ID] = c.InputHash
+			}
+			plain, hinted := hashes["toolu_plain"], hashes["toolu_hinted"]
+			if plain == "" || hinted == "" || plain == hinted {
+				t.Fatalf("input_hash %q (plain) and %q (with cache_control), want two different hashes", plain, hinted)
+			}
+			for h, want := range map[string]string{plain: tc.plain, hinted: tc.hinted} {
+				checkStored(t, r, h)
+				got, err := r.Content(h)
+				if err != nil || !jsonEqual(t, got, []byte(want)) {
+					t.Errorf("stored input %s (%v), want %s", got, err, want)
+				}
+			}
+		})
+	}
+}
+
+// runToolTurn sends the recorded tool turn through a capturing gateway: turn 1 is
+// next_request.json cut before the assistant message, answered with the recorded
+// stream; turn 2 is next_request.json as recorded. It returns both request IDs.
+func runToolTurn(t *testing.T) (*capturingGateway, []string) {
+	t.Helper()
+	next := readFixture(t, "tool_turn/next_request.json")
+	sse := readFixture(t, "tool_turn/response.sse")
+	var calls atomic.Int32
+	up := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			// response.headers' content type: the stream is parsed as SSE.
+			w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+			_, _ = w.Write(sse)
+			return
+		}
+		jsonResponder(okResponse)(w, r)
+	})
+	g := startCapturingGateway(t, upstreamConfig(up.URL))
+	ids := []string{g.post(t, firstTurn(t, next), 1), g.post(t, string(next), 2)}
+	return g, ids
+}
+
+// firstTurn is the request before next: the same body with its messages cut before
+// the first assistant message, re-encoded compact.
+func firstTurn(t *testing.T, next []byte) string {
+	t.Helper()
+	var req map[string]json.RawMessage
+	if err := json.Unmarshal(next, &req); err != nil {
+		t.Fatal(err)
+	}
+	var msgs []json.RawMessage
+	if err := json.Unmarshal(req["messages"], &msgs); err != nil {
+		t.Fatal(err)
+	}
+	for i, m := range msgs {
+		var role struct{ Role string }
+		if err := json.Unmarshal(m, &role); err != nil {
+			t.Fatal(err)
+		}
+		if role.Role == "assistant" {
+			msgs = msgs[:i]
+			break
+		}
+	}
+	cut, err := json.Marshal(msgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req["messages"] = cut
+	out, err := json.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
+
+func jsonResponder(body string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, body)
+	}
+}
+
+// post sends body to the messages endpoint, reads the whole answer, and returns the
+// request ID of the nth messages exchange the gateway logged, whose capture must have
+// been queued. Requests are sent one at a time, so the nth line is this one.
+func (g *capturingGateway) post(t *testing.T, body string, n int) string {
+	t.Helper()
+	res, err := http.Post("http://"+g.addr+"/anthropic/v1/messages", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = io.Copy(io.Discard, res.Body)
+	_ = res.Body.Close()
+	if err != nil || res.StatusCode != http.StatusOK {
+		t.Fatalf("request %d: status %d (%v), want 200", n, res.StatusCode, err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		var lines []map[string]any
+		for _, l := range logLines(t, g.logs) {
+			if l["msg"] == "request" && l["path"] == "/anthropic/v1/messages" {
+				lines = append(lines, l)
+			}
+		}
+		if len(lines) >= n {
+			line := lines[n-1]
+			if line["capture"] != core.CaptureQueued {
+				t.Fatalf("request %d: capture = %v, want %s", n, line["capture"], core.CaptureQueued)
+			}
+			id, _ := line["request_id"].(string)
+			return id
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no request line %d in:\n%s", n, g.logs.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// messagePayload is the part of a stored message payload the dedup tests read.
+type messagePayload struct {
+	Role        string `json:"role"`
+	ContentHash string `json:"content_hash"`
+	Blocks      []struct {
+		Type string `json:"type"`
+		Hash string `json:"hash"`
+	} `json:"blocks"`
+}
+
+type storedRequestPayload struct {
+	SystemHash string `json:"system_hash"`
+	ToolsHash  string `json:"tools_hash"`
+}
+
+type toolCallPayload struct {
+	ID        string `json:"id"`
+	InputHash string `json:"input_hash"`
+}
+
+// storedPayloads decodes the payload of each stored event of kind (and source, when
+// set) of exchange id, in order.
+func storedPayloads[P any](t *testing.T, r *store.Reader, id string, kind core.EventKind, source core.Source) []P {
+	t.Helper()
+	events, err := r.Events(id)
+	if err != nil {
+		t.Fatalf("events of %s: %v", id, err)
+	}
+	var out []P
+	for _, ev := range events {
+		if ev.Kind != string(kind) || (source != "" && ev.Source != string(source)) {
+			continue
+		}
+		var p P
+		if err := json.Unmarshal(ev.Payload, &p); err != nil {
+			t.Fatalf("payload %s: %v", ev.Payload, err)
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func storedMessages(t *testing.T, r *store.Reader, id string, source core.Source) []messagePayload {
+	t.Helper()
+	return storedPayloads[messagePayload](t, r, id, core.KindMessage, source)
+}
+
+func storedToolCalls(t *testing.T, r *store.Reader, id string) []toolCallPayload {
+	t.Helper()
+	return storedPayloads[toolCallPayload](t, r, id, core.KindToolCall, "")
+}
+
+func storedRequest(t *testing.T, r *store.Reader, id string) storedRequestPayload {
+	t.Helper()
+	reqs := storedPayloads[storedRequestPayload](t, r, id, core.KindRequest, "")
+	if len(reqs) != 1 {
+		t.Fatalf("exchange %s stored %d request events, want 1", id, len(reqs))
+	}
+	return reqs[0]
+}
+
+// checkStored checks that content-addressed hash reads back from the store. Equal
+// hashes plus this read are what "one stored copy" rests on: the store keeps one
+// entry per hash.
+func checkStored(t *testing.T, r *store.Reader, hash string) {
+	t.Helper()
+	if _, err := r.Content(hash); err != nil {
+		t.Errorf("content %q: %v", hash, err)
+	}
 }
