@@ -55,3 +55,23 @@ throwaway proxy, `Accept-Encoding: identity`.
   `web_search_tool_result`. Body unchanged; `encrypted_content` is opaque provider data.
 
 Checked for keys, auth tokens, UUIDs, emails, paths and account names.
+
+# Assembled fixtures (spec 002, T23, research Q8)
+
+Built 2026-10-01 from the recorded T19 files above, by owner decision (Q8): each block's
+events keep their recorded bytes, and only their arrangement is synthetic. The one edit
+is the top-level `"index":N` of each block event, renumbered so the blocks run 0, 1, 2
+in the order below (the parser orders blocks by index). Nothing new to scrub.
+
+- `tool_order/response.sse`: `synthetic`, hand-built from recorded blocks. The envelope
+  (`message_start`, `message_delta` with `stop_reason: tool_use`, `message_stop`) and
+  the `Read` `tool_use` block with its `ping` come from `tool_turn/response.sse`. A
+  recorded turn stops at its last `tool_use`, and `tool_turn`'s answer has no text, so
+  the two `text` blocks around it are `server_tool/websearch.sse`'s blocks 3 and 7
+  (plain text, no citations). Order: text, `tool_use`, text.
+- `server_tool/response.sse`: `synthetic (assembled from recorded blocks)`. The
+  envelope (`message_start`, `message_delta` with `stop_reason: end_turn` as recorded,
+  `message_stop`), the `server_tool_use` block with its `ping`, and its
+  `web_search_tool_result` come from `server_tool/websearch.sse`; the client `Read`
+  `tool_use` block is spliced in from `tool_turn/response.sse`. The thinking and text
+  blocks that followed the search are left out.

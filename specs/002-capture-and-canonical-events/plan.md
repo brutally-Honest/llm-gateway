@@ -1152,6 +1152,12 @@ rarely has that exact shape. Each block keeps its recorded bytes, only their
 arrangement is synthetic, and the README says so. No other fixture is edited beyond
 scrubbing.
 
+- **Details fixed in T23 (Q20).** `tool_turn`'s recorded answer is a lone `tool_use`, so
+  `tool_order`'s two `text` blocks are recorded text blocks from `websearch.sse`
+  around `tool_turn`'s `tool_use`, in `tool_turn`'s envelope. `server_tool` keeps
+  `websearch.sse`'s envelope (`stop_reason: end_turn` as recorded). In both, each
+  block event is byte-identical to its recording except its top-level `index`,
+  renumbered 0, 1, 2, since the stream parser orders blocks by index.
 - **How they're recorded.** 001's throwaway recording proxy, extended to save the
   request body as well, with `Accept-Encoding: identity` forced as in 001 Q10.
   AC31 and AC44 gzip and encode in the test.

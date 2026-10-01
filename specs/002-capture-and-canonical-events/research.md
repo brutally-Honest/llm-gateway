@@ -532,3 +532,34 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
 - Outcome (→ spec, plan, tasks): the spec's `message` event lists both fields; the
   plan's payload, `MessageEvent` and T22 details replace the "dropped" note; T22's line
   covers filling them with a stream-vs-JSON equality test.
+
+## Q20 — How are T23's assembled fixtures built when the task line's sources don't fit?
+- Status: answered     Level: flow
+- Blocks / shapes: T23 (AC33, AC34)
+- Context: 2026-10-01, T23 review. The task line says `tool_order` is built "from
+  `tool_turn`'s blocks" and that each block keeps its bytes unchanged. `tool_turn`'s
+  recorded answer is a lone `tool_use` at index 0, with no `text` block, so text,
+  `tool_use`, text can't come from it alone. The stream parser orders blocks by their
+  top-level `index`, so recorded index values can't be kept either: text before a
+  `tool_use` at index 0 is impossible, and in `server_tool` `tool_turn`'s `tool_use`
+  (index 0) collides with `websearch.sse`'s `server_tool_use` (index 0).
+- Question: where do `tool_order`'s text blocks come from, and may block events be
+  edited to fit the new arrangement?
+- How to resolve: implementer, within Q8's owner answer ("hand-built from recorded
+  blocks"; `server_tool` "assembled" and spliced); reviewed at T23.
+- Answer: `tool_order`'s two `text` blocks are `websearch.sse`'s recorded text blocks
+  3 and 7, around `tool_turn`'s `tool_use`, in `tool_turn`'s envelope. `server_tool`
+  keeps `websearch.sse`'s envelope (`stop_reason: end_turn` as recorded). In both,
+  each block event is byte-identical to its recording except its top-level `"index"`,
+  renumbered 0, 1, 2. Every other byte of every block event is unchanged.
+- Why: Q8 allows both fixtures to be built from recorded blocks; the blocks still
+  come only from recordings, and the index is the one field the arrangement itself
+  defines. The READMEs of both fixtures say so.
+- Rejected: hand-writing text blocks (not recorded); keeping recorded index values
+  (impossible order and a collision, above); `tool_turn`'s `message_delta` in
+  `server_tool` (mixes two recordings' usage).
+- Trade-off: "bytes unchanged" now means "except the top-level `index`", and
+  `server_tool`'s `stop_reason: end_turn` doesn't match a turn ending in a client
+  `tool_use`; the parser does not read it for tool mapping.
+- Outcome (→ plan, tasks): plan.md's "Details fixed in T23" bullet points here; T23's
+  line links Q20.

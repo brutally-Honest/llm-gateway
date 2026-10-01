@@ -478,7 +478,7 @@ Layout the tasks assume:
   Commit: `build(deploy): keep captures on a named volume` (no AC; spec Config) (no
   research link)
 
-- [ ] T23 — Tool turns, against the recorded fixtures. Needs T19's `tool_turn` and
+- [x] T23 — Tool turns, against the recorded fixtures. Needs T19's `tool_turn` and
   `server_tool` files; if they are absent, report BLOCKED on T19 and never fake a
   recording. Build the two assembled fixtures from recorded blocks, each block's bytes
   unchanged and each README entry saying so: `testdata/tool_order/response.sse`
@@ -493,7 +493,7 @@ Layout the tasks assume:
   event), `TestParse_ServerToolUse` (`executed_by: provider` for the server call and
   result, `client` for the client call, IDs line up). Done: those pass, and
   `TestFixtures_NoIdentifiers` passes over the new files. Commit: `feat(anthropic): map
-  tool calls and results by origin` (AC32, AC33, AC34, AC53) (shaped: Q2, Q5, Q8)
+  tool calls and results by origin` (AC32, AC33, AC34, AC53) (shaped: Q2, Q5, Q8, Q20)
 - [ ] T24 — Dedup through the real pipeline and store, in
   `internal/protocols/anthropic/pipeline_test.go`. Needs T19's `tool_turn`. Tests first:
   `TestStore_BlockContentDedup` (two requests resending one message store its content

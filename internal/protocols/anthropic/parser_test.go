@@ -987,3 +987,222 @@ func TestParse_ContentEncodings(t *testing.T) {
 		}
 	})
 }
+
+// The recorded tool turn's client call, as tool_turn/response.sse streams it and
+// tool_turn/next_request.json resends it.
+const (
+	turnToolID    = "toolu_019bEfdhX7BCUviMriXT6Dpj"
+	turnToolInput = `{"file_path":"/tmp/t19/work/notes.txt"}`
+)
+
+// toolEvents are the tool_call and tool_result events among events, in order.
+func toolEvents(events []core.Event) (calls []*core.ToolCallEvent, results []*core.ToolResultEvent) {
+	for _, ev := range events {
+		switch ev.Kind {
+		case core.KindToolCall:
+			calls = append(calls, ev.ToolCall)
+		case core.KindToolResult:
+			results = append(results, ev.ToolResult)
+		}
+	}
+	return calls, results
+}
+
+// storedTool is the part of a stored tool_call or tool_result payload the tool tests
+// read.
+type storedTool struct {
+	ID         string          `json:"id"`
+	ToolCallID string          `json:"tool_call_id"`
+	ExecutedBy core.ExecutedBy `json:"executed_by"`
+	Source     core.Source     `json:"source"`
+}
+
+// storedTools are the stored payloads of the tool_call and tool_result events, by
+// kind, in order, as the pipeline would store them.
+func storedTools(t *testing.T, events []core.Event) map[core.EventKind][]storedTool {
+	t.Helper()
+	out := map[core.EventKind][]storedTool{}
+	for _, se := range canonical(t, events) {
+		if se.Kind != core.KindToolCall && se.Kind != core.KindToolResult {
+			continue
+		}
+		var p storedTool
+		if err := json.Unmarshal(se.Payload, &p); err != nil {
+			t.Fatalf("payload %s: %v", se.Payload, err)
+		}
+		out[se.Kind] = append(out[se.Kind], p)
+	}
+	return out
+}
+
+// AC32: the recorded tool turn's streamed answer is a tool_call with its id, name and
+// input, run by the client, from the response. The next request resends that call in
+// its history (source request_history) and answers it with a tool_result whose
+// tool_call_id is the wire's tool_use_id.
+func TestParse_ToolUseTurn(t *testing.T) {
+	t.Run("response", func(t *testing.T) {
+		res := parseStream(t, readFixture(t, "tool_turn/response.sse"), "", false)
+		if res.Status != core.ParseOK {
+			t.Fatalf("status = %q, want ok", res.Status)
+		}
+		msg, rest := responseEvents(t, res)
+		if msg.StopReason != "tool_use" || len(msg.Blocks) != 1 ||
+			msg.Blocks[0].Type != core.BlockToolCall || msg.Blocks[0].ToolCallID != turnToolID {
+			t.Fatalf("response message = %+v, want one tool_call block for %s, stop_reason tool_use", msg, turnToolID)
+		}
+		calls, results := toolEvents(rest)
+		if len(calls) != 1 || len(results) != 0 {
+			t.Fatalf("response gave %d tool calls and %d results, want 1 and 0", len(calls), len(results))
+		}
+		c := calls[0]
+		if c.ID != turnToolID || c.Name != "Read" || !jsonEqual(t, c.Input, []byte(turnToolInput)) ||
+			c.ExecutedBy != core.ExecutedByClient || c.Source != core.SourceResponse {
+			t.Errorf("tool_call = {id %q name %q input %s executed_by %q source %q}, want {%s Read %s client response}",
+				c.ID, c.Name, c.Input, c.ExecutedBy, c.Source, turnToolID, turnToolInput)
+		}
+		stored := storedTools(t, res.Events)
+		want := []storedTool{{ID: turnToolID, ExecutedBy: core.ExecutedByClient, Source: core.SourceResponse}}
+		if !slices.Equal(stored[core.KindToolCall], want) {
+			t.Errorf("stored tool_call payloads = %+v, want %+v", stored[core.KindToolCall], want)
+		}
+	})
+
+	t.Run("next_request", func(t *testing.T) {
+		res := parseMessages(t, string(readFixture(t, "tool_turn/next_request.json")))
+		if res.Status != core.ParseOK {
+			t.Fatalf("status = %q, want ok", res.Status)
+		}
+		calls, results := toolEvents(res.Events)
+		if len(calls) != 1 || len(results) != 1 {
+			t.Fatalf("next request gave %d tool calls and %d results, want 1 and 1", len(calls), len(results))
+		}
+		c := calls[0]
+		if c.ID != turnToolID || c.Name != "Read" || !jsonEqual(t, c.Input, []byte(turnToolInput)) ||
+			c.ExecutedBy != core.ExecutedByClient || c.Source != core.SourceRequestHistory {
+			t.Errorf("resent tool_call = {id %q name %q input %s executed_by %q source %q}, want {%s Read %s client request_history}",
+				c.ID, c.Name, c.Input, c.ExecutedBy, c.Source, turnToolID, turnToolInput)
+		}
+		r := results[0]
+		if r.ToolCallID != turnToolID || r.IsError || r.ExecutedBy != core.ExecutedByClient ||
+			r.Source != core.SourceRequestHistory || !jsonEqual(t, r.Content, []byte(`"1\talpha\n2\tbravo\n3\tcharlie\n4\t"`)) {
+			t.Errorf("tool_result = {tool_call_id %q is_error %v executed_by %q source %q content %s}, want {%s false client request_history the file's lines}",
+				r.ToolCallID, r.IsError, r.ExecutedBy, r.Source, r.Content, turnToolID)
+		}
+		var wire struct {
+			ToolUseID string `json:"tool_use_id"`
+		}
+		if err := json.Unmarshal(r.Raw, &wire); err != nil || wire.ToolUseID != r.ToolCallID {
+			t.Errorf("tool_call_id %q, wire tool_use_id %q (%v): want them equal", r.ToolCallID, wire.ToolUseID, err)
+		}
+		stored := storedTools(t, res.Events)
+		wantCalls := []storedTool{{ID: turnToolID, ExecutedBy: core.ExecutedByClient, Source: core.SourceRequestHistory}}
+		wantResults := []storedTool{{ToolCallID: turnToolID, ExecutedBy: core.ExecutedByClient, Source: core.SourceRequestHistory}}
+		if !slices.Equal(stored[core.KindToolCall], wantCalls) || !slices.Equal(stored[core.KindToolResult], wantResults) {
+			t.Errorf("stored payloads = %+v, want calls %+v and results %+v", stored, wantCalls, wantResults)
+		}
+	})
+}
+
+// AC33: an assistant message of text, tool_use, text (tool_order, assembled from
+// recorded blocks) keeps that order as text, tool_call, text, and the tool_call
+// block names its tool_call event, in the parser's events and in the stored payload.
+func TestParse_MessageKeepsToolBlockOrder(t *testing.T) {
+	res := parseStream(t, readFixture(t, "tool_order/response.sse"), "", false)
+	if res.Status != core.ParseOK {
+		t.Fatalf("status = %q, want ok", res.Status)
+	}
+	msg, rest := responseEvents(t, res)
+	var types []core.BlockType
+	for _, b := range msg.Blocks {
+		types = append(types, b.Type)
+	}
+	if want := []core.BlockType{core.BlockText, core.BlockToolCall, core.BlockText}; !slices.Equal(types, want) {
+		t.Fatalf("blocks = %v, want %v", types, want)
+	}
+	if !jsonEqual(t, msg.Blocks[0].Content, []byte(`{"type":"text","text":"As of October 1, 2026, the latest major version is **Go 1.27**. The newest stable patch release I found is 1.27.1.\n\n**Go 1.27 (current major release)**\n- "}`)) ||
+		!jsonEqual(t, msg.Blocks[2].Content, []byte(`{"type":"text","text":". A newer patch may have come out since then. The official release history page is at go.dev/doc/devel/release.\n- **Language changes:** "}`)) {
+		t.Errorf("text blocks = %s and %s, want the first and the second recorded text", msg.Blocks[0].Content, msg.Blocks[2].Content)
+	}
+	calls, _ := toolEvents(rest)
+	if len(calls) != 1 || calls[0].ID != turnToolID || msg.Blocks[1].ToolCallID != calls[0].ID {
+		t.Fatalf("tool_call block id %q, tool_call events %+v: want one event %s, named by the block",
+			msg.Blocks[1].ToolCallID, calls, turnToolID)
+	}
+
+	var stored struct {
+		Blocks []struct {
+			Type       core.BlockType `json:"type"`
+			ToolCallID string         `json:"tool_call_id"`
+		} `json:"blocks"`
+	}
+	for _, se := range canonical(t, res.Events) {
+		if se.Kind == core.KindMessage && se.Source == core.SourceResponse {
+			if err := json.Unmarshal(se.Payload, &stored); err != nil {
+				t.Fatalf("payload %s: %v", se.Payload, err)
+			}
+		}
+	}
+	if len(stored.Blocks) != 3 || stored.Blocks[0].Type != core.BlockText || stored.Blocks[1].Type != core.BlockToolCall ||
+		stored.Blocks[2].Type != core.BlockText || stored.Blocks[1].ToolCallID != turnToolID {
+		t.Errorf("stored blocks = %+v, want text, tool_call (%s), text", stored.Blocks, turnToolID)
+	}
+	if calls := storedTools(t, res.Events)[core.KindToolCall]; len(calls) != 1 || calls[0].ID != stored.Blocks[1].ToolCallID {
+		t.Errorf("stored tool_call events %+v, want one whose id is the block's %q", calls, stored.Blocks[1].ToolCallID)
+	}
+}
+
+// AC34: a streamed turn with a server_tool_use, its web_search_tool_result and a
+// client tool_use (server_tool, assembled from recorded blocks): the server call and
+// its result are run by the provider, the client call by the client, and every
+// tool block and the result name the call they belong to.
+func TestParse_ServerToolUse(t *testing.T) {
+	const serverID = "srvtoolu_015XnX3PdVM3zYQgxbSYgDcW"
+	res := parseStream(t, readFixture(t, "server_tool/response.sse"), "", false)
+	if res.Status != core.ParseOK {
+		t.Fatalf("status = %q, want ok", res.Status)
+	}
+	msg, rest := responseEvents(t, res)
+	type block struct {
+		typ core.BlockType
+		id  string
+	}
+	var blocks []block
+	for _, b := range msg.Blocks {
+		blocks = append(blocks, block{b.Type, b.ToolCallID})
+	}
+	wantBlocks := []block{{core.BlockToolCall, serverID}, {core.BlockToolResult, serverID}, {core.BlockToolCall, turnToolID}}
+	if !slices.Equal(blocks, wantBlocks) {
+		t.Fatalf("blocks = %+v, want %+v", blocks, wantBlocks)
+	}
+
+	calls, results := toolEvents(rest)
+	if len(calls) != 2 || len(results) != 1 {
+		t.Fatalf("got %d tool calls and %d results, want 2 and 1", len(calls), len(results))
+	}
+	srv, client, result := calls[0], calls[1], results[0]
+	if srv.ID != serverID || srv.Name != "web_search" || srv.ExecutedBy != core.ExecutedByProvider ||
+		srv.Source != core.SourceResponse || !jsonEqual(t, srv.Input, []byte(`{"query":"latest Go release golang 2026"}`)) {
+		t.Errorf("server tool_call = {id %q name %q input %s executed_by %q source %q}, want {%s web_search the query provider response}",
+			srv.ID, srv.Name, srv.Input, srv.ExecutedBy, srv.Source, serverID)
+	}
+	if result.ToolCallID != srv.ID || result.ExecutedBy != core.ExecutedByProvider || result.Source != core.SourceResponse ||
+		!bytes.HasPrefix(result.Content, []byte(`[{"type":"web_search_result"`)) {
+		t.Errorf("server tool_result = {tool_call_id %q executed_by %q source %q}, want {%s provider response} with the search results",
+			result.ToolCallID, result.ExecutedBy, result.Source, srv.ID)
+	}
+	if client.ID != turnToolID || client.Name != "Read" || client.ExecutedBy != core.ExecutedByClient ||
+		client.Source != core.SourceResponse || !jsonEqual(t, client.Input, []byte(turnToolInput)) {
+		t.Errorf("client tool_call = {id %q name %q input %s executed_by %q source %q}, want {%s Read %s client response}",
+			client.ID, client.Name, client.Input, client.ExecutedBy, client.Source, turnToolID, turnToolInput)
+	}
+
+	stored := storedTools(t, res.Events)
+	wantCalls := []storedTool{
+		{ID: serverID, ExecutedBy: core.ExecutedByProvider, Source: core.SourceResponse},
+		{ID: turnToolID, ExecutedBy: core.ExecutedByClient, Source: core.SourceResponse},
+	}
+	wantResults := []storedTool{{ToolCallID: serverID, ExecutedBy: core.ExecutedByProvider, Source: core.SourceResponse}}
+	if !slices.Equal(stored[core.KindToolCall], wantCalls) || !slices.Equal(stored[core.KindToolResult], wantResults) {
+		t.Errorf("stored payloads = %+v, want calls %+v and results %+v", stored, wantCalls, wantResults)
+	}
+}
