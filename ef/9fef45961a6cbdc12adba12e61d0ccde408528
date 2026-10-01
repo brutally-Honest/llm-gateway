@@ -1,0 +1,4 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (supports AC32, AC34, AC50, AC53)
+Why this approach: independent recorder outside the gateway, so fixtures don't vouch for the capture code under test
+Scrubbed in next_request.json (outside assistant messages): metadata.user_id, system text, tool descriptions, non-prompt text, safeguards client context, UUIDs, home paths, local username
+Verified by: TestFixtures_NoIdentifiers, make verify, manual read of every file
