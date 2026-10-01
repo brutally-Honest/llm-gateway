@@ -34,3 +34,24 @@ to scrub; message and tool IDs are made up, and `request_id` is `req_scrubbed`.
   `rate_limit_error`.
 - `error/stream_error.sse`: `synthetic`. A stream that starts a text block and ends
   with an `error` event, type `overloaded_error`, with no `message_stop`.
+
+# Recorded fixtures (spec 002, T19)
+
+Recorded 2026-10-01, model `claude-opus-5-5`, Claude Code `2.1.286` with a subscription login,
+in a scratch directory `/tmp/t19/work` holding a three-line `notes.txt`. Method: 001's
+throwaway proxy, `Accept-Encoding: identity`.
+
+- `tool_turn/response.sse`, `tool_turn/response.headers`: `recorded`. The streamed answer
+  to "How many lines are in notes.txt? Use the Read tool.", ending in a `Read` `tool_use`.
+  Body unchanged. Headers: `anthropic-*-id`, `traceresponse`, `cf-*`, `set-cookie`,
+  hop-by-hop, `content-encoding` and `content-length` dropped; `request-id` set to `req_scrubbed`.
+- `tool_turn/next_request.json`: `recorded`, trimmed. The next `POST /v1/messages` body,
+  carrying the `tool_result`. `metadata.user_id` scrubbed; system text, tool descriptions
+  and every non-assistant text except the recorded prompt replaced with placeholders; tools
+  cut to `Read`; UUIDs, home paths and the local username outside assistant messages
+  replaced; the `safeguards` client context trimmed. Assistant messages unchanged.
+- `server_tool/websearch.sse`: `recorded`. The streamed response to "Search the web for
+  the latest Go release and answer in one line.", holding `server_tool_use` and
+  `web_search_tool_result`. Body unchanged; `encrypted_content` is opaque provider data.
+
+Checked for keys, auth tokens, UUIDs, emails, paths and account names.

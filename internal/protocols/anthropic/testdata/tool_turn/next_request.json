@@ -1,0 +1,258 @@
+{
+  "model": "claude-opus-5-5",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "[trimmed]"
+        },
+        {
+          "type": "text",
+          "text": "[trimmed]"
+        },
+        {
+          "type": "text",
+          "text": "How many lines are in notes.txt? Use the Read tool."
+        }
+      ]
+    },
+    {
+      "role": "system",
+      "content": "[trimmed]",
+      "output_config": {
+        "effort": "medium"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_019bEfdhX7BCUviMriXT6Dpj",
+          "name": "Read",
+          "input": {
+            "file_path": "/tmp/t19/work/notes.txt"
+          },
+          "cache_control": {
+            "type": "ephemeral",
+            "ttl": "1h"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_019bEfdhX7BCUviMriXT6Dpj",
+          "type": "tool_result",
+          "content": "1\talpha\n2\tbravo\n3\tcharlie\n4\t",
+          "cache_control": {
+            "type": "ephemeral",
+            "ttl": "1h"
+          }
+        }
+      ]
+    }
+  ],
+  "system": [
+    {
+      "type": "text",
+      "text": "[trimmed: Claude Code system prompt]"
+    },
+    {
+      "type": "text",
+      "text": "You are Claude Code, Anthropic's official CLI for Claude.",
+      "cache_control": {
+        "type": "ephemeral",
+        "ttl": "1h"
+      }
+    },
+    {
+      "type": "text",
+      "text": "[trimmed: Claude Code system prompt]",
+      "cache_control": {
+        "type": "ephemeral",
+        "ttl": "1h"
+      }
+    }
+  ],
+  "tools": [
+    {
+      "name": "Read",
+      "description": "[trimmed]",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "description": "The absolute path to the file to read",
+            "type": "string"
+          },
+          "offset": {
+            "description": "The line number to start reading from. Only provide if the file is too large to read at once",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "limit": {
+            "description": "The number of lines to read. Only provide if the file is too large to read at once.",
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "pages": {
+            "description": "Page range for PDF files (e.g., \"1-5\", \"3\", \"10-20\"). Only applicable to PDF files. Maximum 20 pages per request.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_path"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "metadata": {
+    "user_id": "user_scrubbed"
+  },
+  "max_tokens": 128000,
+  "thinking": {
+    "type": "adaptive"
+  },
+  "context_management": {
+    "edits": [
+      {
+        "type": "clear_thinking_20251015",
+        "keep": "all"
+      }
+    ]
+  },
+  "safeguards": [
+    {
+      "type": "[trimmed]",
+      "classifier_context": {
+        "v": 1,
+        "permission_mode": "[trimmed]",
+        "platform": "[trimmed]",
+        "live_cwd": "[trimmed]",
+        "home_dir": "[trimmed]",
+        "rule_roots": {
+          "userSettings": "[trimmed]",
+          "projectSettings": "[trimmed]",
+          "localSettings": "[trimmed]",
+          "flagSettings": "[trimmed]",
+          "policySettings": "[trimmed]",
+          "cliArg": "[trimmed]",
+          "command": "[trimmed]",
+          "session": "[trimmed]",
+          "toolsNarrowing": "[trimmed]",
+          "mcpServerPolicy": "[trimmed]",
+          "hostCredential": "[trimmed]"
+        },
+        "trusted_directories": {
+          "primary": {
+            "path": "[trimmed]",
+            "resolved": [
+              "[trimmed]"
+            ]
+          },
+          "additional": [],
+          "network": [],
+          "block_reads_outside_working_directories": false
+        },
+        "rules": {
+          "allow": [],
+          "deny": [],
+          "ask": []
+        },
+        "auto_mode": {
+          "allow": [],
+          "soft_deny": [],
+          "hard_deny": [],
+          "environment": [
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]",
+            "[trimmed]"
+          ]
+        },
+        "artifact_consent_holdback": true,
+        "case_insensitive_paths": false,
+        "restricted": false,
+        "is_remote_mode": false,
+        "classify_all_shell": false,
+        "user_identity": "[trimmed]",
+        "git_state": {
+          "cwd": "[trimmed]",
+          "root": null,
+          "branch": null,
+          "default_branch": null,
+          "status": null,
+          "visibility": {
+            "origin": null,
+            "push_remote": null,
+            "remotes": [],
+            "visibility_cache": []
+          },
+          "error": "[trimmed]"
+        },
+        "artifacts": {
+          "by_slug": {},
+          "by_path": {},
+          "live_docs": [],
+          "room_armed": [],
+          "type_reads": {},
+          "session": {
+            "frame_env": "[trimmed]",
+            "viewer_origin": "[trimmed]",
+            "short_links": true,
+            "ant_build": false,
+            "comments_in_schema": true,
+            "handlers": false,
+            "room_client": false,
+            "eval_stub": false,
+            "scratchpad_dir": "[trimmed]",
+            "tool_results_dir": "[trimmed]",
+            "toolset": true,
+            "live_edit": false,
+            "live_doc_stream": false,
+            "live_paths_schema": false,
+            "copy_from": true,
+            "db_str_replace": true,
+            "types_on": true,
+            "five_class_asks": true,
+            "watch_rail": "[trimmed]",
+            "auto_react": true
+          }
+        }
+      }
+    }
+  ],
+  "output_config": {
+    "effort": "medium"
+  },
+  "stream": true
+}

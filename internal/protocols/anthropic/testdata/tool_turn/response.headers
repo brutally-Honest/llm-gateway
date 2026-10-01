@@ -1,0 +1,22 @@
+HTTP/1.1 200 OK
+Anthropic-Ratelimit-Unified-5h-Reset: 1790880600
+Anthropic-Ratelimit-Unified-5h-Status: allowed
+Anthropic-Ratelimit-Unified-5h-Utilization: 0.07
+Anthropic-Ratelimit-Unified-7d-Reset: 1791417600
+Anthropic-Ratelimit-Unified-7d-Status: allowed
+Anthropic-Ratelimit-Unified-7d-Utilization: 0.02
+Anthropic-Ratelimit-Unified-Fallback-Percentage: 0.5
+Anthropic-Ratelimit-Unified-Overage-Disabled-Reason: org_level_disabled
+Anthropic-Ratelimit-Unified-Overage-Status: rejected
+Anthropic-Ratelimit-Unified-Representative-Claim: five_hour
+Anthropic-Ratelimit-Unified-Reset: 1790880600
+Anthropic-Ratelimit-Unified-Status: allowed
+Cache-Control: no-cache
+Content-Security-Policy: default-src 'none'; frame-ancestors 'none'
+Content-Type: text/event-stream; charset=utf-8
+Date: Thu, 01 Oct 2026 14:18:17 GMT
+Request-Id: req_scrubbed
+Server: cloudflare
+Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+Vary: Accept-Encoding
+X-Robots-Tag: none

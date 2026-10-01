@@ -340,7 +340,7 @@ Layout the tasks assume:
 
 ## Fixtures (human)
 
-- [ ] T19 — Record the new Anthropic fixtures (needs-human). The implementer has no
+- [x] T19 — Record the new Anthropic fixtures (needs-human). The implementer has no
   Claude Code login and must never extract the OAuth token. Nothing else in this spec is
   recorded; `non_streaming` and `error/*` are synthetic (T21).
 
