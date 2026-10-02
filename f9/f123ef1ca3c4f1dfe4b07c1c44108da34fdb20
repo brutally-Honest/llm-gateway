@@ -1,0 +1,4 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (AC16); research Q17; T34
+Why this approach: owner decision on the ESCALATE review (fix 3), the same answer Q17 gave TestStore_OpenFailsFast in cmd/gateway.
+Trade-off / known limit: the subtest now proves the reason 'not a directory', not 'permission denied'; skipIfRoot stays for testStatPermissionDenied, which this fix did not cover. Not run as euid 0: unshare -r is denied in this environment.
+Verified by: subtest passes; fails when Open is made to succeed for the path (reverted); make verify.
