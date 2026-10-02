@@ -428,6 +428,52 @@ func TestParse_MalformedRequest(t *testing.T) {
 	}
 }
 
+// A request body cut in the middle of the messages array parses up to the cut: the
+// request event, flagged partial, then every message complete before the cut with its
+// tool events. The message the cut falls in has no event, and the parse is partial.
+func TestParse_TruncatedRequestPartial(t *testing.T) {
+	const cut = `{"model":"m","max_tokens":8,"messages":[` +
+		`{"role":"user","content":"one"},` +
+		`{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Read","input":{}}]},` +
+		`{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"par`
+	res := parser(t).Parse(core.ParseInput{
+		Method:           http.MethodPost,
+		Path:             "/v1/messages",
+		Status:           http.StatusOK,
+		RequestHeader:    http.Header{},
+		ResponseHeader:   http.Header{},
+		RequestBody:      []byte(cut),
+		RequestTruncated: true,
+		DecodeLimit:      decodeLimit,
+	})
+	if res.Status != core.ParsePartial {
+		t.Fatalf("status %q, want partial", res.Status)
+	}
+	want := []core.EventKind{core.KindRequest, core.KindMessage, core.KindMessage, core.KindToolCall}
+	if len(res.Events) != len(want) {
+		t.Fatalf("%d events, want %d: %+v", len(res.Events), len(want), res.Events)
+	}
+	for i, ev := range res.Events {
+		if ev.Kind != want[i] {
+			t.Errorf("event %d is %s, want %s", i, ev.Kind, want[i])
+		}
+	}
+	req := res.Events[0]
+	if !req.Partial || req.Request.Model != "m" || req.Request.MaxTokens == nil || *req.Request.MaxTokens != 8 {
+		t.Errorf("request event = %+v (partial %v), want partial with model m and max_tokens 8",
+			req.Request, req.Partial)
+	}
+	for i, ev := range res.Events[1:3] {
+		if ev.Partial || ev.Message.Index != i || ev.Message.Source != core.SourceRequestHistory {
+			t.Errorf("message event %d = %+v (partial %v), want whole message %d from history",
+				i, ev.Message, ev.Partial, i)
+		}
+	}
+	if call := res.Events[3].ToolCall; call.ID != "toolu_1" {
+		t.Errorf("tool_call id = %q, want toolu_1", call.ID)
+	}
+}
+
 // update rewrites the golden event files instead of comparing against them.
 var update = flag.Bool("update", false, "rewrite testdata golden files")
 

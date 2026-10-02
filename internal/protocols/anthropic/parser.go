@@ -41,7 +41,9 @@ func (parser) Parse(in core.ParseInput) core.ParseResult {
 		case err == nil:
 			events = evs
 		case reqStatus == core.ParsePartial:
-			// A body cut short is expected not to parse whole: partial, not failed.
+			// A body cut short is expected not to parse whole: partial, not failed,
+			// with the events read before the cut.
+			events = evs
 		default:
 			status = core.ParseFailed
 		}

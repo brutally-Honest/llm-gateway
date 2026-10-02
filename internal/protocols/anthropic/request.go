@@ -10,8 +10,9 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/core"
 )
 
-// wireRequest is the part of a Messages request the parser reads. Every other field
-// stays in the raw body; an unknown one is never an error.
+// wireRequest is the part of a Messages request the parser reads, but for its
+// messages, which are read one at a time. Every other field stays in the raw body; an
+// unknown one is never an error.
 type wireRequest struct {
 	Model     string          `json:"model"`
 	Stream    bool            `json:"stream"`
@@ -19,7 +20,6 @@ type wireRequest struct {
 	System    json.RawMessage `json:"system"`
 	Tools     json.RawMessage `json:"tools"`
 	Thinking  json.RawMessage `json:"thinking"`
-	Messages  []wireMessage   `json:"messages"`
 }
 
 type wireMessage struct {
@@ -41,36 +41,143 @@ type wireBlock struct {
 
 // parseRequest maps a decoded request body to its request event, then one message
 // event per message (source request_history), each followed by the tool events its
-// blocks reference. An error means the body is not a Messages request.
+// blocks reference. It reads the body token by token, so a body cut short still
+// yields every message complete before the cut: on an error the events read so far
+// come back with it, the request event flagged partial, since the fields after the
+// cut are unseen. An error means the body is cut short or not a Messages request.
 func parseRequest(body []byte) ([]core.Event, error) {
-	var req wireRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		return nil, err
+	var r requestReader
+	err := r.read(body)
+	if ferr := r.decodeFields(); err == nil {
+		err = ferr
 	}
-	hints, err := hasKey(body, "cache_control")
-	if err != nil {
-		return nil, err
-	}
-	system, tools := present(req.System), present(req.Tools)
+	system, tools := present(r.req.System), present(r.req.Tools)
 	events := []core.Event{{
-		Kind: core.KindRequest,
+		Kind:    core.KindRequest,
+		Partial: err != nil,
 		Request: &core.RequestEvent{
-			Model:              req.Model,
-			Stream:             req.Stream,
-			MaxTokens:          req.MaxTokens,
+			Model:              r.req.Model,
+			Stream:             r.req.Stream,
+			MaxTokens:          r.req.MaxTokens,
 			System:             system,
 			Tools:              tools,
 			HasSystem:          system != nil,
 			HasTools:           tools != nil,
-			CacheHints:         hints,
-			ReasoningRequested: reasoningRequested(req.Thinking),
+			CacheHints:         r.hints,
+			ReasoningRequested: reasoningRequested(r.req.Thinking),
 			ToolNames:          toolNames(tools),
 		},
 	}}
-	for i, m := range req.Messages {
-		events = append(events, messageEvents(i, m.Role, m.Content, core.SourceRequestHistory)...)
+	return append(events, r.messages...), err
+}
+
+// requestReader walks a request body's top-level members. Every member but messages
+// is kept whole and decoded into req once the walk ends; each message is mapped as
+// soon as it is read, so the messages before a cut survive it.
+type requestReader struct {
+	dec      *json.Decoder
+	fields   []json.RawMessage // the top-level members but messages, each as {"key":value}
+	req      wireRequest
+	messages []core.Event
+	index    int  // the next message's index
+	hints    bool // a cache_control member anywhere read so far
+}
+
+func (r *requestReader) read(body []byte) error {
+	r.dec = json.NewDecoder(bytes.NewReader(body))
+	r.dec.UseNumber()
+	tok, err := r.dec.Token()
+	if err != nil {
+		return err
 	}
-	return events, nil
+	switch tok {
+	case nil: // a null body is an empty request, as json.Unmarshal reads it
+	case json.Delim('{'):
+		if err := r.members(); err != nil {
+			return err
+		}
+	default:
+		return errors.New("the request body is not an object")
+	}
+	if _, err := r.dec.Token(); !errors.Is(err, io.EOF) {
+		return errors.New("data after the request body")
+	}
+	return nil
+}
+
+// members reads the request object's members up to and including its closing brace.
+func (r *requestReader) members() error {
+	for r.dec.More() {
+		tok, err := r.dec.Token()
+		if err != nil {
+			return err
+		}
+		key, _ := tok.(string)
+		if key == "cache_control" {
+			r.hints = true
+		}
+		// json.Unmarshal matches a member name to its field ignoring case.
+		if strings.EqualFold(key, "messages") {
+			if err := r.messagesValue(); err != nil {
+				return err
+			}
+			continue
+		}
+		var v json.RawMessage
+		if err := r.dec.Decode(&v); err != nil {
+			return err
+		}
+		r.hints = r.hints || rawHasKey(v, "cache_control")
+		field, err := json.Marshal(map[string]json.RawMessage{key: v})
+		if err != nil {
+			return err
+		}
+		r.fields = append(r.fields, field)
+	}
+	_, err := r.dec.Token() // the closing brace
+	return err
+}
+
+// messagesValue reads the messages member's value, mapping each message as it ends.
+// A repeated messages member replaces the earlier one, as json.Unmarshal does.
+func (r *requestReader) messagesValue() error {
+	r.messages, r.index = nil, 0
+	tok, err := r.dec.Token()
+	if err != nil {
+		return err
+	}
+	if tok == nil {
+		return nil
+	}
+	if tok != json.Delim('[') {
+		return errors.New("messages is not an array")
+	}
+	for r.dec.More() {
+		var raw json.RawMessage
+		if err := r.dec.Decode(&raw); err != nil {
+			return err
+		}
+		var m wireMessage
+		if err := json.Unmarshal(raw, &m); err != nil {
+			return err
+		}
+		r.hints = r.hints || rawHasKey(raw, "cache_control")
+		r.messages = append(r.messages, messageEvents(r.index, m.Role, m.Content, core.SourceRequestHistory)...)
+		r.index++
+	}
+	_, err = r.dec.Token() // the closing bracket
+	return err
+}
+
+// decodeFields decodes the kept members into req, in the order they were sent, so a
+// repeated member's last value wins, as with json.Unmarshal.
+func (r *requestReader) decodeFields() error {
+	for _, f := range r.fields {
+		if err := json.Unmarshal(f, &r.req); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // present is raw, or nil when the field is absent or null.
@@ -113,18 +220,13 @@ func toolNames(tools json.RawMessage) []string {
 	return names
 }
 
-// hasKey reports whether key names an object member anywhere in the JSON body.
-func hasKey(body []byte, key string) (bool, error) {
-	dec := json.NewDecoder(bytes.NewReader(body))
+// rawHasKey reports whether key names an object member anywhere in raw, a complete
+// JSON value.
+func rawHasKey(raw json.RawMessage, key string) bool {
+	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	var v any
-	if err := dec.Decode(&v); err != nil {
-		return false, err
-	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return false, errors.New("data after the request body")
-	}
-	return walkHasKey(v, key), nil
+	return dec.Decode(&v) == nil && walkHasKey(v, key)
 }
 
 func walkHasKey(v any, key string) bool {

@@ -508,7 +508,7 @@ Layout the tasks assume:
 
 ## Review fixes (002 ESCALATE review, 2026-10-02)
 
-- [ ] T32 — `internal/protocols/anthropic/request.go`: read the request body token by
+- [x] T32 — `internal/protocols/anthropic/request.go`: read the request body token by
   token with a `json.Decoder` instead of one `json.Unmarshal`, so a body cut short
   yields the request event (flagged `partial`, since fields after the cut are unseen)
   and a message event, with its tool events, for every message complete before the
