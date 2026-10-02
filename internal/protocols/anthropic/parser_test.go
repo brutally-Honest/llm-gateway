@@ -407,7 +407,8 @@ func TestParse_RequestEncodings(t *testing.T) {
 	})
 }
 
-// A malformed request body fails the parse; a truncated one is partial.
+// A malformed request body fails the parse; a truncated one, or one sealed before its
+// end (request_incomplete), is partial.
 func TestParse_MalformedRequest(t *testing.T) {
 	const cut = `{"model":"m","messages":[{"role":"user","con`
 	in := core.ParseInput{
@@ -425,6 +426,10 @@ func TestParse_MalformedRequest(t *testing.T) {
 	in.RequestTruncated = true
 	if res := parser(t).Parse(in); res.Status != core.ParsePartial {
 		t.Errorf("truncated: status %q, want partial", res.Status)
+	}
+	in.RequestTruncated, in.RequestIncomplete = false, true
+	if res := parser(t).Parse(in); res.Status != core.ParsePartial {
+		t.Errorf("request_incomplete: status %q, want partial", res.Status)
 	}
 }
 

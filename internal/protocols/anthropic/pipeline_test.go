@@ -2,11 +2,15 @@ package anthropic_test
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -100,6 +104,13 @@ type capturingGateway struct {
 
 func startCapturingGateway(t *testing.T, up config.Upstream) *capturingGateway {
 	t.Helper()
+	return startCapturingGatewayWith(t, up, 1<<20, decodeLimit)
+}
+
+// startCapturingGatewayWith is startCapturingGateway with the capture's memory budget
+// and max_body_bytes set; the parse's decode limit stays decodeLimit.
+func startCapturingGatewayWith(t *testing.T, up config.Upstream, budget, maxBody int64) *capturingGateway {
+	t.Helper()
 	dir := t.TempDir()
 	logs := &syncBuffer{}
 	log := logging.New(logs, "debug")
@@ -109,7 +120,7 @@ func startCapturingGateway(t *testing.T, up config.Upstream) *capturingGateway {
 	}
 	sink := capture.NewSink(capture.Config{QueueSize: 8, Workers: 1, DecodeLimit: decodeLimit}, st, log)
 	reg := core.NewRegistry(log, core.WithCapture(core.Capture{
-		Sink: sink, Budget: core.NewBudget(1 << 20), MaxBodyBytes: decodeLimit, Principal: core.LocalPrincipal{},
+		Sink: sink, Budget: core.NewBudget(budget), MaxBodyBytes: maxBody, Principal: core.LocalPrincipal{},
 	}))
 	reg.AddAdapter(anthropic.Adapter{}, up)
 	srv := server.New(log, reg.Mount)
@@ -161,7 +172,8 @@ func (g *capturingGateway) drain(t *testing.T) *store.Reader {
 // the parser never reads it as the provider's. Through the real proxy, sink,
 // pipeline and store: an unreachable upstream (502, gateway_error) and a client that
 // leaves before upstream answers (499, client_disconnected). A refused dial leaves
-// the request copy empty (T17), so only the 499 case has request events to check.
+// the request copy empty (T17), so only the 499 case has request events to check; the
+// empty copy is a request cut short, so its parse is partial, not failed (Q22).
 func TestParse_GatewayMadeResponseStoredWithoutError(t *testing.T) {
 	const request = `{"model":"m","max_tokens":8,"messages":[{"role":"user","content":"hi"}]}`
 	for _, tc := range []struct {
@@ -169,12 +181,13 @@ func TestParse_GatewayMadeResponseStoredWithoutError(t *testing.T) {
 		up      func(t *testing.T) config.Upstream
 		wait    time.Duration // client timeout; 0 waits for the answer
 		status  int
-		request bool // the request copy is whole, so parse is ok with a request event
+		parse   core.ParseStatus
+		request bool // the request copy is whole, so there is a request event
 	}{
 		{"upstream_unreachable", func(t *testing.T) config.Upstream { return upstreamConfig(refusedURL(t)) }, 0,
-			http.StatusBadGateway, false},
+			http.StatusBadGateway, core.ParsePartial, false},
 		{"client_left", func(t *testing.T) config.Upstream { return upstreamConfig(hangingUpstream(t)) },
-			200 * time.Millisecond, 499, true},
+			200 * time.Millisecond, 499, core.ParseOK, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			checkNoLeaksAtEnd(t)
@@ -196,8 +209,8 @@ func TestParse_GatewayMadeResponseStoredWithoutError(t *testing.T) {
 				t.Errorf("exchange status %d, gateway_error %q, client_disconnected %v; want %d with a flag",
 					row.Status, row.GatewayError, row.ClientDisconnected, tc.status)
 			}
-			if tc.request && row.Parse != string(core.ParseOK) {
-				t.Errorf("parse = %q, want ok", row.Parse)
+			if row.Parse != string(tc.parse) {
+				t.Errorf("parse = %q, want %s", row.Parse, tc.parse)
 			}
 			events, err := r.Events(id)
 			if err != nil {
@@ -216,6 +229,93 @@ func TestParse_GatewayMadeResponseStoredWithoutError(t *testing.T) {
 				t.Error("the request event is missing")
 			}
 		})
+	}
+}
+
+// A request copy sealed before its body's end is parsed as a request cut short:
+// partial, not failed, with the events of every message complete before the seal.
+// Upstream reads a known prefix of the body, answers and closes, while the client is
+// still sending far more than loopback's socket buffers hold, so the exchange ends
+// with request_incomplete set and truncated not.
+func TestParse_RequestSealedEarlyPartial(t *testing.T) {
+	const prefix = `{"model":"m","max_tokens":8,"messages":[{"role":"user","content":"hi"},` +
+		`{"role":"user","content":"`
+	const size = 24 << 20 // under decodeLimit, so only the seal can cut the copy
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := io.ReadFull(r.Body, make([]byte, len(prefix))); err != nil {
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, okResponse)
+	}))
+	t.Cleanup(up.Close)
+	base, err := url.Parse(up.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkNoLeaksAtEnd(t)
+	g := startCapturingGatewayWith(t, upstreamConfig(base), 2*size, 2*size)
+
+	conn, err := net.Dial("tcp", g.addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fmt.Fprintf(conn, "POST /anthropic/v1/messages HTTP/1.1\r\nHost: x\r\n"+
+		"Content-Type: application/json\r\nContent-Length: %d\r\n\r\n%s", size, prefix); err != nil {
+		t.Fatal(err)
+	}
+	written := make(chan struct{})
+	go func() {
+		defer close(written)
+		chunk := bytes.Repeat([]byte("b"), 64<<10)
+		for sent := len(prefix); sent < size; sent += len(chunk) {
+			if _, err := conn.Write(chunk[:min(len(chunk), size-sent)]); err != nil {
+				return
+			}
+		}
+	}()
+	res, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, res.Body)
+	_ = res.Body.Close()
+	id := g.queuedID(t)
+	_ = conn.Close()
+	<-written
+
+	r := g.drain(t)
+	row, err := r.Exchange(id)
+	if err != nil {
+		t.Fatalf("exchange %s: %v", id, err)
+	}
+	if row.Status != http.StatusOK || !row.RequestIncomplete || row.Truncated {
+		t.Fatalf("status %d, request_incomplete %v, truncated %v; want 200, true, false",
+			row.Status, row.RequestIncomplete, row.Truncated)
+	}
+	if row.Parse != string(core.ParsePartial) {
+		t.Errorf("parse = %q, want partial", row.Parse)
+	}
+	events, err := r.Events(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var requests, history int
+	for _, ev := range events {
+		switch {
+		case ev.Kind == string(core.KindRequest):
+			requests++
+		case ev.Kind == string(core.KindMessage) && ev.Source == string(core.SourceRequestHistory):
+			history++
+		}
+	}
+	if requests != 1 || history != 1 {
+		t.Errorf("%d request and %d request_history message events, want 1 and 1 (the message before the seal)",
+			requests, history)
 	}
 }
 

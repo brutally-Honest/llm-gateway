@@ -44,7 +44,10 @@ type ParseInput struct {
 	RequestHeader, ResponseHeader       http.Header
 	RequestBody, ResponseBody           []byte // still content-encoded
 	RequestTruncated, ResponseTruncated bool
-	Stream                              bool
+	// RequestIncomplete means the request copy was sealed before the body's end: a
+	// request cut short, like a truncated one.
+	RequestIncomplete bool
+	Stream            bool
 	// GatewayResponse means upstream sent no response: no status, no header, no body.
 	// The gateway wrote the response itself, because it made an error (the exchange's
 	// gateway_error) or the client left before upstream answered (a bare 499). Status

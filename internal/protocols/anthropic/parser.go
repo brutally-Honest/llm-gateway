@@ -25,13 +25,15 @@ func (parser) HashExcludedFields() []string { return []string{"cache_control"} }
 
 // Parse reads one exchange. Anything but POST /v1/messages is skipped. Each body is
 // decoded before it is read: an encoding the decoder doesn't know makes the parse
-// unsupported_encoding, and a body cut short (truncated by the capture cap, or past
-// the decode limit) makes it partial. A response the gateway wrote is not read.
+// unsupported_encoding, and a body cut short (truncated by the capture cap, sealed
+// before its end, or past the decode limit) makes it partial. A response the gateway
+// wrote is not read.
 func (parser) Parse(in core.ParseInput) core.ParseResult {
 	if in.Method != http.MethodPost || in.Path != messagesPath {
 		return core.ParseResult{Status: core.ParseSkipped}
 	}
-	reqBody, reqStatus := decodeBody(in.RequestHeader, in.RequestBody, in.RequestTruncated, in.DecodeLimit)
+	reqCut := in.RequestTruncated || in.RequestIncomplete
+	reqBody, reqStatus := decodeBody(in.RequestHeader, in.RequestBody, reqCut, in.DecodeLimit)
 	status := reqStatus
 
 	var events []core.Event
@@ -74,13 +76,14 @@ func (parser) Parse(in core.ParseInput) core.ParseResult {
 }
 
 // decodeBody undoes the body's Content-Encoding and says what that leaves the parse:
-// ok, partial when the body was truncated or cut short, or unsupported_encoding.
-func decodeBody(h http.Header, body []byte, truncated bool, limit int64) ([]byte, core.ParseStatus) {
+// ok, partial when the body was cut before capture (cut) or by the decoder, or
+// unsupported_encoding.
+func decodeBody(h http.Header, body []byte, cut bool, limit int64) ([]byte, core.ParseStatus) {
 	out, st := contentcoding.Decode(strings.Join(h.Values("Content-Encoding"), ","), body, limit)
 	switch {
 	case st == contentcoding.Unsupported:
 		return out, core.ParseUnsupportedEncoding
-	case st == contentcoding.CutShort || truncated:
+	case st == contentcoding.CutShort || cut:
 		return out, core.ParsePartial
 	}
 	return out, core.ParseOK

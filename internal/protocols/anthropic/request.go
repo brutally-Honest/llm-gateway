@@ -48,6 +48,9 @@ type wireBlock struct {
 func parseRequest(body []byte) ([]core.Event, error) {
 	var r requestReader
 	err := r.read(body)
+	if !r.started {
+		return nil, err // nothing of the body was read: no request to speak of
+	}
 	if ferr := r.decodeFields(); err == nil {
 		err = ferr
 	}
@@ -81,6 +84,7 @@ type requestReader struct {
 	messages []core.Event
 	index    int  // the next message's index
 	hints    bool // a cache_control member anywhere read so far
+	started  bool // the body's first token was read
 }
 
 func (r *requestReader) read(body []byte) error {
@@ -90,6 +94,7 @@ func (r *requestReader) read(body []byte) error {
 	if err != nil {
 		return err
 	}
+	r.started = true
 	switch tok {
 	case nil: // a null body is an empty request, as json.Unmarshal reads it
 	case json.Delim('{'):

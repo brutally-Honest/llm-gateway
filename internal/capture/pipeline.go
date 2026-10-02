@@ -81,6 +81,7 @@ func (s *Sink) parse(ex *core.Exchange) (res core.ParseResult, logged bool) {
 		ResponseBody:      ex.Response.Bytes(),
 		RequestTruncated:  ex.Request.Truncated,
 		ResponseTruncated: ex.Response.Truncated,
+		RequestIncomplete: ex.RequestIncomplete,
 		Stream:            ex.Stream,
 		GatewayResponse:   !ex.HasTTFB,
 		DecodeLimit:       s.decodeLimit,

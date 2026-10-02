@@ -518,16 +518,20 @@ Layout the tasks assume:
   gives `partial` with the request event and the first two messages' events.
   `TestParse_MalformedRequest` keeps its assertions. Done: those pass. Commit:
   `fix(anthropic): parse a cut request body up to the cut` (AC11) (shaped: Q22)
-- [ ] T33 — `core.ParseInput` gains `RequestIncomplete`; `internal/capture/pipeline.go`
+- [x] T33 — `core.ParseInput` gains `RequestIncomplete`; `internal/capture/pipeline.go`
   passes the exchange's `request_incomplete` beside the truncation flags, and the
   Anthropic parser treats it as a request body cut short: `partial`, not `failed`.
   Tests first, in `internal/protocols/anthropic/pipeline_test.go`:
   `TestParse_GatewayMadeResponseStoredWithoutError/upstream_unreachable` asserts
-  `parse: partial` (its request copy is sealed empty), and a new case
-  `upstream_answered_early` (upstream reads part of the request body, answers, and
-  the client sends the rest only after the answer) stores `request_incomplete` with
-  `parse: partial` and the request event; in `parser_test.go`,
-  `TestParse_MalformedRequest` gains a `request_incomplete` check. Done: those pass.
+  `parse: partial` (its request copy is sealed empty, so it has no request event),
+  and a new test for the upstream-answers-early case, `TestParse_RequestSealedEarlyPartial`
+  (upstream reads a known prefix of the body, answers and closes while the client is
+  still sending a body far larger than loopback's socket buffers, as AC12's
+  `request_read_after_seal` does; a client holding the rest until after the answer
+  would deadlock, since the gateway isn't full-duplex), stores `request_incomplete`
+  with `parse: partial`, the request event and the message before the seal; in
+  `parser_test.go`, `TestParse_MalformedRequest` gains a `request_incomplete` check.
+  Done: those pass.
   Commit: `fix(capture): parse an early-sealed request as partial` (AC12) (shaped:
   Q22)
 - [ ] T34 — `internal/store/store_test.go`: AC16's `unwritable_dir` subtest drops
