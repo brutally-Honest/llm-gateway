@@ -1,0 +1,3 @@
+Research: specs/002-capture-and-canonical-events/research.md Q21
+ADR: docs/decisions/0005-secrets-in-captured-content.md
+Why this approach: owner approved a3c1e39's narrower rule (matches OQ-5 and ADR 0005) on condition the wording counts Proxy-Authorization as an auth header.
