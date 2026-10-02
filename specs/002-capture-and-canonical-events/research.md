@@ -405,6 +405,11 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
 - Outcome (→ spec): spec.md's Do line now reads "every 001 test passes with its
   assertions unchanged, with capture on; test data may be renamed where AC58 requires
   it." `1120d42` stands.
+- 2026-10-02 (owner, 002 ESCALATE review, A1 on `036abdb`, spec.md:367-368): the
+  "assertions unchanged" wording is accepted. Precondition checked the same day:
+  `git diff main...HEAD -- internal/core/proxy_test.go` is `1120d42` only, and it
+  renames four SSE event-name string literals (`message_start`/`message_stop` to
+  `first`/`last`); no assertion line changed.
 
 ## Q15 — How does `startGateway` keep the default `capture.dir` out of the real data dir?
 - Status: answered     Level: flow
@@ -470,6 +475,10 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   had as root without dropping privileges.
 - Outcome (→ tasks): T16's line names the two subtests. `internal/store`'s root skip
   stays for its own task to settle.
+- 2026-10-02 (owner, 002 ESCALATE review, fix 3): `internal/store`'s
+  `unwritable_dir` subtest drops `skipIfRoot` and uses the same answer: the store
+  path sits beneath a regular file (`<tmp>/afile/store`), so creating it fails with
+  `ENOTDIR` for every user, root included. The task is T34.
 
 ## Q18 — What do AC27 and AC28 require of `Proxy-Authorization`, which 001 strips?
 - Status: answered     Level: flow
@@ -507,6 +516,11 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
 - Trade-off: the store has no record that the client sent the header. A client-side
   header view is possible future scope.
 - Outcome (→ spec, tasks): AC27 and AC28 reworded; T18's line matches them.
+- 2026-10-02 (owner, 002 ESCALATE review, A2 on `83bf467`, spec.md:505-513): (a) is
+  accepted. Capture snapshots the outbound request after 001's hop-by-hop stripping,
+  core's redaction list always covers `Proxy-Authorization`, and
+  `TestRedact_AuthHeaders` proves the sentinel never reaches the store or the logs.
+  The spec is re-approved with this wording.
 
 ## Q19 — Where do the response's id and model go in the canonical `message` event?
 - Status: answered     Level: flow
@@ -532,6 +546,9 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
 - Outcome (→ spec, plan, tasks): the spec's `message` event lists both fields; the
   plan's payload, `MessageEvent` and T22 details replace the "dropped" note; T22's line
   covers filling them with a stream-vs-JSON equality test.
+- 2026-10-02 (owner, 002 ESCALATE review, A3 on `918085a`, spec.md:196-199 and
+  238-240): (b) is accepted; `response_id` and `model` are provider-neutral. The spec
+  is re-approved with these fields.
 
 ## Q20 — How are T23's assembled fixtures built when the task line's sources don't fit?
 - Status: answered     Level: flow
@@ -563,3 +580,47 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   `tool_use`; the parser does not read it for tool mapping.
 - Outcome (→ plan, tasks): plan.md's "Details fixed in T23" bullet points here; T23's
   line links Q20.
+
+## Q21 — Does the hard rule on credentials cover `Proxy-Authorization`?
+- Status: answered     Level: flow
+- Blocks / shapes: nothing in 002's tasks; `AGENTS.md` hard rules, `PLAN.md` §5
+- Context: 2026-10-02, 002 ESCALATE review, finding B. `a3c1e39` narrowed the hard
+  rule at `AGENTS.md:30` and `PLAN.md:99` from "secrets" to "credentials — auth
+  headers and keys", to match OQ-5 and ADR 0005. The reviewer flagged the narrowing
+  as a change to a hard rule, which only the owner can approve.
+- Question: is the narrower rule approved, and does "auth headers" include
+  `Proxy-Authorization`, which 001 strips before capture sees it (Q18)?
+- How to resolve: owner decision.
+- Answer: 2026-10-02, owner: the narrower rule is approved; it matches OQ-5 and ADR
+  0005. Its wording names `Proxy-Authorization` as an auth header, so the rule
+  doesn't depend on 001's stripping to hold.
+- Outcome (→ AGENTS.md, PLAN.md): both lines name `Proxy-Authorization` among the
+  auth headers.
+
+## Q22 — What parse status does a request copy sealed early get?
+- Status: answered     Level: flow
+- Blocks / shapes: T32, T33
+- Context: 2026-10-02, 002 ESCALATE review, fixes 1 and 2. Two gaps against the
+  tolerance rule (spec, Anthropic parser): `parseRequest` reads the body with one
+  `json.Unmarshal`, so a request body cut at `max_body_bytes` yields no events at
+  all, not the events before the cut; and the pipeline never tells the parser about
+  `request_incomplete`, so a request copy sealed before its end (upstream answered
+  early, or a 502/504 before upstream read the body) parses as malformed: `failed`.
+  `TestParse_GatewayMadeResponseStoredWithoutError/upstream_unreachable` asserted no
+  parse status, so it passed on `failed`.
+- Question: is a request copy sealed early `partial` or `failed`, and how far does a
+  cut request body parse?
+- How to resolve: owner decision.
+- Answer: 2026-10-02, owner: (1) the request body is read token by token, so a body
+  cut short emits the request event and one message event per message complete
+  before the cut, and the parse is `partial`; (2) the pipeline passes
+  `request_incomplete` to the parser beside the truncation flag, and such an
+  exchange is `partial`, not `failed`.
+- Why: both are bodies cut short, which the tolerance rule already treats as
+  `partial`; `failed` is for a body malformed on its own.
+- Outcome (→ spec, tasks): the spec's tolerance bullet names `request_incomplete`
+  beside `truncated`; T32 and T33 do the work.
+
+## Spec re-approval, 2026-10-02
+- The owner re-approved `spec.md` after the 002 ESCALATE review: A1 (Q14), A2 (Q18)
+  and A3 (Q19) accepted, and the tolerance edit from Q22. Q3 and Q13 stay open.

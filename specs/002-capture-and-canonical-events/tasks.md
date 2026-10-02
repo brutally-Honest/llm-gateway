@@ -506,6 +506,36 @@ Layout the tasks assume:
   those pass. Commit: `test(anthropic): prove captured content deduplicates` (AC49,
   AC50, AC51, AC52) (shaped: Q8)
 
+## Review fixes (002 ESCALATE review, 2026-10-02)
+
+- [ ] T32 — `internal/protocols/anthropic/request.go`: read the request body token by
+  token with a `json.Decoder` instead of one `json.Unmarshal`, so a body cut short
+  yields the request event (flagged `partial`, since fields after the cut are unseen)
+  and a message event, with its tool events, for every message complete before the
+  cut, and the parse is `partial`. A body malformed without being cut is still
+  `failed`. Test first, in `parser_test.go`: `TestParse_TruncatedRequestPartial`, a
+  request body flagged `truncated` that ends inside the third message of `messages`,
+  gives `partial` with the request event and the first two messages' events.
+  `TestParse_MalformedRequest` keeps its assertions. Done: those pass. Commit:
+  `fix(anthropic): parse a cut request body up to the cut` (AC11) (shaped: Q22)
+- [ ] T33 — `core.ParseInput` gains `RequestIncomplete`; `internal/capture/pipeline.go`
+  passes the exchange's `request_incomplete` beside the truncation flags, and the
+  Anthropic parser treats it as a request body cut short: `partial`, not `failed`.
+  Tests first, in `internal/protocols/anthropic/pipeline_test.go`:
+  `TestParse_GatewayMadeResponseStoredWithoutError/upstream_unreachable` asserts
+  `parse: partial` (its request copy is sealed empty), and a new case
+  `upstream_answered_early` (upstream reads part of the request body, answers, and
+  the client sends the rest only after the answer) stores `request_incomplete` with
+  `parse: partial` and the request event; in `parser_test.go`,
+  `TestParse_MalformedRequest` gains a `request_incomplete` check. Done: those pass.
+  Commit: `fix(capture): parse an early-sealed request as partial` (AC12) (shaped:
+  Q22)
+- [ ] T34 — `internal/store/store_test.go`: AC16's `unwritable_dir` subtest drops
+  `skipIfRoot` and opens the store beneath a regular file (`<tmp>/afile/store`), so
+  creation fails with `ENOTDIR` for every user, root included. Done: it passes, and
+  fails when `Open` is made to ignore the error. Commit:
+  `test(store): prove an uncreatable store fails as root too` (AC16) (shaped: Q17)
+
 ## Manual evidence (no commit; output goes into the PR)
 
 - [ ] T29 — Claude Code smoke with capture (needs-human). Run after T1–T28 are ticked.
@@ -575,12 +605,12 @@ Every AC in `spec.md` (AC1–AC63) maps to at least one task:
 | AC8 | T6, T8 | AC29 | T7, T8, T14 | AC50 | T4, T24 |
 | AC9 | T17 | AC30 | T22 | AC51 | T4, T24 |
 | AC10 | T17 | AC31 | T22 | AC52 | T4, T24 |
-| AC11 | T6, T17, T21 | AC32 | T19, T23 | AC53 | T19, T21, T23 |
-| AC12 | T6, T8, T17 | AC33 | T23 | AC54 | T3, T25 |
+| AC11 | T6, T17, T21, T32 | AC32 | T19, T23 | AC53 | T19, T21, T23 |
+| AC12 | T6, T8, T17, T33 | AC33 | T23 | AC54 | T3, T25 |
 | AC13 | T11 | AC34 | T19, T23 | AC55 | T25 |
 | AC14 | T11 | AC35 | T21, T22 | AC56 | T12, T25 |
 | AC15 | T10 | AC36 | T21, T22 | AC57 | T12, T25 |
-| AC16 | T10, T16 | AC37 | T22 | AC58 | T15 |
+| AC16 | T10, T16, T34 | AC37 | T22 | AC58 | T15 |
 | AC17 | T10 | AC38 | T22 | AC59 | T5, T14 |
 | AC18 | T11 | AC39 | T22 | AC60 | T18 |
 | AC19 | T11 | AC40 | T22 | AC61 | T29 |

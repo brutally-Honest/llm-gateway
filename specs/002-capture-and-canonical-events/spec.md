@@ -250,9 +250,11 @@ doesn't break the client.
       field, becomes `unknown` with its raw JSON kept, never a parse failure.
     - A truncated or aborted stream parses as far as it goes, and the events are
       flagged `partial`.
-    - A body flagged `truncated` (streamed or not) parses as far as it can, and the
-      exchange is `partial`, never `failed`. `failed` is kept for a body that is
-      malformed without being truncated.
+    - A body flagged `truncated` (streamed or not), or a request copy flagged
+      `request_incomplete`, parses as far as it can, and the exchange is `partial`,
+      never `failed`. A request body cut either way yields the request event and a
+      message event for every message complete before the cut (research Q22).
+      `failed` is kept for a body that is malformed without being cut short.
   - **Per-exchange status:** each exchange records `parse`: `ok`, `partial`, `skipped`,
     `unsupported_encoding` or `failed`. A failure keeps the raw bodies and is logged
     and counted.
