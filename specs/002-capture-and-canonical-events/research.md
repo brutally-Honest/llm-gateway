@@ -479,6 +479,11 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   `unwritable_dir` subtest drops `skipIfRoot` and uses the same answer: the store
   path sits beneath a regular file (`<tmp>/afile/store`), so creating it fails with
   `ENOTDIR` for every user, root included. The task is T34.
+- 2026-10-02 (owner, review of T34 `f9f123e`): the ENOTDIR variant is reverted; it
+  duplicated `file_in_place_of_dir`. `unwritable_dir` is again the `0500`-parent
+  subtest with `skipIfRoot`, checking `permission denied`. AC16 in `internal/store` is
+  proved under root by `file_in_place_of_dir` (`not a directory`, no skip), and under
+  non-root by `unwritable_dir` as well.
 
 ## Q18 — What do AC27 and AC28 require of `Proxy-Authorization`, which 001 strips?
 - Status: answered     Level: flow

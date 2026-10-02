@@ -534,12 +534,13 @@ Layout the tasks assume:
   Done: those pass.
   Commit: `fix(capture): parse an early-sealed request as partial` (AC12) (shaped:
   Q22)
-- [x] T34 — `internal/store/store_test.go`: AC16's `unwritable_dir` subtest drops
-  `skipIfRoot` and opens the store beneath a regular file (`<tmp>/afile/store`), so
-  creation fails with `ENOTDIR` for every user, root included. Done: it passes, and
-  fails when `Open` is made to succeed for that path (reverted); a run as euid 0 in a
-  user namespace wasn't possible here (`unshare -r` is denied). Commit:
-  `test(store): prove an uncreatable store fails as root too` (AC16) (shaped: Q17)
+- [x] T34 — `internal/store/store_test.go`, AC16 under root (shaped: Q17). `f9f123e`
+  dropped `skipIfRoot` from `unwritable_dir` and moved it beneath a regular file; the
+  owner had it reverted, since that duplicated `file_in_place_of_dir`. `unwritable_dir`
+  stays the `0500`-parent subtest with `skipIfRoot`, checking `permission denied`;
+  under root AC16 is proved by `file_in_place_of_dir`. Done: the original subtest is
+  restored and `make verify` passes. Commit:
+  `revert(store): restore the permission-denied unwritable_dir subtest`
 
 ## Manual evidence (no commit; output goes into the PR)
 
@@ -615,7 +616,7 @@ Every AC in `spec.md` (AC1–AC63) maps to at least one task:
 | AC13 | T11 | AC34 | T19, T23 | AC55 | T25 |
 | AC14 | T11 | AC35 | T21, T22 | AC56 | T12, T25 |
 | AC15 | T10 | AC36 | T21, T22 | AC57 | T12, T25 |
-| AC16 | T10, T16, T34 | AC37 | T22 | AC58 | T15 |
+| AC16 | T10, T16 | AC37 | T22 | AC58 | T15 |
 | AC17 | T10 | AC38 | T22 | AC59 | T5, T14 |
 | AC18 | T11 | AC39 | T22 | AC60 | T18 |
 | AC19 | T11 | AC40 | T22 | AC61 | T29 |

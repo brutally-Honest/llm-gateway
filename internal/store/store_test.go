@@ -257,15 +257,15 @@ func TestStore_Permissions(t *testing.T) {
 }
 
 func TestStore_OpenFailsFast(t *testing.T) {
-	// A store beneath a regular file can't be created by any user, root included, so
-	// this runs everywhere: root ignores directory permissions (research Q17).
 	t.Run("unwritable_dir", func(t *testing.T) {
-		parent := filepath.Join(t.TempDir(), "afile")
-		if err := os.WriteFile(parent, []byte("not a dir"), 0o600); err != nil {
+		skipIfRoot(t)
+		parent := filepath.Join(t.TempDir(), "locked")
+		if err := os.Mkdir(parent, 0o500); err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(func() { _ = os.Chmod(parent, 0o700) })
 		dir := filepath.Join(parent, "store")
-		assertOpenFails(t, dir, "not a directory")
+		assertOpenFails(t, dir, "permission denied")
 	})
 	t.Run("file_in_place_of_dir", func(t *testing.T) {
 		dir := filepath.Join(t.TempDir(), "store")
