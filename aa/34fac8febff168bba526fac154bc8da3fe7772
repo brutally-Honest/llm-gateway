@@ -1,0 +1,4 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (Anthropic parser, Tolerance); research Q14, Q17, Q18, Q19, Q21, Q22
+Why this approach: owner decisions on the ESCALATE review of 036abdb (A1), 83bf467 (A2), 918085a (A3) and a3c1e39 (B). A1's precondition was checked: main...HEAD changes internal/core/proxy_test.go only in 1120d42, renaming four SSE event-name literals; no assertion changed.
+Trade-off / known limit: the spec stays status: approved (re-approval is recorded in research.md and this commit); Q3 and Q13 stay open.
+Verified by: docs only.
