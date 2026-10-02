@@ -1,0 +1,4 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (AC16); research Q17; T34
+Why this approach: owner decision on reviewing f9f123e: keep one ENOTDIR proof (file_in_place_of_dir, which runs as root) and the permission-denied proof for non-root.
+Trade-off / known limit: under root, 'permission denied' is not proved; unwritable_dir skips there.
+Verified by: make verify.
