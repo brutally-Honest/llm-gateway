@@ -1,0 +1,4 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (Anthropic parser, Tolerance); AC12; research Q22; T33
+Why this approach: core.ParseInput gains a provider-neutral RequestIncomplete; the Anthropic parser treats it like RequestTruncated. An empty request copy (refused dial) now yields no request event rather than an empty one.
+Alternatives rejected: a client that holds the rest of the body until after the answer, as the test's trigger: the gateway isn't full-duplex, so its server blocks writing the response while the transport holds the inbound body; the test streams a 24 MiB body instead, as AC12's request_read_after_seal does.
+Verified by: TestParse_GatewayMadeResponseStoredWithoutError/upstream_unreachable (now asserts partial; was failed), TestParse_RequestSealedEarlyPartial (new; was failed with no events), TestParse_MalformedRequest request_incomplete check; -race -count=20 on the pipeline tests; make verify.
