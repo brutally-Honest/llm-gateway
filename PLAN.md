@@ -96,7 +96,7 @@ A lower priority never degrades a higher one.
 - **Errors pass through verbatim.** Status, body, `retry-after`, `x-should-retry`, and rate-limit headers are forwarded, because clients' retry logic parses them.
 - **Don't reshape prompts.** The `system` array, `cache_control`, and message structure stay exactly as sent. Reshaping breaks prompt caching and thinking signatures.
 - **Capture never blocks.** SSE is teed and storage writes are async. If capture fails, the request still succeeds, and the failure is logged and counted.
-- **Credentials the gateway handles never land in storage:** auth headers and keys are always redacted. Secrets inside prompts and tool results are stored as-is on a trusted machine, protected by 0700/0600 permissions, with masking a later opt-in (OQ-5, ADR 0005).
+- **Credentials the gateway handles never land in storage:** auth headers, `Proxy-Authorization` included, and keys are always redacted. Secrets inside prompts and tool results are stored as-is on a trusted machine, protected by 0700/0600 permissions, with masking a later opt-in (OQ-5, ADR 0005).
 - **Never exposed without auth.** Any route reachable from outside localhost (e.g. the Cursor tunnel) requires a gateway token.
 - **Stateless process.** State lives in external stores.
 - **Provider-reported usage is primary; our own estimate is the auditor.** How we estimate per tokenizer is OQ-4.

@@ -27,7 +27,8 @@ A lower priority never degrades a higher one.
 - Errors pass through verbatim, including `retry-after` and rate-limit headers.
 - Don't reshape prompts: `system`, `cache_control` and message structure stay as sent.
 - Capture never blocks; if capture fails the request still succeeds.
-- Credentials — auth headers and keys — never land in storage.
+- Credentials — auth headers (`Proxy-Authorization` included) and keys — never land
+  in storage.
 - No route reachable from outside localhost without a gateway token.
 - Stateless process; state lives in external stores.
 
