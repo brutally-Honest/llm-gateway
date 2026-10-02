@@ -1,0 +1,4 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (Anthropic parser, Tolerance); AC11; research Q22; T32
+Why this approach: a json.Decoder walk over the top-level members maps each message as it ends; the other members are kept whole and decoded into wireRequest in order, so field matching (case-insensitive, last value wins) and type errors behave as json.Unmarshal did.
+Trade-off / known limit: on a cut, the request event is flagged partial and has only the fields sent before the cut; cache_hints covers only what was read.
+Verified by: TestParse_TruncatedRequestPartial (failed with 0 events before the change), TestParse_MalformedRequest unchanged; make verify.
