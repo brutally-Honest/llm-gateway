@@ -534,10 +534,11 @@ Layout the tasks assume:
   Done: those pass.
   Commit: `fix(capture): parse an early-sealed request as partial` (AC12) (shaped:
   Q22)
-- [ ] T34 — `internal/store/store_test.go`: AC16's `unwritable_dir` subtest drops
+- [x] T34 — `internal/store/store_test.go`: AC16's `unwritable_dir` subtest drops
   `skipIfRoot` and opens the store beneath a regular file (`<tmp>/afile/store`), so
   creation fails with `ENOTDIR` for every user, root included. Done: it passes, and
-  fails when `Open` is made to ignore the error. Commit:
+  fails when `Open` is made to succeed for that path (reverted); a run as euid 0 in a
+  user namespace wasn't possible here (`unshare -r` is denied). Commit:
   `test(store): prove an uncreatable store fails as root too` (AC16) (shaped: Q17)
 
 ## Manual evidence (no commit; output goes into the PR)
