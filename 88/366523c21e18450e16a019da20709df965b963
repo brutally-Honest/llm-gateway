@@ -1,0 +1,4 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (AC61)
+Decision: owner, from the T29 manual run on 2026-10-03.
+Verified by: 9 /v1/messages exchanges in a 3-turn session with one tool call; every request_history message matched an earlier content_hash, tool result resent 6x with 1 distinct hash. memory_peak_bytes 230307 over 10 exchanges and 1462248 raw body bytes, 1.5M on disk, 0 drops, 0 failures.
+Trade-off / known limit: defaults kept at 32 MiB / 256 MiB on one 3-turn session's evidence.
