@@ -32,7 +32,17 @@ Report:
 2. **Scope.** Anything in the diff that no AC or task line requires.
 3. **Checks on the checks.** Did the diff touch `spec.md`, `.golangci.yml`, `Makefile`,
    `.githooks/`, `go.mod`, or delete, skip or weaken any test? Quote the lines. Any
-   change to `spec.md` is an automatic `ESCALATE`.
+   post-approval change to `spec.md` is an automatic `ESCALATE`.
+
+   Judge `spec.md` against its approval commit, not against `main`. The approval
+   commit is the newest commit on the branch whose diff adds `status: approved` to
+   that `spec.md`: list candidates with
+   `git log -G '^status: approved$' --format=%H -- specs/<feature>/spec.md` and confirm
+   with `git show` that the line is added, not removed. Edits made in or before that
+   commit are not post-approval changes. Only commits after it that touch `spec.md`
+   are (`git log <approval>..HEAD -- specs/<feature>/spec.md`, or the reviewed commit
+   if it is among them), and only those trigger `ESCALATE`. If no approval commit is
+   found, every change to `spec.md` counts as post-approval.
 4. **Hard rules.** Any line that breaks a rule in `AGENTS.md`.
 5. Run `make verify` and report the result.
 
