@@ -14,6 +14,11 @@ import (
 // exported fields need no lock; the one value written from another goroutine, the
 // request-body error, sits in an atomic inside its watcher.
 type Meta struct {
+	// RequestID is the gateway's ID for the request, set by the access log.
+	RequestID string
+	// PrincipalID is who sent the request, set by the proxy.
+	PrincipalID string
+
 	Protocol           string
 	Client             string
 	Auth               AuthKind
@@ -23,10 +28,18 @@ type Meta struct {
 	GatewayError       string
 	ClientDisconnected bool
 	UpstreamAborted    bool
+	// Status is the final status the proxy answered with: upstream's, or the one its
+	// error handler wrote. 0 until one is known.
+	Status int
+	// Capture is what became of the exchange's capture: CaptureQueued,
+	// CaptureDroppedQueueFull, CaptureDroppedMemory or CaptureOff. It is decided in
+	// Settle, before the access line is written, and is "" off the proxy.
+	Capture string
 
 	start   time.Time // when the proxy handler started; TTFB is measured from it
 	reqBody *requestWatcher
 	resBody *responseWatcher
+	capture *captureState // nil when capture is off or already finished
 }
 
 type metaKey struct{}
@@ -48,10 +61,16 @@ func MetaFrom(ctx context.Context) *Meta {
 // there, upstream cut the response: UpstreamAborted. Otherwise, a cancelled context
 // means the client left: ClientDisconnected. When the client leaves, the outbound
 // read fails with context.Canceled too, which is why the inbound context decides.
+// Then it finishes the exchange's capture, so Capture is set when Settle returns.
 func (m *Meta) Settle(ctx context.Context) {
 	if m == nil {
 		return
 	}
+	m.settleAbort(ctx)
+	m.finishCapture()
+}
+
+func (m *Meta) settleAbort(ctx context.Context) {
 	if m.responseBodyErr() != nil && ctx.Err() == nil {
 		m.UpstreamAborted = true
 		return

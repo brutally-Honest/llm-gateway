@@ -1,0 +1,570 @@
+event: message_start
+data: {"type":"message_start","message":{"model":"claude-opus-5-5","id":"msg_011CfbfMfDdtbsNLrHPCmvCA","type":"message","role":"assistant","content":[],"container":null,"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":2793,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":16,"service_tier":"standard","inference_geo":"not_available"},"diagnostics":null,"context_management":null}       }
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"srvtoolu_015XnX3PdVM3zYQgxbSYgDcW","name":"web_search","input":{}}             }
+
+event: ping
+data: {"type": "ping"}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":""}          }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"query"}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\": \"lat"}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"est Go "}         }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"release"}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":" golang"}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":" 2026\"}"}             }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0   }
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"web_search_tool_result","tool_use_id":"srvtoolu_015XnX3PdVM3zYQgxbSYgDcW","content":[{"type":"web_search_result","title":"Go 1.26 Release Notes - The Go Programming Language","url":"https://go.dev/doc/go1.26","encrypted_content":"Et0ICioIFBgCIiRjMmY2Y2JhMC1hY2NlLTQxMDUtYjU2Yi0yMTk2MmE5MjBhNjcSDANWPw/7AsbamLHTWxoMNwTMCsuusO6bwfSSIjAZd9YEPCN+MloGIKk+6E/rZyQKM3b5Oa2yYzbxAfT/naGXhEuNpRp/2HEbDgXvN3Qq4AeodSwD5b/RqU6W/K68eloIH1SbfzyGYsLqZU6oxdbWYQzmvlCxb1W5FYs9Q/BR+2OR0WyuKxbCwe6tzLxM1NriqU1FwYgCaLGWzBc8vEDzFx+qF3XDUJ5nMr7i3Om8fOO3u16b+0k349i77gZtjjbeNvxSwNOnfSNWc2rirpJVL0MqNm3r8DY3Hda4zAT2MZC0QRHYO2fUy6e6MRYNFarHbmJ/ls1+KIvIHiC4tvn0eQlaDRHfIvicjIe3ukkUzC5sapsCmqF/wsZsy6W5Ut6BHoX92Fk2HrQqCvHtt49SN/48bE3/CsRSv1jjIEsWUijipb8XQG1eN6E4DI8+WJiS3c++WPwE67hxr3c/VDGEu2aetXPdoOM5eJMhH9S8kRtxfEzB/5VvGoEI0ubHy+s7KCCciDUR9EJzTwDApUg7t/ddrnZY8rxXg8+DvAhRuEHx8i7VItWUKiCXx8DhbLG6YwImibHHi+h7XN8XDHRaCAqENUh5yE36tjXvuHRTYdx9aYoT3lyY0pfsgVrufjYbXNYBlQ1jRAkHXb6nGCdpuVuFxgbmRrVmQuQvIzPVnm/1q1i5qmtclwtphnUbCRG6jDlH6+6VqehcPYEl7SL04t2mA5Ky9VuyDjKCXcvbS/QxWMa4s3WF225c/CwtM8IzWYrVy0hHb13ZR29lLdUYyRmBD2gXsQOHdzJCNt/1PrDCtERcgrWpd6XLFa4sIyjOz1IxxMP4Xg9AS3lmC5DDrOqdm0YjtZZXUnF+x0wyPj9t9aVHXrwT1gjUFeUs43Y2jBushQxIQrZRI74KuWvcZ8068bcHM/eTB8utg/xYnIecabOc0U5Vk2MMaai6MQn2Ii7lCLdphi0zhtBWnpQzSBo2bs9Xn0q1iJ4nSdBBlWo4L0xkFDD8/LxvMCPo39R+WN4FzugrwMTG29F0+/Eu9EpdStSEOl6+IhtWsXCB9YICYK0NAPvD8D827iO2EWywn2jPgu4Q9CjGTEaHspKuIeI6T5VBpYZQPyS1dsCOTzPwjFNzzdYUDA2mr1I10XJBHbM38YT80WPYvErmYE2zEdWAHktHdvEeaO4RvUco9dZFLVys7mMVhk9oSVRVCsxGgIkd8OumNZzKhbdIK2K3MGaVMedEkkm3cB+7fbJxSgLEk0IGKCd24BFpOPLL0Ysmfb1GjssfIESVA/gVDIhvpYHmo26vNXfAWhVUMKVFE/22ePzLT2Mb6C22rSLcWDtIw0OiUEsBWmuEYg6s2oK6p56/IgY5vgXKtgfSCX8pccd7YodN7enta1trSVB68BvYq/JyY0mMUbpTi2oKk9hBOBgD","page_age":"229 days ago"},{"type":"web_search_result","title":"Go Release Notes","url":"https://goframe.org/en/release/golang","encrypted_content":"EvsFCioIFBgCIiRjMmY2Y2JhMC1hY2NlLTQxMDUtYjU2Yi0yMTk2MmE5MjBhNjcSDI87KpBrdELpo8tm5BoMUtkn0FucZlAZE71uIjAwoD6ixYmLoFhHamYANLOIxc8+OW3eWyH1ZtvXS5KCcYsFqmfQno5fMIwG2hV5Va8q/gS/bNt3ZOXpZ/UB2HLbbctOxeo7dGxhiJooJO2rkLpI45t91eXULjECnaO7lX5JvWimKWElCuQ5RzHXXRql9CtgyA5gb76xg8SSHLGu6UifegdCq6MoTTxvaXfJETMoWg920a28preZ7Mbsgm5DyQxv+8F6JlB7NREArsq3FNrOTB5MZWeeN/j5KVlMkmzaUrxxiBrdXZKeqCA+xt/1uyLrRxrfe9EfJxLZkfXA/vX0d0uAFZt38fEjtD4gtKEGcyKTTjnY+YpIoG4m1R4CBAqoQp5bYjMMdFotiAe9J/oZwiy2Mww1MIM/0IoRonDyk+lnZVAne+KE/XsbcKSAOlNHVpnJA8j8rhjxai7LvFA4nA2OuoQr1+0Qd3WXs0xtA039PYrTDNt2z5SIkrEffdiMdVgpRQ6P8gCGKY/OT52NHJ2bGdk33e/9bTAyGN1TUKeITKHfBvT/3wzvygZsGWFFqLgfjMGEX8MLWfbTnVk8xFo9BKPEqg67P1mcEukl6jQbY2OLSraOZilQdO8qXOtWLftGiQfwnPyZgt1vsW4T4wxuVgEJZ8OTyoJFiEufrlrHD8OLsykWSocHAfJ0qHEQ5h7N+4RNRYHL/X6kL3idnBp0J2UNtp1HN8vMjIgv9RKhoOeqR/Z4C/+I74KfVV1DEZPlSX6IecMfGTeXDL3v7eGE1zjB0bp6vj3QFktFbjK9QAZSvSF8yMM8CqDjqLwAWD0iDdHT2CWGk59qB1PfIXKp+rU9dBtnLIIDmcdgGvJJhfeqYjoxZNlbU28cgOqHr9x9FoFMfoBYQiDYcqixo3JDilIyyXS8mAMd9bRZEb/M1OeMFm9ecyCwJqB3+hgD","page_age":"232 days ago"},{"type":"web_search_result","title":"Release History - The Go Programming Language","url":"https://go.dev/doc/devel/release","encrypted_content":"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","page_age":"415 days ago"},{"type":"web_search_result","title":"Go 1.26 is released - The Go Programming Language","url":"https://go.dev/blog/go1.26","encrypted_content":"EukICioIFBgCIiRjMmY2Y2JhMC1hY2NlLTQxMDUtYjU2Yi0yMTk2MmE5MjBhNjcSDLD4uC1yV2UZFq3cZRoMh+m+mhV0KrY6Ku5QIjDTM8qc85GEXVx82sWarNBAiVnCEeDpU/XFkqbEG+7sDF9Cx3SwL7/SdeJC6pL6ADYq7AcXDkhpTPLZUxRMqyA1HnuduMnRK59aHTd6Q9dSUhU65a3RDnFwxcOcnNaRhDKVve9WeK12FQO84OH8T5ZQlB2W1KJlJppOcWT8rSYCbzoTjoYh+ojD9cphbq1gj9dWrsCE8ARE0kmELoThzKATK1zcVZj+rWCs4zJc9eb+Nett4q/tgr85Ent0r3onBo/S4LpPyduHHSCzBIJbTRaJUVStShb7kgVa+eLeMY1x7N5hI4akl3a7RsudAlrzrceDObzR5c6OL0VyqjnMTqMI54oNeBEb9DDpv98oK5sqT+nJ/P0L1aaWVUJey8MX3yZoFvBseP5Tirne9uTngEaGOApUbOoHV4nLILRbp+jUqprwaZ32knIaJ1RgUC+r8dWglVfON9pPsO4/ii/4twxgncBczRzzmAF/4gyfYbOPVK1uTzKgv9qk/uWZfGHYF0koqnz/UKjAuvnwKLawGdknDbbQKgnQ3e7/347txnAyU/kqUEXgsw3hijpsjBsozBGaox3Y9fTVF0eKjQblVV9MiGscE7lnABlB56nQhKUM/pUpK0L90kN4nvhlNl1omPY/PdJbG+UzYVptlVo8hVivw6+zunvvp3kOxZSQWsuZsmg1usyKOQCqZzIcgE0WuBih1tB37gamyxQ6UNwCVBSMm2qAFHpGjzE7zAgCOY6VYeC1UFiLYdYETXa4YwcfxSLRZ59YDX45pDUsBX/yslpNP9OoFQT3xY1+3cCo30dPovwTKNbBx5xxdf+HybYcMOpx5KC5kIsZ/2axbXpSJGEl7kw37mrRvM+/GbdoBjTHLaI8SAXteLLVHX+vg9Ev8XSQnHkJzpdB4r5FmV+vUOr9XhBPLo71tiKXacOU5Fw6Zhlm7+Tutjtpxg0tri29uo0LGx0fnPC1+etnknAk8UC/w5RJ2VOQLA1m7zvzaWzr0Xu8RHrvyE42zHiVFHsUQH28s/f+S0EPohRhwunQsKkzFDWC9pJMgpK1611Tg2rXdxmI6GH7ZLz11HD4i3KojBw2DHgcjFWTTjp1NxVPr2TIDs0xQA0MciRlA8+viIg5AiwAxfmYAAZbxVZ/BQS2/kcXkP0bu8P42aORCb7zJ8+F8z2tfCc+gCFbHp9VFSKSxz1GeeObd69/QAZDDWEBnsUixHbtKyFQefBkUaPn64KFXo79N/QQjKhw+fz2NsY1Im6HG4IZtBoeI987+OwP/YZj6QDOIJ5H600rN6TaMvXKy/dlLw9hF941K3HrpZx+SMz407y9RyJNhuIpyKT+LGVpaH2wCFfIR6Yr4DrvShQucphW67lKMU25rjyEMi65eXCrA6wkIZoh28GozxZSMhgD","page_age":"233 days ago"},{"type":"web_search_result","title":"Go (programming language)","url":"https://en.wikipedia.org/wiki/Go_(programming_language)","encrypted_content":"ErUICioIFBgCIiRjMmY2Y2JhMC1hY2NlLTQxMDUtYjU2Yi0yMTk2MmE5MjBhNjcSDP9Ur3raDTbgtdQoVRoMGr1lXBS4B+oVQ+nZIjCy3ucC2pFnK4KkALC9dCQFCc8z3boz9Pi1SSfzmBiUCzCSL3ag8vbP/kp7+Ral0T4quAd0k6XEYA/aSWTH/M2+DHWGnQ/cHvceZjIanhrmV3+PbfYTTQyC2VM1ijmvC+9kWZ0GO0wbC3Xy2a6B98D2X52RVNOwD5k2/ORwm775C3fzKJ6C9LfVKNGWts6aH9GbUwzJUjC/NYIegweNRRFWE2wSTimYqaGmYZAX0dMwcbueZF0rRUnSnonAWap39wJORi0BFBZ1tzllGH/7iMb9jdVjs4L4SOCBwIa8hn9K+tpsO4xNsGY7AndMUXep2TVf1wMfDwpibYEJkdaKjigvsrCbj+ZRSdwvq6zuS9TPhUjpzrwsnyBWA1SayV8fw8Klwr2DQ3il9ZuoUdAfAd6NArmqwMGY+OFQV2TJlelBWXGAGO3ZmGCi/6qMyZu4AJd4bTBtu+CpQpV1FSPOVcnBYrN45VC7q0ao8J63C2iRQQkdJWZtl1EVo9zB8tAiN22sKxtpJx5czXaT3RqJ/B/kzFf/pB9UoaKq3xxw8ai1ii6wKjvPDW2Y/C2/XppZ6oJTrCqyNNJJ1LlhT9TwX6tTw7UmQN3qQ2GTZqKqcEIEdkn3JkLrmXe+Zzip1yPQvn3QAAUHL69kozlFhB1yVe4xNZR3xL4TMCfOYI3ZkjUS6D4A6+ZL86XJHUVv6iWAmlwFxvZkkKQVXqqVEUjcCX602MqpTsXODz+JDeVgMzMQmulB1le02VK39QUGpP4hiSQWMfhL/TMRy+hKrLEuFxK9auHJvA4PKH0AZ2GKQAO6UbSgcYBh6E47zfWdKhdSQdcCMCVnGUVw51KKjL0KzhDXaMnwlGh+CkZjikju/gOwYwe0JO9K+COGVO3L3odtTjrIrLkygVyVlp9+CtlcuR9JvGJM5rJn+n6kqAmSdvH4meYOqKMxUnAf5QgY32aS+5CysXolNHQ985Kmxsb03hua5pfaUqo+0JxZVsrrYnoyliwflfdkHAw1Cg3sjwVqexV+2ERqZGz7z9zlOD2e0AiL31qk7O0rfIVkGJvTfMRadmWetY7nkYmwaxLenGTT1K7QIsFW3HiQmdVZCIcR8y4Fm/eH/JTNhCXElW6hoYmkyt72ecX2k6XQOGjiFqw0WSRwV7Nq5xYINdsxM8IeJi7VEe51z2XeJWc/U4qDoTxvsJ981Sd+stRz/FiOMNn7YEhkRNoDtYV/2fYtEBwpYf3URn4tA3Kmtnd4vqVvUNdAC9RsBtLvHcwkbvbM8tdTlvg0GJGmgbuqm1Rk6dDh7/HZMwcWcjb8F9wjf5F7i10FxfWX7HsgIfym/IYvGAM=","page_age":null},{"type":"web_search_result","title":"Ready for Go 1.27 on Day One - The JetBrains Blog","url":"https://blog.jetbrains.com/go/2026/08/20/ready-for-go-1-27-on-day-one/","encrypted_content":"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","page_age":"42 days ago"},{"type":"web_search_result","title":"Go Updates by Google - August 2026 - Releasebot","url":"https://releasebot.io/updates/google/golang","encrypted_content":"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","page_age":"42 days ago"},{"type":"web_search_result","title":"Android Go","url":"https://en.wikipedia.org/wiki/Android_Go","encrypted_content":"ErcICioIFBgCIiRjMmY2Y2JhMC1hY2NlLTQxMDUtYjU2Yi0yMTk2MmE5MjBhNjcSDCrBBCe/dj1mb4ujXBoMiXTAl+3gwaHApnQuIjAjAAb+4guvN38m8CT80F3hPx0bdqCW86CPnbzaeFWSDT0H/+2INzZMKpyUyvOLunoqugcdM6gUqgcVZqaWsq7+1L2flOxH1zW7qCoLH+DYp/bzU7ezjklngxPorBs2z5qOet6IF7cr74R9vsNMBLOv/w36k5EGZwh0fRHuDQpKTOK3UdB6Qtt9FxIzWTmEQqmuL60dBz1DPcbqY47vZg3UuPjTfLrkKMjke/aVECjCCqASw/W2Ooh/Q9TJVOGeNmIJNMzlC1UEFH1uhbKPSEZCuLVNiERRCrjn6ywlwD59s+KOBizjb97LZSnGvUzGE4Q+Vj2Avuk8pkX+/TJBeMzJ8VyeGNiVlN/jSURCDORQFMBtyuxwl/kbKRNFLS8cL3Eclvu1SkuemtHSyJ/HZ8TmyPuURppqmZzAp3ZwnLjja5X7DOUfexacrk4tlsFpQJF1zrlXNsmiQy+X50iihgY73ouT/Q9syppO+Beu0XGypzrfDajCJhqEhApxWfpB8zzotEXcnDjx5EKIY6naGqYmXsJhBxv+I1XFrRRbr1TNLz15ysAhXkvtYg6/RUBvAhNy1HW5FaEEYIu7pE73jUriRwLMVP5+0wrV4hpdUccYv4vfQ9qzWg+ycmDcW78eukiIOl1tc497Jr9CIni3rDP8IQtpQ5Dg4jLPRbmEUCrAX4pujE78Tj/SYb/SeNm2jZUb5mYqAowmzTeu2pNuFx5qntq9kWxaT3qxLekC9YebFtqD2AhU4vxT91T6O8PjISD1Xu79EODb+96wJ7AG/WgWNbn8/nMKGzTYt55k+fKa5Slf5WdMU/ULz2BNdks25y6O9VYxwApxXNExO1+sj1DlE8oVaqGn3I5HBRK3rKI5sT2u8krHmTzEphNBxJb9P/QS3LUp8vPk7x97fdxPSHvGal25AkhdVheiQbwRxgFkNoYW+ZHwvIqud4OxSxKxZG38Xc19Q9XVkP2/p6pXmZNn8kgYHjV6kLg2ycQiq5+53wW4bLPAZiZruHHc86Bs72em38iSQi19tyrZQ9n8m0YqfKq97uF1WkpUeRUXbc0KUCF+P4zi8phhGseVW8xzWrxtx4dSOmTX35NFPAu1TeAFLP2+qaZl+TaIUI2CkYDfAXuYVOPVV4LpNL/Ex8Mgbgm7olWgyYBHnHgFiiGR8RzYhk5nBq1c98uV4kXfhKcsKwieOeErFT7RGhKzd3wk6nQ2lQlFolLAeg+hwCODjr9Vj1xYiF6kRRgXqgqg/9UI7f/VY23Cmc99/c22mcIGskZguKpgigIdQPuinpXZVYLeq7PIuyKx2NGTkFFHUWO3cDIIaaMvGxnpRUKYuacYAw==","page_age":null},{"type":"web_search_result","title":"Go Version Guide","url":"https://stevenpg.com/references/go-version-guide/","encrypted_content":"EocKCioIFBgCIiRjMmY2Y2JhMC1hY2NlLTQxMDUtYjU2Yi0yMTk2MmE5MjBhNjcSDP9fciKzBPx4AwQ0FRoM4EveKpAUZtComA37IjBjHtGuaYTdrWF7R7xgBr/dbYlKW+cReWHeH+tmKIJXMNzIv2FZKZkRvUt6lvIkUEsqigmRGxYbwSu8LTiAdN4R/EfU1tuC8OzT8GA2Ymx17pnw2ip/SIko2Ew1nV5ugA9O9DVNsI0n/uzTJtHTr6mJ8+GgbMNyTsZZO82PCvZkAXfIw/8d8qnIuF76t1Yu6hmEUD/Irfwq3R+sNI8n4B67A0yD1ltv7UtoirxdCfcJA9opJ0u3WCnP6LUCH0iW+5K/uP4lOT2G90AsRDi1/BhJJTMmMK7FDzkDbkv9stgDaUiC4pB0Fvq6zDBHVZ5J6bOgqA7XXsujarA2PAnuGQjTgTN8o91BaNNLXqSkKE6DuFFcpKWV+jeSmakytshoG3AhNlQiom/hxxF2N2RrmzOh8/XrBeon+GLd4BH5Pjp5dg2NnSo9Qe9Sp/4oQzbl9BVtPQSEmZTrhbhbEefyIT6NeDxXS8coQnFNpWMbgYaTWjRxhgnmAd7BZqRfR9J6PE4gAEp2oB2ihxCKsSibvXx+NWs6A+MaV7odgBIPgdvQID4XtFygn/P02dnW8u15bb7aTQMrsVOeSMkWq0hIFPisPd+bHUdk++HTKMpP5sZQZjsiDCQDej3tf52koBWkAHL7/aAh2JayrNQxsZHDgXnuWn7NNOwfiQq1Nhixck+hwvQw2fidHqaXNdG7WRTd5sJ5IrpqQXpOJtGmrAwdDtpOGT0YMXuYD5InftDdv5DoSerqoEfT/kzLajqTidza4obFOPqzWd9k1TJ2VUmzA4HVCPnpEKf7GpYEsjdnP61kMVbohiQpJn6YZcLG2a+TYjcV66m8+WXCaScmqX5AeomkLQXuNdtptNr9625x0MgSitjYT5m1b6s/7xmh2X1uLoh+CRoamRsulw8Oku1KU8nUqjs1Y0z5hQaKWyV+E2MqGcQTV5hbkzMeKl0RpMLYr951/Itk+e2vqzqKOvcvlQWFZ9P4cF6wgUDxOMnGt51NRBX9SkvALQv9TDWCrAnIefPMDyhvKp9b/nrfFSkx20jWNKZXVdM44Lwx1ifDZdwTOoIGcSXloT9hADWATRhr+TllteZdbrpIL88yzSNDkY8+cwIjUhSlCwdoGMUsJZlM/LPHJULAdrvTesyRtBalAb+lwhTQA8sGZ24DYyP27svEmRZv+OvJ8vAXdck/EEKYX5M5DvK6iK2MTqsrajoZ5o5/ZGDd4Asdduu17rdXUc3od9JXb5jil7G9hnygnrTFT4OxOgPexzsByZfRGSA6uaDa4K33l0U3o2w4plgrUGZ5eyY/ZoOIAGRWTcvcGKzjDYL9qosyJ8hcD2Hc/U7flgh3Fi+D0SPDe490oW++w8mVw7rPCACeeP2Mjb6SBArLM2ZX0ay+zlHINT5I39NnjluC5muP8DOKSrYcb+FXPR5s00ZCyTSdodQpcxBShllFn5YSvoaqvyFojpBZmiuy9khpEGNpDE2IktO/w72HT+UncfUqoUTxLN+posMl3vFjzleWkmTHKchtROQBw4K3HYKsC6snvfUIYVIPgQ1/Yw/cjip6FFuIaZ/qpyo7JZkR3qmbU5T3c/N8Gvt/y+Nem5iLNicZekEirtBd2orKGAM=","page_age":"51 days ago"}],"caller":{"type":"direct"}}  }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1  }
+
+event: content_block_start
+data: {"type":"content_block_start","index":2,"content_block":{"type":"thinking","thinking":"","signature":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":2,"delta":{"type":"thinking_delta","thinking":"","estimated_tokens":50}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":2,"delta":{"type":"thinking_delta","thinking":"","estimated_tokens":null}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":2,"delta":{"type":"signature_delta","signature":"CAQS5wUKEAgSGAI4AUIIdGhpbmtpbmcSDDmTS2Di24aKBe+7zRoMiHPcsI8KCiWZOUP1IjBhAaQqdrS41dQjc356zL0SsOTV+PrTSmmVYqn9N7hG2lXKMVsvD6osLc2rSgE66uQqhAXtEdxRwypmvLMBKCm0K9Ab4TQVqlwDTJ0C+QxdbF+bXHl38ci9HXDs67HgBgm9atwdkRnazwEq6wIZVU+NYSy4Fzs//UEG4qrknWpuNxaaZ8MxLY1gwn5G7JhnYtcSAxQAs3qbkXx0ReNiOoiK3b5w8J1yGvUrze6l/jes9LfvqcCCKLWWt5fWovJGqjFpHB47WQ5ZnCOKFJfgvZJtvT7WFUqoIERNlovtw5GfW/H2WfSyFeDKifmLy57rBkVhrrKvNOY1Y9e4b3gLa0L8VRxtl8nxQ5ynF45KI/TdJmtn9QFI+751mnEadiNRjIGDRWbdm/W/h7QYAqV1cVi3fVCCaW5pOZlJvLvnzxdDAhAJaO2626Vgp1ioObUSjE7aH/Iu4m3fQ6GYUSRzLBXeN9zNdY5FbwmPuTd3Z1J+SiUXlPhEa6yIMVIdkRvX+NJnmmLV1wS8iFm25NR8FhYbRCVXe2Kgaq60zNw9MVRPlSpZ8QXRIIPgiUBMq8xp98U5AoF1uuhw5gsutEyWYMgCYfg7Z6auip2o3t9n+p4doy3akVQBbUpUL8QnFtPOQsyG1YdjXIAL6Oq51HrYPtNKjda5J/UixZVrLlLFoeS9rxVLy67FwCeSFq9brD3eAXEGK+qKppGiyy4LV/dG3BfAH1I9EhowOIsI3O71E/+g9+RfloZduuwvN1mVcF2ZrhMHyXcm1nZ4Qo1C1Tq0h5YneYCEh1NoZvpGY2fLiIhjbI16ttYdFFoLG4cCSj3n6z+4/jFzS7ULcUYN76aLzTizdHVIM97JrevMZWl+GRC47bKhUz6I9YSjBB0CsdWs3P7ih4v/+OAnlSv3q1e+kMsAWW8ct+eoyRgB"} }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":2          }
+
+event: content_block_start
+data: {"type":"content_block_start","index":3,"content_block":{"type":"text","text":""}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":3,"delta":{"type":"text_delta","text":"As"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":3,"delta":{"type":"text_delta","text":" of October 1, 2026"}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":3,"delta":{"type":"text_delta","text":", the latest major"}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":3,"delta":{"type":"text_delta","text":" version is **Go 1."}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":3,"delta":{"type":"text_delta","text":"27**. The"}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":3,"delta":{"type":"text_delta","text":" newest stable patch release I"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":3,"delta":{"type":"text_delta","text":" found is "}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":3,"delta":{"type":"text_delta","text":"1.27.1.\n\n**"}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":3,"delta":{"type":"text_delta","text":"Go"}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":3,"delta":{"type":"text_delta","text":" 1.27 (current"}          }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":3,"delta":{"type":"text_delta","text":" major release)**\n- "}       }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":3         }
+
+event: content_block_start
+data: {"type":"content_block_start","index":4,"content_block":{"citations":[],"type":"text","text":""}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":4,"delta":{"type":"citations_delta","citation":{"type":"web_search_result_location","cited_text":"For example, Go 1.5 was supported until the Go 1.7 release, and Go 1.6 ...\n\n# Release History\n## go1.27.0 (released 2026-08-19)\nGo 1.27.0 is a major r...","url":"https://go.dev/doc/devel/release","title":"Release History - The Go Programming Language","encrypted_index":"Eo8BCioIFBgCIiRjMmY2Y2JhMC1hY2NlLTQxMDUtYjU2Yi0yMTk2MmE5MjBhNjcSDOkAsz7HeIwRVDa8thoM7WBm+mbkEzXR7BqYIjBSVRoOeWtFI5GDr8AZLzRQlyOA7gVViyVqUhCJUOYwEiLG/SAKlKw/XmuuhxvJl4YqE4SMGGcblN1JQFiWv9ezDVPpJ98YBA=="}}         }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":4,"delta":{"type":"text_delta","text":"go"} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":4,"delta":{"type":"text_delta","text":"1.27.0 came"}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":4,"delta":{"type":"text_delta","text":" out on 2026-08-"}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":4,"delta":{"type":"text_delta","text":"19. It is a major release of"}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":4,"delta":{"type":"text_delta","text":" Go."}            }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":4}
+
+event: content_block_start
+data: {"type":"content_block_start","index":5,"content_block":{"type":"text","text":""}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":5,"delta":{"type":"text_delta","text":"\n- Wikip"}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":5,"delta":{"type":"text_delta","text":"edia g"}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":5,"delta":{"type":"text_delta","text":"ives the latest stable release as"}    }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":5,"delta":{"type":"text_delta","text":" "}             }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":5              }
+
+event: content_block_start
+data: {"type":"content_block_start","index":6,"content_block":{"citations":[],"type":"text","text":""}    }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":6,"delta":{"type":"citations_delta","citation":{"type":"web_search_result_location","cited_text":"- Paradigm: Multi-paradigm: concurrent, imperative, functional, object-oriented\n- Designed by: Robert Griesemer Rob Pike Ken Thompson\n- Developer: Goo...","url":"https://en.wikipedia.org/wiki/Go_(programming_language)","title":"Go (programming language)","encrypted_index":"Eo8BCioIFBgCIiRjMmY2Y2JhMC1hY2NlLTQxMDUtYjU2Yi0yMTk2MmE5MjBhNjcSDHmZn6nd8eWopegamRoM5sEhvjO0chbjWsD7IjB9TALOZRVGtVPCvtoMG1Fidf7kL9Pt0xsuwsBzLiceweg5bNfcTw4j5PanM5x8Y+EqE+j2goy65REEPrs+1GFDoY8Eh+0YBA=="}}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":6,"delta":{"type":"text_delta","text":"1.27."} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":6,"delta":{"type":"text_delta","text":"1,"}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":6,"delta":{"type":"text_delta","text":" released"}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":6,"delta":{"type":"text_delta","text":" 1 September 2026"}             }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":6          }
+
+event: content_block_start
+data: {"type":"content_block_start","index":7,"content_block":{"type":"text","text":""}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":7,"delta":{"type":"text_delta","text":". A"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":7,"delta":{"type":"text_delta","text":" newer patch may"}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":7,"delta":{"type":"text_delta","text":" have come out since then"}    }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":7,"delta":{"type":"text_delta","text":"."}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":7,"delta":{"type":"text_delta","text":" The official release history"}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":7,"delta":{"type":"text_delta","text":" page is"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":7,"delta":{"type":"text_delta","text":" at go.dev/doc"}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":7,"delta":{"type":"text_delta","text":"/devel/release.\n-"}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":7,"delta":{"type":"text_delta","text":" **"}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":7,"delta":{"type":"text_delta","text":"Language changes:** "}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":7  }
+
+event: content_block_start
+data: {"type":"content_block_start","index":8,"content_block":{"citations":[],"type":"text","text":""}    }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":8,"delta":{"type":"citations_delta","citation":{"type":"web_search_result_location","cited_text":"Language updates include generic methods, promoted field names in struct composite literals, and improved function type inference. ","url":"https://blog.jetbrains.com/go/2026/08/20/ready-for-go-1-27-on-day-one/","title":"Ready for Go 1.27 on Day One - The JetBrains Blog","encrypted_index":"Eo8BCioIFBgCIiRjMmY2Y2JhMC1hY2NlLTQxMDUtYjU2Yi0yMTk2MmE5MjBhNjcSDHZHFu73i4hEw0p13RoMRQtYkz18GtNSTiwEIjDwCmCFQbRZxZUFEmXy1DV5J8Q+kquZbWgahlkzSdBkstsBsSrXY91fcza/rtrpKR0qE1k7AbsR1ICcITUe6fxl9YrcJ38YBA=="}} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":8,"delta":{"type":"text_delta","text":"generic methods, prom"}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":8,"delta":{"type":"text_delta","text":"oted field names in struct compos"}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":8,"delta":{"type":"text_delta","text":"ite literals, and improved function"}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":8,"delta":{"type":"text_delta","text":" type inference."}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":8     }
+
+event: content_block_start
+data: {"type":"content_block_start","index":9,"content_block":{"type":"text","text":""}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":9,"delta":{"type":"text_delta","text":"\n- **Too"}    }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":9,"delta":{"type":"text_delta","text":"ling and"}              }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":9,"delta":{"type":"text_delta","text":" runtime:** "}         }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":9            }
+
+event: content_block_start
+data: {"type":"content_block_start","index":10,"content_block":{"citations":[],"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":10,"delta":{"type":"citations_delta","citation":{"type":"web_search_result_location","cited_text":"Beyond the language itself, Go 1.27 expands go fix with new modernizers and adds a profile for finding goroutine leaks. ","url":"https://blog.jetbrains.com/go/2026/08/20/ready-for-go-1-27-on-day-one/","title":"Ready for Go 1.27 on Day One - The JetBrains Blog","encrypted_index":"Eo8BCioIFBgCIiRjMmY2Y2JhMC1hY2NlLTQxMDUtYjU2Yi0yMTk2MmE5MjBhNjcSDLzOtZXHM4EYmgmCLBoM4lNIw+HBB4Y1lvcMIjCKseNQgsYgsHgtfZyK/dVSevJM2Qjnd8OoJRpAugmkIutBRJxiR+ct3xL3vB8/COgqEwOr7ZOEuZXxqOOp0btz3pP+DLcYBA=="}}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":10,"delta":{"type":"text_delta","text":"Go 1.27 "}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":10,"delta":{"type":"text_delta","text":"expands go fix with new mod"}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":10,"delta":{"type":"text_delta","text":"ernizers and adds a prof"}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":10,"delta":{"type":"text_delta","text":"ile for finding goroutine"}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":10,"delta":{"type":"text_delta","text":" leaks."}        }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":10      }
+
+event: content_block_start
+data: {"type":"content_block_start","index":11,"content_block":{"type":"text","text":""}    }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":11,"delta":{"type":"text_delta","text":" It also includ"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":11,"delta":{"type":"text_delta","text":"es "}             }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":11  }
+
+event: content_block_start
+data: {"type":"content_block_start","index":12,"content_block":{"citations":[],"type":"text","text":""}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":12,"delta":{"type":"citations_delta","citation":{"type":"web_search_result_location","cited_text":"Go 1.27 releases major updates across the language, toolchain, runtime, and standard library, including generic methods, smarter type inference, new g...","url":"https://releasebot.io/updates/google/golang","title":"Go Updates by Google - August 2026 - Releasebot","encrypted_index":"Eo8BCioIFBgCIiRjMmY2Y2JhMC1hY2NlLTQxMDUtYjU2Yi0yMTk2MmE5MjBhNjcSDAu7xPNUDqkbt/5TQhoMpi02nNo5EPIkSZlzIjAQTuaIj9V8QJWUy+FXMHzcDIF/dnBspwqBOIyhXkHpwCfAUrMiY4Gx8T/IC7ihIx4qEzzLYxJXjSbiSrg1QgZllbZEVh4YBA=="}}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":12,"delta":{"type":"text_delta","text":"faster all"}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":12,"delta":{"type":"text_delta","text":"ocation performance, and additions"}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":12,"delta":{"type":"text_delta","text":" like encoding/json/v"}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":12,"delta":{"type":"text_delta","text":"2, crypto/mld"}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":12,"delta":{"type":"text_delta","text":"sa, and native UUID"}          }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":12,"delta":{"type":"text_delta","text":" support."}      }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":12               }
+
+event: content_block_start
+data: {"type":"content_block_start","index":13,"content_block":{"type":"text","text":""}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":13,"delta":{"type":"text_delta","text":"\n\n**Go 1.26 "}         }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":13,"delta":{"type":"text_delta","text":"(previous major release)**"} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":13,"delta":{"type":"text_delta","text":"\n- "}      }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":13               }
+
+event: content_block_start
+data: {"type":"content_block_start","index":14,"content_block":{"citations":[],"type":"text","text":""}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":14,"delta":{"type":"citations_delta","citation":{"type":"web_search_result_location","cited_text":"# Go 1.26 is released\n# The Go Blog\n\nCarlos Amedee, on behalf of the Go team 10 February 2026\n\nToday the Go team is pleased to release Go 1.26. ","url":"https://go.dev/blog/go1.26","title":"Go 1.26 is released - The Go Programming Language","encrypted_index":"Eo8BCioIFBgCIiRjMmY2Y2JhMC1hY2NlLTQxMDUtYjU2Yi0yMTk2MmE5MjBhNjcSDLwSmo7Bw7tgTllglhoM7sjgcK8MhSzs7NYvIjBkONO8kW8KFQO6p+wvrX3ZHKIDoTyGmi5JFOU5cH0U0KMp6I1xYU/2Ewqy6FEGKmcqE+x8fy1Ru9WC72x+PR8tCLfeOZUYBA=="}}          }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":14,"delta":{"type":"text_delta","text":"The"}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":14,"delta":{"type":"text_delta","text":" Go team released Go 1"}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":14,"delta":{"type":"text_delta","text":".26 on 10 February"}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":14,"delta":{"type":"text_delta","text":" 2026."}        }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":14     }
+
+event: content_block_start
+data: {"type":"content_block_start","index":15,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":15,"delta":{"type":"text_delta","text":"\n-"}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":15,"delta":{"type":"text_delta","text":" Highlights: "}              }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":15            }
+
+event: content_block_start
+data: {"type":"content_block_start","index":16,"content_block":{"citations":[],"type":"text","text":""}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":16,"delta":{"type":"citations_delta","citation":{"type":"web_search_result_location","cited_text":"Next article: Using go fix to modernize Go code Previous article: Results from ...\n\nGo 1.26 adds a new garbage collector, cgo overhead reduction, expe...","url":"https://go.dev/blog/go1.26","title":"Go 1.26 is released - The Go Programming Language","encrypted_index":"Eo8BCioIFBgCIiRjMmY2Y2JhMC1hY2NlLTQxMDUtYjU2Yi0yMTk2MmE5MjBhNjcSDMadkvFNYWQtVnoOdBoMsrqu+WAATU5GkMQxIjCcju488TAX1OHe7rrQWfGZVgvCRe+WYofbzjMlK4WozDPTYTGSs0Jmxhqy1oOrd7AqE0rsTkF6bGYR4gj9EKpE7b+6XUAYBA=="}}    }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":16,"delta":{"type":"text_delta","text":"a new garbage collector,"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":16,"delta":{"type":"text_delta","text":" less cgo overhead,"}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":16,"delta":{"type":"text_delta","text":" an experimental simd/arch"}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":16,"delta":{"type":"text_delta","text":"simd package, an experim"}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":16,"delta":{"type":"text_delta","text":"ental runtime/secret package"}    }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":16,"delta":{"type":"text_delta","text":", and more."}   }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":16       }
+
+event: content_block_start
+data: {"type":"content_block_start","index":17,"content_block":{"type":"text","text":""}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":17,"delta":{"type":"text_delta","text":"\n- It also ad"}         }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":17,"delta":{"type":"text_delta","text":"ds "}               }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":17 }
+
+event: content_block_start
+data: {"type":"content_block_start","index":18,"content_block":{"citations":[],"type":"text","text":""}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":18,"delta":{"type":"citations_delta","citation":{"type":"web_search_result_location","cited_text":"This includes the addition of three new packages: crypto/hpke, crypto/mlkem/mlkemtest, and testing/cryptotest.","url":"https://go.dev/blog/go1.26","title":"Go 1.26 is released - The Go Programming Language","encrypted_index":"Eo8BCioIFBgCIiRjMmY2Y2JhMC1hY2NlLTQxMDUtYjU2Yi0yMTk2MmE5MjBhNjcSDD0zh6t00+KcCWV9ohoMIE2ilMyWhIpVTC/QIjAiA9A+5+a1+0SUf0WhxRKSGJ26F9fDCATQAhc6y7jog+Exv8aHTUze7TTI5bc/udkqEytUT0dvznOpGNRzyMQbtsveamUYBA=="}} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":18,"delta":{"type":"text_delta","text":"three new packages:"}         }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":18,"delta":{"type":"text_delta","text":" crypto/hpke,"}              }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":18,"delta":{"type":"text_delta","text":" crypto/mlkem"}          }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":18,"delta":{"type":"text_delta","text":"/mlkemtest,"}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":18,"delta":{"type":"text_delta","text":" and testing/cryptot"}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":18,"delta":{"type":"text_delta","text":"est."}   }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":18             }
+
+event: content_block_start
+data: {"type":"content_block_start","index":19,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":19,"delta":{"type":"text_delta","text":"\n- "}        }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":19              }
+
+event: content_block_start
+data: {"type":"content_block_start","index":20,"content_block":{"citations":[],"type":"text","text":""}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":20,"delta":{"type":"citations_delta","citation":{"type":"web_search_result_location","cited_text":"## Ports\n### Darwin\nGo 1.26 is the last release that will run on macOS 12 Monterey.\n\n","url":"https://go.dev/doc/go1.26","title":"Go 1.26 Release Notes - The Go Programming Language","encrypted_index":"Eo8BCioIFBgCIiRjMmY2Y2JhMC1hY2NlLTQxMDUtYjU2Yi0yMTk2MmE5MjBhNjcSDEWJSAboAeUJd7095RoMSxR0tNPWzrWIZsgbIjAMc3IcNY7dGdZcEBudX80npVqlyXL+0pHOGg9NrIZat5KgTe0nnzpCllVU2+cd4roqE+bKkp2MUWMSvET5oY6cu3YEUT8YBA=="}}    }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":20,"delta":{"type":"text_delta","text":"Go 1.26 "}    }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":20,"delta":{"type":"text_delta","text":"is the last release that will run on"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":20,"delta":{"type":"text_delta","text":" macOS 12 Mon"}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":20,"delta":{"type":"text_delta","text":"terey."}             }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":20      }
+
+event: content_block_start
+data: {"type":"content_block_start","index":21,"content_block":{"type":"text","text":""}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":21,"delta":{"type":"text_delta","text":"\n- Patch rele"} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":21,"delta":{"type":"text_delta","text":"ases are still co"}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":21,"delta":{"type":"text_delta","text":"ming out. For"}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":21,"delta":{"type":"text_delta","text":" example, "}               }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":21 }
+
+event: content_block_start
+data: {"type":"content_block_start","index":22,"content_block":{"citations":[],"type":"text","text":""}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":22,"delta":{"type":"citations_delta","citation":{"type":"web_search_result_location","cited_text":"Google logo Go by Google Go 1.26.7 and Go 1.25.14 are released Go releases minor point updates for Go 1.26.7 and Go 1.25.14, fixing a breakage in unen...","url":"https://releasebot.io/updates/google/golang","title":"Go Updates by Google - August 2026 - Releasebot","encrypted_index":"Eo8BCioIFBgCIiRjMmY2Y2JhMC1hY2NlLTQxMDUtYjU2Yi0yMTk2MmE5MjBhNjcSDFnbdL/kxep2VeAAwBoMp/MKrL8i53G1jIOTIjAeY685CVt2Jv2aisNEjCiEZh+hvxyw91RIhhiq5ht2DekfwvkYJjVNeuYJiGDNQoMqEyizl9HYEaO8Agm4RNgi22uwOnUYBA=="}}          }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":22,"delta":{"type":"text_delta","text":"Go"} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":22,"delta":{"type":"text_delta","text":" 1.26.7 and"}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":22,"delta":{"type":"text_delta","text":" 1.25.14 f"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":22,"delta":{"type":"text_delta","text":"ixed a breakage in un"}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":22,"delta":{"type":"text_delta","text":"encrypted HTTP"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":22,"delta":{"type":"text_delta","text":"/2 h2c connections"} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":22,"delta":{"type":"text_delta","text":" caused by a recent security pat"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":22,"delta":{"type":"text_delta","text":"ch."}    }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":22         }
+
+event: content_block_start
+data: {"type":"content_block_start","index":23,"content_block":{"type":"text","text":""}    }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":23,"delta":{"type":"text_delta","text":"\n\n**Support policy:"}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":23,"delta":{"type":"text_delta","text":"** "}     }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":23   }
+
+event: content_block_start
+data: {"type":"content_block_start","index":24,"content_block":{"citations":[],"type":"text","text":""}          }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":24,"delta":{"type":"citations_delta","citation":{"type":"web_search_result_location","cited_text":"Each major Go release is supported until there are two newer major releases. ","url":"https://go.dev/doc/devel/release","title":"Release History - The Go Programming Language","encrypted_index":"Eo8BCioIFBgCIiRjMmY2Y2JhMC1hY2NlLTQxMDUtYjU2Yi0yMTk2MmE5MjBhNjcSDAs4cwdn4siv9B4DzxoMKPPyt1F7mVqzjguWIjCBMkuIEQlvUkteP9jz45oy+UOqJwGsETsVkFDAkK2kxUBdA3BT1LXkdaqDY1TIm44qEy9KZsI5h7ZxCktPgsQGGOY1g9kYBA=="}}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":24,"delta":{"type":"text_delta","text":"Each major"}    }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":24,"delta":{"type":"text_delta","text":" Go release is supported until two"}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":24,"delta":{"type":"text_delta","text":" newer major releases are"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":24,"delta":{"type":"text_delta","text":" out."}  }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":24     }
+
+event: content_block_start
+data: {"type":"content_block_start","index":25,"content_block":{"type":"text","text":""}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":25,"delta":{"type":"text_delta","text":" That"}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":25,"delta":{"type":"text_delta","text":" means 1.27 and "}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":25,"delta":{"type":"text_delta","text":"1.26 are currently sup"}              }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":25,"delta":{"type":"text_delta","text":"ported, and 1.25 "}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":25,"delta":{"type":"text_delta","text":"support"}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":25,"delta":{"type":"text_delta","text":" ended when 1.27 "}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":25,"delta":{"type":"text_delta","text":"came out.\n\n**"}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":25,"delta":{"type":"text_delta","text":"How to install:**\n```"}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":25,"delta":{"type":"text_delta","text":"\n$ go install golang.org"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":25,"delta":{"type":"text_delta","text":"/dl/go1.27"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":25,"delta":{"type":"text_delta","text":".0@latest\n$"}         }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":25,"delta":{"type":"text_delta","text":" go1.27.0 download"}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":25,"delta":{"type":"text_delta","text":"\n```"}    }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":25          }
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null,"container":null,"safeguard_results":[]},"usage":{"input_tokens":12392,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":943,"output_tokens_details":{"thinking_tokens":62},"server_tool_use":{"web_search_requests":1,"web_fetch_requests":0},"iterations":[{"input_tokens":2793,"output_tokens":56,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"type":"message"},{"input_tokens":9599,"output_tokens":887,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"type":"message"}]},"context_management":{"applied_edits":[]}             }
+
+event: message_stop
+data: {"type":"message_stop"         }
+

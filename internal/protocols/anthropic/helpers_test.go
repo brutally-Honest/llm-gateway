@@ -114,7 +114,8 @@ func upstreamConfig(base *url.URL) config.Upstream {
 }
 
 // gateway is server.New with a core.Registry holding the Anthropic adapter, mounted
-// as production mounts it, listening on loopback, with its logs in a buffer.
+// as production mounts it, listening on loopback, with its logs in a buffer. Under
+// TestCapture_ForwardingUnchanged the registry captures (AC5).
 type gateway struct {
 	addr string
 	logs *syncBuffer
@@ -124,7 +125,11 @@ func startGateway(t *testing.T, up config.Upstream) *gateway {
 	t.Helper()
 	logs := &syncBuffer{}
 	log := logging.New(logs, "debug")
-	reg := core.NewRegistry(log)
+	var opts []core.RegistryOption
+	if c, ok := fidelityCapture(t); ok {
+		opts = append(opts, core.WithCapture(c))
+	}
+	reg := core.NewRegistry(log, opts...)
 	reg.AddAdapter(anthropic.Adapter{}, up)
 	srv := server.New(log, reg.Mount)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -216,8 +221,9 @@ func (g *gateway) accessLine(t *testing.T, path string) map[string]any {
 
 // checkNoLeaksAtEnd registers the plan's leak check. Call it first in a test, so it
 // runs after every other cleanup has closed the gateway and the upstreams. It polls
-// for up to 2s for the goroutine profile to hold no stack through internal/core (a
-// proxy still at work) and no connection handler of this test package's servers.
+// for up to 2s for the goroutine profile to hold no stack through internal/core or
+// internal/capture (a proxy or a capture worker still at work) and no connection
+// handler of this test package's servers.
 func checkNoLeaksAtEnd(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
@@ -237,8 +243,8 @@ func checkNoLeaksAtEnd(t *testing.T) {
 	})
 }
 
-// leakedStacks are the goroutine stacks, other than the caller's, that run proxy
-// code or serve a connection with a handler from this test package.
+// leakedStacks are the goroutine stacks, other than the caller's, that run proxy or
+// capture code or serve a connection with a handler from this test package.
 func leakedStacks() []string {
 	var buf bytes.Buffer
 	_ = pprof.Lookup("goroutine").WriteTo(&buf, 2)
@@ -247,7 +253,7 @@ func leakedStacks() []string {
 		if strings.Contains(s, "anthropic_test.leakedStacks") {
 			continue // the goroutine writing the profile: this one
 		}
-		inProxy := strings.Contains(s, "/internal/core.")
+		inProxy := strings.Contains(s, "/internal/core.") || strings.Contains(s, "/internal/capture.")
 		inTestHandler := strings.Contains(s, "net/http.(*conn).serve") &&
 			strings.Contains(s, "/internal/protocols/anthropic_test.")
 		if inProxy || inTestHandler {

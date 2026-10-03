@@ -17,6 +17,7 @@ type Config struct {
 	LogLevel        string // one of debug, info, warn, error (lower-cased)
 	ShutdownTimeout time.Duration
 	Upstreams       map[string]Upstream // by adapter name; nil when Options.Upstreams is empty
+	Capture         Capture
 }
 
 // Options says where Load looks.
@@ -74,6 +75,7 @@ const (
 	reasonInvalidLevel      = "invalid level"
 	reasonInvalidAddress    = "invalid address"
 	reasonInvalidURL        = "invalid url"
+	reasonInvalidValue      = "invalid value"
 )
 
 // Defaults is the configuration with no file and no env.
@@ -82,6 +84,7 @@ func Defaults() Config {
 		ListenAddr:      "127.0.0.1:7197",
 		LogLevel:        "info",
 		ShutdownTimeout: 10 * time.Minute,
+		Capture:         defaultCapture(),
 	}
 }
 
@@ -93,7 +96,7 @@ type setting struct {
 }
 
 // settingsFor lists the settings in the order they are applied: the flat ones, then
-// each spec's upstream fields. Every key fileValues returns has one.
+// each spec's upstream fields, then capture's. Every key fileValues returns has one.
 func settingsFor(specs []UpstreamSpec) []setting {
 	s := []setting{
 		{"listen_addr", setListenAddr},
@@ -103,7 +106,7 @@ func settingsFor(specs []UpstreamSpec) []setting {
 	for _, spec := range specs {
 		s = append(s, upstreamSettings(spec.Name)...)
 	}
-	return s
+	return append(s, captureSettings()...)
 }
 
 // envNameReplacer maps the characters of a dotted key that an env var cannot hold.

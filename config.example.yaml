@@ -37,3 +37,34 @@ upstreams:
     # duration syntax; must be > 0.
     # Env: GATEWAY_UPSTREAMS_ANTHROPIC_RESPONSE_HEADER_TIMEOUT
     response_header_timeout: 10m
+
+# Capture: every proxied exchange is copied on the side, redacted of auth headers and
+# stored. Capture never blocks or fails a request. Sizes and counts must be > 0.
+capture:
+  # false means no copy, no queue and no store: the gateway only proxies.
+  # Env: GATEWAY_CAPTURE_ENABLED
+  enabled: true
+
+  # Where the store lives. Must be an absolute path. The default is
+  # $XDG_DATA_HOME/llm-gateway, else ~/.local/share/llm-gateway.
+  # Env: GATEWAY_CAPTURE_DIR
+  # dir: /home/you/.local/share/llm-gateway
+
+  # How many finished exchanges may wait to be stored. When it is full, an exchange
+  # is dropped and logged, never waited for.
+  # Env: GATEWAY_CAPTURE_QUEUE_SIZE
+  queue_size: 256
+
+  # How many goroutines store and parse queued exchanges.
+  # Env: GATEWAY_CAPTURE_WORKERS
+  workers: 2
+
+  # The most bytes kept of each request or response body (32 MiB). Past it the copy
+  # stops and the exchange is flagged truncated; forwarding is unaffected.
+  # Env: GATEWAY_CAPTURE_MAX_BODY_BYTES
+  max_body_bytes: 33554432
+
+  # The memory shared by in-flight copies and queued exchanges (256 MiB). An exchange
+  # that would cross it is dropped and logged; forwarding is unaffected.
+  # Env: GATEWAY_CAPTURE_MEMORY_LIMIT
+  memory_limit: 268435456

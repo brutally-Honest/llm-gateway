@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"slices"
@@ -14,6 +15,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"go.uber.org/zap"
+
+	"github.com/brutally-honest/llm-gateway/internal/capture"
 )
 
 // syncBuffer is a goroutine-safe stdout.
@@ -58,6 +62,8 @@ type options struct {
 	mount []func(chi.Router)
 	// accepted, if set, gets a signal each time the listener accepts a connection.
 	accepted chan struct{}
+	// openStore, if set, replaces store.Open.
+	openStore func(dir string, log *zap.Logger) (capture.Store, error)
 }
 
 // signalListener signals accepted after each connection Accept returns.
@@ -78,14 +84,16 @@ func startGateway(t *testing.T, o options) *gateway {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	g := &gateway{t: t, stdout: &syncBuffer{}, cancel: cancel, code: make(chan int, 1)}
+	env := withTempDataDir(t, o.env)
 	d := deps{
 		args: o.args,
 		lookupEnv: func(name string) (string, bool) {
-			v, ok := o.env[name]
+			v, ok := env[name]
 			return v, ok
 		},
-		stdout: g.stdout,
-		mount:  o.mount,
+		stdout:    g.stdout,
+		mount:     o.mount,
+		openStore: o.openStore,
 		listen: func(network, addr string) (net.Listener, error) {
 			g.mu.Lock()
 			g.listen = append(g.listen, addr)
@@ -113,6 +121,26 @@ func startGateway(t *testing.T, o options) *gateway {
 		}
 	})
 	return g
+}
+
+// withTempDataDir returns env with XDG_DATA_HOME set to a temp dir, so the default
+// capture.dir resolves there and never to the real data dir (spec 002, Do). A test
+// that sets GATEWAY_CAPTURE_DIR, XDG_DATA_HOME or HOME chooses for itself. It is
+// XDG_DATA_HOME and not GATEWAY_CAPTURE_DIR so the startup line's env_overrides,
+// which 001's tests assert, stays as they expect.
+func withTempDataDir(t *testing.T, env map[string]string) map[string]string {
+	t.Helper()
+	out := maps.Clone(env)
+	if out == nil {
+		out = map[string]string{}
+	}
+	for _, k := range []string{"GATEWAY_CAPTURE_DIR", "XDG_DATA_HOME", "HOME"} {
+		if _, ok := out[k]; ok {
+			return out
+		}
+	}
+	out["XDG_DATA_HOME"] = t.TempDir()
+	return out
 }
 
 // lines parses every stdout line as JSON, failing the test on any that isn't.

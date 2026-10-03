@@ -14,8 +14,18 @@ import (
 // server starts; after that it is only read.
 type Registry struct {
 	log      *zap.Logger
+	capture  *Capture // nil: capture off
 	adapters []mounted
 	profiles []Profile
+}
+
+// RegistryOption configures a Registry when it is made.
+type RegistryOption func(*Registry)
+
+// WithCapture turns capture on for every proxy the registry builds. Without it the
+// proxies are 001's and every access line has capture off.
+func WithCapture(c Capture) RegistryOption {
+	return func(r *Registry) { r.capture = &c }
 }
 
 // mounted is one adapter and the proxy in front of its upstream.
@@ -25,8 +35,12 @@ type mounted struct {
 }
 
 // NewRegistry returns an empty registry. log is where each proxy's own error line goes.
-func NewRegistry(log *zap.Logger) *Registry {
-	return &Registry{log: log}
+func NewRegistry(log *zap.Logger, opts ...RegistryOption) *Registry {
+	r := &Registry{log: log}
+	for _, o := range opts {
+		o(r)
+	}
+	return r
 }
 
 // AddProfile registers a client profile. Profiles are tried in the order added.
@@ -36,7 +50,7 @@ func (r *Registry) AddProfile(p Profile) {
 
 // AddAdapter registers a protocol adapter and builds its proxy in front of up.
 func (r *Registry) AddAdapter(a Adapter, up config.Upstream) {
-	r.adapters = append(r.adapters, mounted{adapter: a, proxy: NewProxy(a, up, r.Identify, r.log)})
+	r.adapters = append(r.adapters, mounted{adapter: a, proxy: newProxy(a, up, r.Identify, r.log, r.capture)})
 }
 
 // Identify names the client that sent req: the first profile that matches, else

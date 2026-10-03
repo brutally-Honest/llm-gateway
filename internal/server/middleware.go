@@ -49,6 +49,7 @@ func accessLog(log *zap.Logger) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			ctx, meta := core.WithMeta(r.Context())
+			meta.RequestID = RequestID(ctx)
 			r = r.WithContext(ctx)
 			// Keeps http.Flusher, which 001's streams need.
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
@@ -71,7 +72,8 @@ func accessLog(log *zap.Logger) func(http.Handler) http.Handler {
 }
 
 // proxyFields are the access-line fields a proxy adds through Meta: none unless it
-// set Protocol, and the optional ones only when set or true. Never a header, body,
+// set Protocol, and the optional ones only when set or true. capture is set by every
+// proxy, off included. Never a header, body,
 // query or model.
 func proxyFields(m *core.Meta) []zap.Field {
 	if m.Protocol == "" {
@@ -94,6 +96,9 @@ func proxyFields(m *core.Meta) []zap.Field {
 	}
 	if m.UpstreamAborted {
 		f = append(f, zap.Bool("upstream_aborted", true))
+	}
+	if m.Capture != "" {
+		f = append(f, zap.String("capture", m.Capture))
 	}
 	return f
 }

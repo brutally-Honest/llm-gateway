@@ -17,9 +17,12 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/protocols/anthropic"
 )
 
-// The adapter satisfies core.Adapter; the check lives here so adapter.go never has
-// to name core's interface.
-var _ core.Adapter = anthropic.Adapter{}
+// The adapter satisfies core.Adapter and core.SecretDeclarer; the checks live here so
+// adapter.go never has to name core's interfaces.
+var (
+	_ core.Adapter        = anthropic.Adapter{}
+	_ core.SecretDeclarer = anthropic.Adapter{}
+)
 
 // envelope is the Anthropic error body the gateway sends for reason, spelled out
 // literally so the test pins the bytes rather than trusting the adapter.
@@ -65,6 +68,12 @@ func TestAdapter_Values(t *testing.T) {
 	}
 	if a.DefaultBaseURL() != "https://api.anthropic.com" {
 		t.Errorf("DefaultBaseURL() = %q, want https://api.anthropic.com", a.DefaultBaseURL())
+	}
+	if got := a.SecretHeaders(); !reflect.DeepEqual(got, []string{"x-api-key"}) {
+		t.Errorf("SecretHeaders() = %q, want [x-api-key]", got)
+	}
+	if got := a.SecretQueryParams(); len(got) != 0 {
+		t.Errorf("SecretQueryParams() = %q, want none", got)
 	}
 	for _, reason := range []string{"upstream_unreachable", "upstream_timeout", "client_body"} {
 		contentType, body := a.ErrorBody(reason)

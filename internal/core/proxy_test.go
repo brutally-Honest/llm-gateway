@@ -482,9 +482,9 @@ func sseUpstream(t *testing.T, contentType string, first []string, second string
 // fails at the deadline instead of hanging.
 func TestProxy_StreamsSSEWithoutBuffering(t *testing.T) {
 	const contentType = "text/event-stream; charset=utf-8"
-	event := "event: message_start\ndata: {\"n\":1}\n\n"
+	event := "event: first\ndata: {\"n\":1}\n\n"
 	ping := "event: ping\ndata: {\"type\": \"ping\"}\n\n"
-	last := "event: message_stop\ndata: {\"n\":2}\n\n"
+	last := "event: last\ndata: {\"n\":2}\n\n"
 	up, release := sseUpstream(t, contentType, []string{event, ping}, last)
 	gw := startGateway(t, up.URL, identifyWith())
 
@@ -1066,7 +1066,7 @@ func leaveMidStream(t *testing.T, gw *gateway, path, event string, arrived <-cha
 // assumed, has client_disconnected; before headers it has status 499 and nothing the
 // gateway made up.
 func TestProxy_ClientDisconnectCancelsUpstream(t *testing.T) {
-	const event = "event: message_start\ndata: {}\n\n"
+	const event = "event: first\ndata: {}\n\n"
 
 	t.Run("waiting for headers", func(t *testing.T) {
 		checkNoLeaksAtEnd(t)
@@ -1116,7 +1116,7 @@ func dyingUpstream(t *testing.T, event string) *url.URL {
 // clean terminator.
 func TestProxy_UpstreamDiesMidStreamAbortsClient(t *testing.T) {
 	checkNoLeaksAtEnd(t)
-	const event = "event: message_start\ndata: {}\n\n"
+	const event = "event: first\ndata: {}\n\n"
 	gw := startGateway(t, dyingUpstream(t, event), identifyWith())
 	conn := gw.dial(t)
 	if _, err := io.WriteString(conn, rawRequest(http.MethodGet, "/t/v1/stream", "gateway.local", nil, nil, "")); err != nil {
@@ -1142,7 +1142,7 @@ func TestProxy_UpstreamDiesMidStreamAbortsClient(t *testing.T) {
 // upstream_aborted and not client_disconnected; a client leaving mid-stream is the
 // reverse; a completed response and a gateway 502 have neither.
 func TestAccessLog_UpstreamAbortedField(t *testing.T) {
-	const event = "event: message_start\ndata: {}\n\n"
+	const event = "event: first\ndata: {}\n\n"
 	const path = "/t/v1/stream"
 	cases := []struct {
 		name                          string

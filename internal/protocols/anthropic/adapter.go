@@ -1,6 +1,7 @@
 // Package anthropic is the Anthropic Messages protocol adapter. It hands core the
 // values that make a request Anthropic-shaped: a prefix, an upstream default, an auth
-// kind and an error envelope. It parses no body.
+// kind, an error envelope and the headers that carry its secrets. Its parser reads
+// only the captured copy of an exchange, off the request path, into canonical events.
 package anthropic
 
 import (
@@ -41,6 +42,13 @@ func (Adapter) AuthKind(h http.Header) core.AuthKind {
 	}
 	return core.AuthNone
 }
+
+// SecretHeaders adds x-api-key, Anthropic's key header, to the auth headers core
+// redacts in a captured exchange.
+func (Adapter) SecretHeaders() []string { return []string{"x-api-key"} }
+
+// SecretQueryParams is empty: Anthropic never puts a secret in the query.
+func (Adapter) SecretQueryParams() []string { return nil }
 
 // errorEnvelope is Anthropic's error body. Field order is the wire order.
 type errorEnvelope struct {

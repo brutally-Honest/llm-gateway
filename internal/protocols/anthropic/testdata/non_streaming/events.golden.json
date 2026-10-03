@@ -1,0 +1,119 @@
+[
+  {
+    "seq": 0,
+    "kind": "request",
+    "partial": false,
+    "payload": {
+      "cache_hints": true,
+      "has_system": true,
+      "has_tools": true,
+      "kind": "request",
+      "max_tokens": 32000,
+      "model": "claude-sonnet-5",
+      "partial": false,
+      "reasoning_requested": false,
+      "schema_version": 1,
+      "stream": false,
+      "system_hash": "e32a60a14194e7eafebcb65181aeb889cef5033dae9ec4fd593b33332719d8d6",
+      "tool_names": [
+        "Read"
+      ],
+      "tools_hash": "744c1936d15a772ed1015b52e0333043e8f9f3b144306c8cc62ece55aa8f2a63"
+    }
+  },
+  {
+    "seq": 1,
+    "kind": "message",
+    "source": "request_history",
+    "partial": false,
+    "content_hash": "e3ab7ea3b2de193f4194875ddf043422ed52c8ccc3b6926b0f57d6f0202e09e6",
+    "payload": {
+      "blocks": [
+        {
+          "hash": "3f4f183b9c674854da2cf13e76b8f702cd4161b87c39c0d91a6a761ecc22dae6",
+          "type": "text"
+        }
+      ],
+      "content_hash": "e3ab7ea3b2de193f4194875ddf043422ed52c8ccc3b6926b0f57d6f0202e09e6",
+      "index": 0,
+      "kind": "message",
+      "model": "",
+      "partial": false,
+      "response_id": "",
+      "role": "user",
+      "schema_version": 1,
+      "source": "request_history",
+      "stop_reason": ""
+    }
+  },
+  {
+    "seq": 2,
+    "kind": "message",
+    "source": "response",
+    "partial": false,
+    "content_hash": "ba1035e6379506c365c4c92102c9359b43cb0061ebb45b99d1c99e8dbce25ebd",
+    "payload": {
+      "blocks": [
+        {
+          "hash": "64d3a9326a07289a03a0bebef072c50e4374ed3d4b3a5d567ac433c5e01c7a98",
+          "type": "text"
+        },
+        {
+          "hash": "b70f964afca3afb05324c3df1545d54dd9605a72a6e72125bcdd83c648ee5108",
+          "tool_call_id": "toolu_01SyntheticRead",
+          "type": "tool_call"
+        }
+      ],
+      "content_hash": "ba1035e6379506c365c4c92102c9359b43cb0061ebb45b99d1c99e8dbce25ebd",
+      "index": -1,
+      "kind": "message",
+      "model": "claude-sonnet-5",
+      "partial": false,
+      "response_id": "msg_01SyntheticNonStreaming",
+      "role": "assistant",
+      "schema_version": 1,
+      "source": "response",
+      "stop_reason": "tool_use"
+    }
+  },
+  {
+    "seq": 3,
+    "kind": "tool_call",
+    "source": "response",
+    "partial": false,
+    "content_hash": "d9b9ad004ba3ae47915772846d236f6d997507cecd8091dddda04d9fa580dc4f",
+    "tool_call_id": "toolu_01SyntheticRead",
+    "payload": {
+      "executed_by": "client",
+      "id": "toolu_01SyntheticRead",
+      "input_hash": "d9b9ad004ba3ae47915772846d236f6d997507cecd8091dddda04d9fa580dc4f",
+      "kind": "tool_call",
+      "name": "Read",
+      "partial": false,
+      "raw_hash": "3d06276f78f5b670b54628459b783d6c2e0f2ada5d183115a11bcc8cb34e42df",
+      "schema_version": 1,
+      "source": "response"
+    }
+  },
+  {
+    "seq": 4,
+    "kind": "usage",
+    "partial": false,
+    "payload": {
+      "cache_read_tokens": 41642,
+      "cache_write_tokens": 0,
+      "detail": {
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "service_tier": "standard"
+      },
+      "input_tokens": 12,
+      "kind": "usage",
+      "output_tokens": 58,
+      "partial": false,
+      "schema_version": 1
+    }
+  }
+]

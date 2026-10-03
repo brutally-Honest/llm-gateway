@@ -21,6 +21,7 @@ import (
 func TestBinary_SignalShutdown(t *testing.T) {
 	bin := filepath.Join(t.TempDir(), "gateway")
 	build := exec.Command("go", "build", "-o", bin, ".")
+	build.Env = buildEnv()
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, out)
 	}
@@ -29,7 +30,8 @@ func TestBinary_SignalShutdown(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			cmd := exec.Command(bin)
 			cmd.Dir = t.TempDir() // no config.yaml
-			cmd.Env = append(gatewayFreeEnv(), "GATEWAY_LISTEN_ADDR=127.0.0.1:0")
+			// The store goes in a temp dir, never the default data dir (spec 002, Do).
+			cmd.Env = append(gatewayFreeEnv(), "GATEWAY_LISTEN_ADDR=127.0.0.1:0", "GATEWAY_CAPTURE_DIR="+t.TempDir())
 			stdout, err := cmd.StdoutPipe()
 			if err != nil {
 				t.Fatal(err)
@@ -135,6 +137,17 @@ func gatewayFreeEnv() []string {
 		if !strings.HasPrefix(kv, "GATEWAY_") {
 			env = append(env, kv)
 		}
+	}
+	return env
+}
+
+// buildEnv is the go toolchain's environment: the test's, with HOME as the test
+// process got it, since TestMain points HOME at a temp dir and the toolchain keeps its
+// caches under HOME.
+func buildEnv() []string {
+	env := os.Environ()
+	if buildHome != "" {
+		env = append(env, "HOME="+buildHome)
 	}
 	return env
 }
