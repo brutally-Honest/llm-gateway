@@ -1,0 +1,5 @@
+Spec: specs/002-capture-and-canonical-events/spec.md (AC62, AC63)
+Verified by (owner, 2026-10-03):
+T30 run 1, rm gateway.db mid-session: Claude Code answered every prompt; exactly one 'store file deleted or replaced' warning; capture_failed stage=store for each of the 4 later exchanges.
+T30 run 2, chmod 000 on capture dir: Claude Code answered every prompt; one 'store file unreadable' warning, no deleted-or-replaced line; capture_failed stage=store for the 4 exchanges that needed a blob.
+T31: docs/capture.md covers location (s1), contents (s2), redaction scope (s3), inspection with gateway dump first and sqlite3 second (s4).
