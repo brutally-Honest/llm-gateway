@@ -544,7 +544,7 @@ Layout the tasks assume:
 
 ## Manual evidence (no commit; output goes into the PR)
 
-- [ ] T29 — Claude Code smoke with capture (needs-human). Run after T1–T28 are ticked.
+- [x] T29 — Claude Code smoke with capture (needs-human). Run after T1–T28 are ticked.
   The implementer has no Claude Code login.
 
   What the human runs:

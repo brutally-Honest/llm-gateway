@@ -86,7 +86,7 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   AC38.
 
 ## Q3 — Does Claude Code resend an assistant message's blocks unchanged?
-- Status: open     Level: flow
+- Status: answered     Level: flow
 - Blocks / shapes: nothing yet (tasks.md not written); shapes AC45 and the spec's
   hashed-payload rule
 - Context: 2026-09-27. The canonical hash makes turn N's reassembled assistant message
@@ -120,6 +120,12 @@ the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
   `cache_control` on blocks nested in a `tool_result`'s content. If Claude Code puts
   it there, that resent `tool_result` would not dedup across turns. The AC61 step
   compares assistant messages; compare a resent `tool_result` too while there.
+- 2026-10-03 (owner, T29 manual smoke): yes, Claude Code resends prior messages
+  byte-identical. Across 9 `/v1/messages` exchanges in a 3-turn session with one tool
+  call, every `request_history` message matched an earlier `content_hash`; the only
+  unseen messages per request were the newly added ones (0 or 1, plus 2 for the very
+  first request). The tool result was resent 6 times with 1 distinct hash.
+- 2026-10-03 Outcome: no change to the canonical encoding or the hash exclusions.
 
 ## Q4 — Why is Claude Code's `HEAD /api/hello` labelled `unknown`?
 - Status: answered     Level: limit

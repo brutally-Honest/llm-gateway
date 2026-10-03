@@ -622,9 +622,12 @@ Manual (evidence recorded in the PR)
   redaction scope, and inspection with `gateway dump` first and `sqlite3` second.
 
 ## Open questions
-- [OPEN] Are the `capture.max_body_bytes` (32 MiB) and `memory_limit` (256 MiB)
+- [ANSWERED] Are the `capture.max_body_bytes` (32 MiB) and `memory_limit` (256 MiB)
   defaults right for real Claude Code sessions? Measure during the manual smoke test,
   and log the peak `capture.memory_limit` usage during it.
+  2026-10-03 (owner, T29): yes, both defaults are kept. A 3-turn session of 10
+  exchanges and 1462248 raw body bytes peaked at `memory_peak_bytes` 230307, with
+  1.5M on disk, 0 drops and 0 failures.
 - [OPEN] Does Claude Code resend an assistant message's blocks unchanged, apart from
   the fields the Anthropic adapter excludes from the hash? Answered by AC61's manual
   smoke step (research Q3). It doesn't block approval; a mismatch is a follow-up fix,
