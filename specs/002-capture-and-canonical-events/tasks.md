@@ -578,7 +578,7 @@ Layout the tasks assume:
   exclusions. Step 8's value answers the spec's open question on the `max_body_bytes`
   and `memory_limit` defaults: record it there as answered, with the number, in the PR
   that closes this task. (AC61) (shaped: Q3, Q8, Q12) (needs-human)
-- [ ] T30 — Kill the store mid-session (needs-human). Same setup as T29, a fresh
+- [x] T30 — Kill the store mid-session (needs-human). Same setup as T29, a fresh
   `GATEWAY_CAPTURE_DIR`.
   1. Mid-session, `rm /tmp/llmgw-cap2/gateway.db`, then send two more prompts. Expected:
      Claude Code answers normally; the log has exactly one `store file deleted or
@@ -591,7 +591,7 @@ Layout the tasks assume:
 
   Evidence to paste into the PR: the relevant log lines from both runs and a line saying
   Claude Code kept working. (AC62) (shaped: Q10, Q11) (needs-human)
-- [ ] T31 — Read `docs/capture.md` against AC63 (needs-human): location, contents,
+- [x] T31 — Read `docs/capture.md` against AC63 (needs-human): location, contents,
   redaction scope, inspection with `gateway dump` first and `sqlite3` second. Evidence
   in the PR: one line per item with the heading it is under. (AC63) (needs-human)
 
