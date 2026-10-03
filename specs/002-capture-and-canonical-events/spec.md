@@ -1,5 +1,5 @@
 ---
-status: approved
+status: done
 branch: feat/002-capture-and-canonical-events
 ---
 
