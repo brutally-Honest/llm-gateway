@@ -42,3 +42,5 @@ specs/*/run.log
 
 # Claude Code session worktrees
 .claude/worktrees/
+.agent-loop/
+.claude/agent-loop-backup-*/

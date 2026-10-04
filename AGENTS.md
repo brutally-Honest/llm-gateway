@@ -33,9 +33,12 @@ A lower priority never degrades a higher one.
 - Stateless process; state lives in external stores.
 
 ## Workflow
-Read `specs/NNN-*/spec.md` → follow its `plan.md` → tick `tasks.md` as you go. Ignore
-spec folders whose `spec.md` has `status: done`. Never write code outside the current
-spec's scope. One branch per feature or fix: `feat/NNN-slug`, `fix/slug`, `chore/slug`.
+Features from 003 on are built with the agent-loop kit (/al-spec → /al-plan → /al-implement).
+Never edit or tick tasks.md during a build: progress is tracked by .claude/scripts/loop.sh.
+Approved spec/plan changes go through /al-change, not direct edits. Specs 000–002
+(`status: done`) are history. Branches: feat/NNN-slug, fix/NNN-slug, chore/NNN-slug.
+Every `Commit:` line in tasks.md follows PLAN §11: `<type>(<scope from the §11 list>): <summary>`,
+lowercase, no trailing period, ≤72 characters.
 
 Every doubt, roadblock or limit you hit goes in the same folder's `research.md` as a
 numbered query. The task it holds up ends with `(blocked: Q2)`; when you record the
