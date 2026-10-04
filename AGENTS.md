@@ -41,14 +41,14 @@ Every `Commit:` line in tasks.md follows PLAN §11: `<type>(<scope from the §11
 lowercase, no trailing period, ≤72 characters.
 
 Every doubt, roadblock or limit you hit goes in the same folder's `research.md` as a
-numbered query. The task it holds up ends with `(blocked: Q2)`; when you record the
-answer that becomes `(shaped: Q2)`. The link stays on the task line either way — the
-status lives in `research.md`. **Entries there are never deleted:** a correction is a
-new dated line, not an edit, so the history of the confusion is kept.
+numbered query (`- **Q2** (open) T003 — <question> — options: A) … B) …`), and you stop
+with BLOCKED; the loop asks the human and records the answer there. Never mark the task
+line in tasks.md. **Entries in research.md are never deleted:** a correction is a new
+dated line, not an edit, so the history of the confusion is kept.
 
-If an answer changes scope or a do/don't, edit `spec.md`; if it changes the approach,
-edit `plan.md`; if it outlives the feature or is hard to reverse, write an ADR in
-`docs/decisions/`.
+If an answer changes scope or a do/don't, or changes the approach, that goes through
+`/al-change` (the human runs it), never a direct edit of an approved `spec.md` or `plan.md`.
+If it outlives the feature or is hard to reverse, write an ADR in `docs/decisions/`.
 
 ## Stack
 Decided in `PLAN.md` §8. Do not introduce a dependency without an ADR.
