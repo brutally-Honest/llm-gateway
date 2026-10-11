@@ -18,11 +18,11 @@ type sessionProfile struct{ panics bool }
 
 func (sessionProfile) Name() string               { return "session-client" }
 func (sessionProfile) Match(r *http.Request) bool { return r.Header.Get("X-Session-Client") != "" }
-func (s sessionProfile) SessionKey(h http.Header) string {
+func (s sessionProfile) SessionKey(h http.Header) (string, bool) {
 	if s.panics {
 		panic("profile bug")
 	}
-	return h.Get("X-Test-Session")
+	return h.Get("X-Test-Session"), len(h.Values("X-Test-Session")) > 0
 }
 
 func startSessionGateway(t *testing.T, base *url.URL, sink core.CaptureSink, p core.Profile) *gateway {
@@ -38,6 +38,12 @@ func startSessionGateway(t *testing.T, base *url.URL, sink core.CaptureSink, p c
 
 func sendSession(t *testing.T, g *gateway, client, session string) int {
 	t.Helper()
+	return sendSessionHeader(t, g, client, session, session != "")
+}
+
+// sendSessionHeader sets X-Test-Session only when withHeader, so "" can be present.
+func sendSessionHeader(t *testing.T, g *gateway, client, session string, withHeader bool) int {
+	t.Helper()
 	req, err := http.NewRequest(http.MethodPost, g.url+"/t/v1/x", strings.NewReader("hi"))
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +51,7 @@ func sendSession(t *testing.T, g *gateway, client, session string) int {
 	if client != "" {
 		req.Header.Set(client, "1")
 	}
-	if session != "" {
+	if withHeader {
 		req.Header.Set("X-Test-Session", session)
 	}
 	res, err := http.DefaultClient.Do(req)
@@ -127,7 +133,7 @@ func TestProxy_InvalidSessionKeyStoredUngrouped(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			sink := &recordingSink{}
 			g := startSessionGateway(t, okUpstream(t).URL, sink, sessionProfile{})
-			if got := sendSession(t, g, "X-Session-Client", c.val); got != http.StatusOK {
+			if got := sendSessionHeader(t, g, "X-Session-Client", c.val, true); got != http.StatusOK {
 				t.Fatalf("status %d", got)
 			}
 			ex := sink.wait(t, 1)[0]
@@ -150,6 +156,23 @@ func TestProxy_InvalidSessionKeyStoredUngrouped(t *testing.T) {
 				t.Error("the key's value reached the log")
 			}
 		})
+	}
+}
+
+func TestProxy_AbsentSessionHeaderLogsNothing(t *testing.T) {
+	checkNoLeaksAtEnd(t)
+	sink := &recordingSink{}
+	g := startSessionGateway(t, okUpstream(t).URL, sink, sessionProfile{})
+	if got := sendSession(t, g, "X-Session-Client", ""); got != http.StatusOK {
+		t.Fatalf("status %d", got)
+	}
+	ex := sink.wait(t, 1)[0]
+	defer ex.Release()
+	if ex.SessionKey != "" || ex.Client != "session-client" {
+		t.Errorf("client %q, session key %q; want session-client and none", ex.Client, ex.SessionKey)
+	}
+	if strings.Contains(g.logs.String(), "session_key_rejected") {
+		t.Errorf("an absent header was logged as rejected: %s", g.logs.String())
 	}
 }
 

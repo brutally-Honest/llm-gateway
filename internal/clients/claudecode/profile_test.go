@@ -100,15 +100,23 @@ func TestProfile_SessionKeyFromHeader(t *testing.T) {
 	var p core.SessionKeyer = claudecode.Profile{}
 	h := http.Header{}
 	h.Set("X-Claude-Code-Session-Id", "3f2a9c1e-7b4d-4e8a-9c2f-1d5b6a7e8f90")
-	if got := p.SessionKey(h); got != "3f2a9c1e-7b4d-4e8a-9c2f-1d5b6a7e8f90" {
-		t.Fatalf("SessionKey() = %q, want the header value", got)
+	if got, ok := p.SessionKey(h); !ok || got != "3f2a9c1e-7b4d-4e8a-9c2f-1d5b6a7e8f90" {
+		t.Fatalf("SessionKey() = %q, %v, want the header value", got, ok)
 	}
 }
 
 // AC2: a request without the header has no session key.
 func TestProfile_NoHeaderNoKey(t *testing.T) {
 	var p core.SessionKeyer = claudecode.Profile{}
-	if got := p.SessionKey(http.Header{"User-Agent": {"claude-cli/1.0.0"}}); got != "" {
-		t.Fatalf("SessionKey() = %q, want none", got)
+	if got, ok := p.SessionKey(http.Header{"User-Agent": {"claude-cli/1.0.0"}}); got != "" || ok {
+		t.Fatalf("SessionKey() = %q, %v, want none and absent", got, ok)
+	}
+}
+
+// A header that is present but empty is reported as present, so core can reject it.
+func TestProfile_EmptyHeaderIsPresent(t *testing.T) {
+	var p core.SessionKeyer = claudecode.Profile{}
+	if got, ok := p.SessionKey(http.Header{"X-Claude-Code-Session-Id": {""}}); got != "" || !ok {
+		t.Fatalf("SessionKey() = %q, %v, want empty and present", got, ok)
 	}
 }
