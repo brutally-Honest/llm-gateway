@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"strings"
-	"time"
 	"testing"
+	"time"
 
 	"github.com/brutally-honest/llm-gateway/internal/store"
 	"github.com/brutally-honest/llm-gateway/internal/timeline"
