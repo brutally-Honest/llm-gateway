@@ -1,12 +1,13 @@
 ---
 feature: 005-session-token-usage
-status: approved
-version: 2
-approved: 2026-10-11T09:56:17Z
-approved-by: human
-sha256: 68505683fa77eba0e3ebcf3772212d26ef226466bbe62fefb48d48232fd185a6
-fingerprint: bf88de0c1cc3a52a29ba8de50a622156e395b48e9f8b4cb7e8ac3b6c7ec9fb41
-plan-fingerprint: bc1315ed6e80260cd7a973e0e4bd13dd202102ea873f349f32b59d76a2f913a1
+status: draft
+version: 3
+approved:
+approved-by:
+sha256:
+fingerprint:
+plan-fingerprint:
+previous: cfb7183
 ---
 # Tasks — 005-session-token-usage
 
@@ -88,3 +89,4 @@ plan-fingerprint: bc1315ed6e80260cd7a973e0e4bd13dd202102ea873f349f32b59d76a2f913
 ## Changelog
 - v1 (2026-10-11) — generated from the approved plan
 - v2 (2026-10-11) — T001: partial-flag check first and BLOCKED if the decoder lacks it; errored needs a recorded response (TTFBNS); new tests TestCallUsage_PartialFromEventFlag and TestCallUsage_NoResponseFallbackStatusIsMissing
+- v3 (2026-10-11) — reopened: spec v4 changed its contract sections

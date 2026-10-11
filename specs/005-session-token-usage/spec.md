@@ -1,15 +1,15 @@
 ---
 feature: 005-session-token-usage
 kind: feat
-status: draft
+status: approved
 version: 4
 created: 2026-10-11
 supersedes:
 branch: feat/005-session-token-usage
-approved:
-approved-by:
-sha256:
-fingerprint:
+approved: 2026-10-11T14:29:14Z
+approved-by: human
+sha256: 7dbdb0a7e8c9f7a91facb6f10cc704593bc58537c231a41780a4e90096ba8a86
+fingerprint: 19540985251130b6a58755895f8bf99866c99aad339a3421fc1b84d5c7a46c8f
 previous: 6d5e773
 ---
 # Session token usage
@@ -87,11 +87,7 @@ response status is 4xx/5xx, and **missing** otherwise (2xx, or no response recor
 - **AC12** — When a session, or the ungrouped set, has no model calls, the system shall show
   "no model calls" instead of numbers in text, and `"usage": null` (not zeros, not an
   omitted key) in `-json`.
-- **AC13** — When run on `testdata/sessions/claude-code-task/`, the system shall report,
-  in both text and `-json` for `gateway timeline` and `gateway sessions`, that session
-  `fixture-id-1` totals input 9123, output 1084, cache-write 129405, cache-read 422293, all
-  under one model `claude-opus-5-5`, complete with 9 of 9 model calls reporting and 1
-  errored (the 429 side call); the fixture's `HEAD /api/hello` is not a model call.
+- **AC13** — When run on `testdata/sessions/claude-code-task/`, the system shall report, in both text and `-json` for `gateway timeline` and `gateway sessions`, that session `fixture-id-1` totals input 9123, output 1084, cache-write 129405, cache-read 422293, all under one model `claude-opus-5-5`, complete, 1 errored (the 429 side call); `-json` carries calls 10, errored 1, complete true; the fixture's `HEAD /api/hello` is not a model call.
 - **AC14** — When the change is merged, PLAN.md shall have: §7 Phase 4 renamed "Usage
   (tokens)" with token-only scope and done-when; a new Phase 9 "Cost: pricing table keyed
   by provider + model, needs API billing to verify"; no other phase renumbered; the §8
