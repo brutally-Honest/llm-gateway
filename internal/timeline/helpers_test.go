@@ -68,7 +68,8 @@ func (f *fake) add(id string, e store.EventRow) {
 // msg adds a text message; its hash is the hash of role and text, so equal
 // messages in different exchanges have equal hashes.
 func (f *fake) msg(id, role, text string) {
-	block := f.put(fmt.Sprintf(`{"type":"text","text":%q}`, text))
+	raw, _ := json.Marshal(map[string]string{"type": "text", "text": text})
+	block := f.put(string(raw))
 	payload, _ := json.Marshal(map[string]any{"role": role,
 		"blocks": []map[string]string{{"hash": block, "type": "text"}}})
 	f.add(id, store.EventRow{Kind: "message", ContentHash: hashOf(role + "|" + text), Payload: payload})
