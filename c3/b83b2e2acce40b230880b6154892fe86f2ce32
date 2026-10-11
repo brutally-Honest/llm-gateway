@@ -1,0 +1,3 @@
+Fixture: repo.bundle was built with fixtures/e2e/make.sh; the human approved spec v1 and plan v1 + tasks v1 in the scratch repo. The bundle keeps those commits, so the approval records stay valid.
+The test lays the current kit over the fixture's and sets VERIFY_CMD=true, so it tests the kit, not the fixture's code.
+Verified by: test_e2e_resume.sh (7 checks); with record_base forced to HEAD, the base, post-check and DONE checks fail.
