@@ -1,0 +1,4 @@
+Why bytes: .githooks/commit-msg runs under /bin/sh, where ${#subject} counts bytes, and the docs prefix contains an em dash (3 bytes).
+Scope: only the two subjects changed. The task title, Do:, Tests: and AC: lines still carry the full bug text.
+Not fixed: when the tasks.md commit fails for another reason, add-fix still dies leaving tasks.md modified.
+Verified by: .claude/scripts/tests/test_add_fix.sh, using 005's T008 text: both subjects fit 72 bytes, cut on a word, and pass the repo's commit-msg hook.
