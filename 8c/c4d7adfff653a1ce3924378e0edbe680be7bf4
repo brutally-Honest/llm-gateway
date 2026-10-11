@@ -1,0 +1,3 @@
+ADR: docs/decisions/0006-drop-cursor-from-v1.md
+Alternatives rejected: keep Cursor as Phase 3; keep phase numbers and mark Phase 3 dropped
+Verified by: grep for cursor and Phase N references
