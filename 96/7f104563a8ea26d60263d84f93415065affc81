@@ -1,0 +1,4 @@
+Why this approach: keeping the base only for IN-PROGRESS/BLOCKED/STOPPED avoids a stale base on a task that starts again after it was done, which would pull other tasks' commits into its after-task check.
+Alternatives rejected: write base only if absent (stale bases on restarted tasks).
+Trade-off: a done task is never re-run by this kit (rework goes in a new task, lib.sh tasks_problems), so test (b) simulates a restart from PASS and from a leftover base.
+Verified by: .claude/scripts/tests/test_base.sh (8 of 9 checks fail without the fix).
