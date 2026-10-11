@@ -41,3 +41,37 @@ type Profile interface {
 	// Match reports whether the request came from this client.
 	Match(r *http.Request) bool
 }
+
+// SessionKeyer is an optional Profile capability: it reports the opaque key a client
+// uses to say which requests belong to one session. Core only measures and compares
+// it; "" means the request carries none.
+type SessionKeyer interface {
+	SessionKey(h http.Header) string
+}
+
+// maxSessionKeyBytes is the longest session key core accepts.
+const maxSessionKeyBytes = 256
+
+// The reasons ValidSessionKey gives for a key it rejects.
+const (
+	SessionKeyEmpty            = "empty"
+	SessionKeyTooLong          = "too_long"
+	SessionKeyControlCharacter = "control_character"
+)
+
+// ValidSessionKey returns "" for a usable key, else why it is rejected: empty, over
+// 256 bytes, or holding a control character (C0, DEL or C1).
+func ValidSessionKey(key string) (reason string) {
+	if key == "" {
+		return SessionKeyEmpty
+	}
+	if len(key) > maxSessionKeyBytes {
+		return SessionKeyTooLong
+	}
+	for _, r := range key {
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
+			return SessionKeyControlCharacter
+		}
+	}
+	return ""
+}

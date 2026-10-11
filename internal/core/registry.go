@@ -50,18 +50,35 @@ func (r *Registry) AddProfile(p Profile) {
 
 // AddAdapter registers a protocol adapter and builds its proxy in front of up.
 func (r *Registry) AddAdapter(a Adapter, up config.Upstream) {
-	r.adapters = append(r.adapters, mounted{adapter: a, proxy: newProxy(a, up, r.Identify, r.log, r.capture)})
+	r.adapters = append(r.adapters, mounted{adapter: a, proxy: newProxy(a, up, r.Identify, r.sessionKey, r.log, r.capture)})
 }
 
 // Identify names the client that sent req: the first profile that matches, else
 // ClientUnknown.
 func (r *Registry) Identify(req *http.Request) string {
-	for _, p := range r.profiles {
-		if p.Match(req) {
-			return p.Name()
-		}
+	if p := r.profileFor(req); p != nil {
+		return p.Name()
 	}
 	return ClientUnknown
+}
+
+// profileFor is the first profile that matches req, or nil.
+func (r *Registry) profileFor(req *http.Request) Profile {
+	for _, p := range r.profiles {
+		if p.Match(req) {
+			return p
+		}
+	}
+	return nil
+}
+
+// sessionKey is the raw key the matching profile reports; ok is false when there is
+// no profile or it is not a SessionKeyer, so there was nothing to report.
+func (r *Registry) sessionKey(req *http.Request) (key string, ok bool) {
+	if sk, isKeyer := r.profileFor(req).(SessionKeyer); isKeyer {
+		return sk.SessionKey(req.Header), true
+	}
+	return "", false
 }
 
 // Mount registers each adapter's proxy under its prefix, for every method chi knows,

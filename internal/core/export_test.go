@@ -69,7 +69,7 @@ func RedactQuery(raw string, secret []string) string          { return redactQue
 // NewCapturingProxy is NewProxy with capture on, for a test that must reach the
 // proxy itself rather than go through a Registry.
 func NewCapturingProxy(a Adapter, up config.Upstream, identify func(*http.Request) string, log *zap.Logger, c Capture) *Proxy {
-	return newProxy(a, up, identify, log, &c)
+	return newProxy(a, up, identify, nil, log, &c)
 }
 
 // WrapTransport puts wrap around the proxy's transport, so a test can see the

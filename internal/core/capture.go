@@ -197,6 +197,7 @@ const (
 type Exchange struct {
 	RequestID, PrincipalID, Protocol, Client string
 	Auth                                     AuthKind
+	SessionKey                               string      // opaque, validated; "" when none
 	Method, Path, Query                      string      // Path has the prefix stripped; Query is redacted
 	RequestHeader, ResponseHeader            http.Header // redacted clones
 	Status                                   int
@@ -334,6 +335,7 @@ func (m *Meta) finishCapture() {
 		PrincipalID:        m.PrincipalID,
 		Protocol:           m.Protocol,
 		Client:             m.Client,
+		SessionKey:         m.sessionKey,
 		Auth:               m.Auth,
 		Method:             c.method,
 		Path:               c.path,
