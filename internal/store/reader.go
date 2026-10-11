@@ -160,7 +160,10 @@ func (r *Reader) Last() (ExchangeRow, error) {
 	return ex, nil
 }
 
-func scanExchange(row *sql.Row) (ExchangeRow, error) {
+// rowScanner is what *sql.Row and *sql.Rows share.
+type rowScanner interface{ Scan(dest ...any) error }
+
+func scanExchange(row rowScanner) (ExchangeRow, error) {
 	var (
 		ex                         ExchangeRow
 		reqH, resH                 string
