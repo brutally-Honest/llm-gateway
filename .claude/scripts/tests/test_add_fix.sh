@@ -48,7 +48,7 @@ s=$(fit 'fix(demo): ' "$(printf 'x%.0s' $(seq 1 100))")
 t "add-fix uses fit_subject for both subjects and keeps the full text in the body"
 src=$(sed -n '/^cmd_add_fix() {/,/^}/p' .claude/scripts/loop.sh)
 n=$(printf '%s\n' "$src" | grep -c 'fit_subject')
-body=$(printf '%s\n' "$src" | grep -c 'git commit -q -m "$(fit_subject "docs($F): add $next — fix: " "$subj")" -m "$bug"')
+body=$(printf '%s\n' "$src" | grep -c 'git commit -q -m "$(fit_subject "docs($F): add $next — fix: " "$subj")" -m "$bug" -- "$t" 2>&1')
 do_line=$(printf '%s\n' "$src" | grep -c '^- Do: reproduce and fix: \$bug$')
 assert_eq "2 1 1" "$n $body $do_line" "fit_subject calls / body / Do: line"
 

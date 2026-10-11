@@ -1181,7 +1181,11 @@ cmd_add_fix() { # <the bug, in words> -> a not-started task "Tnnn — fix: <bug>
 		die "the fix task would make tasks.md invalid, so nothing was added:
 $tmp"
 	fi
-	git commit -q -m "$(fit_subject "docs($F): add $next — fix: " "$subj")" -m "$bug" -- "$t" || die "committing tasks.md failed"
+	if ! tmp=$(git commit -q -m "$(fit_subject "docs($F): add $next — fix: " "$subj")" -m "$bug" -- "$t" 2>&1); then
+		git reset -q -- "$t" 2>/dev/null; git checkout -q -- "$t"
+		die "committing tasks.md failed, so nothing was added (tasks.md is back as it was):
+$tmp"
+	fi
 	log_event "$next added by /al-fix: $bug"
 	echo "ADDED $next — fix: $bug$( [ -n "$first" ] && echo " (runs before $first)")"
 	if [ "$(cfg AUTO_APPROVE_TASKS)" = on ]; then echo "NEXT the build runs $next now"
