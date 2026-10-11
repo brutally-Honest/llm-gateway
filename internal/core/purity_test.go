@@ -50,6 +50,8 @@ func TestCore_NoProviderOrClientIdentifiers(t *testing.T) {
 		{"../capture", names},
 		{"../store", names},
 		{"../contentcoding", names},
+		{"../timeline", full},
+		{"../../cmd/gateway/viewer.go", full}, // the viewer commands; a single file, as run.go names a profile
 	}
 	for _, d := range dirs {
 		checkDir(t, d.dir, d.forbidden)

@@ -39,14 +39,14 @@ func (s *Store) SaveExchange(ctx context.Context, ex *core.Exchange) error {
 			request_id, principal_id, protocol, client, auth, method, path, query,
 			request_headers, response_headers, status, started_at, ttfb_ns, ended_at, stream,
 			request_truncated, response_truncated, request_incomplete,
-			client_disconnected, upstream_aborted, gateway_error, request_body, response_body
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			client_disconnected, upstream_aborted, gateway_error, request_body, response_body, session_key
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			ex.RequestID, ex.PrincipalID, ex.Protocol, ex.Client, string(ex.Auth),
 			ex.Method, ex.Path, ex.Query, reqH, resH, ex.Status,
 			ex.Start.UnixNano(), ttfb, ex.End.UnixNano(), ex.Stream,
 			ex.Request.Truncated, ex.Response.Truncated, ex.RequestIncomplete,
 			ex.ClientDisconnected, ex.UpstreamAborted, nullString(ex.GatewayError),
-			reqHash, resHash)
+			reqHash, resHash, nullString(ex.SessionKey))
 		if err != nil {
 			return fmt.Errorf("insert exchange %s: %w", ex.RequestID, err)
 		}

@@ -149,7 +149,7 @@ Status: **Decided** = settled; **Proposed** = my default, confirmed in the phase
 | Token estimation | **tiktoken-go** for OpenAI-family models | Independent count to audit provider-reported usage. | Its accuracy for non-OpenAI tokenizers (Claude, Gemini) is the problem in OQ-4. | Decided for OpenAI; **Open** for others | Phase 4 |
 | Testing | **Table-driven tests, `-race`, testcontainers-go, recorded stream fixtures** per protocol | Race detector catches tee/capture concurrency bugs. testcontainers gives real Redis/DB, not mocks that lie. Recorded real SSE streams (golden files) let each adapter be tested without live API calls or cost. | **Mocked stores only:** they pass while the real thing fails. **Live-API tests in CI:** cost money and flake. | Decided | Phase 0 |
 | Packaging | **docker-compose** for the stack; gateway also runnable as a plain binary | One command brings up store, Redis, Prometheus, Grafana, Jaeger. Running the binary directly keeps the dev loop fast. | **Kubernetes:** irrelevant for local single-user. | Decided | Phase 0 |
-| Viewer | — | — | — | **Open (OQ-7)** | Phase 3 |
+| Viewer | **Local CLI first** (`gateway sessions`, `gateway timeline`); a web UI later, once the canonical event model is stable | Greppable and fast to build, and it reads canonical events directly. Long timelines and nested sub-agents are a later need. | **Small local web UI now:** better for long timelines, but it freezes presentation before the model has met a second protocol. **Grafana panels only:** poor for reading conversations. | Decided ([ADR 0007](docs/decisions/0007-viewer-cli-first.md)) | Phase 3 |
 
 ---
 
@@ -195,7 +195,7 @@ Each is resolved in the named phase's spec and recorded as an ADR. The leaning i
 - **Why it matters:** sources disagree on whether agent mode and sub-agents use the custom key. If most agent traffic bypasses the gateway, Cursor observability is shallow.
 - **How to resolve:** test empirically on my Cursor version and record the result in `docs/clients/cursor.md`.
 
-**OQ-7. What is the viewer?** *(decide by Phase 3)*
+**OQ-7. What is the viewer?** *(decide by Phase 3)* **Resolved:** a local CLI first, a web UI later ([ADR 0007](docs/decisions/0007-viewer-cli-first.md)).
 - **Options:** a CLI (fast to build, greppable); a small local web UI (better for long timelines and nested sub-agents); Grafana panels only (no custom code, but poor for reading conversations).
 - **Leaning:** CLI first, web UI once the canonical event model is stable.
 

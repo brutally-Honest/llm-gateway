@@ -36,10 +36,11 @@ type Meta struct {
 	// Settle, before the access line is written, and is "" off the proxy.
 	Capture string
 
-	start   time.Time // when the proxy handler started; TTFB is measured from it
-	reqBody *requestWatcher
-	resBody *responseWatcher
-	capture *captureState // nil when capture is off or already finished
+	start      time.Time // when the proxy handler started; TTFB is measured from it
+	reqBody    *requestWatcher
+	resBody    *responseWatcher
+	sessionKey string        // validated; "" when the request has none
+	capture    *captureState // nil when capture is off or already finished
 }
 
 type metaKey struct{}

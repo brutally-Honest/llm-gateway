@@ -120,8 +120,8 @@ func TestStore_MigratesFromEmpty(t *testing.T) {
 	}
 
 	db := rawDB(t, dir)
-	if got := userVersion(t, db); got != 1 {
-		t.Fatalf("user_version = %d, want 1", got)
+	if got := userVersion(t, db); got != store.MigrationCountForTest() {
+		t.Fatalf("user_version = %d, want %d", got, store.MigrationCountForTest())
 	}
 	want := map[string]string{
 		"content":              "table",
@@ -132,6 +132,7 @@ func TestStore_MigratesFromEmpty(t *testing.T) {
 		"events_content":       "index",
 		"events_tool_call":     "index",
 		"events_principal":     "index",
+		"exchanges_session":    "index",
 	}
 	for name, typ := range want {
 		var got string
@@ -162,8 +163,8 @@ func TestStore_MigratesFromEmpty(t *testing.T) {
 	if err := s2.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if got := userVersion(t, rawDB(t, dir)); got != 1 {
-		t.Fatalf("user_version after reopen = %d, want 1", got)
+	if got := userVersion(t, rawDB(t, dir)); got != store.MigrationCountForTest() {
+		t.Fatalf("user_version after reopen = %d, want %d", got, store.MigrationCountForTest())
 	}
 }
 

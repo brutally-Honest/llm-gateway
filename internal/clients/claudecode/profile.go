@@ -1,5 +1,5 @@
-// Package claudecode is the Claude Code client profile. In this phase it only detects
-// the client; it reads no session or agent IDs.
+// Package claudecode is the Claude Code client profile. It detects the client and reports
+// the session key the client sends; it reads no agent IDs.
 package claudecode
 
 import (
@@ -24,3 +24,10 @@ func (Profile) Match(r *http.Request) bool {
 	}
 	return r.Header.Get("X-App") == "cli"
 }
+
+// sessionHeader carries the Claude Code session id, one value per session.
+const sessionHeader = "X-Claude-Code-Session-Id"
+
+// SessionKey is the value of the session header, or "" when the request has none.
+// Core validates the value; the profile passes it on unparsed.
+func (Profile) SessionKey(h http.Header) string { return h.Get(sessionHeader) }

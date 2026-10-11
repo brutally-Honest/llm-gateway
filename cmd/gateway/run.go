@@ -112,6 +112,15 @@ func run(ctx context.Context, d deps) int {
 	if len(d.args) > 0 && d.args[0] == "dump" {
 		return runDump(d)
 	}
+	if len(d.args) > 0 && d.args[0] == "sessions" {
+		return runSessions(d)
+	}
+	if len(d.args) > 0 && d.args[0] == "timeline" {
+		return runTimeline(d)
+	}
+	if len(d.args) > 0 && d.args[0] == "backfill-sessions" {
+		return runBackfill(d)
+	}
 
 	fs := flag.NewFlagSet("gateway", flag.ContinueOnError)
 	fs.SetOutput(io.Discard) // the flag package never prints usage text

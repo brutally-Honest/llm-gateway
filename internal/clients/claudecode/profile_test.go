@@ -94,3 +94,21 @@ func TestProfile_ClaudeCodeDetected(t *testing.T) {
 		})
 	}
 }
+
+// AC2: the Claude Code session header's value is the session key, unparsed.
+func TestProfile_SessionKeyFromHeader(t *testing.T) {
+	var p core.SessionKeyer = claudecode.Profile{}
+	h := http.Header{}
+	h.Set("X-Claude-Code-Session-Id", "3f2a9c1e-7b4d-4e8a-9c2f-1d5b6a7e8f90")
+	if got := p.SessionKey(h); got != "3f2a9c1e-7b4d-4e8a-9c2f-1d5b6a7e8f90" {
+		t.Fatalf("SessionKey() = %q, want the header value", got)
+	}
+}
+
+// AC2: a request without the header has no session key.
+func TestProfile_NoHeaderNoKey(t *testing.T) {
+	var p core.SessionKeyer = claudecode.Profile{}
+	if got := p.SessionKey(http.Header{"User-Agent": {"claude-cli/1.0.0"}}); got != "" {
+		t.Fatalf("SessionKey() = %q, want none", got)
+	}
+}

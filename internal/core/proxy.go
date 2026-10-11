@@ -26,24 +26,26 @@ var forwardingHeaders = []string{"Forwarded", "X-Forwarded-For", "X-Forwarded-Ho
 // Proxy forwards one adapter's requests to its upstream and streams the response
 // back. It is protocol-agnostic: everything protocol-shaped comes from the Adapter.
 type Proxy struct {
-	rp        *httputil.ReverseProxy
-	adapter   Adapter
-	identify  func(*http.Request) string
-	principal PrincipalResolver
-	capture   *captureConfig // nil: capture off, the proxy is 001's
+	rp         *httputil.ReverseProxy
+	adapter    Adapter
+	identify   func(*http.Request) string
+	sessionKey func(*http.Request) (string, bool) // nil: no session keys
+	log        *zap.Logger
+	principal  PrincipalResolver
+	capture    *captureConfig // nil: capture off, the proxy is 001's
 }
 
 // NewProxy builds the proxy for adapter a in front of up, with capture off. identify
 // names the client that sent a request.
 func NewProxy(a Adapter, up config.Upstream, identify func(*http.Request) string, log *zap.Logger) *Proxy {
-	return newProxy(a, up, identify, log, nil)
+	return newProxy(a, up, identify, nil, log, nil)
 }
 
 // newProxy is NewProxy with capture on when c is not nil.
-func newProxy(a Adapter, up config.Upstream, identify func(*http.Request) string, log *zap.Logger, c *Capture) *Proxy {
+func newProxy(a Adapter, up config.Upstream, identify func(*http.Request) string, sessionKey func(*http.Request) (string, bool), log *zap.Logger, c *Capture) *Proxy {
 	prefix := a.Prefix()
 	base := up.BaseURL
-	p := &Proxy{adapter: a, identify: identify, principal: LocalPrincipal{}, capture: newCaptureConfig(a, c)}
+	p := &Proxy{adapter: a, identify: identify, sessionKey: sessionKey, log: log, principal: LocalPrincipal{}, capture: newCaptureConfig(a, c)}
 	if p.capture != nil {
 		p.principal = p.capture.Principal
 	}
@@ -150,6 +152,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.PrincipalID = p.principal.Resolve(r)
 		m.start = time.Now()
 		w = p.capture.startCapture(m, w, r)
+		if p.capture != nil {
+			m.sessionKey = p.readSessionKey(m.RequestID, r)
+		}
 	}
 	// net/http sniffs a Content-Type for a response that has none when its first
 	// body write goes out with the headers. ReverseProxy's initial header flush
@@ -160,6 +165,29 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header()["Content-Type"] = nil
 	}
 	p.rp.ServeHTTP(w, r)
+}
+
+// readSessionKey asks the matching profile for the request's session key and returns
+// it if valid, else "". A profile that panics means no key. A rejected key is logged
+// with its reason, never its value.
+func (p *Proxy) readSessionKey(requestID string, r *http.Request) (key string) {
+	if p.sessionKey == nil {
+		return ""
+	}
+	defer func() {
+		if recover() != nil {
+			key = ""
+		}
+	}()
+	key, ok := p.sessionKey(r)
+	if !ok {
+		return ""
+	}
+	if reason := ValidSessionKey(key); reason != "" {
+		p.log.Warn("session_key_rejected", zap.String("request_id", requestID), zap.String("reason", reason))
+		return ""
+	}
+	return key
 }
 
 // modifyResponse runs after ReverseProxy has removed the hop-by-hop headers. It
