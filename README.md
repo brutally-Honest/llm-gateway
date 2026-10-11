@@ -22,6 +22,10 @@ streams included (see `specs/001-core-and-anthropic-passthrough/`). **Phase 2**
 
 ## Setup
 
+Prerequisite: `jq` on your `PATH`. `make verify` (which the pre-push hook runs) needs it
+for the agent-loop kit tests, and the kit's commit guard hook refuses every tool call
+without it.
+
 ```sh
 make setup
 ```
