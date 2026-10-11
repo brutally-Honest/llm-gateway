@@ -457,12 +457,12 @@ pre_task() { # id -> 0 ok (base recorded) | 1 with STOP-REASON lines
 	if [ "$(cfg VERIFY)" = task ] && [ "$(sfile_get green)" != "$(git rev-parse HEAD)" ]; then
 		run_verify "before $id" || { echo "STOP-REASON verify is red at the start of $id — the previous change broke something:"; tail -20 "$(VLOG)"; return 1; }
 	fi
-	sfile_set "base.$id" "$(git rev-parse HEAD)"
+	record_base "$id"
 	sfile_set "rounds.$id" 0
 	rm -f "$(sdir)/findings.$id" "$(sdir)/watch.$id" "$(sdir)/reason.$id" "$(sdir)/end.$id"
 	state_set "$id" IN-PROGRESS
 	[ "$id" = Q ] || state_set BRANCH CLEARED
-	log_event "$id pre-task ok base=$(short)"
+	log_event "$id pre-task ok base=$(short "$(sfile_get "base.$id")")"
 	return 0
 }
 
@@ -970,7 +970,7 @@ cmd_task() { # the context pack: everything one task needs, so agents read more 
 		acs=$(task_field "$(art tasks)" "$id" AC | ac_refs)
 		re=$(printf '%s\n' $acs | paste -sd'|' -)
 		echo; echo "## Its acceptance criteria ($(art spec))"
-		for a in $acs; do _ac_text "$(art spec)" | ac_line "$a"; done
+		for a in $acs; do _ac_text "$(art spec)" | ac_text "$a"; done
 		echo; echo "## Edge cases that concern it"
 		eids=$(task_block "$(art tasks)" "$id" | grep -oE 'E[0-9]+' | sort -u | paste -sd'|' -)
 		section "$(art spec)" "Edge cases" | E="$eids" R="${re:-NONE}" awk '
@@ -1129,8 +1129,8 @@ adopt_delta() { # file approval-sha -> Delta lines (ADDED / MODIFIED / REMOVED) 
 	ids=$( { printf '%s\n' "$o" "$n" | ac_active; printf '%s\n' "$o" "$n" | ac_struck; } | sort -u | sort -t C -k 2n)
 	actext() { sed -E 's/^[[:space:]]*[-*][[:space:]]+(~~)?\*\*AC[0-9]+\*\*(~~)?[[:space:]]*(—|-|:)?[[:space:]]*//'; }
 	for id in $ids; do
-		ol=$(printf '%s\n' "$o" | ac_active | grep -qx "$id" && printf '%s\n' "$o" | ac_line "$id")
-		nl=$(printf '%s\n' "$n" | ac_line "$id")
+		ol=$(printf '%s\n' "$o" | ac_active | grep -qx "$id" && printf '%s\n' "$o" | ac_text "$id")
+		nl=$(printf '%s\n' "$n" | ac_text "$id")
 		if [ -z "$ol" ]; then
 			printf '%s\n' "$n" | ac_active | grep -qx "$id" && echo "- ADDED $id — $(printf '%s\n' "$nl" | actext)"
 		elif [ -z "$nl" ] || printf '%s\n' "$n" | ac_struck | grep -qx "$id"; then
@@ -1160,12 +1160,12 @@ cmd_add_fix() { # <the bug, in words> -> a not-started task "Tnnn — fix: <bug>
 	first=""
 	for id in $(task_ids "$t"); do in_list "$id" "$(done_tasks)" || { first=$id; break; }; done
 	scope=${F#[0-9][0-9][0-9]-}
-	subj=$(printf '%s' "$bug" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9 .,-' ' ' | tr -s ' ' | sed 's/^ //; s/ $//' | cut -c1-60)
+	subj=$(printf '%s' "$bug" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9 .,-' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')
 	BLK="### $next — fix: $bug
 - Do: reproduce and fix: $bug
 - Tests: a regression test that fails before the fix and passes after it ($bug)
 - AC: none — bug fix: $bug
-- Commit: fix($scope): $subj
+- Commit: $(fit_subject "fix($scope): " "$subj")
 - Depends: —
 - Size: S
 - Risk: low
@@ -1181,7 +1181,11 @@ cmd_add_fix() { # <the bug, in words> -> a not-started task "Tnnn — fix: <bug>
 		die "the fix task would make tasks.md invalid, so nothing was added:
 $tmp"
 	fi
-	git commit -q -m "docs($F): add $next — fix: $subj" -- "$t" || die "committing tasks.md failed"
+	if ! tmp=$(git commit -q -m "$(fit_subject "docs($F): add $next — fix: " "$subj")" -m "$bug" -- "$t" 2>&1); then
+		git reset -q -- "$t" 2>/dev/null; git checkout -q -- "$t"
+		die "committing tasks.md failed, so nothing was added (tasks.md is back as it was):
+$tmp"
+	fi
 	log_event "$next added by /al-fix: $bug"
 	echo "ADDED $next — fix: $bug$( [ -n "$first" ] && echo " (runs before $first)")"
 	if [ "$(cfg AUTO_APPROVE_TASKS)" = on ]; then echo "NEXT the build runs $next now"
@@ -1229,7 +1233,7 @@ cmd_answer() { # Qn <answer> — record your answer, commit research.md, restore
 		git stash pop -q "$ref" || die "$id's earlier attempt ($ref) didn't apply cleanly onto HEAD.
   do this: resolve the conflict in the files git lists, then /al-resume"
 	fi
-	sfile_set "base.$id" "$(git rev-parse HEAD)"; sfile_set "rounds.$id" 0
+	record_base "$id"; sfile_set "rounds.$id" 0
 	state_set "$id" IN-PROGRESS "restored after $q"
 	log_event "$id resumes after $q${ref:+ with its stashed attempt}"
 	echo "ANSWERED $q — $id continues${ref:+ from its earlier attempt (restored in the working tree)}"

@@ -278,7 +278,32 @@ sec_raw() { sec "$1"; }   # same as sec; named for streams that keep blank lines
 
 ac_active() { awk '/^[[:space:]]*[-*][[:space:]]+\*\*AC[0-9]+\*\*/ { if (match($0, /AC[0-9]+/)) print substr($0, RSTART, RLENGTH) }'; }
 ac_struck() { awk '/^[[:space:]]*[-*][[:space:]]+~~\*\*AC[0-9]+\*\*~~/ { if (match($0, /AC[0-9]+/)) print substr($0, RSTART, RLENGTH) }'; }
-ac_line()   { I="$1" awk '/^[[:space:]]*[-*][[:space:]]+(~~)?\*\*AC[0-9]+\*\*/ { if (match($0, /AC[0-9]+/) && substr($0, RSTART, RLENGTH) == ENVIRON["I"]) { print; exit } }'; }
+ac_text()   { # id; stdin = an acceptance section -> that AC's whole bullet, wrapped lines joined, whitespace collapsed
+	I="$1" awk '
+		function flush() { if (on) { gsub(/[[:space:]]+/, " ", t); sub(/^ /, "", t); sub(/ $/, "", t); print t; on = 0; done = 1 } }
+		done { next }
+		/^[[:space:]]*$/ || /^#/ { flush(); next }
+		/^[[:space:]]*[-*][[:space:]]+/ {
+			flush()
+			if ($0 ~ /^[[:space:]]*[-*][[:space:]]+(~~)?\*\*AC[0-9]+\*\*/ && match($0, /AC[0-9]+/) && substr($0, RSTART, RLENGTH) == ENVIRON["I"]) { on = 1; t = $0 }
+			next
+		}
+		on { t = t " " $0 }
+		END { flush() }'
+}
+fit_subject() { # prefix text -> prefix + the text's leading words, at most 72 bytes (git hooks count bytes)
+	local p=$1 out="" c w
+	set -f
+	for w in $2; do
+		c=${out:+$out }$w
+		[ "$(printf '%s' "$p$c" | LC_ALL=C wc -c | tr -d ' ')" -le 72 ] || break
+		out=$c
+	done
+	set +f
+	# a first word too long to fit is cut, so the subject never ends empty
+	[ -n "$out" ] || out=$(printf '%s' "$2" | LC_ALL=C cut -c1-$((72 - $(printf '%s' "$p" | LC_ALL=C wc -c))))
+	printf '%s%s\n' "$p" "$(printf '%s' "$out" | sed 's/[ .,-]*$//')"
+}
 ac_refs()   { grep -oE 'AC[0-9]+' | sort -u; }   # every AC id mentioned in stdin
 in_list()   { printf '%s\n' "$2" | grep -qx -- "$1"; }
 
@@ -432,7 +457,7 @@ contract_changes() { # file sha -> what changed in the contract since that appro
 		o=$(printf '%s\n' "$old" | sec "$h"); n=$(printf '%s\n' "$cur" | sec "$h")
 		ids=$( { printf '%s\n' "$o" "$n" | ac_active; printf '%s\n' "$o" "$n" | ac_struck; } | sort -u | sort -t C -k 2n)
 		for id in $ids; do
-			ol=$(printf '%s\n' "$o" | ac_line "$id"); nl=$(printf '%s\n' "$n" | ac_line "$id")
+			ol=$(printf '%s\n' "$o" | ac_text "$id"); nl=$(printf '%s\n' "$n" | ac_text "$id")
 			if [ -z "$ol" ]; then out="$out, $id added"
 			elif [ -z "$nl" ]; then out="$out, $id deleted"
 			elif [ "$ol" != "$nl" ]; then out="$out, $id changed"; fi
@@ -553,6 +578,15 @@ state_detail() {
 }
 sfile_get() { [ -f "$(sdir)/$1" ] && cat "$(sdir)/$1"; return 0; }
 sfile_set() { ensure_state; printf '%s\n' "$2" > "$(sdir)/$1"; }
+record_base() { # id -> base.<id>: kept when the task resumes an interrupted attempt and it is still an ancestor of HEAD, else HEAD
+	local id=$1 b
+	b=$(sfile_get "base.$id")
+	case $(state_get "$id") in
+		IN-PROGRESS | BLOCKED | STOPPED)
+			[ -n "$b" ] && git merge-base --is-ancestor "$b" HEAD 2>/dev/null && return 0 ;;
+	esac
+	sfile_set "base.$id" "$(git rev-parse HEAD)"
+}
 
 trailer_ids() { # task ids that have a "Task: Tnnn" commit on this branch since the base branch
 	local b; b=$(base_branch)

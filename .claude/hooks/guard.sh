@@ -179,6 +179,13 @@ if [ "$tool" = Bash ]; then
 		has '^\.claude/scripts/loop\.sh (start|next|log|stop|finish|unlock|new|cr-new|gate|pause|answer|accept)([[:space:]]|$)' && deny "that loop.sh command belongs to the orchestrator, not to $role."
 		has '^\.claude/scripts/loop\.sh verify([[:space:]]|$)' && deny "the script runs the full verify once per task after you report DONE — run targeted tests instead: .claude/scripts/loop.sh test <args> (or the repo's test command for the packages you touched)."
 		has '(^|[^[:alnum:]_-])rm[[:space:]]+(-[a-zA-Z]*[rR][a-zA-Z]*[[:space:]]+)*(/|~|\$HOME|\.\.?)([[:space:]]|/?$)' && deny "$role may not delete the repo, home or root."
+		# the task commit spelled from this repo's root is the same commit; that one exact shape only
+		case $cmd in
+			"cd $REPO && git commit -F .agent-loop/commit-msg" \
+			| "cd $REPO && git commit --amend -F .agent-loop/commit-msg" \
+			| "cd $REPO && git commit --amend --no-edit")
+				allow "task commit (from the repo root)" ;;
+		esac
 		if single; then
 			case $(gitsub) in
 				add) allow "task commit: git add <paths>" ;;

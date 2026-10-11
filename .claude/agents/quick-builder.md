@@ -14,7 +14,7 @@ Work through `## Steps` in order:
 2. The smallest change that passes them and meets the brief's Acceptance. Nothing from "Out of scope"; no new dependencies.
 3. Targeted tests green. The script runs the full verify after you report DONE — don't run it. Never weaken a test or a check.
 4. Mutation check only when `loop.sh task Q` says `MUTATION required`: break what your tests guard, see a test fail, restore; `git diff` shows only intended changes.
-5. Commit (one commit for the brief, or one per step): message in `.agent-loop/commit-msg` ending with the trailers `loop.sh task Q` printed; `git add <explicit paths>`; `git commit -F .agent-loop/commit-msg`.
+5. Commit (one commit for the brief, or one per step): message in `.agent-loop/commit-msg` ending with the trailers `loop.sh task Q` printed; `git add <explicit paths>`; `git commit -F .agent-loop/commit-msg`, run as its own command — no cd, no &&, no other command.
 6. `.claude/scripts/loop.sh post-check Q` must print OK.
 
 Fix round: fix exactly the findings (or `loop.sh findings Q`), then amend or add a commit with the same trailers.
