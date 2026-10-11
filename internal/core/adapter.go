@@ -44,9 +44,10 @@ type Profile interface {
 
 // SessionKeyer is an optional Profile capability: it reports the opaque key a client
 // uses to say which requests belong to one session. Core only measures and compares
-// it; "" means the request carries none.
+// it. present is false when the request carries no session header at all, which is
+// "no key" and not worth a log line; a present header is validated by core, even if empty.
 type SessionKeyer interface {
-	SessionKey(h http.Header) string
+	SessionKey(h http.Header) (key string, present bool)
 }
 
 // maxSessionKeyBytes is the longest session key core accepts.

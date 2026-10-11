@@ -73,10 +73,11 @@ func (r *Registry) profileFor(req *http.Request) Profile {
 }
 
 // sessionKey is the raw key the matching profile reports; ok is false when there is
-// no profile or it is not a SessionKeyer, so there was nothing to report.
+// no profile, it is not a SessionKeyer, or the request has no session header, so there
+// was nothing to report.
 func (r *Registry) sessionKey(req *http.Request) (key string, ok bool) {
 	if sk, isKeyer := r.profileFor(req).(SessionKeyer); isKeyer {
-		return sk.SessionKey(req.Header), true
+		return sk.SessionKey(req.Header)
 	}
 	return "", false
 }

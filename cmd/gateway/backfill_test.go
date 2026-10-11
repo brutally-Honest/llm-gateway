@@ -103,6 +103,19 @@ func TestBackfill_InvalidKeyLeftWithoutKey(t *testing.T) {
 	}
 }
 
+func TestBackfill_AbsentHeaderLeftWithoutKey(t *testing.T) {
+	dir := seedBare(t, func(s *store.Store) {
+		saveBare(t, s, "none", claudecode.Name, http.Header{"User-Agent": {"claude-cli/1.0.0"}})
+	})
+	code, out := viewerRun(t, dir, "backfill-sessions")
+	if code != exitOK || !strings.HasPrefix(out, "filled 0, left without key 1, skipped 0") {
+		t.Fatalf("code %d out %q", code, out)
+	}
+	if keyOf(t, dir, "none") != "" {
+		t.Fatal("exchange without the header got a key")
+	}
+}
+
 func TestBackfill_SecondRunChangesNothing(t *testing.T) {
 	dir := seedBare(t, func(s *store.Store) {
 		saveBare(t, s, "a", claudecode.Name, http.Header{ccHeader: {"sess-1"}})

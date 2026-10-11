@@ -109,8 +109,8 @@ func backfill(ctx context.Context, st *store.Store, keyers map[string]core.Sessi
 				c.skipped++
 				continue
 			}
-			key := k.SessionKey(u.RequestHeaders)
-			if core.ValidSessionKey(key) != "" {
+			key, present := k.SessionKey(u.RequestHeaders)
+			if !present || core.ValidSessionKey(key) != "" {
 				c.noKey++
 				continue
 			}

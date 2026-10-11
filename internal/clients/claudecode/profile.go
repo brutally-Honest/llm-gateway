@@ -28,6 +28,8 @@ func (Profile) Match(r *http.Request) bool {
 // sessionHeader carries the Claude Code session id, one value per session.
 const sessionHeader = "X-Claude-Code-Session-Id"
 
-// SessionKey is the value of the session header, or "" when the request has none.
-// Core validates the value; the profile passes it on unparsed.
-func (Profile) SessionKey(h http.Header) string { return h.Get(sessionHeader) }
+// SessionKey is the value of the session header; present is false when the request has
+// no such header. Core validates the value; the profile passes it on unparsed.
+func (Profile) SessionKey(h http.Header) (key string, present bool) {
+	return h.Get(sessionHeader), len(h.Values(sessionHeader)) > 0
+}
