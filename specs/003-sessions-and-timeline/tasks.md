@@ -1,12 +1,12 @@
 ---
 feature: 003-sessions-and-timeline
-status: draft
+status: approved
 version: 2
-approved:
-approved-by:
-sha256:
-fingerprint:
-plan-fingerprint:
+approved: 2026-10-11T06:13:21Z
+approved-by: human
+sha256: 68ded52f294d8dc6aa2e1eeba379f92079ad7c09d717a489993741c76c7056a0
+fingerprint: 1284f4cf54429e25fb8fc075f8a2bfa37ea2c8586ba2547e39de1f2513100c22
+plan-fingerprint: ef486a396a618b8458a57e11d453330b33a05a9a25a8d9795e3c1557a9b1d688
 previous: 0fe04e7
 ---
 # Tasks — 003-sessions-and-timeline
@@ -78,7 +78,7 @@ previous: 0fe04e7
 
 ### T006 — Build the de-duplicated timeline
 - Do: new `internal/timeline`; add a `TestBuild_RealSessionFixture` that loads the T004 fixture through `store.OpenReader` (the fixture lives outside `internal/timeline`, which the purity test scans), and use it where it fits (ordering, de-dup, tool events); (`Source` interface, entry types, `Build`, `Options{Full}`): ordering, best-match shared prefix with tie-breaks, `history diverged`, new threads, folded exchanges, partial marking, tool events following their message, per-entry cut; extend `core/purity_test.go` to walk `../timeline` with the full word list.
-- Tests: TestBuild_OrdersExchangesByStartThenRequestID (AC12, E4); TestBuild_EventOrderWithinExchange (AC12); TestBuild_ShowsOnlyMessagesAfterSharedPrefix (AC13); TestBuild_RepeatedUserMessageShownAgain (E5); TestBuild_TieBreaksPrefixEqualThenMostRecent (E13); TestBuild_RewriteMarksHistoryDiverged (AC14, E12); TestBuild_NoMarkerWhenBestMatchIsPrefix (AC14); TestBuild_NewThreadWhenNoSharedMessage (AC27); TestBuild_SubAgentInterleaveNoMarkers (E6); TestBuild_FoldsExchangesWithoutMessages (AC15, E3); TestBuild_FoldsFailedSkippedUnsupported (AC16); TestBuild_PartialExchangeShowsEventsMarked (AC16, E7); TestBuild_ToolEventsOfHiddenMessagesAreHidden (AC13); TestBuild_CutsLongEntriesAndNotesBytes (AC17); TestBuild_FullKeepsEverything (AC17); TestCore_NoProviderOrClientIdentifiers (AC26).
+- Tests: TestBuild_RealSessionFixture (AC12, AC13, AC27: loads the T004 fixture; also asserts its request events carry a `system_hash` with no matching content in the store, and that `Build`, default and `Full`, still returns every exchange and event of the session without error, research.md D12); TestBuild_OrdersExchangesByStartThenRequestID (AC12, E4); TestBuild_EventOrderWithinExchange (AC12); TestBuild_ShowsOnlyMessagesAfterSharedPrefix (AC13); TestBuild_RepeatedUserMessageShownAgain (E5); TestBuild_TieBreaksPrefixEqualThenMostRecent (E13); TestBuild_RewriteMarksHistoryDiverged (AC14, E12); TestBuild_NoMarkerWhenBestMatchIsPrefix (AC14); TestBuild_NewThreadWhenNoSharedMessage (AC27); TestBuild_SubAgentInterleaveNoMarkers (E6); TestBuild_FoldsExchangesWithoutMessages (AC15, E3); TestBuild_FoldsFailedSkippedUnsupported (AC16); TestBuild_PartialExchangeShowsEventsMarked (AC16, E7); TestBuild_ToolEventsOfHiddenMessagesAreHidden (AC13); TestBuild_CutsLongEntriesAndNotesBytes (AC17); TestBuild_FullKeepsEverything (AC17); TestCore_NoProviderOrClientIdentifiers (AC26).
 - AC: AC12, AC13, AC14, AC15, AC16, AC17, AC26, AC27
 - Commit: feat(observability): build a de-duplicated session timeline
 - Depends: T004, T005
@@ -87,7 +87,7 @@ previous: 0fe04e7
 
 ### T007 — List sessions and render text and JSON
 - Do: `internal/timeline`: `ListSessions(src, limit)` with first-user-prompt preview (80 runes), text and JSON renderers taking a `*time.Location`, terminal-control escaping for keys, previews and bodies; one helper reads a text block's `text` string, falling back to the raw JSON (Q1).
-- Tests: TestListSessions_RowsWithPreview (AC8); TestListSessions_EmptyPreviewForSideCallOnly (E3); TestRenderText_LocalZoneRFC3339 (AC21); TestRenderJSON_UTC (AC21); TestRenderText_EscapesTerminalControls (E11); TestRenderText_FoldedAndMarkerLines (AC14, AC15, AC16); TestBlockText_TextFieldElseRawJSON (AC8, AC12).
+- Tests: TestListSessions_RowsWithPreview (AC8); TestListSessions_EmptyPreviewForSideCallOnly (E3); TestRenderText_LocalZoneRFC3339 (AC21); TestRenderJSON_UTC (AC21); TestRenderText_EscapesTerminalControls (E11); TestRenderText_FoldedAndMarkerLines (AC14, AC15, AC16); TestBlockText_TextFieldElseRawJSON (AC8, AC12); TestRender_RealSessionFixtureWithoutSystemContent (AC12, AC21: renders the T004 fixture timeline as text and JSON with the system content absent; must not fail and must not print the system prompt, D12).
 - AC: AC8, AC21
 - Commit: feat(observability): render sessions and timelines as text or json
 - Depends: T006
@@ -137,3 +137,4 @@ previous: 0fe04e7
 - v1 (2026-10-11) — revise: T004 captures in a clean /tmp directory, gets a privacy review (greps incl. referenced content) before commit, and stays NEEDS-HUMAN until the user confirms it in research.md
 - v1 (2026-10-11) — revise: T004 moves ~/.claude/CLAUDE.md aside during the capture and restores it after; a failed grep on needed content stops with an open question and no commit
 - v2 (2026-10-11) — reopened: CR-001: Real-session fixture test also covers missing system content
+- v2 (2026-10-11) — CR-001: T006 TestBuild_RealSessionFixture also checks Build with system content absent; T007 gains TestRender_RealSessionFixtureWithoutSystemContent
