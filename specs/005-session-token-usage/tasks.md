@@ -66,6 +66,15 @@ plan-fingerprint: bc1315ed6e80260cd7a973e0e4bd13dd202102ea873f349f32b59d76a2f913
 - Size: S
 - Risk: low
 
+### T008 — fix: json header usage keys
+- Do: reproduce and fix: json header usage keys
+- Tests: a regression test that fails before the fix and passes after it (json header usage keys)
+- AC: none — bug fix: json header usage keys
+- Commit: fix(session-token-usage): json header usage keys
+- Depends: —
+- Size: S
+- Risk: low
+
 ### T007 — Update PLAN.md for usage-only Phase 4 and the new Phase 9
 - Do: edit `PLAN.md` only: §7 Phase 4 renamed "Usage (tokens)" with token-only scope and done-when; new Phase 9 "Cost: pricing table keyed by provider + model, needs API billing to verify"; no other phase renumbered; §8 "Token estimation" row and OQ-4 retargeted to Phase 9, OQ-4 still open; §7 "Later, each as a new adapter or profile" paragraph requires each new protocol's decoder to map usage to the counter meaning in 005's Terms.
 - Tests: none — documentation only; nothing executable changes, `make verify` stays green
