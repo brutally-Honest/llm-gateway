@@ -1,12 +1,13 @@
 ---
 feature: 003-sessions-and-timeline
-status: approved
-version: 1
-approved: 2026-10-11T03:34:10Z
-approved-by: human
-sha256: 0f1046db5290c08c975569a80d3f3e1915735c86fd5ecc9cef798e6814c3b7f7
-fingerprint: 93ae3694d4c5024f7c7f5e7c79065528c5bdb04f04151fa4a7e42f19e95bc3e0
-plan-fingerprint: ef486a396a618b8458a57e11d453330b33a05a9a25a8d9795e3c1557a9b1d688
+status: draft
+version: 2
+approved:
+approved-by:
+sha256:
+fingerprint:
+plan-fingerprint:
+previous: 0fe04e7
 ---
 # Tasks — 003-sessions-and-timeline
 
@@ -135,3 +136,4 @@ plan-fingerprint: ef486a396a618b8458a57e11d453330b33a05a9a25a8d9795e3c1557a9b1d6
 - v1 (2026-10-11) — revise: new manual fixture task T004; later tasks renumbered T005-T011; ADR task notes the wire-shaped text helper; AC28 replay is T011
 - v1 (2026-10-11) — revise: T004 captures in a clean /tmp directory, gets a privacy review (greps incl. referenced content) before commit, and stays NEEDS-HUMAN until the user confirms it in research.md
 - v1 (2026-10-11) — revise: T004 moves ~/.claude/CLAUDE.md aside during the capture and restores it after; a failed grep on needed content stops with an open question and no commit
+- v2 (2026-10-11) — reopened: CR-001: Real-session fixture test also covers missing system content
