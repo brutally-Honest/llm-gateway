@@ -1,15 +1,16 @@
 ---
 feature: 005-session-token-usage
 kind: feat
-status: approved
-version: 3
+status: draft
+version: 4
 created: 2026-10-11
 supersedes:
 branch: feat/005-session-token-usage
-approved: 2026-10-11T09:26:54Z
-approved-by: human
-sha256: 6d5421708a8ef6099f371fbae51971098688d665610ffe0ce0bd4a80b08c9e87
-fingerprint: 90e6e708aab15d33bdb698dd9aa73a692901f8978bb46aa44a4b4c2588aa630e
+approved:
+approved-by:
+sha256:
+fingerprint:
+previous: 6d5e773
 ---
 # Session token usage
 
@@ -152,3 +153,4 @@ None.
   no OpenAI decoder exists, so the mapping moves to that protocol's spec.
 - v3 (2026-10-11) — AC16 and E11: an all-errored total shows `no usage (E errored)`, never
   0, unknown or "0 of 0".
+- v4 (2026-10-11) — reopened: CR-001: AC13 wording: state completeness as the code reports it
