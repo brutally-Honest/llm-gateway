@@ -35,10 +35,9 @@ data/
 # Claude Code local overrides (shared settings.json is committed)
 .claude/settings.local.json
 
-# /run-feature scratch: commit messages and notes the implementer passes with -F,
-# and each feature's run log
-/tmp/
-specs/*/run.log
-
 # Claude Code session worktrees
 .claude/worktrees/
+
+# Agent-loop kit state (run logs, verify logs, commit-msg scratch) and install backups
+.agent-loop/
+.claude/agent-loop-backup-*/

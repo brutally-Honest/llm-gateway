@@ -2,14 +2,78 @@
   "includeCoAuthoredBy": false,
   "permissions": {
     "allow": [
-      "Bash(make verify)",
-      "Bash(go test *)",
-      "Bash(git status)",
-      "Bash(git status *)",
+      "Bash(./.claude/scripts/loop.sh *)",
+      "Bash(.claude/scripts/loop.sh *)",
+      "Bash(git blame *)",
+      "Bash(git branch --show-current)",
       "Bash(git diff *)",
-      "Bash(git show *)",
+      "Bash(git diff)",
       "Bash(git log *)",
-      "Bash(git notes show *)"
+      "Bash(git log)",
+      "Bash(git ls-files *)",
+      "Bash(git notes show *)",
+      "Bash(git rev-parse *)",
+      "Bash(git show *)",
+      "Bash(git status *)",
+      "Bash(git status)",
+      "Bash(go test *)",
+      "Bash(make verify)"
+    ],
+    "deny": [
+      "Bash(*approve.sh*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit|Read|Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.sh",
+            "args": [],
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "implementer|quick-builder|reviewer|planner|impact-analyst|spec-critic",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/on-agent-stop.sh",
+            "args": [],
+            "timeout": 900
+          }
+        ]
+      }
+    ],
+    "UserPromptExpansion": [
+      {
+        "matcher": "^(.*:)?al-(approve|plan|implement|resume|change|fix|answer|status|pause)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/on-command.sh",
+            "args": [],
+            "timeout": 300
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/on-prompt.sh",
+            "args": [],
+            "timeout": 30
+          }
+        ]
+      }
     ]
   }
 }

@@ -33,19 +33,23 @@ A lower priority never degrades a higher one.
 - Stateless process; state lives in external stores.
 
 ## Workflow
-Read `specs/NNN-*/spec.md` → follow its `plan.md` → tick `tasks.md` as you go. Ignore
-spec folders whose `spec.md` has `status: done`. Never write code outside the current
-spec's scope. One branch per feature or fix: `feat/NNN-slug`, `fix/slug`, `chore/slug`.
+Features from 003 on are built with the agent-loop kit (/al-spec → /al-plan → /al-implement).
+Never edit or tick tasks.md during a build: progress is tracked by .claude/scripts/loop.sh.
+Approved spec/plan changes go through /al-change, not direct edits. Specs 000–002
+(`status: done`) are history. Branches: feat/NNN-slug, fix/NNN-slug, chore/NNN-slug.
+Every `Commit:` line in tasks.md follows PLAN §11: `<type>(<scope from the §11 list>): <summary>`,
+lowercase, no trailing period, ≤72 characters.
 
-Every doubt, roadblock or limit you hit goes in the same folder's `research.md` as a
-numbered query. The task it holds up ends with `(blocked: Q2)`; when you record the
-answer that becomes `(shaped: Q2)`. The link stays on the task line either way — the
-status lives in `research.md`. **Entries there are never deleted:** a correction is a
-new dated line, not an edit, so the history of the confusion is kept.
+Every doubt, roadblock or limit you hit goes in the same folder's `research.md`, under
+`## Open questions`, as `- **Qn** (open) Tnnn — <question> — options: A) … B) …`, and you
+stop with BLOCKED. The loop parses only that line format. The human answers with
+`/al-answer`, which turns it into `(answered)` with the answer underneath. Never mark the
+task line in tasks.md. **Entries in research.md are never deleted:** a correction is a new
+dated line, not an edit, so the history of the confusion is kept.
 
-If an answer changes scope or a do/don't, edit `spec.md`; if it changes the approach,
-edit `plan.md`; if it outlives the feature or is hard to reverse, write an ADR in
-`docs/decisions/`.
+If an answer changes scope or a do/don't, or changes the approach, that goes through
+`/al-change` (the human runs it), never a direct edit of an approved `spec.md` or `plan.md`.
+If it outlives the feature or is hard to reverse, write an ADR in `docs/decisions/`.
 
 ## Stack
 Decided in `PLAN.md` §8. Do not introduce a dependency without an ADR.
@@ -63,5 +67,5 @@ so install it on any machine or harness that commits here.
 - Do not weaken lint, tests or config to make a check pass.
 - Do not add suppressions, skip tests, or delete assertions.
 - Do not add a dependency without an ADR.
-- When unsure, stop. Add the question to the feature's `research.md` as `open`, link it
-  from the blocked task, and do not guess.
+- When unsure, stop. Add the question to the feature's `research.md` under
+  `## Open questions` as `- **Qn** (open) Tnnn — …`, and do not guess.
