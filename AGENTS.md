@@ -40,10 +40,11 @@ Approved spec/plan changes go through /al-change, not direct edits. Specs 000–
 Every `Commit:` line in tasks.md follows PLAN §11: `<type>(<scope from the §11 list>): <summary>`,
 lowercase, no trailing period, ≤72 characters.
 
-Every doubt, roadblock or limit you hit goes in the same folder's `research.md` as a
-numbered query (`- **Q2** (open) T003 — <question> — options: A) … B) …`), and you stop
-with BLOCKED; the loop asks the human and records the answer there. Never mark the task
-line in tasks.md. **Entries in research.md are never deleted:** a correction is a new
+Every doubt, roadblock or limit you hit goes in the same folder's `research.md`, under
+`## Open questions`, as `- **Qn** (open) Tnnn — <question> — options: A) … B) …`, and you
+stop with BLOCKED. The loop parses only that line format. The human answers with
+`/al-answer`, which turns it into `(answered)` with the answer underneath. Never mark the
+task line in tasks.md. **Entries in research.md are never deleted:** a correction is a new
 dated line, not an edit, so the history of the confusion is kept.
 
 If an answer changes scope or a do/don't, or changes the approach, that goes through
@@ -66,5 +67,5 @@ so install it on any machine or harness that commits here.
 - Do not weaken lint, tests or config to make a check pass.
 - Do not add suppressions, skip tests, or delete assertions.
 - Do not add a dependency without an ADR.
-- When unsure, stop. Add the question to the feature's `research.md` as `open`, link it
-  from the blocked task, and do not guess.
+- When unsure, stop. Add the question to the feature's `research.md` under
+  `## Open questions` as `- **Qn** (open) Tnnn — …`, and do not guess.
