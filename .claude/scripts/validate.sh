@@ -170,7 +170,7 @@ $t"
 	for t in $tids; do in_list "$t" "$dones" || opens="$opens $t"; done
 
 	prev=$(fm_get "$f" previous)
-	if [ -n "$prev" ]; then
+	if [ -n "$prev" ] && [ "$(fm_get "$f" status)" = draft ]; then
 		prevtxt=$(git show "$prev:$f" 2>/dev/null | strip_fm | strip_noise)
 		ptids=$(printf '%s\n' "$prevtxt" | task_ids_stdin)
 		maxprev=$(printf '%s\n' $ptids | sort | tail -1)
