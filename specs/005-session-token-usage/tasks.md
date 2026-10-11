@@ -1,12 +1,12 @@
 ---
 feature: 005-session-token-usage
-status: draft
+status: approved
 version: 3
-approved:
-approved-by:
-sha256:
-fingerprint:
-plan-fingerprint:
+approved: 2026-10-11T14:31:17Z
+approved-by: human
+sha256: 6157da341c509d6300c78f3e27ee145732d899c1f8b19385f53faea8440e3332
+fingerprint: 01fb6d51c67f5c22ed6751c861b0e74e2c4a23afdafc52c29e8f9bc85839169f
+plan-fingerprint: bc1315ed6e80260cd7a973e0e4bd13dd202102ea873f349f32b59d76a2f913a1
 previous: cfb7183
 ---
 # Tasks — 005-session-token-usage
@@ -86,7 +86,17 @@ previous: cfb7183
 - Risk: low
 - Manual: read the PLAN.md diff against AC14 (phase names, no renumbering, OQ-4 still open, decoder rule present)
 
+### T009 — Pin AC13 JSON calls, errored and complete values
+- Do: test-only, in `cmd/gateway/viewer_fixture_test.go`: make sure the fixture JSON tests for `gateway timeline` and `gateway sessions` assert `calls` 10, `errored` 1 and `complete` true for `fixture-id-1`, and that the text carries "1 errored" and no "9 of 9". Add only the missing assertions; no production code change.
+- Tests: TestFixture_TimelineJSONCarriesSameTotals (AC13, extended), TestFixture_SessionsUsageTotals (AC13, extended)
+- AC: AC13 (rework)
+- Commit: test(server): pin fixture calls and errored counts in json
+- Depends: T006
+- Size: S
+- Risk: low
+
 ## Changelog
 - v1 (2026-10-11) — generated from the approved plan
 - v2 (2026-10-11) — T001: partial-flag check first and BLOCKED if the decoder lacks it; errored needs a recorded response (TTFBNS); new tests TestCallUsage_PartialFromEventFlag and TestCallUsage_NoResponseFallbackStatusIsMissing
 - v3 (2026-10-11) — reopened: spec v4 changed its contract sections
+- v4 (2026-10-11) — CR-001: AC13 wording only; T006 stays as done; added T009 (test-only) to pin calls 10, errored 1, complete true

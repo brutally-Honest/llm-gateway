@@ -1,12 +1,12 @@
 ---
 feature: 005-session-token-usage
-status: draft
+status: approved
 version: 3
-approved:
-approved-by:
-sha256:
-fingerprint:
-spec-fingerprint:
+approved: 2026-10-11T14:31:16Z
+approved-by: human
+sha256: d5a2e7861f119d5b05eaa54c9a8f4f01d4bb8a85c56aa1fc1ffb562b8600ede8
+fingerprint: bc1315ed6e80260cd7a973e0e4bd13dd202102ea873f349f32b59d76a2f913a1
+spec-fingerprint: 19540985251130b6a58755895f8bf99866c99aad339a3421fc1b84d5c7a46c8f
 previous: cfb7183
 ---
 # Plan — 005-session-token-usage
@@ -195,3 +195,4 @@ Unit tests of `Summarize` and `callUsage` against the in-memory `fake` (add `fak
 - v1 (2026-10-11) — first draft
 - v2 (2026-10-11) — errored requires a recorded response (`TTFBNS != nil`), fallback status explained; partial-flag check is T001's first step and blocks instead of editing the decoder; test-only file in the anthropic package allowed; new tests in AC coverage
 - v3 (2026-10-11) — reopened: spec v4 changed its contract sections
+- v4 (2026-10-11) — CR-001: AC13 wording only (complete, 1 errored; JSON calls 10, errored 1, complete true); no plan change
