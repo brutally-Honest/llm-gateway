@@ -50,6 +50,7 @@ func TestCore_NoProviderOrClientIdentifiers(t *testing.T) {
 		{"../capture", names},
 		{"../store", names},
 		{"../contentcoding", names},
+		{"../timeline", full},
 	}
 	for _, d := range dirs {
 		checkDir(t, d.dir, d.forbidden)
