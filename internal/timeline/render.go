@@ -153,3 +153,73 @@ func RenderJSON(w io.Writer, entries []Entry, loc *time.Location) error {
 	_, err := w.Write(buf.Bytes())
 	return err
 }
+
+// UngroupedSummary is the row that ends the sessions list: the exchanges that carry
+// no session key.
+type UngroupedSummary struct {
+	Count       int
+	First, Last int64
+}
+
+// RenderUngroupedRowText prints the ungrouped row in the sessions columns.
+func RenderUngroupedRowText(w io.Writer, u UngroupedSummary, loc *time.Location) error {
+	_, err := fmt.Fprintf(w, "ungrouped\t\t\t%s\t%s\t%d\t\n", stamp(u.First, loc), stamp(u.Last, loc), u.Count)
+	return err
+}
+
+// RenderUngroupedRowJSON prints the ungrouped row as one JSON object.
+func RenderUngroupedRowJSON(w io.Writer, u UngroupedSummary, loc *time.Location) error {
+	return json.NewEncoder(w).Encode(struct {
+		Type  string `json:"type"`
+		First string `json:"first"`
+		Last  string `json:"last"`
+		Count int    `json:"count"`
+	}{"ungrouped", stamp(u.First, loc), stamp(u.Last, loc), u.Count})
+}
+
+// UngroupedExchange is one exchange with no session key.
+type UngroupedExchange struct {
+	RequestID, Client, Method, Path string
+	Start                           int64
+	Status                          int
+}
+
+// RenderUngroupedText prints one exchange per line: request id, time, client,
+// method, path and status.
+func RenderUngroupedText(w io.Writer, rows []UngroupedExchange, loc *time.Location) error {
+	var buf bytes.Buffer
+	for _, r := range rows {
+		fmt.Fprintf(&buf, "%s\t%s\t%s\t%s\t%s\t%d\n", escape(r.RequestID, false), stamp(r.Start, loc),
+			escape(r.Client, false), escape(r.Method, false), escape(r.Path, false), r.Status)
+	}
+	_, err := w.Write(buf.Bytes())
+	return err
+}
+
+// RenderUngroupedJSON prints one JSON object per exchange.
+func RenderUngroupedJSON(w io.Writer, rows []UngroupedExchange, loc *time.Location) error {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	for _, r := range rows {
+		if err := enc.Encode(struct {
+			Type      string `json:"type"`
+			RequestID string `json:"request_id"`
+			Time      string `json:"time"`
+			Client    string `json:"client"`
+			Method    string `json:"method"`
+			Path      string `json:"path"`
+			Status    int    `json:"status"`
+		}{"exchange", r.RequestID, stamp(r.Start, loc), r.Client, r.Method, r.Path, r.Status}); err != nil {
+			return err
+		}
+	}
+	_, err := w.Write(buf.Bytes())
+	return err
+}
+
+// RenderSessionHeaderText prints the line that heads one session's timeline when
+// several sessions share a key.
+func RenderSessionHeaderText(w io.Writer, client, principal, key string) error {
+	_, err := fmt.Fprintf(w, "### session %s client=%s principal=%s\n", escape(key, false), escape(client, false), escape(principal, false))
+	return err
+}
