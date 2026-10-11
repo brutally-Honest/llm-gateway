@@ -301,3 +301,13 @@ func TestBuild_FullKeepsEverything(t *testing.T) {
 		}
 	}
 }
+
+func TestBuild_TextAtExactLimitIsNotCut(t *testing.T) {
+	f := newFake()
+	f.exchange("A", 1, "ok")
+	f.msg("A", "user", strings.Repeat("a", timeline.DefaultEntryLimit))
+	out := build(t, f, timeline.Options{})
+	if out[1].Omitted != 0 || len(out[1].Text) != timeline.DefaultEntryLimit {
+		t.Fatalf("cut at the limit: len %d omitted %d", len(out[1].Text), out[1].Omitted)
+	}
+}
