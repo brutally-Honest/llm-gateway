@@ -1,7 +1,7 @@
 # LLM Gateway
 
 An observability-first LLM gateway in Go. It sits between any LLM client (Claude Code,
-Cursor, …) and any LLM provider (Anthropic, OpenAI, …), forwards traffic faithfully,
+Codex, …) and any LLM provider (Anthropic, OpenAI, …), forwards traffic faithfully,
 and captures what flows through: prompts, responses, tool calls, tool results, tokens
 and cost.
 

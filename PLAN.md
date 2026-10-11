@@ -9,8 +9,8 @@
 An **observability-first LLM gateway**, written in Go. It sits between any LLM client and any LLM provider, and lets me see exactly what flows through: prompts, responses, tool calls, tool results, tokens, cost. Rate limiting, cost controls, and routing come after observability.
 
 **What it is not:**
-- **Not a harness.** It doesn't run agents, execute tools, or edit files. The harness (Claude Code, Cursor, …) stays in charge. The gateway only watches the traffic.
-- **Not tied to one vendor.** Claude Code and Cursor are the first clients because they're what I use today. The design must let Codex, Gemini CLI, Antigravity, OpenCode, Cline, plain apps, and future clients plug in without changing the core.
+- **Not a harness.** It doesn't run agents, execute tools, or edit files. The harness (Claude Code, Codex, …) stays in charge. The gateway only watches the traffic.
+- **Not tied to one vendor.** Claude Code is the first client because it's what I use today. The design must let Codex, Gemini CLI, Antigravity, OpenCode, Cline, plain apps, and future clients plug in without changing the core.
 
 Why it exists:
 1. Observe my own agent and LLM usage (primary).
@@ -68,15 +68,13 @@ v1 runs **on my machine, for me only**. It must be able to grow into a team or h
 | Client | Protocol | How it connects | Status |
 |---|---|---|---|
 | Claude Code | Anthropic Messages | `ANTHROPIC_BASE_URL` → `http://localhost:…`; works with an API key **or** a claude.ai subscription | **v1** |
-| Cursor | OpenAI Chat Completions | "Override OpenAI Base URL". Cursor calls it **from its own servers**, so the gateway needs a public HTTPS tunnel | **v1** |
 | Codex CLI | OpenAI Responses | custom `model_providers` base URL | designed for, later |
 | Gemini CLI / Antigravity / others | Gemini, OpenAI-compatible, … | per-client base-URL setting | designed for, later |
 | Plain apps / scripts | any supported protocol | base URL in the SDK | free once the protocol exists |
 
 **Known client limits (inherent, not bugs):**
 - **Claude Code:** fast-mode checks and the WebFetch domain check call `api.anthropic.com` directly, so they never reach the gateway. Through a custom base URL, Claude Code does not load claude.ai connectors (Gmail, Calendar, Drive), so the gateway sees no request for them. Its `HEAD /api/hello` sends `User-Agent: Bun/<version>` and no `x-app`, so it is labelled `unknown` on purpose: matching on Bun would mislabel every other Bun app.
-- **Cursor:** Tab autocomplete and inline edit (Cmd+K) always use Cursor's own backend and are invisible to the gateway. Agent-mode and sub-agent coverage is unconfirmed (see OQ-6). Cursor's servers see the traffic before the gateway does.
-- **All clients:** the gateway sees what the model *asked for* and what the harness *reported back*, not the real file-system or network side effects. Phase 7 addresses this.
+- **All clients:** the gateway sees what the model *asked for* and what the harness *reported back*, not the real file-system or network side effects. Phase 6 addresses this.
 
 ## 4. Priorities (in order)
 
@@ -97,7 +95,7 @@ A lower priority never degrades a higher one.
 - **Don't reshape prompts.** The `system` array, `cache_control`, and message structure stay exactly as sent. Reshaping breaks prompt caching and thinking signatures.
 - **Capture never blocks.** SSE is teed and storage writes are async. If capture fails, the request still succeeds, and the failure is logged and counted.
 - **Credentials the gateway handles never land in storage:** auth headers, `Proxy-Authorization` included, and keys are always redacted. Secrets inside prompts and tool results are stored as-is on a trusted machine, protected by 0700/0600 permissions, with masking a later opt-in (OQ-5, ADR 0005).
-- **Never exposed without auth.** Any route reachable from outside localhost (e.g. the Cursor tunnel) requires a gateway token.
+- **Never exposed without auth.** Any route reachable from outside localhost requires a gateway token.
 - **Stateless process.** State lives in external stores.
 - **Provider-reported usage is primary; our own estimate is the auditor.** How we estimate per tokenizer is OQ-4.
 
@@ -107,7 +105,6 @@ A lower priority never degrades a higher one.
 - Cross-protocol translation (e.g. an Anthropic-format client → an OpenAI-only model). Designed for, not built.
 - Multi-user features: virtual keys, per-user budgets, user management, hosted UI. The seams exist (§2, "Scale"); the features don't.
 - Semantic caching, MCP, A2A, admin UI, SDK
-- Capturing traffic a client never sends to the gateway (Cursor Tab, Cmd+K)
 
 ## 7. Phases
 
@@ -118,17 +115,18 @@ Each phase maps to one or more features, and each feature gets its own spec fold
 | 0 | Foundation | Repo, AGENTS.md, spec templates, docker-compose, local gate (`make verify`: lint, test, `-race`; pre-push hook), logging, `/healthz` | On a fresh clone, after `make setup`, `make verify` passes, and a push containing a malformed commit subject or a failing check is rejected |
 | 1 | Core + first protocol | Adapter/profile interfaces; Anthropic Messages passthrough (`/v1/messages`, `count_tokens`, `/v1/models`, `HEAD /api/hello`); Claude Code profile | A real Claude Code session (API key **and** subscription) runs through the gateway with no behaviour difference<br>API-key half pending: AC44 deferred, tracked in `specs/001-core-and-anthropic-passthrough/research.md` Q4. |
 | 2 | Capture + canonical events | Async raw capture with redaction; Anthropic parser → canonical events | Every exchange is stored and parsed; killing the store doesn't break the client |
-| 3 | Second protocol (the agnosticism proof) | OpenAI Chat Completions adapter + Cursor profile; gateway token auth; documented tunnel setup | Cursor traffic produces the **same canonical events**, with zero changes to the core or the Anthropic adapter |
-| 4 | Sessions & timeline | Group requests into sessions using client-profile IDs (with a fallback); viewer | Sessions from both clients replay as ordered timelines: prompt → tool calls → results |
-| 5 | Cost | Usage from the provider's response (incl. cache read/write), pricing table keyed by provider + model, estimate audit | Per-session cost matches the provider console within tolerance; unknown models are shown as `unknown` |
-| 6 | Rate limiting | Redis token bucket via Lua; well-formed 429s with `retry-after` | Clients back off and retry cleanly |
-| 7 | Ground truth (optional) | Ingest harness hooks / OTel events; correlate with captured tool calls | The timeline shows "model asked" vs "harness did" |
-| 8 | Routing | Same-protocol model aliases, weighted selection, fallback + circuit breaker | A model swap via config needs no restart and doesn't break the client |
-| 9 | Self-observability | Prometheus, OTel → Jaeger, Grafana | The gateway's own p50/p99 overhead is visible |
+| 3 | Sessions & timeline | Group Claude Code requests into sessions via `x-claude-code-session-id`; viewer | Claude Code sessions replay as ordered timelines: prompt → tool calls → results. The timeline reads only canonical events, never Anthropic wire types, enforced by a purity test on the timeline package |
+| 4 | Cost | Usage from the provider's response (incl. cache read/write), pricing table keyed by provider + model, estimate audit | Per-session cost matches the provider console within tolerance; unknown models are shown as `unknown` |
+| 5 | Rate limiting | Redis token bucket via Lua; well-formed 429s with `retry-after` | Clients back off and retry cleanly |
+| 6 | Ground truth (optional) | Ingest harness hooks / OTel events; correlate with captured tool calls | The timeline shows "model asked" vs "harness did" |
+| 7 | Routing | Same-protocol model aliases, weighted selection, fallback + circuit breaker | A model swap via config needs no restart and doesn't break the client |
+| 8 | Self-observability | Prometheus, OTel → Jaeger, Grafana | The gateway's own p50/p99 overhead is visible |
 
-Later, each as a new adapter or profile: OpenAI Responses (Codex), Gemini (Gemini CLI, Antigravity), Bedrock/Vertex formats, cross-protocol translation, eBPF-level fs/network tracing.
+The former Phase 3 (a second wire protocol and its client profile, gateway token auth, a public tunnel) was removed and the later phases moved up by one ([ADR 0006](docs/decisions/0006-drop-cursor-from-v1.md)).
 
-**Why Cursor comes before the timeline:** a second, different protocol early on is the real test of the canonical event model. Building the timeline on only one protocol would bake that protocol's shape into it.
+Later, each as a new adapter or profile: OpenAI Responses (Codex), OpenAI Chat Completions (Cursor and others), Gemini (Gemini CLI, Antigravity), Bedrock/Vertex formats, cross-protocol translation, eBPF-level fs/network tracing.
+
+**Why no second protocol before the timeline:** the test-only adapter and profile (001 AC35) prove ingestion is agnostic, and the timeline purity test in Phase 3 proves consumption is. Codex (OpenAI Responses) becomes the first real second protocol.
 
 ---
 
@@ -143,16 +141,15 @@ Status: **Decided** = settled; **Proposed** = my default, confirmed in the phase
 | Proxy engine | **`httputil.ReverseProxy`** with a `Rewrite` hook; the response body is wrapped to tee bytes into capture | Already handles hop-by-hop headers, `X-Forwarded-*`, and immediate flushing of `text/event-stream`. Those edge cases would otherwise be mine to rediscover. | **Hand-rolled proxy:** more to learn, but re-implements solved edge cases and is where fidelity bugs hide. Kept as a fallback if a protocol needs control the stdlib can't give. | Decided ([ADR 0003](docs/decisions/0003-reverseproxy-with-rewrite-as-proxy-engine.md)) | Phase 1 |
 | Capture pipeline | **In-process bounded channel + worker goroutines**; when full, drop and count rather than block | Keeps "capture never blocks" true with zero extra infrastructure. The counter makes loss visible instead of silent. | **Kafka:** I know it from production, but it's a whole broker for one user on one machine. Revisit if multiple gateway instances ever exist. **Synchronous writes:** add storage latency to every token of every stream. | Decided ([ADR 0004](docs/decisions/0004-capture-store.md)) | Phase 2 |
 | Capture store | **SQLite** (pure-Go `modernc.org/sqlite`, WAL) for the index and events + **zstd-compressed content-addressed blob files** for bodies | Zero-ops single file, still SQL, and one user has no concurrent-writer problem. Content addressing dedups identical bodies and parsed content for free. The pure-Go driver keeps the binary static (no cgo). | **PostgreSQL:** strong for cost queries, but heavy to run for one user; revisit if it goes multi-user. **MongoDB:** weaker for cost aggregation joins. **Everything in SQLite:** large bodies bloat the database and its WAL for no gain. **`mattn/go-sqlite3`:** needs cgo. | Decided ([ADR 0004](docs/decisions/0004-capture-store.md)) | Phase 2 |
-| Rate-limit state | **Redis** + Lua token bucket | A Lua script runs atomically on the server, so check-and-decrement has no race between instances. Keeps the process stateless. I already run it in production. | **In-memory limiter:** simplest, but state dies on restart and breaks with more than one instance, which violates the stateless rule. Redis is added only in Phase 6, so it isn't a dependency before it's needed. | Decided | Phase 6 |
+| Rate-limit state | **Redis** + Lua token bucket | A Lua script runs atomically on the server, so check-and-decrement has no race between instances. Keeps the process stateless. I already run it in production. | **In-memory limiter:** simplest, but state dies on restart and breaks with more than one instance, which violates the stateless rule. Redis is added only in Phase 5, so it isn't a dependency before it's needed. | Decided | Phase 5 |
 | Config | **One YAML file** (providers, pricing, client profiles, routes), parsed with **`go.yaml.in/yaml/v3`**; **secrets only from env vars** | Adding a provider or model price is a config edit, not code, which is agnosticism made concrete. Secrets never sit in a file that could be committed. | **DB-backed config:** needed for an admin UI, which is out of scope. **Env-only:** unreadable for nested pricing and routing tables. | Decided ([ADR 0002](docs/decisions/0002-config-format-and-loader.md)) | Phase 0 |
 | Logging | **zap** (structured JSON) | Very low allocation on the hot path; mature; structured fields make logs queryable by session or request ID. | **`log/slog`** (stdlib): a credible option with no dependency. zap was already chosen and can sit behind a slog handler, so switching later is cheap. | Decided | Phase 0 |
-| Metrics | **Prometheus + Grafana** | The de-facto standard. Pull-based, so no agent is needed. Histograms give p50/p99 latency overhead, one of my learning goals. | **StatsD:** no native histograms/percentiles. **Datadog etc.:** SaaS, costs money, and data leaves my machine. | Decided | Phase 9 |
-| Tracing | **OpenTelemetry → Jaeger** | OTel is vendor-neutral, which matches the agnostic principle: the backend can swap without code changes. Jaeger gives a local UI in one container. | **Vendor SDKs:** lock-in. **Grafana Tempo:** fine, but needs more setup to browse locally than Jaeger. | Decided | Phase 9 |
-| Token estimation | **tiktoken-go** for OpenAI-family models | Independent count to audit provider-reported usage. | Its accuracy for non-OpenAI tokenizers (Claude, Gemini) is the problem in OQ-4. | Decided for OpenAI; **Open** for others | Phase 5 |
+| Metrics | **Prometheus + Grafana** | The de-facto standard. Pull-based, so no agent is needed. Histograms give p50/p99 latency overhead, one of my learning goals. | **StatsD:** no native histograms/percentiles. **Datadog etc.:** SaaS, costs money, and data leaves my machine. | Decided | Phase 8 |
+| Tracing | **OpenTelemetry → Jaeger** | OTel is vendor-neutral, which matches the agnostic principle: the backend can swap without code changes. Jaeger gives a local UI in one container. | **Vendor SDKs:** lock-in. **Grafana Tempo:** fine, but needs more setup to browse locally than Jaeger. | Decided | Phase 8 |
+| Token estimation | **tiktoken-go** for OpenAI-family models | Independent count to audit provider-reported usage. | Its accuracy for non-OpenAI tokenizers (Claude, Gemini) is the problem in OQ-4. | Decided for OpenAI; **Open** for others | Phase 4 |
 | Testing | **Table-driven tests, `-race`, testcontainers-go, recorded stream fixtures** per protocol | Race detector catches tee/capture concurrency bugs. testcontainers gives real Redis/DB, not mocks that lie. Recorded real SSE streams (golden files) let each adapter be tested without live API calls or cost. | **Mocked stores only:** they pass while the real thing fails. **Live-API tests in CI:** cost money and flake. | Decided | Phase 0 |
 | Packaging | **docker-compose** for the stack; gateway also runnable as a plain binary | One command brings up store, Redis, Prometheus, Grafana, Jaeger. Running the binary directly keeps the dev loop fast. | **Kubernetes:** irrelevant for local single-user. | Decided | Phase 0 |
-| Public exposure (Cursor) | — | — | — | **Open (OQ-3)** | Phase 3 |
-| Viewer | — | — | — | **Open (OQ-7)** | Phase 4 |
+| Viewer | — | — | — | **Open (OQ-7)** | Phase 3 |
 
 ---
 
@@ -169,12 +166,13 @@ Each is resolved in the named phase's spec and recorded as an ADR. The leaning i
   - **Content-addressed blob files + a small index:** dedup comes naturally (same bytes → same hash); needs one of the above for the index.
 - **Leaning:** SQLite for the index and events + content-addressed blobs for bodies. Revisit Postgres if it ever goes multi-user.
 
-**OQ-2. How are requests grouped into sessions for clients without a session header?** *(decide by Phase 4)*
-- **Why it matters:** Claude Code sends `x-claude-code-session-id`; Cursor doesn't. Without a grouping rule, Cursor's timeline is a flat list of requests.
-- **Options:** hash the conversation prefix (the first N messages are stable within one chat); time-window + same model; client-specific metadata if Cursor sends any.
+**OQ-2. How are requests grouped into sessions for clients without a session header?** *(decide with the first client that has no session header)*
+- **Why it matters:** Claude Code is covered: it sends `x-claude-code-session-id`, which Phase 3 uses. A client without a session header would get a timeline that is a flat list of requests, so the fallback rule is deferred to the first such client.
+- **Options:** hash the conversation prefix (the first N messages are stable within one chat); time-window + same model; client-specific metadata if the client sends any.
 - **Leaning:** prefix hashing, with the time window as a tiebreaker.
 
-**OQ-3. How is the gateway exposed to Cursor's servers?** *(decide by Phase 3)*
+**OQ-3. How is the gateway exposed to Cursor's servers?** *(decide by the former Phase 3)*
+**Withdrawn (Oct 2026): Cursor dropped from v1, see [ADR 0006](docs/decisions/0006-drop-cursor-from-v1.md).**
 - **Why it matters:** Cursor can't reach `localhost`. A tunnel makes my gateway reachable from the internet.
 - **Options:**
   - **Cloudflare Tunnel:** free, stable named URL.
@@ -182,7 +180,7 @@ Each is resolved in the named phase's spec and recorded as an ADR. The leaning i
   - **Tailscale Funnel:** good if I already use Tailscale.
 - **Constraint regardless of choice:** gateway token auth on every externally reachable route.
 
-**OQ-4. How is usage audited for models whose tokenizer isn't public?** *(decide by Phase 5)*
+**OQ-4. How is usage audited for models whose tokenizer isn't public?** *(decide by Phase 4)*
 - **Why it matters:** tiktoken approximates Claude and Gemini tokenization poorly, so a 5% audit threshold would raise false alarms.
 - **Options:** call the provider's own count-tokens endpoint (exact, but extra requests); use a wider tolerance per model family; audit only OpenAI-family models.
 - **Leaning:** per-family tolerance in config, with provider count-tokens as an opt-in exact check.
@@ -192,11 +190,12 @@ Each is resolved in the named phase's spec and recorded as an ADR. The leaning i
 - **Options:** store as-is (the machine is trusted, fidelity is highest); scan with secret patterns and mask before storage; encrypt the store at rest.
 - **Trade-off:** masking changes the captured copy, never the forwarded traffic, but the timeline then shows less than what the model actually saw.
 
-**OQ-6. How much of Cursor actually flows through a custom base URL?** *(verify in Phase 3)*
+**OQ-6. How much of Cursor actually flows through a custom base URL?** *(verify in the former Phase 3)*
+**Withdrawn (Oct 2026): Cursor dropped from v1, see [ADR 0006](docs/decisions/0006-drop-cursor-from-v1.md).**
 - **Why it matters:** sources disagree on whether agent mode and sub-agents use the custom key. If most agent traffic bypasses the gateway, Cursor observability is shallow.
 - **How to resolve:** test empirically on my Cursor version and record the result in `docs/clients/cursor.md`.
 
-**OQ-7. What is the viewer?** *(decide by Phase 4)*
+**OQ-7. What is the viewer?** *(decide by Phase 3)*
 - **Options:** a CLI (fast to build, greppable); a small local web UI (better for long timelines and nested sub-agents); Grafana panels only (no custom code, but poor for reading conversations).
 - **Leaning:** CLI first, web UI once the canonical event model is stable.
 
@@ -267,7 +266,7 @@ Small fixes don't need a spec folder. The PR description states the bug, the cau
 **What goes here:** the drilled-down stuff that's too detailed for the spec or plan but worth remembering:
 - **Flow:** "does Claude Code send `count_tokens` before or after the first message?"
 - **Low-level technical:** "`ReverseProxy` buffers when `Content-Length` is set — how to force flush?"
-- **Limits hit:** "Cursor strips our custom header; can't use it for session ID."
+- **Limits hit:** "Claude Code's `HEAD /api/hello` sends no `x-app`, so the profile can't label it."
 - **Roadblocks and workarounds:** what blocked, what unblocked it.
 
 **Where it's referenced:** only from `tasks.md` (which task it blocked or shaped) and from commit git notes (`Research: … (Q2, Q5)`). The spec and plan don't link to it; they stay at the level of intent and approach.
@@ -304,18 +303,18 @@ What is repo-specific, and so belongs here:
 
 ### Scopes
 
-A scope is a noun naming the area touched, matching this codebase: `proxy`, `capture`, `anthropic`, `openai-chat`, `cursor`, `claude-code`, `cost`, `ratelimit`, `routing`, `store`, `observability`, `config`, `server` (`internal/server`, `cmd/gateway`), `logging`, `deploy` (Dockerfile, compose, image), `docs`, `repo` (repo-level tooling, hooks, process docs).
+A scope is a noun naming the area touched, matching this codebase: `proxy`, `capture`, `anthropic`, `openai-chat`, `claude-code`, `cost`, `ratelimit`, `routing`, `store`, `observability`, `config`, `server` (`internal/server`, `cmd/gateway`), `logging`, `deploy` (Dockerfile, compose, image), `docs`, `repo` (repo-level tooling, hooks, process docs).
 
-**Branch and commit agree.** Commits on `feat/003-cursor-adapter` use scopes from that feature.
+**Branch and commit agree.** Commits on `feat/003-sessions-and-timeline` use scopes from that feature.
 
 ### Git notes in this repo
 
 Add a note (`git notes add -m "<note>" <commit>`) when the commit involves a decision, a trade-off, or a spec criterion:
 
 ```
-Spec: specs/003-cursor-adapter/spec.md (AC2, AC4)
+Spec: specs/003-sessions-and-timeline/spec.md (AC2, AC4)
 ADR: docs/decisions/0004-capture-store.md
-Research: specs/003-cursor-adapter/research.md (Q2, Q5)
+Research: specs/003-sessions-and-timeline/research.md (Q2, Q5)
 Why this approach: <one or two lines>
 Alternatives rejected: <one line each>
 Trade-off / known limit: <…>

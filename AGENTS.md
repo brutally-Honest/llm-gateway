@@ -2,8 +2,8 @@
 
 An observability-first LLM gateway in Go, between any LLM client and any provider,
 capturing prompts, responses, tool calls, tokens and cost. **Not a harness** — it never
-runs agents, executes tools or edits files. **Not tied to one vendor** — Claude Code and
-Cursor are only the first clients. Full intent, phases, stack rationale and open
+runs agents, executes tools or edits files. **Not tied to one vendor** — Claude Code is
+only the first client. Full intent, phases, stack rationale and open
 questions: `PLAN.md`, which wins wherever this file disagrees with it.
 
 ## Priority order
