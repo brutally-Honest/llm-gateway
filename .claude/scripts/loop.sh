@@ -1160,12 +1160,12 @@ cmd_add_fix() { # <the bug, in words> -> a not-started task "Tnnn — fix: <bug>
 	first=""
 	for id in $(task_ids "$t"); do in_list "$id" "$(done_tasks)" || { first=$id; break; }; done
 	scope=${F#[0-9][0-9][0-9]-}
-	subj=$(printf '%s' "$bug" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9 .,-' ' ' | tr -s ' ' | sed 's/^ //; s/ $//' | cut -c1-60)
+	subj=$(printf '%s' "$bug" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9 .,-' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')
 	BLK="### $next — fix: $bug
 - Do: reproduce and fix: $bug
 - Tests: a regression test that fails before the fix and passes after it ($bug)
 - AC: none — bug fix: $bug
-- Commit: fix($scope): $subj
+- Commit: $(fit_subject "fix($scope): " "$subj")
 - Depends: —
 - Size: S
 - Risk: low
@@ -1181,7 +1181,7 @@ cmd_add_fix() { # <the bug, in words> -> a not-started task "Tnnn — fix: <bug>
 		die "the fix task would make tasks.md invalid, so nothing was added:
 $tmp"
 	fi
-	git commit -q -m "docs($F): add $next — fix: $subj" -- "$t" || die "committing tasks.md failed"
+	git commit -q -m "$(fit_subject "docs($F): add $next — fix: " "$subj")" -m "$bug" -- "$t" || die "committing tasks.md failed"
 	log_event "$next added by /al-fix: $bug"
 	echo "ADDED $next — fix: $bug$( [ -n "$first" ] && echo " (runs before $first)")"
 	if [ "$(cfg AUTO_APPROVE_TASKS)" = on ]; then echo "NEXT the build runs $next now"

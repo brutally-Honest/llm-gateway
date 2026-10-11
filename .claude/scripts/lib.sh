@@ -292,6 +292,19 @@ ac_text()   { # id; stdin = an acceptance section -> that AC's whole bullet, wra
 		on { t = t " " $0 }
 		END { flush() }'
 }
+fit_subject() { # prefix text -> prefix + the text's leading words, at most 72 bytes (git hooks count bytes)
+	local p=$1 out="" c w
+	set -f
+	for w in $2; do
+		c=${out:+$out }$w
+		[ "$(printf '%s' "$p$c" | LC_ALL=C wc -c | tr -d ' ')" -le 72 ] || break
+		out=$c
+	done
+	set +f
+	# a first word too long to fit is cut, so the subject never ends empty
+	[ -n "$out" ] || out=$(printf '%s' "$2" | LC_ALL=C cut -c1-$((72 - $(printf '%s' "$p" | LC_ALL=C wc -c))))
+	printf '%s%s\n' "$p" "$(printf '%s' "$out" | sed 's/[ .,-]*$//')"
+}
 ac_refs()   { grep -oE 'AC[0-9]+' | sort -u; }   # every AC id mentioned in stdin
 in_list()   { printf '%s\n' "$2" | grep -qx -- "$1"; }
 
