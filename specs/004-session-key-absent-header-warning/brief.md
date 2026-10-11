@@ -2,7 +2,7 @@
 feature: 004-session-key-absent-header-warning
 kind: fix
 mode: quick
-status: approved
+status: done
 version: 1
 created: 2026-10-11
 branch: fix/004-session-key-absent-header-warning
