@@ -279,6 +279,19 @@ sec_raw() { sec "$1"; }   # same as sec; named for streams that keep blank lines
 ac_active() { awk '/^[[:space:]]*[-*][[:space:]]+\*\*AC[0-9]+\*\*/ { if (match($0, /AC[0-9]+/)) print substr($0, RSTART, RLENGTH) }'; }
 ac_struck() { awk '/^[[:space:]]*[-*][[:space:]]+~~\*\*AC[0-9]+\*\*~~/ { if (match($0, /AC[0-9]+/)) print substr($0, RSTART, RLENGTH) }'; }
 ac_line()   { I="$1" awk '/^[[:space:]]*[-*][[:space:]]+(~~)?\*\*AC[0-9]+\*\*/ { if (match($0, /AC[0-9]+/) && substr($0, RSTART, RLENGTH) == ENVIRON["I"]) { print; exit } }'; }
+ac_text()   { # id; stdin = an acceptance section -> that AC's whole bullet, wrapped lines joined, whitespace collapsed
+	I="$1" awk '
+		function flush() { if (on) { gsub(/[[:space:]]+/, " ", t); sub(/^ /, "", t); sub(/ $/, "", t); print t; on = 0; done = 1 } }
+		done { next }
+		/^[[:space:]]*$/ || /^#/ { flush(); next }
+		/^[[:space:]]*[-*][[:space:]]+/ {
+			flush()
+			if ($0 ~ /^[[:space:]]*[-*][[:space:]]+(~~)?\*\*AC[0-9]+\*\*/ && match($0, /AC[0-9]+/) && substr($0, RSTART, RLENGTH) == ENVIRON["I"]) { on = 1; t = $0 }
+			next
+		}
+		on { t = t " " $0 }
+		END { flush() }'
+}
 ac_refs()   { grep -oE 'AC[0-9]+' | sort -u; }   # every AC id mentioned in stdin
 in_list()   { printf '%s\n' "$2" | grep -qx -- "$1"; }
 
@@ -432,7 +445,7 @@ contract_changes() { # file sha -> what changed in the contract since that appro
 		o=$(printf '%s\n' "$old" | sec "$h"); n=$(printf '%s\n' "$cur" | sec "$h")
 		ids=$( { printf '%s\n' "$o" "$n" | ac_active; printf '%s\n' "$o" "$n" | ac_struck; } | sort -u | sort -t C -k 2n)
 		for id in $ids; do
-			ol=$(printf '%s\n' "$o" | ac_line "$id"); nl=$(printf '%s\n' "$n" | ac_line "$id")
+			ol=$(printf '%s\n' "$o" | ac_text "$id"); nl=$(printf '%s\n' "$n" | ac_text "$id")
 			if [ -z "$ol" ]; then out="$out, $id added"
 			elif [ -z "$nl" ]; then out="$out, $id deleted"
 			elif [ "$ol" != "$nl" ]; then out="$out, $id changed"; fi

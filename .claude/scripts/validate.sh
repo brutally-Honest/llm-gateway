@@ -36,7 +36,7 @@ _old_ac_text() { # file rev -> acceptance section of the file at rev
 _shall() { # file ids...
 	local f=$1 id line; shift
 	for id in "$@"; do
-		line=$(_ac_text "$f" | ac_line "$id")
+		line=$(_ac_text "$f" | ac_text "$id")
 		printf '%s' "$line" | grep -qiE 'shall|must' \
 			|| err "$id must state an observable result: 'When <trigger>, the system shall <result>'"
 	done
@@ -315,7 +315,7 @@ check_cr_applied() { # cr-file target-file -> did the target apply the CR's AC d
 			REMOVED) printf '%s\n' "$cur" | ac_struck | grep -qx "$id" || err "${c##*/} removes $id — strike it in ${f##*/}: - ~~**$id**~~ — removed in vN (${c##*/}): reason" ;;
 			MODIFIED)
 				if ! printf '%s\n' "$cur" | ac_active | grep -qx "$id"; then err "${c##*/} modifies $id, but ${f##*/} has no active $id"
-				elif [ "$(printf '%s\n' "$cur" | ac_line "$id")" = "$(printf '%s\n' "$old" | ac_line "$id")" ]; then err "${c##*/} modifies $id, but its text in ${f##*/} is unchanged"
+				elif [ "$(printf '%s\n' "$cur" | ac_text "$id")" = "$(printf '%s\n' "$old" | ac_text "$id")" ]; then err "${c##*/} modifies $id, but its text in ${f##*/} is unchanged"
 				fi ;;
 		esac
 	done <<EOF

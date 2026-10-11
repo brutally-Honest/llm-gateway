@@ -970,7 +970,7 @@ cmd_task() { # the context pack: everything one task needs, so agents read more 
 		acs=$(task_field "$(art tasks)" "$id" AC | ac_refs)
 		re=$(printf '%s\n' $acs | paste -sd'|' -)
 		echo; echo "## Its acceptance criteria ($(art spec))"
-		for a in $acs; do _ac_text "$(art spec)" | ac_line "$a"; done
+		for a in $acs; do _ac_text "$(art spec)" | ac_text "$a"; done
 		echo; echo "## Edge cases that concern it"
 		eids=$(task_block "$(art tasks)" "$id" | grep -oE 'E[0-9]+' | sort -u | paste -sd'|' -)
 		section "$(art spec)" "Edge cases" | E="$eids" R="${re:-NONE}" awk '
@@ -1129,8 +1129,8 @@ adopt_delta() { # file approval-sha -> Delta lines (ADDED / MODIFIED / REMOVED) 
 	ids=$( { printf '%s\n' "$o" "$n" | ac_active; printf '%s\n' "$o" "$n" | ac_struck; } | sort -u | sort -t C -k 2n)
 	actext() { sed -E 's/^[[:space:]]*[-*][[:space:]]+(~~)?\*\*AC[0-9]+\*\*(~~)?[[:space:]]*(—|-|:)?[[:space:]]*//'; }
 	for id in $ids; do
-		ol=$(printf '%s\n' "$o" | ac_active | grep -qx "$id" && printf '%s\n' "$o" | ac_line "$id")
-		nl=$(printf '%s\n' "$n" | ac_line "$id")
+		ol=$(printf '%s\n' "$o" | ac_active | grep -qx "$id" && printf '%s\n' "$o" | ac_text "$id")
+		nl=$(printf '%s\n' "$n" | ac_text "$id")
 		if [ -z "$ol" ]; then
 			printf '%s\n' "$n" | ac_active | grep -qx "$id" && echo "- ADDED $id — $(printf '%s\n' "$nl" | actext)"
 		elif [ -z "$nl" ] || printf '%s\n' "$n" | ac_struck | grep -qx "$id"; then
