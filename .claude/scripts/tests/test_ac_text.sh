@@ -29,6 +29,11 @@ A demo.
 EOF
 }
 
+# --- the first-line-only helper is gone everywhere in the kit
+t "no kit file references ac_line"
+hits=$(grep -rln 'ac_line' "$KIT_SRC" --exclude-dir=tests --exclude-dir=worktrees --exclude-dir='agent-loop-backup-*')
+assert_eq "" "$hits" "files referencing ac_line"
+
 # --- ac_text itself
 t "ac_text joins wrapped lines and stops at the next AC"
 got=$(printf '%s\n' '- **AC1** — When x, the system' '  shall do y.' '- **AC2** — When z, the system shall w.' | lib 'ac_text AC1')
