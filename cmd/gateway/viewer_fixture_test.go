@@ -132,6 +132,26 @@ func TestFixture_SessionsUsageTotals(t *testing.T) {
 	if !strings.Contains(js, `"input_tokens":9123`) || !strings.Contains(js, `"errored":1`) {
 		t.Errorf("sessions -json lacks the totals:\n%s", js)
 	}
+	if strings.Contains(out, "9 of 9") {
+		t.Errorf("sessions text has \"9 of 9\":\n%s", out)
+	}
+	var sess map[string]any
+	for _, l := range lines(js) {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(l), &m); err != nil {
+			t.Fatalf("sessions -json line %q: %v", l, err)
+		}
+		if m["session_key"] == "fixture-id-1" {
+			sess = m
+		}
+	}
+	if sess == nil {
+		t.Fatalf("no fixture-id-1 session in -json:\n%s", js)
+	}
+	usage, _ := sess["usage"].(map[string]any)
+	if sess["calls"] != float64(10) || sess["errored"] != float64(1) || usage["complete"] != true {
+		t.Errorf("fixture-id-1 json: calls %v errored %v usage %v, want 10, 1, complete", sess["calls"], sess["errored"], usage)
+	}
 }
 
 func TestFixture_HeadHelloNotAModelCall(t *testing.T) {
@@ -181,6 +201,13 @@ func TestFixture_TimelineJSONCarriesSameTotals(t *testing.T) {
 	}
 	if usage["complete"] != true || usage["missing"] != float64(0) || m["errored"] != float64(1) {
 		t.Errorf("want complete, 0 missing, 1 errored: %v", m)
+	}
+	if m["calls"] != float64(10) {
+		t.Errorf("calls = %v, want 10", m["calls"])
+	}
+	_, text := viewerRun(t, dir, "timeline", "fixture-id-1")
+	if !strings.Contains(text, "1 errored") || strings.Contains(text, "9 of 9") {
+		t.Errorf("timeline text lacks \"1 errored\" or has \"9 of 9\":\n%s", text)
 	}
 	models := m["models"].([]any)
 	if len(models) != 1 || models[0].(map[string]any)["model"] != "claude-opus-5-5" {
