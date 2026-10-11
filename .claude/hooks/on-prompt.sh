@@ -21,7 +21,7 @@ r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 # not typed by the user: Claude Code delivers background-agent results and command output as
 # prompts too (no field says so, the text does) — they must not pause the build
 case $(printf '%s' "$prompt" | awk 'NF { sub(/^[[:space:]]+/, ""); print; exit }') in
-	"<task-notification>"* | "<local-command-"* | "<command-name>"* | "<command-message>"* | "<system-reminder>"* | "<bash-input>"* | "<bash-stdout>"* | "<bash-stderr>"*) exit 0 ;;
+	"<task-notification>"* | "<agent-message"* | "<local-command-"* | "<command-name>"* | "<command-message>"* | "<system-reminder>"* | "<bash-input>"* | "<bash-stdout>"* | "<bash-stderr>"*) exit 0 ;;
 esac
 
 # kit commands (all of them start with /al-) manage the run themselves; anything else is a plain prompt
