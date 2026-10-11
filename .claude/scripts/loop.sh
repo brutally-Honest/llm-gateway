@@ -457,12 +457,12 @@ pre_task() { # id -> 0 ok (base recorded) | 1 with STOP-REASON lines
 	if [ "$(cfg VERIFY)" = task ] && [ "$(sfile_get green)" != "$(git rev-parse HEAD)" ]; then
 		run_verify "before $id" || { echo "STOP-REASON verify is red at the start of $id — the previous change broke something:"; tail -20 "$(VLOG)"; return 1; }
 	fi
-	sfile_set "base.$id" "$(git rev-parse HEAD)"
+	record_base "$id"
 	sfile_set "rounds.$id" 0
 	rm -f "$(sdir)/findings.$id" "$(sdir)/watch.$id" "$(sdir)/reason.$id" "$(sdir)/end.$id"
 	state_set "$id" IN-PROGRESS
 	[ "$id" = Q ] || state_set BRANCH CLEARED
-	log_event "$id pre-task ok base=$(short)"
+	log_event "$id pre-task ok base=$(short "$(sfile_get "base.$id")")"
 	return 0
 }
 
@@ -1229,7 +1229,7 @@ cmd_answer() { # Qn <answer> — record your answer, commit research.md, restore
 		git stash pop -q "$ref" || die "$id's earlier attempt ($ref) didn't apply cleanly onto HEAD.
   do this: resolve the conflict in the files git lists, then /al-resume"
 	fi
-	sfile_set "base.$id" "$(git rev-parse HEAD)"; sfile_set "rounds.$id" 0
+	record_base "$id"; sfile_set "rounds.$id" 0
 	state_set "$id" IN-PROGRESS "restored after $q"
 	log_event "$id resumes after $q${ref:+ with its stashed attempt}"
 	echo "ANSWERED $q — $id continues${ref:+ from its earlier attempt (restored in the working tree)}"

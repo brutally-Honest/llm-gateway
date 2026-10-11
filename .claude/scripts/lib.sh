@@ -553,6 +553,15 @@ state_detail() {
 }
 sfile_get() { [ -f "$(sdir)/$1" ] && cat "$(sdir)/$1"; return 0; }
 sfile_set() { ensure_state; printf '%s\n' "$2" > "$(sdir)/$1"; }
+record_base() { # id -> base.<id>: kept when the task resumes an interrupted attempt and it is still an ancestor of HEAD, else HEAD
+	local id=$1 b
+	b=$(sfile_get "base.$id")
+	case $(state_get "$id") in
+		IN-PROGRESS | BLOCKED | STOPPED)
+			[ -n "$b" ] && git merge-base --is-ancestor "$b" HEAD 2>/dev/null && return 0 ;;
+	esac
+	sfile_set "base.$id" "$(git rev-parse HEAD)"
+}
 
 trailer_ids() { # task ids that have a "Task: Tnnn" commit on this branch since the base branch
 	local b; b=$(base_branch)
