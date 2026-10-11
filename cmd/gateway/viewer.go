@@ -115,15 +115,11 @@ func runSessions(d deps) int {
 	var out bytes.Buffer
 	l := loc(*asJSON)
 	if *ungrouped {
-		rows, err := v.r.UngroupedExchanges(*n)
+		rows, usage, total, err := timeline.ListUngrouped(v.r, *n)
 		if err != nil {
 			return v.fail("cannot read store", err)
 		}
-		list := make([]timeline.UngroupedExchange, 0, len(rows))
-		for _, e := range rows {
-			list = append(list, timeline.UngroupedExchange{RequestID: e.RequestID, Client: e.Client,
-				Method: e.Method, Path: e.Path, Start: e.StartedAt, Status: e.Status})
-		}
+		list := timeline.UngroupedList{Rows: rows, Exchanges: total, Usage: usage}
 		render := timeline.RenderUngroupedText
 		if *asJSON {
 			render = timeline.RenderUngroupedJSON
@@ -142,6 +138,12 @@ func runSessions(d deps) int {
 	if err != nil {
 		return v.fail("cannot read store", err)
 	}
+	var ungroupedUsage timeline.Summary
+	if sum.Count > 0 {
+		if _, ungroupedUsage, _, err = timeline.ListUngrouped(v.r, 1); err != nil {
+			return v.fail("cannot read store", err)
+		}
+	}
 	renderRows, renderUngrouped := timeline.RenderSessionsText, timeline.RenderUngroupedRowText
 	if *asJSON {
 		renderRows, renderUngrouped = timeline.RenderSessionsJSON, timeline.RenderUngroupedRowJSON
@@ -150,7 +152,7 @@ func runSessions(d deps) int {
 		return v.fail("cannot read store", err)
 	}
 	if sum.Count > 0 {
-		u := timeline.UngroupedSummary{Count: sum.Count, First: sum.First, Last: sum.Last}
+		u := timeline.UngroupedSummary{Count: sum.Count, First: sum.First, Last: sum.Last, Usage: ungroupedUsage}
 		if err := renderUngrouped(&out, u, l); err != nil {
 			return v.fail("cannot read store", err)
 		}

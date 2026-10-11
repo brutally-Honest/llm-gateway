@@ -211,15 +211,17 @@ func RenderJSON(w io.Writer, entries []Entry, loc *time.Location) error {
 }
 
 // UngroupedSummary is the row that ends the sessions list: the exchanges that carry
-// no session key.
+// no session key, with the usage of their model calls.
 type UngroupedSummary struct {
 	Count       int
 	First, Last int64
+	Usage       Summary
 }
 
 // RenderUngroupedRowText prints the ungrouped row in the sessions columns.
 func RenderUngroupedRowText(w io.Writer, u UngroupedSummary, loc *time.Location) error {
-	_, err := fmt.Fprintf(w, "ungrouped\t\t\t%s\t%s\t%d\t\n", stamp(u.First, loc), stamp(u.Last, loc), u.Count)
+	_, err := fmt.Fprintf(w, "ungrouped\t\t\t%s\t%s\t%d\t\t%s\n", stamp(u.First, loc), stamp(u.Last, loc), u.Count,
+		groupText(u.Usage.Total, u.Usage.Calls))
 	return err
 }
 
@@ -230,44 +232,72 @@ func RenderUngroupedRowJSON(w io.Writer, u UngroupedSummary, loc *time.Location)
 		First string `json:"first"`
 		Last  string `json:"last"`
 		Count int    `json:"count"`
-	}{"ungrouped", stamp(u.First, loc), stamp(u.Last, loc), u.Count})
+		summaryJSON
+	}{"ungrouped", stamp(u.First, loc), stamp(u.Last, loc), u.Count, summaryObject("", u.Usage)})
 }
 
-// UngroupedExchange is one exchange with no session key.
+// UngroupedExchange is one exchange with no session key; Call is set when it is a
+// model call.
 type UngroupedExchange struct {
 	RequestID, Client, Method, Path string
 	Start                           int64
 	Status                          int
+	Call                            *CallUsage
+}
+
+// UngroupedList is what `sessions -ungrouped` prints: the listed rows, and the usage
+// of all Exchanges ungrouped exchanges, whatever the row limit.
+type UngroupedList struct {
+	Rows      []UngroupedExchange
+	Exchanges int
+	Usage     Summary
 }
 
 // RenderUngroupedText prints one exchange per line: request id, time, client,
-// method, path and status.
-func RenderUngroupedText(w io.Writer, rows []UngroupedExchange, loc *time.Location) error {
+// method, path, status and the call's tokens, then the usage total.
+func RenderUngroupedText(w io.Writer, l UngroupedList, loc *time.Location) error {
 	var buf bytes.Buffer
-	for _, r := range rows {
-		fmt.Fprintf(&buf, "%s\t%s\t%s\t%s\t%s\t%d\n", escape(r.RequestID, false), stamp(r.Start, loc),
-			escape(r.Client, false), escape(r.Method, false), escape(r.Path, false), r.Status)
+	for _, r := range l.Rows {
+		fmt.Fprintf(&buf, "%s\t%s\t%s\t%s\t%s\t%d%s\n", escape(r.RequestID, false), stamp(r.Start, loc),
+			escape(r.Client, false), escape(r.Method, false), escape(r.Path, false), r.Status, callSuffix(r.Call))
+	}
+	fmt.Fprintf(&buf, "total over all %d ungrouped exchanges\n", l.Exchanges)
+	if err := RenderUsageText(&buf, l.Usage); err != nil {
+		return err
 	}
 	_, err := w.Write(buf.Bytes())
 	return err
 }
 
-// RenderUngroupedJSON prints one JSON object per exchange.
-func RenderUngroupedJSON(w io.Writer, rows []UngroupedExchange, loc *time.Location) error {
+// RenderUngroupedJSON prints one JSON object per exchange, then an ungrouped_usage
+// object.
+func RenderUngroupedJSON(w io.Writer, l UngroupedList, loc *time.Location) error {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
-	for _, r := range rows {
-		if err := enc.Encode(struct {
-			Type      string `json:"type"`
-			RequestID string `json:"request_id"`
-			Time      string `json:"time"`
-			Client    string `json:"client"`
-			Method    string `json:"method"`
-			Path      string `json:"path"`
-			Status    int    `json:"status"`
-		}{"exchange", r.RequestID, stamp(r.Start, loc), r.Client, r.Method, r.Path, r.Status}); err != nil {
+	for _, r := range l.Rows {
+		usage, noUsage, err := usageFields(r.Call)
+		if err != nil {
 			return err
 		}
+		if err := enc.Encode(struct {
+			Type      string          `json:"type"`
+			RequestID string          `json:"request_id"`
+			Time      string          `json:"time"`
+			Client    string          `json:"client"`
+			Method    string          `json:"method"`
+			Path      string          `json:"path"`
+			Status    int             `json:"status"`
+			Usage     json.RawMessage `json:"usage,omitempty"`
+			NoUsage   string          `json:"no_usage,omitempty"`
+		}{"exchange", r.RequestID, stamp(r.Start, loc), r.Client, r.Method, r.Path, r.Status, usage, noUsage}); err != nil {
+			return err
+		}
+	}
+	if err := enc.Encode(struct {
+		summaryJSON
+		Exchanges int `json:"exchanges"`
+	}{summaryObject("ungrouped_usage", l.Usage), l.Exchanges}); err != nil {
+		return err
 	}
 	_, err := w.Write(buf.Bytes())
 	return err

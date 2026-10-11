@@ -136,3 +136,125 @@ func TestListSessions_UsageDoesNotWrite(t *testing.T) {
 	}
 	assertUnchanged(t, before, storeFiles(t, dir))
 }
+
+func TestSessionsCmd_UngroupedRowsAndTotals(t *testing.T) {
+	dir := seedCalls(t,
+		call{id: "u1", model: "m1", at: 1, in: 10, out: 20},
+		call{id: "u2", model: "m2", at: 2, in: 5, out: 1},
+	)
+	code, out := viewerRun(t, dir, "sessions", "-ungrouped")
+	if code != exitOK {
+		t.Fatalf("exit %d\n%s", code, out)
+	}
+	ls := lines(out)
+	if len(ls) != 6 {
+		t.Fatalf("lines = %q", ls)
+	}
+	if !strings.HasSuffix(ls[0], "\t200 tokens in=5 out=1 cache_write=0 cache_read=0") ||
+		!strings.HasSuffix(ls[1], "\t200 tokens in=10 out=20 cache_write=0 cache_read=0") ||
+		ls[2] != "total over all 2 ungrouped exchanges" ||
+		ls[3] != "== usage total: input 15, output 21, cache-write 0, cache-read 0" ||
+		ls[4] != "   m1: input 10, output 20, cache-write 0, cache-read 0" ||
+		ls[5] != "   m2: input 5, output 1, cache-write 0, cache-read 0" {
+		t.Errorf("out:\n%s", out)
+	}
+
+	_, js := viewerRun(t, dir, "sessions", "-ungrouped", "-json")
+	jl := lines(js)
+	var row, tot map[string]any
+	if err := json.Unmarshal([]byte(jl[0]), &row); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(jl[len(jl)-1]), &tot); err != nil {
+		t.Fatal(err)
+	}
+	if row["usage"].(map[string]any)["input_tokens"] != float64(5) ||
+		tot["type"] != "ungrouped_usage" || tot["exchanges"] != float64(2) ||
+		tot["usage"].(map[string]any)["input_tokens"] != float64(15) || len(tot["models"].([]any)) != 2 {
+		t.Errorf("row %v total %v", row, tot)
+	}
+}
+
+func TestSessionsCmd_UngroupedSummaryLineCarriesTotals(t *testing.T) {
+	dir := seedCalls(t,
+		call{id: "g", key: "k", model: "m1", at: 9, in: 100, out: 100},
+		call{id: "u1", model: "m1", at: 1, in: 10, out: 20},
+		call{id: "u2", model: "m1", at: 2, in: 5, out: 1},
+	)
+	_, out := viewerRun(t, dir, "sessions")
+	ls := lines(out)
+	last := ls[len(ls)-1]
+	if !strings.HasPrefix(last, "ungrouped\t") ||
+		!strings.HasSuffix(last, "\tinput 15, output 21, cache-write 0, cache-read 0") {
+		t.Errorf("last line = %q", last)
+	}
+	_, js := viewerRun(t, dir, "sessions", "-json")
+	jl := lines(js)
+	var m map[string]any
+	if err := json.Unmarshal([]byte(jl[len(jl)-1]), &m); err != nil || m["type"] != "ungrouped" ||
+		m["usage"].(map[string]any)["output_tokens"] != float64(21) {
+		t.Errorf("json %q: %v", jl[len(jl)-1], err)
+	}
+}
+
+func TestSessionsCmd_UngroupedNoModelCalls(t *testing.T) {
+	dir := seedViewer(t, vx{id: "u1", at: 1})
+	_, out := viewerRun(t, dir, "sessions", "-ungrouped")
+	if !strings.Contains(out, "== usage total: no model calls") || strings.Contains(out, "input 0") {
+		t.Errorf("out:\n%s", out)
+	}
+	_, js := viewerRun(t, dir, "sessions", "-ungrouped", "-json")
+	jl := lines(js)
+	var m map[string]any
+	if err := json.Unmarshal([]byte(jl[len(jl)-1]), &m); err != nil || m["usage"] != nil || m["calls"] != float64(0) {
+		t.Errorf("json %q: %v", jl[len(jl)-1], err)
+	}
+}
+
+func TestSessionsCmd_UngroupedNonModelExchangeIgnored(t *testing.T) {
+	dir := seedCalls(t, call{id: "u1", model: "m1", at: 1, in: 10, out: 20})
+	// a second ungrouped exchange with no events (like HEAD /api/hello)
+	s, err := store.Open(dir, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := viewerBase.Add(5 * time.Second)
+	ex := &core.Exchange{RequestID: "h", PrincipalID: core.PrincipalLocal, Protocol: "test", Client: "cc",
+		Auth: core.AuthAPIKey, Method: http.MethodHead, Path: "/api/hello", Status: 200, Start: start, End: start.Add(time.Second)}
+	if err := s.SaveExchange(t.Context(), ex); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_, out := viewerRun(t, dir, "sessions", "-ungrouped")
+	ls := lines(out)
+	if !strings.HasSuffix(ls[0], "\tHEAD\t/api/hello\t200") {
+		t.Errorf("non-model row = %q", ls[0])
+	}
+	if !strings.Contains(out, "total over all 2 ungrouped exchanges") ||
+		!strings.Contains(out, "== usage total: input 10, output 20, cache-write 0, cache-read 0\n") {
+		t.Errorf("out:\n%s", out)
+	}
+}
+
+func TestSessionsCmd_UngroupedTotalScopeWithLimit(t *testing.T) {
+	dir := seedCalls(t,
+		call{id: "u1", model: "m1", at: 1, in: 10, out: 20},
+		call{id: "u2", model: "m1", at: 2, in: 5, out: 1},
+		call{id: "u3", model: "m1", at: 3, in: 1, out: 1},
+	)
+	_, out := viewerRun(t, dir, "sessions", "-ungrouped", "-n", "1")
+	ls := lines(out)
+	if len(ls) != 4 || !strings.HasPrefix(ls[0], "u3\t") ||
+		ls[1] != "total over all 3 ungrouped exchanges" ||
+		ls[2] != "== usage total: input 16, output 22, cache-write 0, cache-read 0" {
+		t.Errorf("out:\n%s", out)
+	}
+	_, js := viewerRun(t, dir, "sessions", "-ungrouped", "-n", "1", "-json")
+	jl := lines(js)
+	var m map[string]any
+	if err := json.Unmarshal([]byte(jl[len(jl)-1]), &m); err != nil || m["exchanges"] != float64(3) {
+		t.Errorf("json %q: %v", jl[len(jl)-1], err)
+	}
+}

@@ -45,6 +45,41 @@ func ListSessions(src SessionSource, limit int) ([]SessionListing, error) {
 	return out, nil
 }
 
+// UngroupedSource is what ListUngrouped reads. *store.Reader satisfies it.
+type UngroupedSource interface {
+	Events(requestID string) ([]store.EventRow, error)
+	UngroupedExchanges(limit int) ([]store.ExchangeRow, error)
+}
+
+// ListUngrouped lists the newest exchanges with no session key (limit 0 lists all)
+// and the usage Summary of all of them, whatever the limit. exchanges is how many
+// ungrouped exchanges the Summary covers.
+func ListUngrouped(src UngroupedSource, limit int) (rows []UngroupedExchange, sum Summary, exchanges int, err error) {
+	all, err := src.UngroupedExchanges(0)
+	if err != nil {
+		return nil, Summary{}, 0, fmt.Errorf("timeline: ungrouped: %w", err)
+	}
+	var calls []CallUsage
+	rows = []UngroupedExchange{}
+	for i, ex := range all {
+		evs, err := src.Events(ex.RequestID)
+		if err != nil {
+			return nil, Summary{}, 0, fmt.Errorf("timeline: events of %s: %w", ex.RequestID, err)
+		}
+		c, ok := callUsage(ex, evs)
+		var call *CallUsage
+		if ok {
+			calls = append(calls, c)
+			call = &c
+		}
+		if limit == 0 || i < limit {
+			rows = append(rows, UngroupedExchange{RequestID: ex.RequestID, Client: ex.Client,
+				Method: ex.Method, Path: ex.Path, Start: ex.StartedAt, Status: ex.Status, Call: call})
+		}
+	}
+	return rows, Summarize(calls), len(all), nil
+}
+
 // sessionUsage summarises the model calls of a session. Every exchange's events are
 // read, folded ones too, since a failed parse may still hold a request event.
 func sessionUsage(src Source, s store.SessionRow) (Summary, error) {
