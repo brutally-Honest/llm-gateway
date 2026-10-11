@@ -272,3 +272,106 @@ func RenderSessionHeaderText(w io.Writer, client, principal, key string) error {
 	_, err := fmt.Fprintf(w, "### session %s client=%s principal=%s\n", escape(key, false), escape(client, false), escape(principal, false))
 	return err
 }
+
+// groupText is the one text form of a usage group, used by every view.
+func groupText(g Group, calls int) string {
+	switch {
+	case calls == 0:
+		return "no model calls"
+	case g.AllErrored():
+		return fmt.Sprintf("no usage (%d errored)", g.Errored)
+	}
+	s := fmt.Sprintf("input %s, output %s, cache-write %s, cache-read %s",
+		counterText(g.Input.Value), counterText(g.Output.Value),
+		counterText(g.CacheWrite.Value), counterText(g.CacheRead.Value))
+	if g.PartialCalls > 0 {
+		s += fmt.Sprintf("; partial (%d calls)", g.PartialCalls)
+	}
+	if g.Missing > 0 {
+		s += fmt.Sprintf("; incomplete: %d of %d model calls missing usage", g.Missing, g.Reporting+g.Missing)
+	}
+	for _, c := range []struct {
+		name string
+		sum  Sum
+	}{{"input", g.Input}, {"output", g.Output}, {"cache-write", g.CacheWrite}, {"cache-read", g.CacheRead}} {
+		if c.sum.Unreported > 0 {
+			s += fmt.Sprintf("; %s incomplete (%d calls did not report)", c.name, c.sum.Unreported)
+		}
+	}
+	if g.Errored > 0 {
+		s += fmt.Sprintf("; %d errored", g.Errored)
+	}
+	return s
+}
+
+// RenderUsageText prints a session's usage total and one indented line per model.
+func RenderUsageText(w io.Writer, s Summary) error {
+	var b bytes.Buffer
+	fmt.Fprintf(&b, "== usage total: %s\n", groupText(s.Total, s.Calls))
+	for _, m := range s.Models {
+		fmt.Fprintf(&b, "   %s: %s\n", escape(m.Model, false), groupText(m.Group, m.Calls))
+	}
+	_, err := w.Write(b.Bytes())
+	return err
+}
+
+type unreportedJSON struct {
+	Input      int `json:"input_tokens"`
+	Output     int `json:"output_tokens"`
+	CacheWrite int `json:"cache_write_tokens"`
+	CacheRead  int `json:"cache_read_tokens"`
+}
+
+type groupJSON struct {
+	Input        *int64         `json:"input_tokens"`
+	Output       *int64         `json:"output_tokens"`
+	CacheWrite   *int64         `json:"cache_write_tokens"`
+	CacheRead    *int64         `json:"cache_read_tokens"`
+	Calls        int            `json:"calls"`
+	Missing      int            `json:"missing"`
+	Errored      int            `json:"errored"`
+	PartialCalls int            `json:"partial_calls"`
+	Unreported   unreportedJSON `json:"unreported"`
+	Complete     bool           `json:"complete"`
+}
+
+// usageGroup is the group object, or null (with sibling errored and calls) when the
+// group has no model calls or every call errored.
+func usageGroup(g Group, calls int) *groupJSON {
+	if calls == 0 || g.AllErrored() {
+		return nil
+	}
+	return &groupJSON{g.Input.Value, g.Output.Value, g.CacheWrite.Value, g.CacheRead.Value,
+		calls, g.Missing, g.Errored, g.PartialCalls,
+		unreportedJSON{g.Input.Unreported, g.Output.Unreported, g.CacheWrite.Unreported, g.CacheRead.Unreported},
+		!g.Incomplete()}
+}
+
+type modelUsageJSON struct {
+	Model   string     `json:"model"`
+	Usage   *groupJSON `json:"usage"`
+	Errored int        `json:"errored"`
+	Calls   int        `json:"calls"`
+}
+
+type summaryJSON struct {
+	Type    string           `json:"type,omitempty"`
+	Usage   *groupJSON       `json:"usage"`
+	Errored int              `json:"errored"`
+	Calls   int              `json:"calls"`
+	Models  []modelUsageJSON `json:"models"`
+}
+
+func summaryObject(typ string, s Summary) summaryJSON {
+	o := summaryJSON{Type: typ, Usage: usageGroup(s.Total, s.Calls), Errored: s.Total.Errored,
+		Calls: s.Calls, Models: []modelUsageJSON{}}
+	for _, m := range s.Models {
+		o.Models = append(o.Models, modelUsageJSON{m.Model, usageGroup(m.Group, m.Calls), m.Errored, m.Calls})
+	}
+	return o
+}
+
+// RenderUsageJSON prints a session's usage total as one usage_total object.
+func RenderUsageJSON(w io.Writer, s Summary) error {
+	return json.NewEncoder(w).Encode(summaryObject("usage_total", s))
+}

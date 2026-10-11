@@ -214,7 +214,7 @@ func runTimeline(d deps) int {
 	var out bytes.Buffer
 	l := loc(*asJSON)
 	for _, s := range sessions {
-		entries, err := timeline.Build(v.r, s, timeline.Options{Full: *full})
+		entries, sum, err := timeline.BuildWithUsage(v.r, s, timeline.Options{Full: *full})
 		if err != nil {
 			return v.fail("cannot read store", err)
 		}
@@ -228,11 +228,14 @@ func runTimeline(d deps) int {
 				return v.fail("cannot read store", err)
 			}
 		}
-		render := timeline.RenderText
+		render, renderUsage := timeline.RenderText, timeline.RenderUsageText
 		if *asJSON {
-			render = timeline.RenderJSON
+			render, renderUsage = timeline.RenderJSON, timeline.RenderUsageJSON
 		}
 		if err := render(&out, entries, l); err != nil {
+			return v.fail("cannot read store", err)
+		}
+		if err := renderUsage(&out, sum); err != nil {
 			return v.fail("cannot read store", err)
 		}
 	}

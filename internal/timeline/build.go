@@ -82,18 +82,26 @@ type thread struct {
 // reduced to what it adds to the best-matching earlier exchange. A source error is
 // returned; missing content is shown as NotStored.
 func Build(src Source, session store.SessionRow, opts Options) ([]Entry, error) {
+	out, _, err := BuildWithUsage(src, session, opts)
+	return out, err
+}
+
+// BuildWithUsage is Build that also returns the session's usage summary, taken from
+// the same pass over the events.
+func BuildWithUsage(src Source, session store.SessionRow, opts Options) ([]Entry, Summary, error) {
 	exchanges, err := src.SessionExchanges(session.PrincipalID, session.Client, session.SessionKey)
 	if err != nil {
-		return nil, fmt.Errorf("timeline: session exchanges: %w", err)
+		return nil, Summary{}, fmt.Errorf("timeline: session exchanges: %w", err)
 	}
 	var (
 		out     []Entry
 		earlier []thread
+		calls   []CallUsage
 	)
 	for _, ex := range exchanges {
 		evs, err := loadEvents(src, ex)
 		if err != nil {
-			return nil, err
+			return nil, Summary{}, err
 		}
 		hashes := messageHashes(evs)
 		if len(hashes) == 0 || foldedParse(ex.Parse) {
@@ -103,10 +111,13 @@ func Build(src Source, session store.SessionRow, opts Options) ([]Entry, error) 
 			callEvs := evs
 			if foldedParse(ex.Parse) {
 				if callEvs, err = src.Events(ex.RequestID); err != nil {
-					return nil, fmt.Errorf("timeline: events of %s: %w", ex.RequestID, err)
+					return nil, Summary{}, fmt.Errorf("timeline: events of %s: %w", ex.RequestID, err)
 				}
 			}
 			fe.Call = callOf(ex, callEvs)
+			if fe.Call != nil {
+				calls = append(calls, *fe.Call)
+			}
 			out = append(out, fe)
 			continue
 		}
@@ -114,12 +125,15 @@ func Build(src Source, session store.SessionRow, opts Options) ([]Entry, error) 
 		earlier = append(earlier, thread{hashes: hashes})
 		entries, err := exchangeEntries(src, ex, evs, lcp, best, opts)
 		if err != nil {
-			return nil, err
+			return nil, Summary{}, err
 		}
 		entries[0].Call = callOf(ex, evs)
+		if entries[0].Call != nil {
+			calls = append(calls, *entries[0].Call)
+		}
 		out = append(out, entries...)
 	}
-	return out, nil
+	return out, Summarize(calls), nil
 }
 
 func callOf(ex store.ExchangeRow, evs []store.EventRow) *CallUsage {
