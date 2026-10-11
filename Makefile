@@ -9,7 +9,7 @@ NOTES_REFSPEC := +refs/notes/*:refs/notes/*
 # `dev` when git can't describe the tree, e.g. a Docker build without .git.
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-.PHONY: setup setup-git setup-lint build run image test lint verify
+.PHONY: setup setup-git setup-lint build run image test kit-test lint verify
 
 # Idempotent: safe to run again at any time.
 setup: setup-git setup-lint
@@ -45,11 +45,16 @@ image:
 test:
 	go test -race ./...
 
+# The agent-loop kit's shell tests; each runs in a throwaway git repo (needs jq).
+kit-test:
+	.claude/scripts/tests/run.sh
+
 lint:
 	@test -x $(GOLANGCI_LINT) || { echo 'golangci-lint not found: run make setup' >&2; exit 1; }
 	$(GOLANGCI_LINT) run ./...
 
-# Lint, then test, in that order even under -j.
+# Lint, then test, then the kit's tests, in that order even under -j.
 verify:
 	@$(MAKE) --no-print-directory lint
 	@$(MAKE) --no-print-directory test
+	@$(MAKE) --no-print-directory kit-test
