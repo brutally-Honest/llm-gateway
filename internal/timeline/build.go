@@ -69,6 +69,9 @@ type Entry struct {
 	Omitted int
 	// Partial marks an entry built from an exchange or event that is incomplete.
 	Partial bool
+	// Call is the usage of the model call this exchange or folded entry stands for;
+	// nil for any other entry.
+	Call *CallUsage
 }
 
 type thread struct {
@@ -94,7 +97,17 @@ func Build(src Source, session store.SessionRow, opts Options) ([]Entry, error) 
 		}
 		hashes := messageHashes(evs)
 		if len(hashes) == 0 || foldedParse(ex.Parse) {
-			out = append(out, folded(ex))
+			fe := folded(ex)
+			// A folded-parse exchange may still be a model call; its events are
+			// read only to find the request event.
+			callEvs := evs
+			if foldedParse(ex.Parse) {
+				if callEvs, err = src.Events(ex.RequestID); err != nil {
+					return nil, fmt.Errorf("timeline: events of %s: %w", ex.RequestID, err)
+				}
+			}
+			fe.Call = callOf(ex, callEvs)
+			out = append(out, fe)
 			continue
 		}
 		lcp, best := bestMatch(earlier, hashes)
@@ -103,9 +116,18 @@ func Build(src Source, session store.SessionRow, opts Options) ([]Entry, error) 
 		if err != nil {
 			return nil, err
 		}
+		entries[0].Call = callOf(ex, evs)
 		out = append(out, entries...)
 	}
 	return out, nil
+}
+
+func callOf(ex store.ExchangeRow, evs []store.EventRow) *CallUsage {
+	c, ok := callUsage(ex, evs)
+	if !ok {
+		return nil
+	}
+	return &c
 }
 
 func foldedParse(p string) bool {

@@ -84,6 +84,29 @@ func exchangeLine(e Entry, loc *time.Location) string {
 	return s + " " + escape(e.RequestID, false)
 }
 
+func counterText(v *int64) string {
+	if v == nil {
+		return "unknown"
+	}
+	return fmt.Sprintf("%d", *v)
+}
+
+// callSuffix is the text appended to a model call's line; empty for a non-call.
+func callSuffix(c *CallUsage) string {
+	switch {
+	case c == nil:
+		return ""
+	case !c.HasUsage:
+		return " no usage (" + c.NoUsage + ")"
+	}
+	s := fmt.Sprintf(" tokens in=%s out=%s cache_write=%s cache_read=%s",
+		counterText(c.Input), counterText(c.Output), counterText(c.CacheWrite), counterText(c.CacheRead))
+	if c.Partial {
+		s += " [usage partial]"
+	}
+	return s
+}
+
 // RenderText prints entries as text with times in loc as RFC 3339. Message and tool
 // bodies keep newlines and tabs; every other control character is escaped.
 func RenderText(w io.Writer, entries []Entry, loc *time.Location) error {
@@ -95,9 +118,9 @@ func RenderText(w io.Writer, entries []Entry, loc *time.Location) error {
 		}
 		switch e.Kind {
 		case KindExchange:
-			fmt.Fprintf(&b, "== %s%s\n", exchangeLine(e, loc), mark)
+			fmt.Fprintf(&b, "== %s%s%s\n", exchangeLine(e, loc), mark, callSuffix(e.Call))
 		case KindFolded:
-			fmt.Fprintf(&b, "-- %s\n", exchangeLine(e, loc))
+			fmt.Fprintf(&b, "-- %s%s\n", exchangeLine(e, loc), callSuffix(e.Call))
 		case KindMarker:
 			fmt.Fprintf(&b, "   ~ %s\n", escape(e.Text, false))
 		case KindMessage:
@@ -136,6 +159,28 @@ type entryJSON struct {
 	Text       string `json:"text,omitempty"`
 	Omitted    int    `json:"omitted_bytes,omitempty"`
 	Partial    bool   `json:"partial,omitempty"`
+	// Usage is the counters object, or null with NoUsage; omitted for a non-call.
+	Usage   json.RawMessage `json:"usage,omitempty"`
+	NoUsage string          `json:"no_usage,omitempty"`
+}
+
+type callUsageJSON struct {
+	Input      *int64 `json:"input_tokens"`
+	Output     *int64 `json:"output_tokens"`
+	CacheWrite *int64 `json:"cache_write_tokens"`
+	CacheRead  *int64 `json:"cache_read_tokens"`
+	Partial    bool   `json:"partial"`
+}
+
+func usageFields(c *CallUsage) (json.RawMessage, string, error) {
+	switch {
+	case c == nil:
+		return nil, "", nil
+	case !c.HasUsage:
+		return json.RawMessage("null"), c.NoUsage, nil
+	}
+	raw, err := json.Marshal(callUsageJSON{c.Input, c.Output, c.CacheWrite, c.CacheRead, c.Partial})
+	return raw, "", err
 }
 
 // RenderJSON prints one JSON object per entry with a type field and the time in loc
@@ -144,7 +189,11 @@ func RenderJSON(w io.Writer, entries []Entry, loc *time.Location) error {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	for _, e := range entries {
-		if err := enc.Encode(entryJSON{Type: string(e.Kind), RequestID: e.RequestID, Time: stamp(e.Start, loc),
+		usage, noUsage, err := usageFields(e.Call)
+		if err != nil {
+			return err
+		}
+		if err := enc.Encode(entryJSON{Usage: usage, NoUsage: noUsage, Type: string(e.Kind), RequestID: e.RequestID, Time: stamp(e.Start, loc),
 			Method: e.Method, Path: e.Path, Status: e.Status, Parse: e.Parse, Role: e.Role, Name: e.Name,
 			ToolCallID: e.ToolCallID, IsError: e.IsError, Text: e.Text, Omitted: e.Omitted, Partial: e.Partial}); err != nil {
 			return err
