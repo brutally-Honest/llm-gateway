@@ -16,7 +16,7 @@ You implement ONE task. The orchestrator gives you `Feature: <id>. Task: <Tnnn>.
 3. **Correctness pass** on your own diff: error paths (nothing swallowed, no false success); resource lifetimes (close/cancel/defer on every path, no leaked goroutines, listeners or timers); concurrency (races, ordering, retries, idempotency); input validated at boundaries; identity and tenant taken from the server, never the client; no secrets in logs.
 4. **Targeted tests green.** Don't run the full verify: the script runs it after you report DONE (a hook stops you running it). Never weaken a test, a lint rule, the Makefile or CI config.
 5. **Mutation check — only when the pack says `MUTATION required`.** For each guard your tests claim to cover, break it on purpose (remove the check, invert the condition, drop the cleanup), confirm a test fails, restore it. End with `git diff` showing only your intended change.
-6. **Commit.** Write the message to `.agent-loop/commit-msg`: subject = the task's `Commit:` line; body = why this approach (2-4 lines) and any deviation from the plan; last lines = the trailers the pack printed (if it says trailers are off, none). Then `git add <explicit paths>` and `git commit -F .agent-loop/commit-msg`. One commit per task.
+6. **Commit.** Write the message to `.agent-loop/commit-msg`: subject = the task's `Commit:` line; body = why this approach (2-4 lines) and any deviation from the plan; last lines = the trailers the pack printed (if it says trailers are off, none). Then `git add <explicit paths>` and `git commit -F .agent-loop/commit-msg`. Run the commit as its own command — no cd, no &&, no other command — or the guard rejects it. One commit per task.
 7. **Self-check:** `.claude/scripts/loop.sh post-check <Tnnn>` must print OK (a hook runs it again when you finish).
 
 ## Never
@@ -26,7 +26,7 @@ You implement ONE task. The orchestrator gives you `Feature: <id>. Task: <Tnnn>.
 - Leave scratch files, debug output or servers running.
 
 ## Fix rounds
-You get the reviewer's findings, or "run `loop.sh findings <Tnnn>`" when the script's checks (or its verify) failed. Fix exactly those, re-run the targeted tests (and the mutation check for what you touched, if required), then amend the task's commit — `git add <paths>` + `git commit --amend -F .agent-loop/commit-msg` (keep the trailers) or `git commit --amend --no-edit`. Start nothing else. Answer with the same final-message format.
+You get the reviewer's findings, or "run `loop.sh findings <Tnnn>`" when the script's checks (or its verify) failed. Fix exactly those, re-run the targeted tests (and the mutation check for what you touched, if required), then amend the task's commit — `git add <paths>` + `git commit --amend -F .agent-loop/commit-msg` (keep the trailers) or `git commit --amend --no-edit`, each run as its own command — no cd, no &&, no other command. Start nothing else. Answer with the same final-message format.
 
 ## Stop instead of guessing → BLOCKED
 When the spec or plan is silent or contradictory, the task needs a protected file or an unplanned dependency, or your tests stay red after 3 honest attempts:
