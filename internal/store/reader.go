@@ -48,9 +48,10 @@ type ExchangeRow struct {
 	ClientDisconnected bool        `json:"client_disconnected"`
 	UpstreamAborted    bool        `json:"upstream_aborted"`
 	GatewayError       string      `json:"gateway_error"`
-	RequestBody        string      `json:"request_body"`  // "": no body
-	ResponseBody       string      `json:"response_body"` // "": no body
-	Parse              string      `json:"parse"`         // "": not parsed yet
+	RequestBody        string      `json:"request_body"`          // "": no body
+	ResponseBody       string      `json:"response_body"`         // "": no body
+	Parse              string      `json:"parse"`                 // "": not parsed yet
+	SessionKey         string      `json:"session_key,omitempty"` // "": ungrouped
 }
 
 // EventRow is one stored canonical event. A NULL column reads as "".
@@ -135,7 +136,7 @@ func (r *Reader) Close() error {
 const exchangeColumns = `request_id, principal_id, protocol, client, auth, method, path, query,
 	request_headers, response_headers, status, started_at, ttfb_ns, ended_at, stream,
 	request_truncated, response_truncated, request_incomplete, truncated,
-	client_disconnected, upstream_aborted, gateway_error, request_body, response_body, parse`
+	client_disconnected, upstream_aborted, gateway_error, request_body, response_body, parse, session_key`
 
 // Exchange reads the exchange with request ID id, or ErrNotFound.
 func (r *Reader) Exchange(id string) (ExchangeRow, error) {
@@ -165,12 +166,13 @@ func scanExchange(row *sql.Row) (ExchangeRow, error) {
 		reqH, resH                 string
 		ttfb                       sql.NullInt64
 		gwErr, reqB, resB, parseSt sql.NullString
+		sessionKey                 sql.NullString
 	)
 	err := row.Scan(&ex.RequestID, &ex.PrincipalID, &ex.Protocol, &ex.Client, &ex.Auth,
 		&ex.Method, &ex.Path, &ex.Query, &reqH, &resH, &ex.Status, &ex.StartedAt, &ttfb,
 		&ex.EndedAt, &ex.Stream, &ex.RequestTruncated, &ex.ResponseTruncated,
 		&ex.RequestIncomplete, &ex.Truncated, &ex.ClientDisconnected, &ex.UpstreamAborted,
-		&gwErr, &reqB, &resB, &parseSt)
+		&gwErr, &reqB, &resB, &parseSt, &sessionKey)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ExchangeRow{}, ErrNotFound
 	}
@@ -189,6 +191,7 @@ func scanExchange(row *sql.Row) (ExchangeRow, error) {
 	}
 	ex.GatewayError, ex.RequestBody, ex.ResponseBody, ex.Parse =
 		gwErr.String, reqB.String, resB.String, parseSt.String
+	ex.SessionKey = sessionKey.String
 	return ex, nil
 }
 

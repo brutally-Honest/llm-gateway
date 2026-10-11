@@ -39,3 +39,9 @@ func (s *Store) PragmasForTest(ctx context.Context) map[string]string {
 func (s *Store) MaxOpenConnsForTest() int {
 	return s.db.Stats().MaxOpenConnections
 }
+
+// MigrationCountForTest is the number of migration steps this binary knows.
+func MigrationCountForTest() int { return len(migrations) }
+
+// MigrationForTest is the text of migration step n (1-based).
+func MigrationForTest(n int) string { return migrations[n-1] }

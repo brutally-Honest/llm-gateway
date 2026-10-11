@@ -66,6 +66,11 @@ CREATE INDEX events_content ON events(content_hash);
 CREATE INDEX events_tool_call ON events(tool_call_id);
 CREATE INDEX events_principal ON events(principal_id, kind);
 `,
+	// 2: the opaque session key a client profile reports (feature 003).
+	`
+ALTER TABLE exchanges ADD COLUMN session_key TEXT;
+CREATE INDEX exchanges_session ON exchanges(principal_id, client, session_key, started_at);
+`,
 }
 
 // migrate brings the database to len(migrations) inside one BEGIN IMMEDIATE, so
