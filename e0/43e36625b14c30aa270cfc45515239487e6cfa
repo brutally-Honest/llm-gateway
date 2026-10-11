@@ -1,0 +1,6 @@
+Sites: validate.sh _shall (39), validate.sh check_cr_applied (318), loop.sh adopt_delta (1132-1133), lib.sh contract_changes (435), loop.sh cmd_task pack (973).
+Why this approach: one helper that normalises an AC to a single line, so wrapping never changes a comparison.
+Fingerprints: contract_changes only builds an error message; approval fingerprints come from contract_fp_text, which is unchanged, so approved specs 001-005 are unaffected.
+Known limitation, not fixed: contract_fp_text hashes lines as written, so re-wrapping an AC with no change in meaning changes the fingerprint and reopens downstream artifacts.
+Behaviour: _shall now accepts 'shall' on a wrapped line (a relaxation; no approved spec can newly fail). A non-bullet, non-heading line right after an AC counts as part of it, as in Markdown.
+Verified by: .claude/scripts/tests/test_ac_text.sh (14 checks; each site's check fails with the old first-line code).
