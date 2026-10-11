@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/brutally-honest/llm-gateway/internal/store"
 )
 
 func stamp(ns int64, loc *time.Location) string {
@@ -301,6 +303,27 @@ func RenderUngroupedJSON(w io.Writer, l UngroupedList, loc *time.Location) error
 	}
 	_, err := w.Write(buf.Bytes())
 	return err
+}
+
+// sessionHeaderJSON is the header row of one session in a multi-session timeline. It
+// has the pre-005 session fields and no usage: the session's totals are only in its
+// usage_total line.
+type sessionHeaderJSON struct {
+	Type      string `json:"type"`
+	Key       string `json:"session_key"`
+	Client    string `json:"client"`
+	Principal string `json:"principal_id"`
+	First     string `json:"first"`
+	Last      string `json:"last"`
+	Count     int    `json:"count"`
+	Preview   string `json:"preview"`
+}
+
+// RenderSessionHeaderJSON prints one session's header row as one JSON object. Preview
+// is empty, as it was before 005: the timeline never loads it.
+func RenderSessionHeaderJSON(w io.Writer, s store.SessionRow, loc *time.Location) error {
+	return json.NewEncoder(w).Encode(sessionHeaderJSON{Type: "session", Key: s.SessionKey, Client: s.Client,
+		Principal: s.PrincipalID, First: stamp(s.First, loc), Last: stamp(s.Last, loc), Count: s.Count})
 }
 
 // RenderSessionHeaderText prints the line that heads one session's timeline when

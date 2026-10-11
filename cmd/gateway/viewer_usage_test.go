@@ -258,3 +258,46 @@ func TestSessionsCmd_UngroupedTotalScopeWithLimit(t *testing.T) {
 		t.Errorf("json %q: %v", jl[len(jl)-1], err)
 	}
 }
+
+// A session header row in multi-session timeline -json carries no usage: the totals
+// live only in each session's usage_total line, which follows its header.
+func TestTimelineCmd_JSONSessionHeadersHaveNoUsage(t *testing.T) {
+	dir := seedCalls(t,
+		call{id: "a", key: "k", client: "cc", model: "m1", at: 1, in: 10, out: 20},
+		call{id: "b", key: "k", client: "other", model: "m1", at: 2, in: 3, out: 4},
+	)
+	code, out := viewerRun(t, dir, "timeline", "-json", "k")
+	if code != exitOK {
+		t.Fatalf("exit %d\n%s", code, out)
+	}
+	headers := 0
+	client := ""
+	totals := map[string]any{}
+	for _, l := range lines(out) {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(l), &m); err != nil {
+			t.Fatalf("line %q: %v", l, err)
+		}
+		switch m["type"] {
+		case "session":
+			headers++
+			client = m["client"].(string)
+			for _, k := range []string{"usage", "calls", "models", "errored"} {
+				if _, ok := m[k]; ok {
+					t.Errorf("header for %s has %q: %v", client, k, m)
+				}
+			}
+			if _, ok := m["preview"]; !ok {
+				t.Errorf("header for %s lost preview (pre-005 field): %v", client, m)
+			}
+		case "usage_total":
+			totals[client] = m["usage"].(map[string]any)["input_tokens"]
+		}
+	}
+	if headers != 2 || len(totals) != 2 {
+		t.Fatalf("headers %d, totals %v, want 2 each:\n%s", headers, totals, out)
+	}
+	if totals["cc"] != float64(10) || totals["other"] != float64(3) {
+		t.Errorf("usage_total per session = %v, want cc 10 and other 3", totals)
+	}
+}

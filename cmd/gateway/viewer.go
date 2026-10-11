@@ -222,7 +222,7 @@ func runTimeline(d deps) int {
 		}
 		if len(sessions) > 1 {
 			if *asJSON {
-				err = timeline.RenderSessionsJSON(&out, []timeline.SessionListing{{SessionRow: s}}, l)
+				err = timeline.RenderSessionHeaderJSON(&out, s, l)
 			} else {
 				err = timeline.RenderSessionHeaderText(&out, s.Client, s.PrincipalID, s.SessionKey)
 			}
