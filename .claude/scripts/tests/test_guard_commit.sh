@@ -42,7 +42,31 @@ assert_eq deny "$(decision "cd $ROOT/sub && git commit -F .agent-loop/commit-msg
 t "the exception is for builders only: a reviewer stays blocked"
 assert_eq deny "$(decision "cd $ROOT && git commit -F .agent-loop/commit-msg" reviewer)"
 
+t "a quoted root path stays blocked"
+assert_eq deny "$(decision "cd \"$ROOT\" && git commit -F .agent-loop/commit-msg")"
+
+# the two fix-round amends
+for amend in "git commit --amend -F .agent-loop/commit-msg" "git commit --amend --no-edit"; do
+	t "'$amend' from the literal repo root is allowed"
+	assert_eq allow "$(decision "cd $ROOT && $amend")"
+
+	t "'$amend' chained with another command stays blocked"
+	assert_eq deny "$(decision "cd $ROOT && $amend && git push")"
+
+	t "'$amend' piped stays blocked"
+	assert_eq deny "$(decision "cd $ROOT && $amend | tee x")"
+
+	t "'$amend' after another cd path stays blocked"
+	assert_eq deny "$(decision "cd /tmp && $amend")"
+
+	t "'$amend' after a quoted root stays blocked"
+	assert_eq deny "$(decision "cd \"$ROOT\" && $amend")"
+done
+
 t "implementer.md tells the agent to run the commit on its own"
 assert_contains "$(cat .claude/agents/implementer.md)" "no cd, no &&, no other command" "implementer.md"
+
+t "quick-builder.md tells the agent to run the commit on its own"
+assert_contains "$(cat .claude/agents/quick-builder.md)" "no cd, no &&, no other command" "quick-builder.md"
 
 done_tests
