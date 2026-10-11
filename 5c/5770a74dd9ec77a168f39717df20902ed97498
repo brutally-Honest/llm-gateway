@@ -1,0 +1,3 @@
+Scope: tasks.md is the only file add-fix writes, and it refuses to start on a dirty tree, so restoring tasks.md from HEAD returns the tree to clean.
+Test approach: add-fix needs an approved tasks.md, which only the human approval script makes, so test_add_fix_rollback.sh loads cmd_add_fix with art_state, approval_sha and tasks_problems stubbed. The e2e fixture will cover the real path.
+Verified by: test_add_fix_rollback.sh (5 checks fail without the fix).
