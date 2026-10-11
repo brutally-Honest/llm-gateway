@@ -1,6 +1,6 @@
 ---
 feature: 003-sessions-and-timeline
-status: approved
+status: done
 version: 2
 approved: 2026-10-11T06:13:21Z
 approved-by: human

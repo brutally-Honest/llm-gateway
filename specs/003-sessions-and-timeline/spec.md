@@ -1,7 +1,7 @@
 ---
 feature: 003-sessions-and-timeline
 kind: feat
-status: approved
+status: done
 version: 1
 created: 2026-10-11
 supersedes:
