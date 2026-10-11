@@ -41,9 +41,15 @@ func escape(s string, keepLayout bool) string {
 func RenderSessionsText(w io.Writer, rows []SessionListing, loc *time.Location) error {
 	var buf bytes.Buffer
 	for _, r := range rows {
-		fmt.Fprintf(&buf, "%s\t%s\t%s\t%s\t%s\t%d\t%s\n",
+		fmt.Fprintf(&buf, "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
 			escape(r.SessionKey, false), escape(r.Client, false), escape(r.PrincipalID, false),
-			stamp(r.First, loc), stamp(r.Last, loc), r.Count, escape(r.Preview, false))
+			stamp(r.First, loc), stamp(r.Last, loc), r.Count, escape(r.Preview, false),
+			groupText(r.Usage.Total, r.Usage.Calls))
+		if len(r.Usage.Models) > 1 {
+			for _, m := range r.Usage.Models {
+				fmt.Fprintf(&buf, "   %s: %s\n", escape(m.Model, false), groupText(m.Group, m.Calls))
+			}
+		}
 	}
 	_, err := w.Write(buf.Bytes())
 	return err
@@ -58,6 +64,7 @@ type sessionJSON struct {
 	Last      string `json:"last"`
 	Count     int    `json:"count"`
 	Preview   string `json:"preview"`
+	summaryJSON
 }
 
 // RenderSessionsJSON prints one JSON object per session, times in loc (UTC for the
@@ -68,7 +75,7 @@ func RenderSessionsJSON(w io.Writer, rows []SessionListing, loc *time.Location) 
 	for _, r := range rows {
 		if err := enc.Encode(sessionJSON{Type: "session", Key: r.SessionKey, Client: r.Client,
 			Principal: r.PrincipalID, First: stamp(r.First, loc), Last: stamp(r.Last, loc),
-			Count: r.Count, Preview: r.Preview}); err != nil {
+			Count: r.Count, Preview: r.Preview, summaryJSON: summaryObject("", r.Usage)}); err != nil {
 			return err
 		}
 	}

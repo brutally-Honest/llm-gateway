@@ -114,8 +114,8 @@ func TestSessions_PrintsRows(t *testing.T) {
 		t.Fatalf("exit %d\n%s", code, out)
 	}
 	want := []string{
-		fmt.Sprintf("new\tcc\tlocal\t%s\t%s\t2\thello there", ts(5, time.Local), ts(9, time.Local)),
-		fmt.Sprintf("old\tcc\tlocal\t%s\t%s\t1\tfirst old", ts(1, time.Local), ts(1, time.Local)),
+		fmt.Sprintf("new\tcc\tlocal\t%s\t%s\t2\thello there\tno model calls", ts(5, time.Local), ts(9, time.Local)),
+		fmt.Sprintf("old\tcc\tlocal\t%s\t%s\t1\tfirst old\tno model calls", ts(1, time.Local), ts(1, time.Local)),
 	}
 	if got := lines(out); strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("got\n%s\nwant\n%s", out, strings.Join(want, "\n"))

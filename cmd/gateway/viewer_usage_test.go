@@ -102,3 +102,37 @@ func TestTimelineCmd_TwoSessionsSameKeyEachHasTotals(t *testing.T) {
 		t.Errorf("headings:\n%s", out)
 	}
 }
+
+func TestSessionsCmd_RowTotalsAndModelLines(t *testing.T) {
+	dir := seedCalls(t,
+		call{id: "a", key: "k", model: "m1", at: 1, in: 10, out: 20},
+		call{id: "b", key: "k", model: "m2", at: 2, in: 5, out: 1},
+		call{id: "c", key: "s", model: "m1", at: 3, in: 1, out: 2},
+	)
+	code, out := viewerRun(t, dir, "sessions")
+	if code != exitOK {
+		t.Fatalf("exit %d\n%s", code, out)
+	}
+	ls := lines(out)
+	if len(ls) != 4 {
+		t.Fatalf("lines = %q", ls)
+	}
+	// newest first: s has one model (no model lines), then k with two.
+	if !strings.HasSuffix(ls[0], "\tinput 1, output 2, cache-write 0, cache-read 0") ||
+		!strings.HasSuffix(ls[1], "\tinput 15, output 21, cache-write 0, cache-read 0") ||
+		ls[2] != "   m1: input 10, output 20, cache-write 0, cache-read 0" ||
+		ls[3] != "   m2: input 5, output 1, cache-write 0, cache-read 0" {
+		t.Errorf("out:\n%s", out)
+	}
+}
+
+func TestListSessions_UsageDoesNotWrite(t *testing.T) {
+	dir := seedCalls(t, call{id: "a", key: "k", model: "m1", at: 1, in: 1, out: 1})
+	before := storeFiles(t, dir)
+	for _, args := range [][]string{{"sessions"}, {"sessions", "-json"}} {
+		if code, out := viewerRun(t, dir, args...); code != exitOK {
+			t.Fatalf("%v: exit %d\n%s", args, code, out)
+		}
+	}
+	assertUnchanged(t, before, storeFiles(t, dir))
+}

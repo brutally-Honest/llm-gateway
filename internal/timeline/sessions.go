@@ -21,6 +21,7 @@ type SessionSource interface {
 type SessionListing struct {
 	store.SessionRow
 	Preview string
+	Usage   Summary
 }
 
 // ListSessions lists sessions, newest last activity first; limit 0 lists all.
@@ -35,9 +36,33 @@ func ListSessions(src SessionSource, limit int) ([]SessionListing, error) {
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, SessionListing{SessionRow: s, Preview: p})
+		u, err := sessionUsage(src, s)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, SessionListing{SessionRow: s, Preview: p, Usage: u})
 	}
 	return out, nil
+}
+
+// sessionUsage summarises the model calls of a session. Every exchange's events are
+// read, folded ones too, since a failed parse may still hold a request event.
+func sessionUsage(src Source, s store.SessionRow) (Summary, error) {
+	exchanges, err := src.SessionExchanges(s.PrincipalID, s.Client, s.SessionKey)
+	if err != nil {
+		return Summary{}, fmt.Errorf("timeline: session exchanges: %w", err)
+	}
+	var calls []CallUsage
+	for _, ex := range exchanges {
+		evs, err := src.Events(ex.RequestID)
+		if err != nil {
+			return Summary{}, fmt.Errorf("timeline: events of %s: %w", ex.RequestID, err)
+		}
+		if c, ok := callUsage(ex, evs); ok {
+			calls = append(calls, c)
+		}
+	}
+	return Summarize(calls), nil
 }
 
 // preview is the first text of the first user message in the session's exchanges,
