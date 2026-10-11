@@ -116,15 +116,16 @@ Each phase maps to one or more features, and each feature gets its own spec fold
 | 1 | Core + first protocol | Adapter/profile interfaces; Anthropic Messages passthrough (`/v1/messages`, `count_tokens`, `/v1/models`, `HEAD /api/hello`); Claude Code profile | A real Claude Code session (API key **and** subscription) runs through the gateway with no behaviour difference<br>API-key half pending: AC44 deferred, tracked in `specs/001-core-and-anthropic-passthrough/research.md` Q4. |
 | 2 | Capture + canonical events | Async raw capture with redaction; Anthropic parser → canonical events | Every exchange is stored and parsed; killing the store doesn't break the client |
 | 3 | Sessions & timeline | Group Claude Code requests into sessions via `x-claude-code-session-id`; viewer | Claude Code sessions replay as ordered timelines: prompt → tool calls → results. The timeline reads only canonical events, never Anthropic wire types, enforced by a purity test on the timeline package |
-| 4 | Cost | Usage from the provider's response (incl. cache read/write), pricing table keyed by provider + model, estimate audit | Per-session cost matches the provider console within tolerance; unknown models are shown as `unknown` |
+| 4 | Usage (tokens) | Usage from the provider's response: the four counters (input, output, cache write, cache read) per model call, shown per exchange and summed per session; no prices | Every model call shows the counters from its provider usage event; session totals sum them and mark unknown, partial, or errored calls, never as 0 |
 | 5 | Rate limiting | Redis token bucket via Lua; well-formed 429s with `retry-after` | Clients back off and retry cleanly |
 | 6 | Ground truth (optional) | Ingest harness hooks / OTel events; correlate with captured tool calls | The timeline shows "model asked" vs "harness did" |
 | 7 | Routing | Same-protocol model aliases, weighted selection, fallback + circuit breaker | A model swap via config needs no restart and doesn't break the client |
 | 8 | Self-observability | Prometheus, OTel → Jaeger, Grafana | The gateway's own p50/p99 overhead is visible |
+| 9 | Cost: pricing table keyed by provider + model, needs API billing to verify | Price each model call from the Phase 4 counters using a pricing table keyed by provider + model; estimate audit (OQ-4) | Per-session cost matches the provider console within tolerance; unknown models are shown as `unknown` |
 
 The former Phase 3 (a second wire protocol and its client profile, gateway token auth, a public tunnel) was removed and the later phases moved up by one ([ADR 0006](docs/decisions/0006-drop-cursor-from-v1.md)).
 
-Later, each as a new adapter or profile: OpenAI Responses (Codex), OpenAI Chat Completions (Cursor and others), Gemini (Gemini CLI, Antigravity), Bedrock/Vertex formats, cross-protocol translation, eBPF-level fs/network tracing.
+Later, each as a new adapter or profile: OpenAI Responses (Codex), OpenAI Chat Completions (Cursor and others), Gemini (Gemini CLI, Antigravity), Bedrock/Vertex formats, cross-protocol translation, eBPF-level fs/network tracing. Each new protocol's decoder must map its provider usage to the four Phase 4 counters with the meaning defined in `specs/005-session-token-usage/spec.md` (Terms): input is uncached input only, so input + cache write + cache read is the full prompt.
 
 **Why no second protocol before the timeline:** the test-only adapter and profile (001 AC35) prove ingestion is agnostic, and the timeline purity test in Phase 3 proves consumption is. Codex (OpenAI Responses) becomes the first real second protocol.
 
@@ -146,7 +147,7 @@ Status: **Decided** = settled; **Proposed** = my default, confirmed in the phase
 | Logging | **zap** (structured JSON) | Very low allocation on the hot path; mature; structured fields make logs queryable by session or request ID. | **`log/slog`** (stdlib): a credible option with no dependency. zap was already chosen and can sit behind a slog handler, so switching later is cheap. | Decided | Phase 0 |
 | Metrics | **Prometheus + Grafana** | The de-facto standard. Pull-based, so no agent is needed. Histograms give p50/p99 latency overhead, one of my learning goals. | **StatsD:** no native histograms/percentiles. **Datadog etc.:** SaaS, costs money, and data leaves my machine. | Decided | Phase 8 |
 | Tracing | **OpenTelemetry → Jaeger** | OTel is vendor-neutral, which matches the agnostic principle: the backend can swap without code changes. Jaeger gives a local UI in one container. | **Vendor SDKs:** lock-in. **Grafana Tempo:** fine, but needs more setup to browse locally than Jaeger. | Decided | Phase 8 |
-| Token estimation | **tiktoken-go** for OpenAI-family models | Independent count to audit provider-reported usage. | Its accuracy for non-OpenAI tokenizers (Claude, Gemini) is the problem in OQ-4. | Decided for OpenAI; **Open** for others | Phase 4 |
+| Token estimation | **tiktoken-go** for OpenAI-family models | Independent count to audit provider-reported usage. | Its accuracy for non-OpenAI tokenizers (Claude, Gemini) is the problem in OQ-4. | Decided for OpenAI; **Open** for others | Phase 9 |
 | Testing | **Table-driven tests, `-race`, testcontainers-go, recorded stream fixtures** per protocol | Race detector catches tee/capture concurrency bugs. testcontainers gives real Redis/DB, not mocks that lie. Recorded real SSE streams (golden files) let each adapter be tested without live API calls or cost. | **Mocked stores only:** they pass while the real thing fails. **Live-API tests in CI:** cost money and flake. | Decided | Phase 0 |
 | Packaging | **docker-compose** for the stack; gateway also runnable as a plain binary | One command brings up store, Redis, Prometheus, Grafana, Jaeger. Running the binary directly keeps the dev loop fast. | **Kubernetes:** irrelevant for local single-user. | Decided | Phase 0 |
 | Viewer | **Local CLI first** (`gateway sessions`, `gateway timeline`); a web UI later, once the canonical event model is stable | Greppable and fast to build, and it reads canonical events directly. Long timelines and nested sub-agents are a later need. | **Small local web UI now:** better for long timelines, but it freezes presentation before the model has met a second protocol. **Grafana panels only:** poor for reading conversations. | Decided ([ADR 0007](docs/decisions/0007-viewer-cli-first.md)) | Phase 3 |
@@ -180,7 +181,7 @@ Each is resolved in the named phase's spec and recorded as an ADR. The leaning i
   - **Tailscale Funnel:** good if I already use Tailscale.
 - **Constraint regardless of choice:** gateway token auth on every externally reachable route.
 
-**OQ-4. How is usage audited for models whose tokenizer isn't public?** *(decide by Phase 4)*
+**OQ-4. How is usage audited for models whose tokenizer isn't public?** *(decide by Phase 9)*
 - **Why it matters:** tiktoken approximates Claude and Gemini tokenization poorly, so a 5% audit threshold would raise false alarms.
 - **Options:** call the provider's own count-tokens endpoint (exact, but extra requests); use a wider tolerance per model family; audit only OpenAI-family models.
 - **Leaning:** per-family tolerance in config, with provider count-tokens as an opt-in exact check.

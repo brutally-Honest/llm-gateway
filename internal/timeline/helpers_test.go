@@ -136,3 +136,18 @@ func equal(a, b []string) bool {
 	}
 	return true
 }
+
+// request adds a request event for a model ("" leaves the model empty).
+func (f *fake) request(id, model string) {
+	payload, _ := json.Marshal(map[string]any{"model": model})
+	f.add(id, store.EventRow{Kind: "request", Payload: payload})
+}
+
+// usage adds a usage event; a nil counter is a JSON null.
+func (f *fake) usage(id string, partial bool, in, out, cw, cr *int64) {
+	payload, _ := json.Marshal(map[string]any{"input_tokens": in, "output_tokens": out,
+		"cache_write_tokens": cw, "cache_read_tokens": cr, "detail": nil})
+	f.add(id, store.EventRow{Kind: "usage", Partial: partial, Payload: payload})
+}
+
+func n(v int64) *int64 { return &v }

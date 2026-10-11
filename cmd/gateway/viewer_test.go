@@ -114,8 +114,8 @@ func TestSessions_PrintsRows(t *testing.T) {
 		t.Fatalf("exit %d\n%s", code, out)
 	}
 	want := []string{
-		fmt.Sprintf("new\tcc\tlocal\t%s\t%s\t2\thello there", ts(5, time.Local), ts(9, time.Local)),
-		fmt.Sprintf("old\tcc\tlocal\t%s\t%s\t1\tfirst old", ts(1, time.Local), ts(1, time.Local)),
+		fmt.Sprintf("new\tcc\tlocal\t%s\t%s\t2\thello there\tno model calls", ts(5, time.Local), ts(9, time.Local)),
+		fmt.Sprintf("old\tcc\tlocal\t%s\t%s\t1\tfirst old\tno model calls", ts(1, time.Local), ts(1, time.Local)),
 	}
 	if got := lines(out); strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("got\n%s\nwant\n%s", out, strings.Join(want, "\n"))
@@ -157,7 +157,7 @@ func TestSessions_EndsWithUngroupedRow(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("got %q", out)
 	}
-	want := fmt.Sprintf("ungrouped\t\t\t%s\t%s\t2\t", ts(1, time.Local), ts(3, time.Local))
+	want := fmt.Sprintf("ungrouped\t\t\t%s\t%s\t2\t\tno model calls", ts(1, time.Local), ts(3, time.Local))
 	if got[1] != want {
 		t.Errorf("last row = %q, want %q", got[1], want)
 	}
@@ -182,11 +182,12 @@ func TestSessions_UngroupedFlagListsExchanges(t *testing.T) {
 		fmt.Sprintf("u2\t%s\tcc\tPOST\t/v1/m\t200", ts(3, time.Local)),
 		fmt.Sprintf("u1\t%s\tcc\tPOST\t/v1/m\t200", ts(1, time.Local)),
 	}
+	want = append(want, "total over all 2 ungrouped exchanges", "== usage total: no model calls")
 	if strings.Join(lines(out), "\n") != strings.Join(want, "\n") {
 		t.Fatalf("got\n%s", out)
 	}
 	_, out = viewerRun(t, dir, "sessions", "-ungrouped", "-n", "1")
-	if len(lines(out)) != 1 {
+	if len(lines(out)) != 3 {
 		t.Errorf("-n 1 gave %q", out)
 	}
 }
