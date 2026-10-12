@@ -54,6 +54,9 @@ func newProxy(a Adapter, up config.Upstream, identify func(*http.Request) string
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			rewrite(pr, prefix, base)
 			teeRequest(pr)
+			// The gateway's own credential never goes upstream. Capture has snapshotted
+			// it above, where redaction hides its value.
+			pr.Out.Header.Del(gatewayKeyHeader)
 			watchRequestBody(pr)
 		},
 		ModifyResponse: modifyResponse,

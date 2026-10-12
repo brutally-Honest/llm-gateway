@@ -1291,3 +1291,51 @@ func TestNetHTTP_ChunkedFramingErrorKeepsContextLive(t *testing.T) {
 		t.Fatalf("request context = %v after a chunked framing error, want live", r.ctxErr)
 	}
 }
+
+// AC18: x-gateway-key is the gateway's own credential. It is stripped from the
+// upstream request on every route, and nothing else in the request changes.
+func TestRewrite_StripsGatewayKey(t *testing.T) {
+	up := newUpstream(t, nil)
+	gw := startGateway(t, up.URL, identifyWith())
+
+	want, names := headersIn("X-Gateway-Key", "gw-sekrit", "X-Client", "kept")
+	res, _ := gw.raw(t, rawRequest(http.MethodPost, "/t/v1/x", "gateway.local", want, names, "body"))
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", res.StatusCode)
+	}
+	got := up.only(t).Header
+	if v := got.Values("X-Gateway-Key"); len(v) != 0 {
+		t.Errorf("upstream got X-Gateway-Key = %q, want it stripped", v)
+	}
+	if got.Get("X-Client") != "kept" {
+		t.Errorf("upstream X-Client = %q, want it forwarded", got.Get("X-Client"))
+	}
+}
+
+// E9: x-gateway-key on a non-model route is still stripped upstream and redacted in
+// capture, with the route otherwise proxied as sent.
+func TestProxy_GatewayKeyOnNonModelRoute_StrippedAndRedacted(t *testing.T) {
+	checkNoLeaksAtEnd(t)
+	up := newUpstream(t, nil)
+	sink := &recordingSink{}
+	g := startCaptureGateway(t, testAdapter{}, up.URL, core.Capture{Sink: sink, Budget: core.NewBudget(1 << 20), MaxBodyBytes: 1 << 20})
+
+	res, _ := g.raw(t, rawRequest(http.MethodGet, "/t/v1/models", "gateway.local", headersIn1("X-Gateway-Key", "gw-sekrit"), []string{"X-Gateway-Key"}, ""))
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", res.StatusCode)
+	}
+	if v := up.only(t).Header.Values("X-Gateway-Key"); len(v) != 0 {
+		t.Errorf("upstream got X-Gateway-Key = %q, want it stripped", v)
+	}
+	ex := sink.wait(t, 1)[0]
+	if got := ex.RequestHeader.Values("X-Gateway-Key"); !slices.Equal(got, []string{core.Redacted}) {
+		t.Errorf("stored X-Gateway-Key = %q, want [REDACTED]", got)
+	}
+	ex.Release()
+}
+
+// headersIn1 is headersIn for one name and value.
+func headersIn1(name, value string) http.Header {
+	h, _ := headersIn(name, value)
+	return h
+}
