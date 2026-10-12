@@ -1,6 +1,6 @@
 ---
 feature: 005-session-token-usage
-status: approved
+status: done
 version: 3
 approved: 2026-10-11T14:31:17Z
 approved-by: human
