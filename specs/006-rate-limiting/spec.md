@@ -1,15 +1,15 @@
 ---
 feature: 006-rate-limiting
 kind: feat
-status: draft
+status: approved
 version: 2
 created: 2026-10-12
 supersedes:
 branch: feat/006-rate-limiting
-approved:
-approved-by:
-sha256:
-fingerprint:
+approved: 2026-10-12T16:05:04Z
+approved-by: human
+sha256: 83399e7546c2937f7ca26cb515bcd498fa776f3068336a40f36db7bb422d403a
+fingerprint: 5d1b5daa97e1a0276b794565cb198c916fa578fd482fc01aa20ef10903d70acd
 previous: 7025eed
 ---
 # Rate limiting
@@ -59,9 +59,10 @@ A **window** is a fixed 60-second interval aligned to the wall-clock
 minute. A call's **tokens** are input + cache-write + output, with the counter meanings of
 005's Terms; cache-read is not counted.
 
-- **AC1** — When `ratelimit.enabled` is false (the default), the
-  system shall proxy every request exactly as before this feature: no header required,
-  nothing counted, nothing rejected.
+- **AC1** — When `ratelimit.enabled` is false (the default), the system shall require no
+  gateway key, count nothing and limit nothing, and shall proxy every request as before
+  this feature, except that `x-gateway-key` is still stripped and redacted on every
+  route (AC18).
 - **AC2** — When limiting is enabled and a model call has no gateway key, or an empty one,
   the system shall answer 403 in the protocol's error envelope with its permission error
   type (for Anthropic: `permission_error`), with a message saying the gateway key header
