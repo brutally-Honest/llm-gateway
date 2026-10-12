@@ -41,6 +41,7 @@ type Meta struct {
 	resBody    *responseWatcher
 	sessionKey string        // validated; "" when the request has none
 	capture    *captureState // nil when capture is off or already finished
+	complete   bool          // the response body hit a clean EOF and all of it reached the client
 }
 
 type metaKey struct{}
@@ -72,12 +73,25 @@ func (m *Meta) Settle(ctx context.Context) {
 }
 
 func (m *Meta) settleAbort(ctx context.Context) {
+	// A response that reached the client whole is never a disconnect or an abort: the
+	// client may close before Settle runs, and net/http then cancels ctx.
+	if m.complete {
+		return
+	}
 	if m.responseBodyErr() != nil && ctx.Err() == nil {
 		m.UpstreamAborted = true
 		return
 	}
 	if ctx.Err() != nil {
 		m.ClientDisconnected = true
+	}
+}
+
+// markResponseComplete records that the response was forwarded whole: the upstream
+// body reached a clean EOF. The caller vouches that the proxy wrote it without error.
+func (m *Meta) markResponseComplete() {
+	if m.resBody != nil && m.resBody.eof && m.resBody.err == nil {
+		m.complete = true
 	}
 }
 
@@ -139,11 +153,14 @@ func (w *requestWatcher) Close() error { return w.rc.Close() }
 type responseWatcher struct {
 	rc  io.ReadCloser
 	err error
+	eof bool // a Read returned io.EOF
 }
 
 func (w *responseWatcher) Read(p []byte) (int, error) {
 	n, err := w.rc.Read(p)
-	if err != nil && !errors.Is(err, io.EOF) && w.err == nil {
+	if err == io.EOF {
+		w.eof = true
+	} else if err != nil && w.err == nil {
 		w.err = err
 	}
 	return n, err

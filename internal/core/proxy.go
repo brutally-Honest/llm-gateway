@@ -165,6 +165,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header()["Content-Type"] = nil
 	}
 	p.rp.ServeHTTP(w, r)
+	// ReverseProxy panics with http.ErrAbortHandler on any copy error, read or write,
+	// so reaching here means the body was copied whole when the watcher saw its EOF.
+	if m := MetaFrom(r.Context()); m != nil {
+		m.markResponseComplete()
+	}
 }
 
 // readSessionKey asks the matching profile for the request's session key and returns
