@@ -1,12 +1,12 @@
 ---
 feature: 006-rate-limiting
-status: draft
+status: approved
 version: 1
-approved:
-approved-by:
-sha256:
-fingerprint:
-spec-fingerprint:
+approved: 2026-10-12T16:11:38Z
+approved-by: human
+sha256: 9824aada05f50824044ce410ca82830774aa189040106f05c40183ab09433e88
+fingerprint: 4d911d754ca478c402ed6968fad6ece8a4429a47414281bcd0533d0b899d1e3c
+spec-fingerprint: 5d1b5daa97e1a0276b794565cb198c916fa578fd482fc01aa20ef10903d70acd
 ---
 # Plan — 006-rate-limiting
 
@@ -27,7 +27,9 @@ which route is a model call, the 403/429 envelopes, and the usage reader.
 - `internal/core/redact.go` — `secretHeaders` list; `internal/core/registry.go` —
   `RegistryOption`, `AddAdapter`, `Mount`.
 - `internal/protocols/anthropic/{adapter,response,stream}.go` — error envelope,
-  `usageCounters` (the 005 counter meanings), SSE usage merge (`mergeUsage`), `contentcoding`.
+  `usageCounters` (the 005 counter meanings), SSE usage merge (`mergeUsage`).
+- `internal/contentcoding/decode.go` — today only `Decode(encoding, []byte, limit)` (whole body in memory;
+  gzip/deflate/br/zstd via deps already in go.mod); no streaming API, so this feature adds one.
 - `internal/config/{config,load,capture}.go` — dotted-key settings, `Error{Key,Source,Reason}`,
   env via `envName`, ADR 0002 precedence.
 - `cmd/gateway/run.go` — the one place that wires config into the registry.
@@ -93,18 +95,37 @@ an injectable clock for tests. `New(cfg)` selects the strategy by name (only `fi
   proxy; `mounted` holds an `http.Handler`.
 - `rewrite` order: tee snapshot first, then `Header.Del("X-Gateway-Key")` after `teeRequest`, so upstream never
   sees it while the captured request header shows `[REDACTED]` (AC18); `X-Gateway-Key` is added to core's
-  `secretHeaders`. Both unconditional, on every route, enabled or not (E9). The header is gateway-owned, not provider-shaped.
+  `secretHeaders`. Both unconditional, on every route, enabled or not, including the default
+  `ratelimit.enabled=false` (AC1, AC18, E9). The header is gateway-owned, not provider-shaped.
+
+**Streaming decoder in contentcoding (AC9, AC10).** `contentcoding` gains, with no new dependency (gzip,
+zlib/flate, `andybalholm/brotli`, `klauspost/compress/zstd` are already imported there):
+- `NewReader(encoding string, src io.Reader) (io.ReadCloser, Status)`: parses the header with the existing
+  `parse`, chains one streaming decoder per coding in reverse order; `Unsupported` (nil reader) for an unknown
+  coding. Deflate sniffs zlib vs raw with `bufio.Reader.Peek(2)` (the streaming twin of `isZlib`). `Decode`
+  and its tests stay unchanged.
+- `Feeder`: `NewFeeder(encoding string, sink func(io.Reader), maxPending int)`; `Write(p)` copies p into a
+  bounded queue and returns at once, never blocking the caller (a full queue marks it `Overflowed` and later
+  bytes are dropped). One goroutine reads the queue through `NewReader` and hands the decoded stream to `sink`.
+  `Close()` ends input, waits for the goroutine and reports `Complete | CutShort | Unsupported | Overflowed`.
+  A decoded-output cap (64 MiB) stops a decompression bomb; after a decode error or the cap the goroutine
+  drains and discards, so it never leaks. Forwarded bytes are never buffered, delayed or blocked by decoding:
+  only a bounded copy of the compressed side stream (1 MiB) waits for the decoder.
 
 **Anthropic adapter (AC2, AC7, AC9, AC11, AC19).** `IsModelCall` is `POST` + `/v1/messages`
 exactly (so `count_tokens`, `/v1/models`, `HEAD /api/hello` are not). `LimitErrorBody` uses the existing
-`errorEnvelope` with types `permission_error` / `rate_limit_error`. `UsageReader`: if
-`Content-Encoding` is identity and `stream` is true, an incremental SSE scanner keeps only the
-current event (capped at 1 MiB, an oversized event is skipped) and merges `usage` of `message_start`
-and `message_delta` through a shared usage accumulator (last value wins, as `streamState.mergeUsage`),
-holding nothing else. Otherwise (JSON body, or any content-encoded body) it keeps a side copy
-capped at 4 MiB, decoded with `contentcoding` and read by the existing `readResponse`/`usageEvent`
-at `Tokens()`; past the cap there are no tokens (warned by the middleware like AC11). Non-2xx
-statuses return no reader work: `ok=false`.
+`errorEnvelope` with types `permission_error` / `rate_limit_error`. `UsageReader` chooses by `stream`:
+- Stream (SSE): bytes go through a `contentcoding.Feeder` when `Content-Encoding` names any coding (gzip,
+  deflate, br, zstd, stacked), or straight to the scanner when identity. Compressed SSE is the normal case:
+  Claude Code sends `Accept-Encoding: gzip, deflate, br, zstd` and Anthropic answered with
+  `Content-Encoding: gzip` (verified 2026-10-12). An incremental SSE scanner keeps only the current event
+  (capped at 1 MiB, an oversized event is skipped) and merges `usage` of `message_start` and `message_delta`
+  through a shared accumulator (last value wins, as `streamState.mergeUsage`). A stream cut mid-way yields the
+  usage decoded so far (E1).
+- Non-stream JSON: the decoded stream (Feeder, or direct if identity) goes into a 4 MiB capped buffer read by
+  the existing `readResponse`/`usageEvent` at `Tokens()`; past the cap there are no tokens (warned like AC11).
+- Non-2xx statuses do no reader work: `ok=false`. An `Unsupported` or `Overflowed` result also gives `ok=false`
+  (fails open; the middleware warns for 2xx).
 
 **Middleware (AC2-AC8, AC11, AC15, AC17, AC19).** `ratelimit.Middleware(l Limiter, a core.Adapter, log *zap.Logger)`.
 If `a` is not a `RateLimitAdapter`, or not `IsModelCall`, it passes the request through untouched (AC4).
@@ -132,7 +153,7 @@ No migrations. No new dependency.
 ## AC coverage
 | AC | Where | Verified by |
 |----|-------|-------------|
-| AC1 | `config` default; `run.go` wiring; no wrapper when `OnUsage` nil | `TestRun_RateLimitDisabled_ProxiesWithoutKey`, `TestLoad_RateLimitDefaultsOff` |
+| AC1 | `config` default; `run.go` wiring; no wrapper when `OnUsage` nil; strip/redact unconditional | `TestRun_RateLimitDisabled_ProxiesWithoutKey`, `TestRun_RateLimitDisabled_GatewayKeyStillStrippedAndRedacted`, `TestLoad_RateLimitDefaultsOff` |
 | AC2 | `ratelimit/middleware.go`, anthropic `LimitErrorBody` | `TestMiddleware_MissingOrEmptyKey_403Permission` |
 | AC3 | `ratelimit/limiter.go` (UnknownKey), middleware | `TestMiddleware_UnknownKey_403Permission` |
 | AC4 | middleware passthrough, anthropic `IsModelCall` | `TestMiddleware_NonModelCall_NotRequiredNotCounted`, `TestIsModelCall_OnlyMessagesPost` |
@@ -140,7 +161,7 @@ No migrations. No new dependency.
 | AC6 | limiter `Admit`/`Record`, middleware | `TestFixedWindow_RejectsAtTPM`, `TestMiddleware_TPMExceeded_429NotForwarded` |
 | AC7 | middleware headers/body | `TestMiddleware_429Response_HeadersAndEnvelope`, `TestRetryAfter_RoundsUpMinOne` |
 | AC8 | limiter `Admit` count | `TestMiddleware_AdmittedCallCountedEvenIfUpstreamFails` |
-| AC9 | core `usageWriter`, `Meta.Settle`, middleware callback | `TestUsageWriter_CallsOnUsageOnceAtSettle`, `TestRun_TokensRecordedFromStream` |
+| AC9 | core `usageWriter`, `Meta.Settle`, middleware callback | `TestUsageWriter_CallsOnUsageOnceAtSettle`, `TestRun_TokensRecordedFromStream`, `TestUsageReader_GzipSSEStream`, `TestRun_GzipStreamTokensRecorded` |
 | AC10 | core observer independent of capture | `TestRun_TokensCountedWithCaptureOff`, `TestRun_TokensCountedWhenExchangeDropped` |
 | AC11 | anthropic reader `ok=false`; middleware warn | `TestMiddleware_NoUsage2xx_WarnsNoTokens`, `TestMiddleware_Upstream5xx_NoTokensNoWarn` |
 | AC12 | limiter lazy rollover | `TestFixedWindow_NewWindowResetsCounts` |
@@ -151,15 +172,25 @@ No migrations. No new dependency.
 | AC17 | `Limiter` interface, middleware | `TestMiddleware_WorksAgainstFakeLimiter` |
 | AC18 | `core.rewrite`, `redact.go` | `TestRewrite_StripsGatewayKey`, `TestCapture_RedactsGatewayKey` |
 | AC19 | middleware/upstream passthrough | `TestRun_Upstream429PassedThroughVerbatim` |
-| AC20 | `config.example.yaml`, `docs/clients/claude-code.md` | manual: real Claude Code session (T008) |
-| AC21 | `docs/decisions/0008-*.md`, `PLAN.md` | manual review of the diff (T008) |
+| AC20 | `config.example.yaml`, `docs/clients/claude-code.md` | manual: real Claude Code session (T009) |
+| AC21 | `docs/decisions/0008-*.md`, `PLAN.md` | manual review of the diff (T009) |
 
 ## Test strategy
 - Limiter: `TestFixedWindow_ConcurrentBurstAdmitsExactlyRemaining (AC14, E10)`,
   `TestFixedWindow_OvershootRejectsUntilWindowEnds (E4)`, `TestFixedWindow_StreamEndingInNextWindowCountsThere (E3)`,
   `TestFixedWindow_NewWindowResetsCounts (AC12)`, remaining clamped at 0.
+- contentcoding: `TestNewReader_StreamsEachCoding` (gzip, deflate zlib and raw, br, zstd, stacked; fed in 1-byte
+  chunks), `TestNewReader_UnknownCodingUnsupported`, `TestFeeder_WriteNeverBlocksOnSlowSink`,
+  `TestFeeder_OverflowMarksOverflowedAndDrops`, `TestFeeder_BombStopsAtOutputCap`, `TestFeeder_CloseDrainsNoLeak`,
+  `TestFeeder_TruncatedInputReportsCutShort`.
 - Anthropic reader: stream golden (`testdata/stream.sse`) token total equals the parser's usage event total;
-  `TestUsageReader_CutStreamStillReportsSeenUsage (E1)`; gzip JSON body decoded; oversize body gives no tokens.
+  `TestUsageReader_GzipSSEStream (AC9)` feeds `testdata/stream.sse.gz` in small chunks; its siblings feed
+  the br, zstd and deflate variants the same way. Each fixture is generated by compressing the existing
+  recorded `internal/protocols/anthropic/testdata/stream.sse` byte for byte, with no hand edits, and each
+  test asserts the same usage total as the uncompressed test on `stream.sse`. The 2026-10-12 capture is not
+  a fixture source (it holds org, workspace and session identifiers); every fixture passes
+  `TestFixtures_NoIdentifiers`. `TestUsageReader_CutGzipStreamStillReportsSeenUsage (E1)`; gzip JSON body
+  decoded; oversize JSON body gives no tokens.
 - Core: `usageWriter` forwards bytes identically, `Flush` still works through `Unwrap`, `OnUsage` once even on abort.
 - Middleware: every AC row above with a fake adapter/limiter plus the anthropic adapter.
 - End to end through `run()` with a fake upstream: AC1 byte-identical proxying, 403/429 flows, token recording
@@ -169,15 +200,18 @@ No migrations. No new dependency.
 
 ## Risks
 - Counting drift if `OnUsage` is skipped on a panic path: `Settle` runs in a defer, tested with an aborted stream.
-- Compressed streams are buffered up to 4 MiB for decoding; beyond that no tokens are counted (fails open, warned).
-  Limit on damage: the cap, and capture is untouched.
+- Decoding compressed SSE on a side goroutine: a slow decoder could grow the queue or leak a goroutine. Limit on
+  damage: queue capped at 1 MiB (overflow means no tokens, fails open, warned), `Close` always drains, forwarded
+  bytes never wait on it, a decompression bomb stops at the output cap.
+- A new streaming API in the shared `contentcoding` package; `Decode` and its tests stay unchanged.
 - The usage wrapper sits on the streaming path: it must never delay or reorder bytes; tests compare forwarded bytes.
 - Fixed-window boundary bursts (2x rpm) and per-instance counts: documented in the ADR.
-- Research Q1 (open): whether Claude Code sends `ANTHROPIC_CUSTOM_HEADERS` on every call is settled only by the
-  manual check in T008; if not, only the docs change.
+- Research Q1 (answered): Claude Code 2.1.296 sends `ANTHROPIC_CUSTOM_HEADERS` on every /v1/messages call,
+  including sub-agent and side calls (verified 2026-10-12), so the header approach holds; the manual check in
+  T009 only re-confirms it for the docs (AC20).
 
 ## Open questions
 None.
 
 ## Changelog
-- v1 (2026-10-12) — first draft
+- v1 (2026-10-12) — first draft, revised against spec v2: AC1 strip/redact when disabled; streaming content decoding replaces the 4 MiB side copy; Q1 answered
