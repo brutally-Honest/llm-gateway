@@ -1,7 +1,7 @@
 ---
 feature: 005-session-token-usage
 kind: feat
-status: approved
+status: done
 version: 4
 created: 2026-10-11
 supersedes:
