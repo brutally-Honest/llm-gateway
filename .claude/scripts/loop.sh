@@ -40,15 +40,19 @@ render() { # template dest   (uses F KIND TITLE SUP CR BRANCH); .claude/template
 }
 
 run_verify() { # [why] -> 0 = green. Records HEAD as green only when verify ran on a clean tree and left it clean.
-	local log rc before
+	local log out rc before
 	log=$(VLOG)
 	if [ -z "$VERIFY_CMD" ]; then { verify_unset_msg; echo; } > "$log"; return 1; fi # unset is red, never a silent green
+	# Verify writes outside the repo and the log moves in only after it exits, so
+	# .agent-loop/ holds still while verify runs (the kit's runner checks that).
+	out=$(mktemp "${TMPDIR:-/tmp}/al-verify.XXXXXX") || die "cannot create a temp file for verify's output"
 	before=$(git status --porcelain)
-	(bash -c "$VERIFY_CMD") > "$log" 2>&1; rc=$?
+	(bash -c "$VERIFY_CMD") > "$out" 2>&1; rc=$?
 	if [ "$(git status --porcelain)" != "$before" ]; then
-		printf '\nagent-loop: verify changed files in the working tree — verify must be read-only:\n%s\n' "$(git status --short)" >> "$log"
+		printf '\nagent-loop: verify changed files in the working tree — verify must be read-only:\n%s\n' "$(git status --short)" >> "$out"
 		rc=1
 	fi
+	mv -f "$out" "$log"
 	if [ $rc = 0 ] && [ -z "$before" ] && [ -n "${F:-}" ]; then sfile_set green "$(git rev-parse HEAD)"; fi
 	if [ -n "${F:-}" ] && [ -n "${1:-}" ]; then
 		if [ $rc = 0 ]; then log_event "VERIFY green $1 at $(short)"; else log_event "VERIFY red $1 at $(short)"; fi
