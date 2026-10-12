@@ -1,15 +1,16 @@
 ---
 feature: 006-rate-limiting
 kind: feat
-status: approved
-version: 1
+status: draft
+version: 2
 created: 2026-10-12
 supersedes:
 branch: feat/006-rate-limiting
-approved: 2026-10-12T15:54:14Z
-approved-by: human
-sha256: 66caaf6c56372831327a76e3b182934047ee8c18b7451657e1aaae9eab2bdfbd
-fingerprint: d6239390e13b082f7e2414e7b44ea56b72ddc1292769f9cb87ff4e9e2577c1c2
+approved:
+approved-by:
+sha256:
+fingerprint:
+previous: 7025eed
 ---
 # Rate limiting
 
@@ -176,3 +177,4 @@ None. The header name, default-off, 403 `permission_error`, strip+redact and log
 ## Changelog
 - v1 (2026-10-12) — first draft
   - 403 permission_error instead of 401 for a missing or unknown gateway key; remaining clamped at 0
+- v2 (2026-10-12) — reopened: AC1: when ratelimit.enabled is false, nothing is counted, limited or required, and every request is proxied as before this feature, except that x-gateway-key is still stripped and redacted on every route (AC18). Reason: the header is addressed to the gateway, and redacting a future secret must not depend on a toggle.
