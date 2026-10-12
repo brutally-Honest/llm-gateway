@@ -68,3 +68,20 @@ capture:
   # that would cross it is dropped and logged; forwarding is unaffected.
   # Env: GATEWAY_CAPTURE_MEMORY_LIMIT
   memory_limit: 268435456
+
+# Rate limiting: per gateway key, requests and tokens per minute. Off by default; when
+# off no key is required. Clients send their key in the x-gateway-key header.
+ratelimit:
+  # Env: GATEWAY_RATELIMIT_ENABLED
+  enabled: false
+
+  # The only strategy so far: an in-memory fixed window.
+  # Env: GATEWAY_RATELIMIT_STRATEGY
+  strategy: fixed_window_memory
+
+  # One block per gateway key (file only). rpm and tpm are integers >= 0; 0 or omitted
+  # means no limit on that axis. Enabling with no keys is an error.
+  # keys:
+  #   alice:
+  #     rpm: 60
+  #     tpm: 100000

@@ -18,6 +18,7 @@ type Config struct {
 	ShutdownTimeout time.Duration
 	Upstreams       map[string]Upstream // by adapter name; nil when Options.Upstreams is empty
 	Capture         Capture
+	RateLimit       RateLimit
 }
 
 // Options says where Load looks.
@@ -85,6 +86,7 @@ func Defaults() Config {
 		LogLevel:        "info",
 		ShutdownTimeout: 10 * time.Minute,
 		Capture:         defaultCapture(),
+		RateLimit:       defaultRateLimit(),
 	}
 }
 
@@ -106,7 +108,8 @@ func settingsFor(specs []UpstreamSpec) []setting {
 	for _, spec := range specs {
 		s = append(s, upstreamSettings(spec.Name)...)
 	}
-	return append(s, captureSettings()...)
+	s = append(s, captureSettings()...)
+	return append(s, ratelimitSettings()...)
 }
 
 // envNameReplacer maps the characters of a dotted key that an env var cannot hold.

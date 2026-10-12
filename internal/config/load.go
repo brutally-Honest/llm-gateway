@@ -23,6 +23,7 @@ type fileConfig struct {
 
 	Upstreams map[string]upstreamFile `yaml:"upstreams"`
 	Capture   captureFile             `yaml:"capture"`
+	RateLimit ratelimitFile           `yaml:"ratelimit"`
 }
 
 // upstreamFile is one upstreams.<name> block. Like fileConfig, its tags are the known
@@ -75,6 +76,9 @@ func fileValues(f *fileConfig) map[string]*string {
 	for field, p := range stringFields(&f.Capture) {
 		values[captureKey(field)] = p
 	}
+	for field, p := range stringFields(&f.RateLimit) {
+		values[ratelimitKey(field)] = p
+	}
 	return values
 }
 
@@ -100,7 +104,7 @@ func Load(opts Options) (Config, Source, error) {
 		return Config{}, Source{}, err
 	}
 	if path != "" {
-		values, lines, err := parseFile(path, data, opts.Upstreams)
+		values, keys, lines, err := parseFile(path, data, opts.Upstreams)
 		if err != nil {
 			return Config{}, Source{}, err
 		}
@@ -112,6 +116,9 @@ func Load(opts Options) (Config, Source, error) {
 			if reason := s.apply(&cfg, *v); reason != "" {
 				return Config{}, Source{}, &Error{Key: s.key, Source: path, Reason: reason, Line: lines[s.key]}
 			}
+		}
+		if err := applyKeys(&cfg, path, keys, lines); err != nil {
+			return Config{}, Source{}, err
 		}
 		src.File = path
 	}
@@ -129,6 +136,9 @@ func Load(opts Options) (Config, Source, error) {
 			}
 			src.EnvOverrides = append(src.EnvOverrides, s.key)
 		}
+	}
+	if err := validateRateLimit(&cfg, src.File); err != nil {
+		return Config{}, Source{}, err
 	}
 	return cfg, src, nil
 }
@@ -161,7 +171,7 @@ var syntaxLine = regexp.MustCompile(`^yaml: line (\d+):`)
 
 // parseFile checks the file's structure and returns its values and the line of each
 // key it sets (steps 2–4).
-func parseFile(path string, data []byte, specs []UpstreamSpec) (map[string]*string, map[string]int, error) {
+func parseFile(path string, data []byte, specs []UpstreamSpec) (map[string]*string, map[string]keyFile, map[string]int, error) {
 	fail := func(key, reason string, line int) error {
 		return &Error{Key: key, Source: path, Reason: reason, Line: line}
 	}
@@ -172,7 +182,7 @@ func parseFile(path string, data []byte, specs []UpstreamSpec) (map[string]*stri
 		if m := syntaxLine.FindStringSubmatch(err.Error()); m != nil {
 			line, _ = strconv.Atoi(m[1])
 		}
-		return nil, nil, fail("", reasonMalformedYAML, line)
+		return nil, nil, nil, fail("", reasonMalformedYAML, line)
 	}
 
 	known := stringFields(&fileConfig{})
@@ -252,29 +262,85 @@ func parseFile(path string, data []byte, specs []UpstreamSpec) (map[string]*stri
 		}
 		return walkFields(v, captureKey, knownCapture)
 	}
+	// walkRateLimit checks the block under `ratelimit`: scalar fields, plus `keys`
+	// with one block of rpm/tpm per name.
+	walkRateLimit := func(k, v *yaml.Node) error {
+		if isNull(v) {
+			return nil
+		}
+		if v.Kind != yaml.MappingNode {
+			return fail(k.Value, reasonInvalidType, k.Line)
+		}
+		scalars := stringFields(&ratelimitFile{})
+		knownKey := stringFields(&keyFile{})
+		for j := 0; j+1 < len(v.Content); j += 2 {
+			fk, fv := v.Content[j], v.Content[j+1]
+			dotted := ratelimitKey(fk.Value)
+			_, isScalar := scalars[fk.Value]
+			if err := entry(dotted, fk, isScalar || fk.Value == "keys"); err != nil {
+				return err
+			}
+			if fk.Value != "keys" {
+				if fv.Kind != yaml.ScalarNode {
+					return fail(dotted, reasonInvalidType, fk.Line)
+				}
+				lines[dotted] = fk.Line
+				continue
+			}
+			if isNull(fv) {
+				continue
+			}
+			if fv.Kind != yaml.MappingNode {
+				return fail(dotted, reasonInvalidType, fk.Line)
+			}
+			lines[dotted+"."] = fk.Line
+			for i := 0; i+1 < len(fv.Content); i += 2 {
+				nk, nv := fv.Content[i], fv.Content[i+1]
+				nameKey := dotted + "." + nk.Value
+				if err := entry(nameKey, nk, nk.Kind == yaml.ScalarNode); err != nil {
+					return err
+				}
+				if nk.Value == "" {
+					lines[dotted+"."] = nk.Line
+				}
+				if isNull(nv) {
+					continue
+				}
+				if nv.Kind != yaml.MappingNode {
+					return fail(nameKey, reasonInvalidType, nk.Line)
+				}
+				key := func(field string) string { return ratelimitKeyField(nk.Value, field) }
+				if err := walkFields(nv, key, knownKey); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
 	blocks := map[string]func(k, v *yaml.Node) error{
 		"upstreams": walkUpstreams,
 		"capture":   walkCapture,
+		"ratelimit": walkRateLimit,
 	}
 	if root := documentRoot(&doc); root != nil {
 		if root.Kind != yaml.MappingNode {
-			return nil, nil, fail("", reasonNotMapping, root.Line)
+			return nil, nil, nil, fail("", reasonNotMapping, root.Line)
 		}
 		for i := 0; i+1 < len(root.Content); i += 2 {
 			k, v := root.Content[i], root.Content[i+1]
 			_, isKnown := known[k.Value]
 			walk, isBlock := blocks[k.Value]
 			if err := entry(k.Value, k, isKnown || isBlock); err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 			if isBlock {
 				if err := walk(k, v); err != nil {
-					return nil, nil, err
+					return nil, nil, nil, err
 				}
 				continue
 			}
 			if v.Kind != yaml.ScalarNode {
-				return nil, nil, fail(k.Value, reasonInvalidType, k.Line)
+				return nil, nil, nil, fail(k.Value, reasonInvalidType, k.Line)
 			}
 			lines[k.Value] = k.Line
 		}
@@ -288,15 +354,15 @@ func parseFile(path string, data []byte, specs []UpstreamSpec) (map[string]*stri
 	var f fileConfig
 	if err := dec.Decode(&f); err != nil {
 		if errors.Is(err, io.EOF) { // an empty or comment-only file
-			return map[string]*string{}, lines, nil
+			return map[string]*string{}, nil, lines, nil
 		}
-		return nil, nil, fail("", reasonInvalidConfig, 0)
+		return nil, nil, nil, fail("", reasonInvalidConfig, 0)
 	}
 	var next yaml.Node
 	if err := dec.Decode(&next); !errors.Is(err, io.EOF) {
-		return nil, nil, fail("", reasonMultipleDocuments, next.Line)
+		return nil, nil, nil, fail("", reasonMultipleDocuments, next.Line)
 	}
-	return fileValues(&f), lines, nil
+	return fileValues(&f), f.RateLimit.Keys, lines, nil
 }
 
 // documentRoot is the document's top node, or nil for an empty document: an empty
