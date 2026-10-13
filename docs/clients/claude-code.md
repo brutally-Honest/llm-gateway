@@ -41,6 +41,24 @@ it.
 To go direct again, unset `ANTHROPIC_BASE_URL` (or run
 `env -u ANTHROPIC_BASE_URL claude`).
 
+### Gateway key for rate limits
+
+With `ratelimit.enabled: true` in the gateway config, every model call must carry a
+gateway key. The key names this client in the config's `ratelimit.keys` block. Claude
+Code sends it as a custom header, set with `ANTHROPIC_CUSTOM_HEADERS` in the same shell
+as `ANTHROPIC_BASE_URL`:
+
+```sh
+export ANTHROPIC_CUSTOM_HEADERS="x-gateway-key: <name>"
+```
+
+`<name>` is the key from `ratelimit.keys` (for example `alice`). It is matched exactly as
+sent. Claude Code sends this header on every `/v1/messages` call, including sub-agent and
+side calls, so each one counts against the same key. The header is an identity label, not a
+secret; the gateway strips it before forwarding and never stores it. A request without a
+known key gets a 403 when limiting is on, and a call over a limit gets a 429 with
+`retry-after`, which Claude Code backs off and retries.
+
 ## 2. Known limits
 
 Some Claude Code traffic never reaches the gateway, by design of the client, not as a

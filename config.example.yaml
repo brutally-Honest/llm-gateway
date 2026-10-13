@@ -69,18 +69,26 @@ capture:
   # Env: GATEWAY_CAPTURE_MEMORY_LIMIT
   memory_limit: 268435456
 
-# Rate limiting: per gateway key, requests and tokens per minute. Off by default; when
-# off no key is required. Clients send their key in the x-gateway-key header.
+# Rate limiting: per gateway key, requests and tokens per minute, counted on model calls
+# only (POST /v1/messages for Anthropic). Off by default; when off no key is required.
+# Clients send their key in the x-gateway-key header (see docs/clients/claude-code.md).
+# A window is a fixed 60-second interval aligned to the wall clock. Tokens are input +
+# cache-write + output; cache-read is not counted. Over a limit the client gets a 429
+# with retry-after and the protocol's error envelope.
+# Known limits of the v1 limiter (ADR 0008): a burst of up to 2x rpm is possible across a
+# window edge; a restart resets every count to 0; several gateway instances each count
+# separately, so the effective limit is up to N times the configured one.
 ratelimit:
   # Env: GATEWAY_RATELIMIT_ENABLED
   enabled: false
 
-  # The only strategy so far: an in-memory fixed window.
+  # The only strategy so far: an in-memory fixed window (ADR 0008). Redis is deferred.
   # Env: GATEWAY_RATELIMIT_STRATEGY
   strategy: fixed_window_memory
 
-  # One block per gateway key (file only). rpm and tpm are integers >= 0; 0 or omitted
-  # means no limit on that axis. Enabling with no keys is an error.
+  # One block per gateway key (file only). The key is matched exactly as sent. rpm and
+  # tpm are integers >= 0; 0 or omitted means no limit on that axis. Enabling with no
+  # keys is an error.
   # keys:
   #   alice:
   #     rpm: 60
