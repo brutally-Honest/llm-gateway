@@ -101,6 +101,15 @@ plan-fingerprint: 4d911d754ca478c402ed6968fad6ece8a4429a47414281bcd0533d0b899d1e
 - Size: M
 - Risk: high
 
+### T010 — fix: contentcoding's decode goroutine uses zap.NewNop(), so a recovered panic there is never logged and tokens silently stop being counted for that response. NewFeeder takes a *zap.Logger from its caller in core (the proxy's logger); a recovered panic logs one warn line with the request ID and stops counting for that response, never affecting forwarding. Add a test that a panicking decoder logs exactly one line and forwarded bytes are unchanged.
+- Do: reproduce and fix: contentcoding's decode goroutine uses zap.NewNop(), so a recovered panic there is never logged and tokens silently stop being counted for that response. NewFeeder takes a *zap.Logger from its caller in core (the proxy's logger); a recovered panic logs one warn line with the request ID and stops counting for that response, never affecting forwarding. Add a test that a panicking decoder logs exactly one line and forwarded bytes are unchanged.
+- Tests: a regression test that fails before the fix and passes after it (contentcoding's decode goroutine uses zap.NewNop(), so a recovered panic there is never logged and tokens silently stop being counted for that response. NewFeeder takes a *zap.Logger from its caller in core (the proxy's logger); a recovered panic logs one warn line with the request ID and stops counting for that response, never affecting forwarding. Add a test that a panicking decoder logs exactly one line and forwarded bytes are unchanged.)
+- AC: none — bug fix: contentcoding's decode goroutine uses zap.NewNop(), so a recovered panic there is never logged and tokens silently stop being counted for that response. NewFeeder takes a *zap.Logger from its caller in core (the proxy's logger); a recovered panic logs one warn line with the request ID and stops counting for that response, never affecting forwarding. Add a test that a panicking decoder logs exactly one line and forwarded bytes are unchanged.
+- Commit: fix(rate-limiting): contentcoding s decode goroutine uses zap.newnop
+- Depends: —
+- Size: S
+- Risk: low
+
 ### T009 — Document rate limiting and record the decision
 - Do: `config.example.yaml` ratelimit block; `docs/clients/claude-code.md` (send `x-gateway-key` via `ANTHROPIC_CUSTOM_HEADERS`); ADR `docs/decisions/0008-in-memory-fixed-window-limiter.md` (including E5-E7 limits); PLAN.md: §8 "Rate-limit state" row, §7 Phase 5 goal, §5 stateless rule exception.
 - Tests: none — docs only; `make verify` stays green
