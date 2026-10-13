@@ -28,6 +28,9 @@ const (
 	// Unsupported means the header names a coding Decode does not know; the body is
 	// returned as given.
 	Unsupported
+	// Overflowed means a Feeder's bounded queue filled before the decoder caught up,
+	// so later input was dropped. Only Feeder reports it.
+	Overflowed
 )
 
 func (s Status) String() string {
@@ -38,6 +41,8 @@ func (s Status) String() string {
 		return "cut_short"
 	case Unsupported:
 		return "unsupported"
+	case Overflowed:
+		return "overflowed"
 	}
 	return "unknown"
 }
