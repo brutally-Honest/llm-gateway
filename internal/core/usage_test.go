@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"bufio"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/brutally-honest/llm-gateway/internal/contentcoding"
 	"github.com/brutally-honest/llm-gateway/internal/core"
 	"github.com/brutally-honest/llm-gateway/internal/logging"
 	"github.com/brutally-honest/llm-gateway/internal/server"
@@ -273,5 +275,69 @@ func TestRegistry_WithGuardWrapsProxy(t *testing.T) {
 	res, _ = gw.send(t, http.MethodGet, "/t/v1/x", http.Header{"X-Deny": {"1"}})
 	if res.StatusCode != http.StatusTeapot || len(up.reqs) != 1 {
 		t.Errorf("denied: status %d, upstream saw %d requests; want 418 and 1", res.StatusCode, len(up.reqs))
+	}
+}
+
+// panicReader is a reader whose decoder panicked: it reports no tokens and names the
+// panic, the way an adapter's reader does over a contentcoding.Feeder.
+type panicReader struct{ f *contentcoding.Feeder }
+
+func (p *panicReader) Write(b []byte) { _, _ = p.f.Write(b) }
+func (p *panicReader) Tokens() (int64, bool) {
+	p.f.Close()
+	return 0, false
+}
+func (p *panicReader) Panicked() (string, bool) {
+	if p.f.Close() != contentcoding.Panicked {
+		return "", false
+	}
+	return p.f.PanicType(), true
+}
+
+type panicAdapter struct{ usageAdapter }
+
+func (a *panicAdapter) UsageReader(int, http.Header, bool) core.UsageReader {
+	return &panicReader{f: contentcoding.NewFeeder("identity", func(io.Reader) { panic("decoder bug") }, contentcoding.DefaultMaxPending)}
+}
+
+// A panicking decoder logs one warn line with the request ID, records no tokens and
+// never changes the bytes the client receives.
+func TestUsageWriter_PanickedDecoderLogsOnceAndForwardsBytes(t *testing.T) {
+	const body = "first\nsecond\n"
+	up := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, body)
+	})
+	calls := newUsageCalls()
+	gw := startUsageGateway(t, &panicAdapter{}, up.URL, calls.record)
+
+	res, err := http.Get(gw.url + "/t/v1/x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if string(got) != body {
+		t.Errorf("client got %q, want %q", got, body)
+	}
+	r := calls.wait(t)
+	if r.OK || r.Tokens != 0 {
+		t.Errorf("result = %+v, want no tokens", r)
+	}
+	var warns []map[string]any
+	for _, raw := range strings.Split(gw.logs.String(), "\n") {
+		var line map[string]any
+		if json.Unmarshal([]byte(raw), &line) == nil && line["msg"] == "usage decoder panicked" {
+			warns = append(warns, line)
+		}
+	}
+	if len(warns) != 1 {
+		t.Fatalf("got %d panic lines, want exactly 1:\n%s", len(warns), gw.logs.String())
+	}
+	if warns[0]["level"] != "warn" || warns[0]["request_id"] == nil || warns[0]["request_id"] == "" {
+		t.Errorf("line = %v, want warn with a request_id", warns[0])
+	}
+	if warns[0]["panic_type"] != "string" {
+		t.Errorf("panic_type = %v, want string", warns[0]["panic_type"])
 	}
 }

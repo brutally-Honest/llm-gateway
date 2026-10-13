@@ -31,6 +31,9 @@ const (
 	// Overflowed means a Feeder's bounded queue filled before the decoder caught up,
 	// so later input was dropped. Only Feeder reports it.
 	Overflowed
+	// Panicked means the decoder goroutine panicked and was recovered. Decoding
+	// stopped there, so what the sink saw is a prefix. Only Feeder reports it.
+	Panicked
 )
 
 func (s Status) String() string {
@@ -43,6 +46,8 @@ func (s Status) String() string {
 		return "unsupported"
 	case Overflowed:
 		return "overflowed"
+	case Panicked:
+		return "panicked"
 	}
 	return "unknown"
 }

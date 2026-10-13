@@ -159,7 +159,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// means no wrapper), and independent of capture: it wraps the tee, not the
 		// other way round.
 		if ra, ok := p.adapter.(RateLimitAdapter); ok && m.OnUsage != nil {
-			m.usage = newUsageWriter(w, ra)
+			m.usage = newUsageWriter(w, ra, p.log.With(zap.String("request_id", m.RequestID)))
 			w = m.usage
 		}
 		if p.capture != nil {

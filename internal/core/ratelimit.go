@@ -24,6 +24,13 @@ type UsageReader interface {
 	Tokens() (n int64, ok bool)
 }
 
+// PanickedReader is an optional UsageReader extension for a reader whose decoder
+// panicked and was recovered. Panicked reports the panic value's type; core logs it
+// once and records no usage for that response.
+type PanickedReader interface {
+	Panicked() (panicType string, ok bool)
+}
+
 // RateLimitAdapter is an optional Adapter extension: what the rate limiter needs to
 // know about a protocol.
 type RateLimitAdapter interface {

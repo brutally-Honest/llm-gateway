@@ -2,6 +2,8 @@ package core
 
 import (
 	"net/http"
+
+	"go.uber.org/zap"
 )
 
 // UsageResult is what the response of one call reported, handed to Meta.OnUsage
@@ -25,10 +27,11 @@ type usageWriter struct {
 	wroteHeader bool
 	status      int
 	reader      UsageReader // nil: none made yet, or the status was not a final one
+	log         *zap.Logger // already scoped to the request's ID
 }
 
-func newUsageWriter(w http.ResponseWriter, a RateLimitAdapter) *usageWriter {
-	return &usageWriter{ResponseWriter: w, adapter: a}
+func newUsageWriter(w http.ResponseWriter, a RateLimitAdapter, log *zap.Logger) *usageWriter {
+	return &usageWriter{ResponseWriter: w, adapter: a, log: log}
 }
 
 // WriteHeader records the first final status and starts the reader from the headers
@@ -99,6 +102,12 @@ func (u *usageWriter) finish(fallbackStatus int) (res UsageResult) {
 		}
 	}()
 	res.Tokens, res.OK = u.reader.Tokens()
+	if pr, ok := u.reader.(PanickedReader); ok {
+		if typ, panicked := pr.Panicked(); panicked {
+			res.Tokens, res.OK = 0, false
+			u.log.Warn("usage decoder panicked", zap.String("panic_type", typ))
+		}
+	}
 	u.reader = nil
 	return res
 }

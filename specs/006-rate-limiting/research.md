@@ -17,6 +17,7 @@ feature: 006-rate-limiting
 
 ## Decisions
 <!-- - D1 (date) — <decision> — why -->
+- D1 (2026-10-13) — T010 (Q3, option 2): contentcoding.NewFeeder stays logger-free. A recovered decoder panic stops decoding and Close reports Panicked with the panic value's type; core logs one warn line "usage decoder panicked" with request_id and panic_type, records no tokens, and forwarding is never affected — because the feeder has no request ID or logger and the protocol reader has none either, so the log belongs to the core usage writer that owns the request.
 
 ## Notes
 - 2026-10-13 — after the rebase onto 14917ce, record_base reset base.T003 to HEAD (f5e5fd8) because the old base was no longer an ancestor; set it by hand to c52818d. Kit gap, fix as chore 009.

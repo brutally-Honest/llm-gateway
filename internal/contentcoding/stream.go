@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"compress/zlib"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 
@@ -135,24 +136,34 @@ type Feeder struct {
 	closed     bool
 	overflowed bool
 
-	done   chan struct{}
-	once   sync.Once
-	status Status
+	done      chan struct{}
+	once      sync.Once
+	status    Status
+	panicType string
 }
 
 // NewFeeder starts the decoding goroutine. sink is called once, from that
 // goroutine, with the decoded stream, unless the encoding is unsupported; whatever
 // sink leaves unread is drained and discarded. maxPending bounds the compressed
-// bytes queued for the decoder.
+// bytes queued for the decoder. A panic in the decoder or the sink is recovered:
+// decoding stops, Close reports Panicked and PanicType names the panic value's type.
 func NewFeeder(encoding string, sink func(io.Reader), maxPending int) *Feeder {
 	f := &Feeder{maxPending: maxPending, done: make(chan struct{})}
 	f.cond = sync.NewCond(&f.mu)
-	// No logger reaches a protocol's side reader; logging.Go still recovers a panic.
+	// run recovers every panic itself, so logging.Go's recover never fires; the nop
+	// logger is only its fallback and nothing is logged here.
 	_ = logging.Go(zap.NewNop(), "contentcoding.feeder", func() error {
 		f.run(encoding, sink)
 		return nil
 	})
 	return f
+}
+
+// PanicType is the type of the value a recovered panic carried, e.g. "string", or
+// "" when the decoder did not panic. Call it after Close.
+func (f *Feeder) PanicType() string {
+	<-f.done
+	return f.panicType
 }
 
 // Write queues a copy of p. It never blocks on the decoder: if the queue is full
@@ -206,6 +217,12 @@ func (f *Feeder) Read(p []byte) (int, error) {
 
 func (f *Feeder) run(encoding string, sink func(io.Reader)) {
 	defer close(f.done)
+	defer func() {
+		if v := recover(); v != nil {
+			f.panicType = fmt.Sprintf("%T", v)
+			f.status = Panicked
+		}
+	}()
 	r, st := NewReader(encoding, f)
 	if st == Unsupported {
 		_, _ = io.Copy(io.Discard, f)
@@ -214,10 +231,7 @@ func (f *Feeder) run(encoding string, sink func(io.Reader)) {
 	}
 	defer func() { _ = r.Close() }()
 	cr := &cappedReader{r: r, left: MaxDecoded}
-	func() {
-		defer func() { _ = recover() }()
-		sink(cr)
-	}()
+	sink(cr)
 	_, _ = io.Copy(io.Discard, cr)
 	_, _ = io.Copy(io.Discard, f)
 	f.mu.Lock()

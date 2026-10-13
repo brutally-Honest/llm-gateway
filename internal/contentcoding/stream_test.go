@@ -158,3 +158,25 @@ func TestFeeder_TruncatedInputReportsCutShort(t *testing.T) {
 		t.Errorf("got %d bytes, want a non-empty prefix of the input", len(got))
 	}
 }
+
+func TestFeeder_PanickingDecoderReportsPanicked(t *testing.T) {
+	// The sink is where the decoded stream is parsed, so a panic there is the
+	// decoder goroutine's panic.
+	f := contentcoding.NewFeeder("identity", func(io.Reader) { panic("decoder bug") }, contentcoding.DefaultMaxPending)
+	_, _ = f.Write([]byte("abc"))
+	if st := f.Close(); st != contentcoding.Panicked {
+		t.Fatalf("status = %v, want panicked", st)
+	}
+	if typ := f.PanicType(); typ != "string" {
+		t.Errorf("PanicType = %q, want the panic value's type string", typ)
+	}
+}
+
+func TestFeeder_PanicTypeEmptyWhenNoPanic(t *testing.T) {
+	f := contentcoding.NewFeeder("identity", func(r io.Reader) { _, _ = io.Copy(io.Discard, r) }, contentcoding.DefaultMaxPending)
+	_, _ = f.Write([]byte("abc"))
+	_ = f.Close()
+	if typ := f.PanicType(); typ != "" {
+		t.Errorf("PanicType = %q, want empty", typ)
+	}
+}

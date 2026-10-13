@@ -60,10 +60,18 @@ func (r *usageReader) Write(p []byte) {
 	_, _ = r.decoded.Write(p)
 }
 
+// Panicked reports the type of the value a recovered decoder panic carried.
+func (r *usageReader) Panicked() (string, bool) {
+	if r.feeder == nil || r.feeder.Close() != contentcoding.Panicked {
+		return "", false
+	}
+	return r.feeder.PanicType(), true
+}
+
 func (r *usageReader) Tokens() (int64, bool) {
 	if r.feeder != nil {
 		switch r.feeder.Close() {
-		case contentcoding.Unsupported, contentcoding.Overflowed:
+		case contentcoding.Unsupported, contentcoding.Overflowed, contentcoding.Panicked:
 			return 0, false
 		}
 	}
