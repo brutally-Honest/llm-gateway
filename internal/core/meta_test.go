@@ -41,6 +41,7 @@ func TestMeta_Settle(t *testing.T) {
 		name             string
 		responseErr      error // what the response body fails with; nil reads to EOF
 		requestErr       error // what the request body fails with; nil reads to EOF
+		complete         bool  // the proxy forwarded the whole response
 		cancel           bool  // the client's context is gone when the handler ends
 		wantAborted      bool
 		wantDisconnected bool
@@ -50,6 +51,8 @@ func TestMeta_Settle(t *testing.T) {
 		{name: "both clean"},
 		{name: "watcher error, cancelled context", responseErr: context.Canceled, cancel: true, wantDisconnected: true},
 		{name: "request body error only, live context", requestErr: upstreamReset},
+		{name: "complete response, cancelled context", complete: true, cancel: true},
+		{name: "complete response, live context", complete: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -70,6 +73,9 @@ func TestMeta_Settle(t *testing.T) {
 			}
 			if _, err := io.ReadAll(core.WatchRequestBody(m, req)); !errors.Is(err, tc.requestErr) {
 				t.Fatalf("reading request body: err = %v, want %v", err, tc.requestErr)
+			}
+			if tc.complete {
+				core.MarkResponseComplete(m)
 			}
 			if tc.cancel {
 				cancel()

@@ -17,6 +17,7 @@ import (
 
 func WatchRequestBody(m *Meta, rc io.ReadCloser) io.ReadCloser  { return m.watchRequestBody(rc) }
 func WatchResponseBody(m *Meta, rc io.ReadCloser) io.ReadCloser { return m.watchResponseBody(rc) }
+func MarkResponseComplete(m *Meta)                              { m.markResponseComplete() }
 func RequestBodyErr(m *Meta) error                              { return m.requestBodyErr() }
 func ResponseBodyErr(m *Meta) error                             { return m.responseBodyErr() }
 
