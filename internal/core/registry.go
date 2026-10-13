@@ -14,7 +14,8 @@ import (
 // server starts; after that it is only read.
 type Registry struct {
 	log      *zap.Logger
-	capture  *Capture // nil: capture off
+	capture  *Capture                                      // nil: capture off
+	guard    func(Adapter) func(http.Handler) http.Handler // nil: no guard
 	adapters []mounted
 	profiles []Profile
 }
@@ -28,10 +29,18 @@ func WithCapture(c Capture) RegistryOption {
 	return func(r *Registry) { r.capture = &c }
 }
 
-// mounted is one adapter and the proxy in front of its upstream.
+// WithGuard wraps each adapter's proxy in the middleware g returns for that adapter,
+// so a guard such as rate limiting sits in front of the proxy while core knows
+// nothing about it. Without it the proxy is mounted as it is.
+func WithGuard(g func(Adapter) func(http.Handler) http.Handler) RegistryOption {
+	return func(r *Registry) { r.guard = g }
+}
+
+// mounted is one adapter and the handler in front of its upstream: its proxy,
+// wrapped by the guard if there is one.
 type mounted struct {
 	adapter Adapter
-	proxy   *Proxy
+	handler http.Handler
 }
 
 // NewRegistry returns an empty registry. log is where each proxy's own error line goes.
@@ -50,7 +59,13 @@ func (r *Registry) AddProfile(p Profile) {
 
 // AddAdapter registers a protocol adapter and builds its proxy in front of up.
 func (r *Registry) AddAdapter(a Adapter, up config.Upstream) {
-	r.adapters = append(r.adapters, mounted{adapter: a, proxy: newProxy(a, up, r.Identify, r.sessionKey, r.log, r.capture)})
+	var h http.Handler = newProxy(a, up, r.Identify, r.sessionKey, r.log, r.capture)
+	if r.guard != nil {
+		if wrap := r.guard(a); wrap != nil {
+			h = wrap(h)
+		}
+	}
+	r.adapters = append(r.adapters, mounted{adapter: a, handler: h})
 }
 
 // Identify names the client that sent req: the first profile that matches, else
@@ -88,6 +103,6 @@ func (r *Registry) sessionKey(req *http.Request) (key string, ok bool) {
 // chi's 405 inside or outside a prefix (research Q20).
 func (r *Registry) Mount(rt chi.Router) {
 	for _, m := range r.adapters {
-		rt.Handle(m.adapter.Prefix()+"/*", m.proxy)
+		rt.Handle(m.adapter.Prefix()+"/*", m.handler)
 	}
 }

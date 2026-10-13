@@ -27,7 +27,7 @@ func NewReader(encoding string, src io.Reader) (io.ReadCloser, Status) {
 		return nil, Unsupported
 	}
 	r := &chain{}
-	var cur io.Reader = src
+	cur := src
 	for i := len(cs) - 1; i >= 0; i-- {
 		if cs[i] == identity {
 			continue
@@ -147,7 +147,8 @@ type Feeder struct {
 func NewFeeder(encoding string, sink func(io.Reader), maxPending int) *Feeder {
 	f := &Feeder{maxPending: maxPending, done: make(chan struct{})}
 	f.cond = sync.NewCond(&f.mu)
-	_ = logging.Go(zap.L(), "contentcoding.feeder", func() error {
+	// No logger reaches a protocol's side reader; logging.Go still recovers a panic.
+	_ = logging.Go(zap.NewNop(), "contentcoding.feeder", func() error {
 		f.run(encoding, sink)
 		return nil
 	})

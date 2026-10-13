@@ -66,7 +66,7 @@ func TestFeeder_WriteNeverBlocksOnSlowSink(t *testing.T) {
 
 	start := time.Now()
 	for i := 0; i < len(gz); i += 100 {
-		f.Write(gz[i:min(i+100, len(gz))])
+		_, _ = f.Write(gz[i:min(i+100, len(gz))])
 	}
 	if d := time.Since(start); d > 2*time.Second {
 		t.Fatalf("writes took %v with a stuck sink", d)
@@ -104,7 +104,7 @@ func TestFeeder_BombStopsAtOutputCap(t *testing.T) {
 	f := contentcoding.NewFeeder("gzip", func(r io.Reader) {
 		total, _ = io.Copy(io.Discard, r)
 	}, 4<<20)
-	f.Write(bomb)
+	_, _ = f.Write(bomb)
 	if st := f.Close(); st != contentcoding.CutShort {
 		t.Errorf("status = %v, want cut_short", st)
 	}
@@ -123,7 +123,7 @@ func TestFeeder_CloseDrainsNoLeak(t *testing.T) {
 		}
 		// The sink reads nothing: the feeder must still drain and finish.
 		f := contentcoding.NewFeeder(enc, func(io.Reader) {}, contentcoding.DefaultMaxPending)
-		f.Write(body)
+		_, _ = f.Write(body)
 		f.Close()
 		f.Close() // idempotent
 	}
@@ -139,7 +139,7 @@ func TestFeeder_CloseDrainsNoLeak(t *testing.T) {
 func TestFeeder_UnsupportedReported(t *testing.T) {
 	called := false
 	f := contentcoding.NewFeeder("x-custom", func(io.Reader) { called = true }, 1024)
-	f.Write([]byte("abc"))
+	_, _ = f.Write([]byte("abc"))
 	if st := f.Close(); st != contentcoding.Unsupported || called {
 		t.Errorf("status = %v, sink called = %v", st, called)
 	}
@@ -150,7 +150,7 @@ func TestFeeder_TruncatedInputReportsCutShort(t *testing.T) {
 	gz := encode(t, "gzip", plain)
 	var got []byte
 	f := contentcoding.NewFeeder("gzip", func(r io.Reader) { got, _ = io.ReadAll(r) }, contentcoding.DefaultMaxPending)
-	f.Write(gz[:len(gz)/2])
+	_, _ = f.Write(gz[:len(gz)/2])
 	if st := f.Close(); st != contentcoding.CutShort {
 		t.Errorf("status = %v, want cut_short", st)
 	}

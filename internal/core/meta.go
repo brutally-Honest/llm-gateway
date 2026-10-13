@@ -35,11 +35,16 @@ type Meta struct {
 	// CaptureDroppedQueueFull, CaptureDroppedMemory or CaptureOff. It is decided in
 	// Settle, before the access line is written, and is "" off the proxy.
 	Capture string
+	// OnUsage, when set before the proxy runs, is called once from Settle with what
+	// the response reported. Core sets nothing here: a middleware that counts tokens
+	// does. Unset, the response is not observed at all.
+	OnUsage func(UsageResult)
 
 	start      time.Time // when the proxy handler started; TTFB is measured from it
 	reqBody    *requestWatcher
 	resBody    *responseWatcher
 	sessionKey string        // validated; "" when the request has none
+	usage      *usageWriter  // nil when OnUsage is unset or the adapter is not a RateLimitAdapter
 	capture    *captureState // nil when capture is off or already finished
 	complete   bool          // the response body hit a clean EOF and all of it reached the client
 }
@@ -63,13 +68,15 @@ func MetaFrom(ctx context.Context) *Meta {
 // there, upstream cut the response: UpstreamAborted. Otherwise, a cancelled context
 // means the client left: ClientDisconnected. When the client leaves, the outbound
 // read fails with context.Canceled too, which is why the inbound context decides.
-// Then it finishes the exchange's capture, so Capture is set when Settle returns.
+// Then it finishes the exchange's capture, so Capture is set when Settle returns, and
+// reports the response's usage to OnUsage, once.
 func (m *Meta) Settle(ctx context.Context) {
 	if m == nil {
 		return
 	}
 	m.settleAbort(ctx)
 	m.finishCapture()
+	m.finishUsage()
 }
 
 func (m *Meta) settleAbort(ctx context.Context) {

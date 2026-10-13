@@ -155,6 +155,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.PrincipalID = p.principal.Resolve(r)
 		m.start = time.Now()
 		w = p.capture.startCapture(m, w, r)
+		// Observing is off unless the middleware asked for it (rate limiting off
+		// means no wrapper), and independent of capture: it wraps the tee, not the
+		// other way round.
+		if ra, ok := p.adapter.(RateLimitAdapter); ok && m.OnUsage != nil {
+			m.usage = newUsageWriter(w, ra)
+			w = m.usage
+		}
 		if p.capture != nil {
 			m.sessionKey = p.readSessionKey(m.RequestID, r)
 		}
