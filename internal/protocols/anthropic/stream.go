@@ -252,21 +252,28 @@ func (st *streamState) apply(name string, status int, w wireStreamEvent) error {
 	return nil
 }
 
-// mergeUsage takes each key of a usage object; the last value reported wins, and a
-// null is no report. A usage that isn't an object is ignored.
+// mergeUsage folds a usage object into the usage read so far; see mergeUsage.
 func (st *streamState) mergeUsage(raw json.RawMessage) {
+	st.usage = mergeUsage(st.usage, raw)
+}
+
+// mergeUsage takes each key of a usage object into acc; the last value reported
+// wins, and a null is no report. A usage that isn't an object is ignored. The
+// stream parser and the usage reader share it.
+func mergeUsage(acc map[string]json.RawMessage, raw json.RawMessage) map[string]json.RawMessage {
 	var fields map[string]json.RawMessage
 	if present(raw) == nil || json.Unmarshal(raw, &fields) != nil {
-		return
+		return acc
 	}
-	if st.usage == nil {
-		st.usage = map[string]json.RawMessage{}
+	if acc == nil {
+		acc = map[string]json.RawMessage{}
 	}
 	for k, v := range fields {
 		if string(v) != "null" {
-			st.usage[k] = v
+			acc[k] = v
 		}
 	}
+	return acc
 }
 
 // events is the assistant message, when message_start came, with its blocks in index

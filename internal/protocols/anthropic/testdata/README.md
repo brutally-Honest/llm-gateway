@@ -75,3 +75,9 @@ in the order below (the parser orders blocks by index). Nothing new to scrub.
   `web_search_tool_result` come from `server_tool/websearch.sse`; the client `Read`
   `tool_use` block is spliced in from `tool_turn/response.sse`. The thinking and text
   blocks that followed the search are left out.
+
+# Compressed stream fixtures (spec 006, T005)
+
+`stream.sse.gz`, `stream.sse.br`, `stream.sse.zst` and `stream.sse.deflate` (zlib) are
+`stream.sse` compressed byte for byte with the matching coding, no hand edits. They feed
+the usage reader's decoder tests; nothing new to scrub.

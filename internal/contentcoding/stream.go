@@ -11,6 +11,9 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/zstd"
+	"go.uber.org/zap"
+
+	"github.com/brutally-honest/llm-gateway/internal/logging"
 )
 
 // NewReader returns a streaming decoder for the codings named in a Content-Encoding
@@ -144,7 +147,10 @@ type Feeder struct {
 func NewFeeder(encoding string, sink func(io.Reader), maxPending int) *Feeder {
 	f := &Feeder{maxPending: maxPending, done: make(chan struct{})}
 	f.cond = sync.NewCond(&f.mu)
-	go f.run(encoding, sink)
+	_ = logging.Go(zap.L(), "contentcoding.feeder", func() error {
+		f.run(encoding, sink)
+		return nil
+	})
 	return f
 }
 
