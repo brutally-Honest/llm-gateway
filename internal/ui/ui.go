@@ -8,9 +8,12 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
+
+	"github.com/brutally-honest/llm-gateway/internal/store"
 )
 
 //go:embed web
@@ -22,6 +25,10 @@ type Deps struct {
 	// localhost on the same port, are the only Hosts and Origins served.
 	Addr string
 	Log  *zap.Logger
+	// Reader is the read-only store view; nil leaves the store routes unmounted.
+	Reader *store.Reader
+	// Now is the clock for the active flag; nil is time.Now.
+	Now func() time.Time
 }
 
 // Handler returns the UI router.
@@ -54,6 +61,9 @@ func newRouter(d Deps, extra ...func(chi.Router)) chi.Router {
 		api.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
 			writeJSON(w, map[string]bool{"ok": true})
 		})
+		if d.Reader != nil {
+			mountSessions(api, d)
+		}
 		for _, m := range extra {
 			m(api)
 		}
