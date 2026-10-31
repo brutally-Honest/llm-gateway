@@ -301,3 +301,47 @@ func TestAPI_NotFoundAndBadRequestCodes(t *testing.T) {
 	wantEnvelope(t, e.get("/api/exchanges/a/body"), 400, "bad_request")
 	wantEnvelope(t, e.get("/api/exchanges/a/body?part=other"), 400, "bad_request")
 }
+
+func TestAPI_ToolEntriesCarryToolCallID(t *testing.T) {
+	e := newAPIEnv(t)
+	e.save("a", "k", "cc", 1)
+	input, result := []byte(`{"cmd":"ls"}`), []byte("file.txt")
+	msg := []byte(`{"type":"text","text":"run ls"}`)
+	mp, _ := json.Marshal(map[string]any{"role": "assistant", "blocks": []map[string]string{{"hash": sha("msg"), "type": "text"}}})
+	evs := []core.StoredEvent{
+		{Seq: 0, Kind: core.KindRequest, Payload: []byte(`{"model":"m1"}`)},
+		{Seq: 1, Kind: core.KindMessage, ContentHash: sha("m"), Payload: mp},
+		{Seq: 2, Kind: core.KindToolCall, ToolCallID: "call_1", ContentHash: sha("in"),
+			Payload: []byte(`{"name":"bash","id":"call_1"}`)},
+		{Seq: 3, Kind: core.KindToolResult, ToolCallID: "call_1", ContentHash: sha("out"),
+			Payload: []byte(`{"is_error":false}`)},
+	}
+	contents := []core.Content{{Hash: sha("msg"), Bytes: msg}, {Hash: sha("m"), Bytes: []byte(sha("m"))},
+		{Hash: sha("in"), Bytes: input}, {Hash: sha("out"), Bytes: result}}
+	if err := e.s.SaveParse(e.t.Context(), "a", core.PrincipalLocal, core.ParseStatus("ok"), evs, contents); err != nil {
+		t.Fatal(err)
+	}
+	p := e.timeline("/api/sessions/" + sid() + "/timeline")
+	seen := map[string]bool{}
+	for _, en := range p.Entries {
+		kind, _ := en["kind"].(string)
+		if kind != "tool_call" && kind != "tool_result" {
+			continue
+		}
+		seen[kind] = true
+		if en["tool_call_id"] != "call_1" {
+			t.Fatalf("%s tool_call_id = %v in %v", kind, en["tool_call_id"], en)
+		}
+		// The entry's fields are exactly the API's tool fields: no other id name rides along.
+		allowed := map[string]bool{"id": true, "exchange_id": true, "index": true, "start": true, "kind": true,
+			"name": true, "tool_call_id": true, "text": true, "is_error": true, "truncated": true, "partial": true}
+		for k := range en {
+			if !allowed[k] {
+				t.Fatalf("%s carries unexpected field %q: %v", kind, k, en)
+			}
+		}
+	}
+	if !seen["tool_call"] || !seen["tool_result"] {
+		t.Fatalf("missing tool entries: %v", p.Entries)
+	}
+}

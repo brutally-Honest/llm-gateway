@@ -57,7 +57,7 @@ type entryJSON struct {
 	Text       string `json:"text,omitempty"`
 	Truncated  bool   `json:"truncated,omitempty"`
 	Name       string `json:"name,omitempty"`
-	ToolUseID  string `json:"tool_use_id,omitempty"`
+	ToolCallID string `json:"tool_call_id,omitempty"`
 	IsError    *bool  `json:"is_error,omitempty"`
 	Method     string `json:"method,omitempty"`
 	Path       string `json:"path,omitempty"`
@@ -113,10 +113,10 @@ func mapEntries(entries []timeline.Entry, exs map[string]store.ExchangeRow) []en
 			}
 			add(e, entryJSON{Kind: kind, Role: e.Role, Text: e.Text, Truncated: e.Omitted > 0, Partial: e.Partial})
 		case timeline.KindToolCall:
-			add(e, entryJSON{Kind: kindToolCall, Name: e.Name, ToolUseID: e.ToolCallID, Text: e.Text,
+			add(e, entryJSON{Kind: kindToolCall, Name: e.Name, ToolCallID: e.ToolCallID, Text: e.Text,
 				Truncated: e.Omitted > 0, Partial: e.Partial})
 		case timeline.KindToolResult:
-			add(e, entryJSON{Kind: kindToolResult, ToolUseID: e.ToolCallID, IsError: ptr(e.IsError),
+			add(e, entryJSON{Kind: kindToolResult, ToolCallID: e.ToolCallID, IsError: ptr(e.IsError),
 				Text: e.Text, Truncated: e.Omitted > 0, Partial: e.Partial})
 		case timeline.KindError:
 			add(e, entryJSON{Kind: kindError, Name: e.Name, Status: ptr(e.Status), Text: e.Text,
