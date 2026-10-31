@@ -8,9 +8,8 @@ and cost.
 It is **not** a harness — it never runs agents, executes tools or edits files — and it
 is not tied to one vendor.
 
-Status: **Phase 1** done; Claude Code proxies through the gateway to Anthropic,
-streams included (see `specs/001-core-and-anthropic-passthrough/`). **Phase 2**
-(capture) is next.
+Status: **Phases 0–5** done. Claude Code proxies through the gateway to Anthropic with capture,
+session timelines, token usage and per-key rate limiting (see `specs/`).
 
 - `PLAN.md` — the one-page source of intent: goals, phases, stack rationale, open
   questions, commit conventions.
