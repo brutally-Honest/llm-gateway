@@ -9,15 +9,17 @@ import (
 
 // The stages a capture_failed line names.
 const (
-	stageStore = "store"
-	stageParse = "parse"
+	stageStore  = "store"
+	stageParse  = "parse"
+	stageCommit = "commit"
 )
 
 // process is the pipeline a worker runs for one exchange: store it raw, parse it,
 // canonicalise the events, store them with the parse status. The raw exchange is
 // stored first, so a parse failure never loses it; a failure to store it stops the
-// pipeline, since there is no row for events to hang from. The exchange's memory is
-// released whatever the outcome.
+// pipeline, since there is no row for events to hang from. Once the row is stored the
+// committed callback runs last, even when the parse or SaveParse failed. The
+// exchange's memory is released whatever the outcome.
 func (s *Sink) process(ex *core.Exchange) {
 	defer ex.Release()
 	if err := s.store.SaveExchange(s.ctx, ex); err != nil {
@@ -50,6 +52,30 @@ func (s *Sink) process(ex *core.Exchange) {
 	if err := s.store.SaveParse(s.ctx, ex.RequestID, ex.PrincipalID, status, stored, contents); err != nil {
 		s.storeFailure(ex.RequestID, err)
 	}
+	s.commit(ex)
+}
+
+// commit calls the committed callback for ex, whose row is stored. A panic in the
+// callback is recovered and logged, with the stack but never the panic's value, so it
+// never reaches the worker.
+func (s *Sink) commit(ex *core.Exchange) {
+	if s.onCommit == nil {
+		return
+	}
+	defer func() {
+		if v := recover(); v != nil {
+			logging.LogPanic(s.log, "capture_failed", v,
+				zap.String("request_id", ex.RequestID),
+				zap.String("stage", stageCommit),
+				zap.String("reason", "committed callback panicked"))
+		}
+	}()
+	s.onCommit(Committed{
+		RequestID:   ex.RequestID,
+		PrincipalID: ex.PrincipalID,
+		Client:      ex.Client,
+		SessionKey:  ex.SessionKey,
+	})
 }
 
 // parse runs the exchange's parser; with none the parse is skipped. A panic in the

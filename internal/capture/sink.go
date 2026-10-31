@@ -14,9 +14,21 @@ import (
 // Config sizes the sink: capture.queue_size and capture.workers, both greater than 0
 // (config rejects anything else), and DecodeLimit, capture.max_body_bytes, which the
 // pipeline hands each parser to cap its decoded bodies.
+//
+// OnCommit, when set, is called once per exchange whose raw row was stored, as the
+// last step of its pipeline and after SaveParse has returned, whether or not the
+// parse was saved. It is called synchronously on the worker, so it must not block.
+// It is never called when SaveExchange failed. A nil OnCommit is a no-op.
 type Config struct {
 	QueueSize, Workers int
 	DecodeLimit        int64
+	OnCommit           func(Committed)
+}
+
+// Committed names an exchange whose raw row is stored. It carries what a subscriber
+// needs to know about the exchange, and no request data.
+type Committed struct {
+	RequestID, PrincipalID, Client, SessionKey string
 }
 
 // Counts are the sink's drop and failure counts, logged in the shutdown line.
@@ -36,6 +48,7 @@ type Sink struct {
 	store       Store
 	log         *zap.Logger
 	decodeLimit int64
+	onCommit    func(Committed)
 
 	// mu orders Submit against Close: Submit sends under the read lock, and Close
 	// sets closed under the write lock before it closes queue, so no send ever
@@ -68,6 +81,7 @@ func NewSink(cfg Config, st Store, log *zap.Logger) *Sink {
 		store:       st,
 		log:         log,
 		decodeLimit: cfg.DecodeLimit,
+		onCommit:    cfg.OnCommit,
 		queue:       make(chan *core.Exchange, cfg.QueueSize),
 		ctx:         ctx,
 		cancel:      cancel,
