@@ -51,7 +51,7 @@ func walkSessions(t *testing.T, r *store.Reader, limit int) []string {
 	t.Helper()
 	var (
 		out   []string
-		after *store.SessionCursor
+		after *store.SessionAfter
 	)
 	for range 100 {
 		page, err := r.WithContext(t.Context()).SessionPage(after, limit)
@@ -63,7 +63,7 @@ func walkSessions(t *testing.T, r *store.Reader, limit int) []string {
 			return out
 		}
 		l := page[len(page)-1]
-		after = &store.SessionCursor{Last: l.Last, PrincipalID: l.PrincipalID, Client: l.Client, SessionKey: l.SessionKey}
+		after = &store.SessionAfter{Last: l.Last, PrincipalID: l.PrincipalID, Client: l.Client, SessionKey: l.SessionKey}
 	}
 	t.Fatal("walk did not end")
 	return nil
@@ -123,7 +123,7 @@ func TestReader_UngroupedPageTiesBrokenByRequestID(t *testing.T) {
 	for _, limit := range []int{1, 2, 3} {
 		var (
 			got   []string
-			after *store.UngroupedCursor
+			after *store.UngroupedAfter
 		)
 		for range 20 {
 			page, err := r.WithContext(t.Context()).UngroupedPage(after, limit)
@@ -135,7 +135,7 @@ func TestReader_UngroupedPageTiesBrokenByRequestID(t *testing.T) {
 				break
 			}
 			l := page[len(page)-1]
-			after = &store.UngroupedCursor{StartedAt: l.StartedAt, RequestID: l.RequestID}
+			after = &store.UngroupedAfter{StartedAt: l.StartedAt, RequestID: l.RequestID}
 		}
 		if !reflect.DeepEqual(got, requestIDs(want)) {
 			t.Fatalf("limit %d: walk = %v, want %v", limit, got, requestIDs(want))

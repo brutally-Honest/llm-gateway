@@ -39,25 +39,27 @@ func (c *CtxReader) UngroupedSummary() (UngroupedRow, error) {
 	return c.r.ungroupedSummaryCtx(c.ctx)
 }
 
-// SessionCursor is the sort tuple of the last session on a page: its last activity
-// and identity. Sessions after it in SessionRows order come next.
-type SessionCursor struct {
+// SessionAfter is the after key of a session page: the sort tuple of the last session
+// on that page, its last activity and identity. Sessions after it in SessionRows order
+// come next.
+type SessionAfter struct {
 	Last        int64
 	PrincipalID string
 	Client      string
 	SessionKey  string
 }
 
-// UngroupedCursor is the sort tuple of the last ungrouped exchange on a page.
-type UngroupedCursor struct {
+// UngroupedAfter is the after key of an ungrouped page: the sort tuple of the last
+// ungrouped exchange on that page.
+type UngroupedAfter struct {
 	StartedAt int64
 	RequestID string
 }
 
 // SessionPage lists up to limit sessions in SessionRows order, strictly after the
-// cursor (nil: from the start). The full tuple is compared, so sessions that share
+// after key (nil: from the start). The full tuple is compared, so sessions that share
 // a last activity are neither repeated nor skipped. limit must be positive.
-func (c *CtxReader) SessionPage(after *SessionCursor, limit int) ([]SessionRow, error) {
+func (c *CtxReader) SessionPage(after *SessionAfter, limit int) ([]SessionRow, error) {
 	q, args := sessionSelect+` GROUP BY principal_id, client, session_key`, []any{}
 	if after != nil {
 		q += ` HAVING MAX(started_at) < ? OR (MAX(started_at) = ? AND (principal_id, client, session_key) > (?, ?, ?))`
@@ -69,8 +71,8 @@ func (c *CtxReader) SessionPage(after *SessionCursor, limit int) ([]SessionRow, 
 }
 
 // UngroupedPage lists up to limit exchanges with no session key, newest first (ties
-// by request ID), strictly after the cursor (nil: from the start).
-func (c *CtxReader) UngroupedPage(after *UngroupedCursor, limit int) ([]ExchangeRow, error) {
+// by request ID), strictly after the after key (nil: from the start).
+func (c *CtxReader) UngroupedPage(after *UngroupedAfter, limit int) ([]ExchangeRow, error) {
 	q, args := `WHERE session_key IS NULL`, []any{}
 	if after != nil {
 		q += ` AND (started_at < ? OR (started_at = ? AND request_id > ?))`
