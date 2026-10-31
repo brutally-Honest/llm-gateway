@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -686,18 +687,27 @@ func (u *rawUpstream) connections() int {
 // hang reads whatever the gateway sends and never writes a byte back.
 func hang(conn net.Conn) { _, _ = io.Copy(io.Discard, conn) }
 
-// refusedURL is an http URL on loopback where nothing listens.
+// refusedURL is an http URL on loopback where nothing listens. Port 0 is never
+// bound by a listener, so the dial is refused and no parallel test can rebind it.
 func refusedURL(t *testing.T) *url.URL {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	return &url.URL{Scheme: "http", Host: "127.0.0.1:0"}
+}
+
+// TestRefusedURLIsAlwaysRefused guards the unreachable-upstream cases: the address
+// refusedURL hands out must refuse a dial, every time.
+func TestRefusedURLIsAlwaysRefused(t *testing.T) {
+	for range 20 {
+		u := refusedURL(t)
+		conn, err := net.DialTimeout("tcp", u.Host, 2*time.Second)
+		if err == nil {
+			_ = conn.Close()
+			t.Fatalf("dial %s succeeded; refusedURL must point at nothing listening", u.Host)
+		}
+		if !errors.Is(err, syscall.ECONNREFUSED) {
+			t.Fatalf("dial %s: got %v, want ECONNREFUSED", u.Host, err)
+		}
 	}
-	addr := ln.Addr().String()
-	if err := ln.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return &url.URL{Scheme: "http", Host: addr}
 }
 
 // checkGatewayError asserts a gateway-made error: the status, the test adapter's

@@ -306,16 +306,9 @@ func hangingUpstream(t *testing.T) *url.URL {
 	return &url.URL{Scheme: "http", Host: ln.Addr().String()}
 }
 
-// refusedURL is an http URL on loopback where nothing listens.
+// refusedURL is an http URL on loopback where nothing listens. Port 0 is never
+// bound by a listener, so the dial is refused and no parallel test can rebind it.
 func refusedURL(t *testing.T) *url.URL {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := ln.Addr().String()
-	if err := ln.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return &url.URL{Scheme: "http", Host: addr}
+	return &url.URL{Scheme: "http", Host: "127.0.0.1:0"}
 }
