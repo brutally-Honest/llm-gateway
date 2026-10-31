@@ -142,6 +142,21 @@ func TestAPI_NonGETIs405WithAllow(t *testing.T) {
 	}
 }
 
+func TestUI_StaticNonGETIs405(t *testing.T) {
+	h := newTestRouter()
+	for _, m := range []string{"POST", "PUT", "DELETE", "HEAD"} {
+		for _, p := range []string{"/", "/index.html"} {
+			rec := do(t, h, m, p, nil)
+			if rec.Code != 405 || rec.Header().Get("Allow") != "GET" {
+				t.Errorf("%s %s = %d allow=%q", m, p, rec.Code, rec.Header().Get("Allow"))
+			}
+		}
+	}
+	if rec := do(t, h, "GET", "/", nil); rec.Code != 200 {
+		t.Errorf("GET / = %d", rec.Code)
+	}
+}
+
 func TestAPI_Health(t *testing.T) {
 	rec := do(t, newTestRouter(), "GET", "/api/health", nil)
 	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != `{"ok":true}` {

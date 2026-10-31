@@ -101,11 +101,11 @@ func originCheck(hosts map[string]bool) func(http.Handler) http.Handler {
 	}
 }
 
-// getOnly answers 405 with Allow: GET for any other method (HEAD included) under
-// /api, before routing.
+// getOnly answers 405 with Allow: GET for any other method (HEAD included), on /api and on
+// the static files alike, before routing (AC13, D4).
 func getOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && (r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/")) {
+		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", http.MethodGet)
 			writeErr(w, http.StatusMethodNotAllowed, "method_not_allowed", "only GET is allowed")
 			return
