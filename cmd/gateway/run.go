@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"syscall"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
@@ -22,6 +23,7 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/ratelimit"
 	"github.com/brutally-honest/llm-gateway/internal/server"
 	"github.com/brutally-honest/llm-gateway/internal/store"
+	"github.com/brutally-honest/llm-gateway/internal/ui"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -155,9 +157,11 @@ func run(ctx context.Context, d deps) int {
 	var capt *captureRun
 	if cfg.Capture.Enabled {
 		var code int
-		if capt, code = startCapture(cfg.Capture, d, log); capt == nil {
+		if capt, code = startCapture(cfg.Capture, cfg.UI.Enabled, d, log); capt == nil {
 			return code
 		}
+	} else if cfg.UI.Enabled {
+		log.Warn("ui is off because capture is disabled", zap.String("key", "capture.enabled"))
 	}
 
 	ln, err := d.listen("tcp", cfg.ListenAddr)
@@ -187,6 +191,21 @@ func run(ctx context.Context, d deps) int {
 			return ratelimit.Middleware(limiter, a, log)
 		}))
 	}
+	// The UI binds before anything serves, so a taken port stops the proxy too (E17).
+	var uiLn net.Listener
+	if capt.hasUI() {
+		uiLn, err = d.listen("tcp", cfg.UI.ListenAddr)
+		if err != nil {
+			_, _ = capt.close(context.Background())
+			_ = ln.Close()
+			reason := "bind failed"
+			if errors.Is(err, syscall.EADDRINUSE) {
+				reason = "address in use"
+			}
+			log.Error("cannot bind", zap.String("key", "ui.listen_addr"), zap.String("reason", reason))
+			return exitRuntime
+		}
+	}
 	registry := core.NewRegistry(log, opts...)
 	for _, p := range profiles {
 		registry.AddProfile(p)
@@ -198,6 +217,19 @@ func run(ctx context.Context, d deps) int {
 	mounts := append([]func(chi.Router){registry.Mount}, d.mount...)
 	srv := server.New(log, mounts...)
 	serveErr := logging.Go(log, "serve", func() error { return srv.Serve(ln) })
+
+	var uiSrv *http.Server
+	var uiErr <-chan error // nil, so never ready, when the UI is off
+	if uiLn != nil {
+		uiSrv = &http.Server{
+			Handler: ui.Handler(ui.Deps{
+				Addr: uiLn.Addr().String(), Log: log, Reader: capt.reader, Hub: capt.hub,
+			}),
+			ReadHeaderTimeout: 10 * time.Second,
+		}
+		uiErr = logging.Go(log, "ui_serve", func() error { return uiSrv.Serve(uiLn) })
+		log.Info("ui started", zap.String("addr", uiLn.Addr().String()))
+	}
 
 	configSource := src.File
 	if configSource == "" {
@@ -216,6 +248,14 @@ func run(ctx context.Context, d deps) int {
 		log.Error("serve failed", zap.Error(err))
 		stopCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()
+		stopUI(stopCtx, uiSrv, capt, log)
+		capt.stop(stopCtx, log)
+		return exitRuntime
+	case err := <-uiErr:
+		log.Error("ui serve failed", zap.Error(err))
+		stopCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		defer cancel()
+		_ = srv.Shutdown(stopCtx)
 		capt.stop(stopCtx, log)
 		return exitRuntime
 	}
@@ -223,7 +263,10 @@ func run(ctx context.Context, d deps) int {
 	// ctx is already cancelled, so the shutdown deadline needs a fresh context.
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
-	// The server shuts down first, so exchanges that end while it waits for in-flight
+	// The hub closes first so open UI streams end and the UI server can finish; commits
+	// from the draining workers then publish into a closed hub, which ignores them.
+	uiFailed := !stopUI(shutdownCtx, uiSrv, capt, log)
+	// The server shuts down next, so exchanges that end while it waits for in-flight
 	// streams are still queued; capture then drains in what is left of the timeout.
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -241,8 +284,28 @@ func run(ctx context.Context, d deps) int {
 		log.Error("serve failed", zap.Error(err))
 		return exitRuntime
 	}
+	if uiFailed {
+		return exitRuntime
+	}
 	log.Info("gateway stopped")
 	return exitOK
+}
+
+// stopUI closes the hub, then shuts the UI server down. It reports false when the
+// shutdown failed or timed out.
+func stopUI(ctx context.Context, srv *http.Server, capt *captureRun, log *zap.Logger) bool {
+	if capt != nil && capt.hub != nil {
+		capt.hub.Close()
+	}
+	if srv == nil {
+		return true
+	}
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Error("ui shutdown failed", zap.Error(err))
+		_ = srv.Close()
+		return false
+	}
+	return true
 }
 
 // reasonInvalidValue is config's reason for a value it can't use (ADR 0002).
@@ -256,11 +319,17 @@ type captureRun struct {
 	sink         *capture.Sink
 	budget       *core.Budget
 	maxBodyBytes int64
+	// reader and hub are set only when the UI is on.
+	reader *store.Reader
+	hub    *ui.Hub
 }
+
+// hasUI reports whether the UI is on for this run.
+func (c *captureRun) hasUI() bool { return c != nil && c.hub != nil }
 
 // startCapture resolves capture.dir, opens the store and starts the sink. On failure
 // it logs one line and returns nil and the exit code.
-func startCapture(c config.Capture, d deps, log *zap.Logger) (*captureRun, int) {
+func startCapture(c config.Capture, withUI bool, d deps, log *zap.Logger) (*captureRun, int) {
 	dir, ok := captureDir(c, d.lookupEnv, log)
 	if !ok {
 		return nil, exitConfig
@@ -279,12 +348,27 @@ func startCapture(c config.Capture, d deps, log *zap.Logger) (*captureRun, int) 
 			zap.String("reason", storeOpenReason(err)))
 		return nil, exitRuntime
 	}
-	sink := capture.NewSink(capture.Config{
-		QueueSize:   c.QueueSize,
-		Workers:     c.Workers,
-		DecodeLimit: c.MaxBodyBytes,
-	}, st, log)
-	return &captureRun{store: st, sink: sink, budget: core.NewBudget(c.MemoryLimit), maxBodyBytes: c.MaxBodyBytes}, exitOK
+	cfg := capture.Config{QueueSize: c.QueueSize, Workers: c.Workers, DecodeLimit: c.MaxBodyBytes}
+	var reader *store.Reader
+	var hub *ui.Hub
+	if withUI {
+		// The store exists now (E2), so the read-only view can open on it.
+		if reader, err = store.OpenReader(dir); err != nil {
+			_ = st.Close()
+			log.Error("cannot open store reader",
+				zap.String("key", "capture.dir"),
+				zap.String("path", dir),
+				zap.String("reason", storeOpenReason(err)))
+			return nil, exitRuntime
+		}
+		hub = ui.NewHub(ui.Deps{Log: log, Reader: reader})
+		cfg.OnCommit = hub.Publish
+	}
+	sink := capture.NewSink(cfg, st, log)
+	return &captureRun{
+		store: st, sink: sink, budget: core.NewBudget(c.MemoryLimit), maxBodyBytes: c.MaxBodyBytes,
+		reader: reader, hub: hub,
+	}, exitOK
 }
 
 // storeOpenReason is a fixed reason for a failed store open.
@@ -322,8 +406,15 @@ func (c *captureRun) close(ctx context.Context) (undrained int, err error) {
 	if c == nil {
 		return 0, nil
 	}
+	if c.hub != nil {
+		c.hub.Close()
+	}
 	undrained = c.sink.Close(ctx)
-	return undrained, c.store.Close()
+	err = c.store.Close()
+	if c.reader != nil {
+		_ = c.reader.Close()
+	}
+	return undrained, err
 }
 
 // stop is close plus the one capture stopped line (spec 002, Shutdown): what was left
