@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/brutally-honest/llm-gateway/internal/capture"
+	"github.com/brutally-honest/llm-gateway/internal/logging"
 	"github.com/brutally-honest/llm-gateway/internal/store"
 	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
@@ -107,7 +108,10 @@ func newHub(d Deps, queue int) *Hub {
 	return h
 }
 
-func (h *Hub) start() { go h.run() }
+// start runs the dispatcher through logging.Go, so a panic in it is logged, not fatal.
+func (h *Hub) start() {
+	logging.Go(h.log, "ui_hub", func() error { h.run(); return nil })
+}
 
 // Publish queues a commit. It never waits: a full queue sets the overflow flag, and after
 // Close it does nothing. The queue is never closed, so the send cannot panic.
