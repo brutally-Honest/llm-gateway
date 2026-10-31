@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -140,7 +141,11 @@ const exchangeColumns = `request_id, principal_id, protocol, client, auth, metho
 
 // Exchange reads the exchange with request ID id, or ErrNotFound.
 func (r *Reader) Exchange(id string) (ExchangeRow, error) {
-	row := r.db.QueryRow(`SELECT `+exchangeColumns+` FROM exchanges WHERE request_id = ?`, id)
+	return r.exchangeCtx(context.Background(), id)
+}
+
+func (r *Reader) exchangeCtx(ctx context.Context, id string) (ExchangeRow, error) {
+	row := r.db.QueryRowContext(ctx, `SELECT `+exchangeColumns+` FROM exchanges WHERE request_id = ?`, id)
 	ex, err := scanExchange(row)
 	if err != nil {
 		return ExchangeRow{}, fmt.Errorf("store %s: exchange %s: %w", r.path, id, err)
@@ -151,7 +156,7 @@ func (r *Reader) Exchange(id string) (ExchangeRow, error) {
 // Last reads the exchange that started last, or ErrNotFound on an empty store. Ties
 // go to the one stored last.
 func (r *Reader) Last() (ExchangeRow, error) {
-	row := r.db.QueryRow(`SELECT ` + exchangeColumns +
+	row := r.db.QueryRowContext(context.Background(), `SELECT ` + exchangeColumns +
 		` FROM exchanges ORDER BY started_at DESC, rowid DESC LIMIT 1`)
 	ex, err := scanExchange(row)
 	if err != nil {
@@ -201,6 +206,10 @@ func scanExchange(row rowScanner) (ExchangeRow, error) {
 // Content reads the content stored under hash, inline or from its blob,
 // decompressed. A hash the store doesn't hold is ErrNotFound.
 func (r *Reader) Content(hash string) ([]byte, error) {
+	return r.contentCtx(context.Background(), hash)
+}
+
+func (r *Reader) contentCtx(ctx context.Context, hash string) ([]byte, error) {
 	if !validHash(hash) {
 		return nil, fmt.Errorf("store %s: content %q: %w", r.path, hash, ErrNotFound)
 	}
@@ -209,7 +218,7 @@ func (r *Reader) Content(hash string) ([]byte, error) {
 		location string
 		data     []byte
 	)
-	err := r.db.QueryRow(`SELECT size, location, data FROM content WHERE hash = ?`, hash).
+	err := r.db.QueryRowContext(ctx, `SELECT size, location, data FROM content WHERE hash = ?`, hash).
 		Scan(&size, &location, &data)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("store %s: content %s: %w", r.path, hash, ErrNotFound)
@@ -255,20 +264,24 @@ func validHash(h string) bool {
 // Events reads the exchange's canonical events in seq order; an exchange with no
 // parse stored has none. An exchange the store doesn't hold is ErrNotFound.
 func (r *Reader) Events(id string) ([]EventRow, error) {
-	tx, err := r.db.Begin() // one snapshot for the existence check and the events
+	return r.eventsCtx(context.Background(), id)
+}
+
+func (r *Reader) eventsCtx(ctx context.Context, id string) ([]EventRow, error) {
+	tx, err := r.db.BeginTx(ctx, nil) // one snapshot for the existence check and the events
 	if err != nil {
 		return nil, fmt.Errorf("store %s: events of %s: %w", r.path, id, err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	var one int
-	err = tx.QueryRow(`SELECT 1 FROM exchanges WHERE request_id = ?`, id).Scan(&one)
+	err = tx.QueryRowContext(ctx, `SELECT 1 FROM exchanges WHERE request_id = ?`, id).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("store %s: exchange %s: %w", r.path, id, ErrNotFound)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("store %s: events of %s: %w", r.path, id, err)
 	}
-	rows, err := tx.Query(`SELECT request_id, seq, kind, schema_version, principal_id, source,
+	rows, err := tx.QueryContext(ctx, `SELECT request_id, seq, kind, schema_version, principal_id, source,
 		partial, content_hash, tool_call_id, payload FROM events WHERE request_id = ? ORDER BY seq`, id)
 	if err != nil {
 		return nil, fmt.Errorf("store %s: events of %s: %w", r.path, id, err)

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 )
 
@@ -36,17 +37,17 @@ func (r *Reader) SessionRows(limit int) ([]SessionRow, error) {
 		q += ` LIMIT ?`
 		args = append(args, limit)
 	}
-	return r.sessions(q, args...)
+	return r.sessions(context.Background(), q, args...)
 }
 
 // SessionsByKey lists every session with the key, whatever its client or principal,
 // in SessionRows order.
 func (r *Reader) SessionsByKey(key string) ([]SessionRow, error) {
-	return r.sessions(sessionSelect+` AND session_key = ?`+sessionOrder, key)
+	return r.sessions(context.Background(), sessionSelect+` AND session_key = ?`+sessionOrder, key)
 }
 
-func (r *Reader) sessions(q string, args ...any) ([]SessionRow, error) {
-	rows, err := r.db.Query(q, args...)
+func (r *Reader) sessions(ctx context.Context, q string, args ...any) ([]SessionRow, error) {
+	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store %s: sessions: %w", r.path, err)
 	}
@@ -69,16 +70,24 @@ func (r *Reader) sessions(q string, args ...any) ([]SessionRow, error) {
 // Principal and client are part of the session's identity, so another tenant's
 // exchanges with the same key are never returned.
 func (r *Reader) SessionExchanges(principal, client, key string) ([]ExchangeRow, error) {
-	return r.exchanges(`WHERE principal_id = ? AND client = ? AND session_key = ?
+	return r.sessionExchangesCtx(context.Background(), principal, client, key)
+}
+
+func (r *Reader) sessionExchangesCtx(ctx context.Context, principal, client, key string) ([]ExchangeRow, error) {
+	return r.exchanges(ctx, `WHERE principal_id = ? AND client = ? AND session_key = ?
 		ORDER BY started_at, request_id`, principal, client, key)
 }
 
 // UngroupedSummary counts the exchanges with no session key and gives their first
 // and last start times.
 func (r *Reader) UngroupedSummary() (UngroupedRow, error) {
+	return r.ungroupedSummaryCtx(context.Background())
+}
+
+func (r *Reader) ungroupedSummaryCtx(ctx context.Context) (UngroupedRow, error) {
 	var u UngroupedRow
 	var first, last *int64
-	err := r.db.QueryRow(`SELECT COUNT(*), MIN(started_at), MAX(started_at)
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*), MIN(started_at), MAX(started_at)
 		FROM exchanges WHERE session_key IS NULL`).Scan(&u.Count, &first, &last)
 	if err != nil {
 		return UngroupedRow{}, fmt.Errorf("store %s: ungrouped summary: %w", r.path, err)
@@ -100,11 +109,11 @@ func (r *Reader) UngroupedExchanges(limit int) ([]ExchangeRow, error) {
 		q += ` LIMIT ?`
 		args = append(args, limit)
 	}
-	return r.exchanges(q, args...)
+	return r.exchanges(context.Background(), q, args...)
 }
 
-func (r *Reader) exchanges(tail string, args ...any) ([]ExchangeRow, error) {
-	rows, err := r.db.Query(`SELECT `+exchangeColumns+` FROM exchanges `+tail, args...)
+func (r *Reader) exchanges(ctx context.Context, tail string, args ...any) ([]ExchangeRow, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT `+exchangeColumns+` FROM exchanges `+tail, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store %s: exchanges: %w", r.path, err)
 	}
