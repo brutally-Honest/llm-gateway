@@ -71,6 +71,7 @@ func (s *subscriber) drop() { s.once.Do(func() { close(s.gone) }) }
 type Hub struct {
 	log       *zap.Logger
 	read      readFn
+	snap      snapFn
 	heartbeat time.Duration
 
 	q         chan capture.Committed
@@ -104,6 +105,9 @@ func newHub(d Deps, queue int) *Hub {
 	h.ctx, h.cancel = context.WithCancel(context.Background())
 	h.read = func(ctx context.Context, who sessIdent, ids []string, summary, entries bool) (liveMsg, error) {
 		return readLive(ctx, d, who, ids, summary, entries)
+	}
+	h.snap = func(ctx context.Context, session string) (snapshot, error) {
+		return readSnapshot(ctx, d, session)
 	}
 	return h
 }
@@ -320,33 +324,91 @@ func readLive(ctx context.Context, d Deps, who sessIdent, ids []string, summary,
 		m.Summary = &s
 	}
 	if entries {
-		rows, _, err := c.SessionSnapshot(who.principal, who.client, who.name)
+		all, err := sessionExchanges(c, who)
 		if err != nil {
 			return liveMsg{}, err
 		}
-		exs := make([]store.ExchangeRow, len(rows))
-		byID := make(map[string]store.ExchangeRow, len(rows))
-		rowID := make(map[string]int64, len(rows))
-		for i, x := range rows {
-			exs[i] = x.ExchangeRow
-			byID[x.RequestID] = x.ExchangeRow
-			rowID[x.RequestID] = x.RowID
-		}
-		session := store.SessionRow{PrincipalID: who.principal, Client: who.client, SessionKey: who.name}
-		built, _, err := timeline.BuildWithUsage(snapshotSource{c, exs}, session, timeline.Options{Cut: entryCut})
-		if err != nil {
-			return liveMsg{}, err
-		}
-		per := map[string][]entryJSON{}
-		for _, e := range mapEntries(built, byID) {
-			per[e.ExchangeID] = append(per[e.ExchangeID], e)
-		}
+		want := make(map[string]bool, len(ids))
 		for _, id := range ids {
-			if es := per[id]; len(es) > 0 {
-				m.Exchanges = append(m.Exchanges, liveExchange{RowID: rowID[id], RequestID: id, Entries: es})
+			want[id] = true
+		}
+		for _, x := range all {
+			if want[x.RequestID] {
+				m.Exchanges = append(m.Exchanges, x)
 			}
 		}
 		sort.Slice(m.Exchanges, func(i, j int) bool { return m.Exchanges[i].RowID < m.Exchanges[j].RowID })
 	}
 	return m, nil
+}
+
+// sessionExchanges builds a session's whole timeline from one snapshot read and returns
+// each stored exchange with its entries, in timeline order. Exchanges with no entry are
+// left out.
+func sessionExchanges(c *store.CtxReader, who sessIdent) ([]liveExchange, error) {
+	rows, _, err := c.SessionSnapshot(who.principal, who.client, who.name)
+	if err != nil {
+		return nil, err
+	}
+	exs := make([]store.ExchangeRow, len(rows))
+	byID := make(map[string]store.ExchangeRow, len(rows))
+	rowID := make(map[string]int64, len(rows))
+	for i, x := range rows {
+		exs[i] = x.ExchangeRow
+		byID[x.RequestID] = x.ExchangeRow
+		rowID[x.RequestID] = x.RowID
+	}
+	session := store.SessionRow{PrincipalID: who.principal, Client: who.client, SessionKey: who.name}
+	built, _, err := timeline.BuildWithUsage(snapshotSource{c, exs}, session, timeline.Options{Cut: entryCut})
+	if err != nil {
+		return nil, err
+	}
+	var out []liveExchange
+	at := map[string]int{}
+	for _, e := range mapEntries(built, byID) {
+		i, ok := at[e.ExchangeID]
+		if !ok {
+			i = len(out)
+			at[e.ExchangeID] = i
+			out = append(out, liveExchange{RowID: rowID[e.ExchangeID], RequestID: e.ExchangeID})
+		}
+		out[i].Entries = append(out[i].Entries, e)
+	}
+	return out, nil
+}
+
+// snapshot is what a stream sends on open: the first page of sessions (global stream) or
+// every exchange of the session in timeline order.
+type snapshot struct {
+	Sessions  []sessionSummary
+	Exchanges []liveExchange
+}
+
+// snapFn reads the connect snapshot; session "" is the global stream. Tests replace it.
+type snapFn func(ctx context.Context, session string) (snapshot, error)
+
+func readSnapshot(ctx context.Context, d Deps, session string) (snapshot, error) {
+	if d.Reader == nil {
+		return snapshot{}, errors.New("ui: no reader")
+	}
+	c := d.Reader.WithContext(ctx)
+	if session != "" {
+		principal, client, key, _ := parseSessionID(session)
+		x, err := sessionExchanges(c, sessIdent{principal, client, key})
+		return snapshot{Exchanges: x}, err
+	}
+	rows, err := c.SessionPage(nil, defaultListLimit)
+	if err != nil {
+		return snapshot{}, err
+	}
+	now := d.now()
+	var out snapshot
+	for _, row := range rows {
+		st, err := timeline.SessionStats(c, row)
+		if err != nil {
+			return snapshot{}, err
+		}
+		out.Sessions = append(out.Sessions, buildSummary(sessionID(row), row, st, now))
+	}
+	return out, nil
 }
