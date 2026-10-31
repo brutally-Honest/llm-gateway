@@ -763,3 +763,31 @@ func TestLive_ReconnectSnapshotReplacesEverything(t *testing.T) {
 		t.Fatalf("view = %v\nreload = %v", view, e.freshTimeline())
 	}
 }
+
+// AC33: both streams, and a stream whose snapshot failed, carry the standard CSP and the
+// other security headers on their response.
+func TestStream_ResponsesSendStandardCSP(t *testing.T) {
+	check := func(t *testing.T, name string, s *sse) {
+		t.Helper()
+		h := s.resp.Header
+		if ct := h.Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+			t.Errorf("%s: content-type = %q, want an event stream", name, ct)
+		}
+		if got := h.Get("Content-Security-Policy"); got != csp {
+			t.Errorf("%s: CSP = %q, want standard", name, got)
+		}
+		if h.Get("X-Content-Type-Options") != "nosniff" || h.Get("Referrer-Policy") != "no-referrer" {
+			t.Errorf("%s: lost nosniff/referrer headers", name)
+		}
+	}
+	e := newStreamEnv(t, nil)
+	e.seedThree()
+	check(t, "global stream", e.open("/api/stream"))
+	check(t, "session stream", e.open("/api/sessions/"+sid()+"/stream"))
+
+	f := newStreamEnv(t, func(h *Hub) {
+		h.snap = func(context.Context, string) (snapshot, error) { return snapshot{}, errors.New("boom") }
+	})
+	f.seedThree()
+	check(t, "failed snapshot", f.open("/api/sessions/"+sid()+"/stream"))
+}
