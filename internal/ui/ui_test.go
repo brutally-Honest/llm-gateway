@@ -168,3 +168,24 @@ func TestUI_StoreTimeoutIs504(t *testing.T) {
 		t.Errorf("cancelled request got a body: %s", rec.Body)
 	}
 }
+
+func TestUI_AllLoopbackHostFormsAccepted(t *testing.T) {
+	for _, listen := range []string{"127.0.0.1:7199", "127.0.0.2:7199"} {
+		h := newRouter(Deps{Addr: listen})
+		for _, host := range []string{"127.0.0.1:7199", "localhost:7199", "[::1]:7199", listen} {
+			if rec := do(t, h, "GET", "/api/health", map[string]string{"Host": host}); rec.Code != 200 {
+				t.Errorf("listen %s: host %s = %d, want 200", listen, host, rec.Code)
+			}
+		}
+		wantEnvelope(t, do(t, h, "GET", "/api/health", map[string]string{"Host": "evil.example:7199"}), 421, "bad_host")
+	}
+}
+
+func TestUI_LoopbackHostWrongPortIs421(t *testing.T) {
+	h := newRouter(Deps{Addr: "127.0.0.2:7199"})
+	for _, host := range []string{"127.0.0.1", "localhost", "[::1]", "127.0.0.2"} {
+		for _, bad := range []string{host + ":7200", host} {
+			wantEnvelope(t, do(t, h, "GET", "/api/health", map[string]string{"Host": bad}), 421, "bad_host")
+		}
+	}
+}

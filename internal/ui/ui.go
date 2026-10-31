@@ -34,16 +34,19 @@ type Deps struct {
 // Handler returns the UI router.
 func Handler(d Deps) http.Handler { return newRouter(d) }
 
-// allowedHosts is the host:port set the UI answers to (D8).
+// allowedHosts is the host:port set the UI answers to (D8): the three loopback forms on
+// the bound port, plus the listen host itself when it is a loopback literal.
 func allowedHosts(addr string) map[string]bool {
 	set := map[string]bool{}
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return set
 	}
-	set[strings.ToLower(net.JoinHostPort(host, port))] = true
+	for _, h := range []string{"127.0.0.1", "localhost", "::1"} {
+		set[strings.ToLower(net.JoinHostPort(h, port))] = true
+	}
 	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-		set[net.JoinHostPort("localhost", port)] = true
+		set[strings.ToLower(net.JoinHostPort(host, port))] = true
 	}
 	return set
 }
