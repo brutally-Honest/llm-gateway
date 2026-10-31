@@ -1,6 +1,6 @@
 ---
 feature: 006-rate-limiting
-status: approved
+status: done
 version: 1
 approved: 2026-10-12T16:11:38Z
 approved-by: human

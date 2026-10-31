@@ -1,7 +1,7 @@
 ---
 feature: 006-rate-limiting
 kind: feat
-status: approved
+status: done
 version: 2
 created: 2026-10-12
 supersedes:
