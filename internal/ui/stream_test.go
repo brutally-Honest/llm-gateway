@@ -293,7 +293,7 @@ func TestStream_LastEventIDAndSinceValidatedNotNarrowing(t *testing.T) {
 			t.Fatalf("%s: body = %+v %v", name, env, err)
 		}
 	}
-	// A cursor past every row id still gets the whole session.
+	// A resume position past every row id still gets the whole session.
 	s := e.openWith(path+"?since=9999", map[string]string{"Last-Event-ID": "9999"})
 	if got := snapshotEntries(t, s, 3); !reflect.DeepEqual(got, e.freshTimeline()) {
 		t.Fatalf("narrowed snapshot: %v", got)

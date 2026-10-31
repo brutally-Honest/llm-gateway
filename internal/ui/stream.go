@@ -31,9 +31,9 @@ func (h *Hub) serveSession(w http.ResponseWriter, r *http.Request) {
 	h.serve(w, r, id)
 }
 
-// validCursor reports whether Last-Event-ID and ?since, when present, are non-negative
+// validResumeInputs reports whether Last-Event-ID and ?since, when present, are non-negative
 // integers. They are only checked: the snapshot is never narrowed by them (AC24).
-func validCursor(r *http.Request) bool {
+func validResumeInputs(r *http.Request) bool {
 	ok := func(v string) bool {
 		n, err := strconv.ParseInt(v, 10, 64)
 		return err == nil && n >= 0
@@ -46,7 +46,7 @@ func validCursor(r *http.Request) bool {
 
 // serve runs one SSE stream until the client leaves, the hub drops it, or the hub closes.
 func (h *Hub) serve(w http.ResponseWriter, r *http.Request, session string) {
-	if !validCursor(r) {
+	if !validResumeInputs(r) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "Last-Event-ID and since must be non-negative integers")
 		return
 	}
