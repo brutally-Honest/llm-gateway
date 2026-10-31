@@ -1,15 +1,16 @@
 ---
 feature: 009-web-ui
 kind: feat
-status: approved
-version: 1
+status: draft
+version: 2
 created: 2026-10-31
 supersedes:
 branch: feat/009-web-ui
-approved: 2026-10-31T05:36:14Z
-approved-by: human
-sha256: 6c01d20a2c7d5af74a06f8bdb645cf44153936a84e7c5dcbd077c7ece7e3ea17
-fingerprint: ca37c7a7e860b836760f30197c522791cdc7226a955c85013a947344c9e68194
+approved:
+approved-by:
+sha256:
+fingerprint:
+previous: 87c8c4b
 ---
 # Web UI
 
@@ -357,3 +358,4 @@ None. The requirement's decisions are recorded above; smaller choices are in res
     event is dropped (AC11, AC18, AC23–AC25, AC50; research D11–D13). Renumbered 008 → 009.
   - review: changed exchanges are re-sent whole as `exchange` events and replaced in place, so
     live = reload = CLI (AC54, AC55; AC50, E6, E13, E20, E21; research D14).
+- v2 (2026-10-31) — reopened: AC54, AC24, AC55 and Constraints: the sent-record is kept per open stream, not per active session. On every connect or reconnect, a stream first sends a full snapshot of what it watches (the open session's exchanges as replace events, or the first page of the sessions/ungrouped list), then live events. Last-Event-ID and ?since are accepted, but correctness never depends on row-id order. The page applies exchange events as replace-by-exchange-id and never ignores an id it already holds.
