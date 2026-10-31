@@ -27,6 +27,7 @@ const (
 
 	listSessions  = "s"
 	listUngrouped = "u"
+	listTimeline  = "t"
 )
 
 // counterJSON is one summed counter: nil value when no call reported it.
@@ -124,6 +125,8 @@ type afterToken struct {
 	Client    string `json:"c,omitempty"`
 	Key       string `json:"k,omitempty"`
 	RequestID string `json:"r,omitempty"`
+	// Index is the entry's position within its exchange (timeline lists only).
+	Index int `json:"i,omitempty"`
 }
 
 func encodeAfter(t afterToken) string {
@@ -142,7 +145,7 @@ func decodeAfter(s, list string) (afterToken, bool) {
 	if dec.Decode(&t) != nil || t.List != list {
 		return afterToken{}, false
 	}
-	if list == listUngrouped && t.RequestID == "" {
+	if (list == listUngrouped || list == listTimeline) && t.RequestID == "" {
 		return afterToken{}, false
 	}
 	return t, true

@@ -17,9 +17,10 @@ import (
 var baseTime = time.Unix(1700000000, 0)
 
 type apiEnv struct {
-	t *testing.T
-	s *store.Store
-	h http.Handler
+	t   *testing.T
+	dir string
+	s   *store.Store
+	h   http.Handler
 }
 
 func newAPIEnv(t *testing.T) *apiEnv {
@@ -35,7 +36,7 @@ func newAPIEnv(t *testing.T) *apiEnv {
 
 func openEnv(t *testing.T, dir string, s *store.Store) *apiEnv {
 	t.Helper()
-	e := &apiEnv{t: t, s: s}
+	e := &apiEnv{t: t, s: s, dir: dir}
 	r, err := store.OpenReader(dir)
 	if err != nil {
 		t.Fatal(err)

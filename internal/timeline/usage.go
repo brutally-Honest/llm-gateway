@@ -183,3 +183,7 @@ func Summarize(calls []CallUsage) Summary {
 	})
 	return s
 }
+
+// CallOf is the usage record of an exchange from its events; nil when the exchange
+// is not a model call.
+func CallOf(ex store.ExchangeRow, evs []store.EventRow) *CallUsage { return callOf(ex, evs) }

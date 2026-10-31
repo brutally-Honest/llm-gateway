@@ -63,6 +63,7 @@ func newRouter(d Deps, extra ...func(chi.Router)) chi.Router {
 		})
 		if d.Reader != nil {
 			mountSessions(api, d)
+			mountExchanges(api, d)
 		}
 		for _, m := range extra {
 			m(api)
