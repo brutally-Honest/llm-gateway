@@ -1,15 +1,15 @@
 ---
 feature: 009-web-ui
 kind: feat
-status: draft
+status: approved
 version: 3
 created: 2026-10-31
 supersedes:
 branch: feat/009-web-ui
-approved:
-approved-by:
-sha256:
-fingerprint:
+approved: 2026-10-31T15:52:53Z
+approved-by: human
+sha256: a8e45c0a979846853cb3557af5f0f9a3f448d486a021a6c7b28c40040ddf63f8
+fingerprint: 5fec66999c80961105a1e4db530b14bfd4bf92adb75229b01aa742b731df8414
 previous: ae25bf8
 ---
 # Web UI
@@ -98,20 +98,20 @@ loopback address (research D8).
   system shall answer 405 with an `Allow: GET` header and the JSON error envelope; every API
   error shall be `{"error":{"code":"...","message":"..."}}` with `content-type: application/json`.
 - **AC14** — When `GET /api/health` is called, the system shall answer 200 `{"ok":true}`.
-- **AC15** — When `GET /api/sessions?limit=&cursor=` is called, the system shall return sessions
+- **AC15** — When `GET /api/sessions?limit=&after=` is called, the system shall return sessions
   newest last activity first, each with: id, session key, client, models seen, first_at,
   last_at, exchange count, model-call count, tool-call count, error count, usage totals with
-  their flags, and active; plus `next_cursor` (null on the last page). `limit` defaults to 50
-  and is capped at 200; following `next_cursor` lists every session exactly once.
-- **AC16** — When `GET /api/ungrouped?limit=&cursor=` is called, the system shall return the
+  their flags, and active; plus `next_after` (null on the last page). `limit` defaults to 50
+  and is capped at 200; following `next_after` lists every session exactly once.
+- **AC16** — When `GET /api/ungrouped?limit=&after=` is called, the system shall return the
   ungrouped exchanges, newest first, in the same summary shape per exchange (counts of 0 or 1
-  where a count applies) with the same limit, cap and cursor rules as AC15.
+  where a count applies) with the same limit, cap and `after` rules as AC15.
 - **AC17** — When `GET /api/sessions/{id}` is called, the system shall return that session's
   summary as in AC15.
-- **AC18** — When `GET /api/sessions/{id}/timeline?cursor=&limit=` is called, the system shall
+- **AC18** — When `GET /api/sessions/{id}/timeline?after=&limit=` is called, the system shall
   return the session's entries ordered by (exchange start time, exchange id, index within the
-  exchange), at most `limit` (default 500, capped at 2000), starting after the opaque `cursor`
-  (none = from the start), plus `next_cursor` (null when no more) and `stream_since`, the
+  exchange), at most `limit` (default 500, capped at 2000), starting after the opaque `after`
+  value (none = from the start), plus `next_after` (null when no more) and `stream_since`, the
   highest store row id among the session's exchanges included in this answer (research D12); the
   page may pass it as `?since`, but no result depends on it (AC24, research D16).
   Each entry has the id `<exchange_id>:<index>`, where index is its position within its own
@@ -131,7 +131,7 @@ loopback address (research D8).
   5 MiB it shall return the first 5 MiB with `X-Body-Truncated: true`. A body not stored
   answers 404 with code `body_not_stored`; a missing or other `part` answers 400.
 - **AC21** — When an `{id}` names no session or exchange, the system shall answer 404 with code
-  `not_found`; when `limit`, `cursor` or `since` is malformed, it shall answer 400 with code
+  `not_found`; when `limit`, `after` or `since` is malformed, it shall answer 400 with code
   `bad_request`.
 - **AC22** — When `GET /api/stream` is opened or reopened, the system shall first send the first
   page of the sessions list (AC15 order and default limit) as one `session` event per session
@@ -250,14 +250,14 @@ loopback address (research D8).
   shows) and a status line that includes the web UI.
 
 ## Edge cases
-- **E1** — Empty store (no sessions, no ungrouped) → empty lists with `next_cursor: null`; the
+- **E1** — Empty store (no sessions, no ungrouped) → empty lists with `next_after: null`; the
   page shows an empty state, not an error (AC15, AC16, AC37)
 - **E2** — Store file missing when the gateway starts with capture on → capture creates it; the
   UI opens its reader after the store exists (AC1, AC9)
 - **E3** — `limit=0`, negative, non-numeric → 400; `limit` above the cap → the cap (AC15, AC18,
   AC21)
-- **E4** — A cursor from a different list, or tampered → 400 (AC21)
-- **E5** — A session gains exchanges while the user pages with a cursor → no session appears
+- **E4** — An `after` value from a different list, or tampered → 400 (AC21)
+- **E5** — A session gains exchanges while the user pages with `after` → no session appears
   twice in one walk; a session that moved to the top is picked up by the live stream (AC15,
   AC22)
 - **E6** — Concurrent sub-agent calls in one session finish out of start order → the late
@@ -351,7 +351,7 @@ feature:
 - Read-only store access through a separate `mode=ro` pool; timelines only from canonical events
   through the existing timeline package; reuse the CLI viewer's grouping and usage totals.
 - "Active" = last exchange less than 5 minutes old, a named constant.
-- GET-only JSON API under `/api` with opaque cursors and the listed limits; SSE for live updates
+- GET-only JSON API under `/api` with opaque `after` values and the listed limits; SSE for live updates
   fed by the capture workers after commit; 64-message buffers, drop slow subscribers, 32
   subscribers max.
 - Host and Origin checks, the CSP and the listed headers; render captured content as text.
@@ -394,3 +394,7 @@ None. The requirement's decisions are recorded above; smaller choices are in res
   - E22 and a required test: a failed connect snapshot sends an SSE `snapshot_error` event, `retry: 30000`
     and closes; the page shows an error state and does not hot-loop (research D16 addendum).
 - v3 (2026-10-31) — reopened: CR-001: Rename the paging parameter cursor to after
+  - AC15, AC16, AC18, AC21 (CR-001): the paging parameter `?cursor=` is now `?after=` and the
+    field `next_cursor` is now `next_after`, same opaque keyset semantics and 400 on a malformed
+    value; E1, E4, E5 and the Decisions line reworded to match. Reason: "cursor" is a client name
+    the purity test bans (AC12, D10). Earlier changelog lines keep their wording as history.

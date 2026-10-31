@@ -1,12 +1,13 @@
 ---
 feature: 009-web-ui
-status: approved
-version: 1
-approved: 2026-10-31T15:40:49Z
-approved-by: human
-sha256: 8ba74618f63ae1d4dbf3597b91a38714ea216d55af1450c59db54cfa42421fad
-fingerprint: 3477955d7335b8b010a038de30fa863e3dd6b88dc47f99fb28877213fa68b70b
-spec-fingerprint: 7db1fba8de90bf2daf7e0dcd63e861315208b433215a7e39b15384154de9895e
+status: draft
+version: 2
+approved:
+approved-by:
+sha256:
+fingerprint:
+spec-fingerprint:
+previous: fa06c47
 ---
 # Plan — 009-web-ui
 
@@ -209,3 +210,4 @@ stable ids `TestAPI_TimelineStableIdsAndOrder`; convergence `TestLive_ConvergesW
 - v1 (2026-10-31) — review fixes, still draft: entries not append-only, whole-exchange update unit; per-stream hash record; OnCommit after `SaveParse`; hub coalescing, stats-only for unwatched sessions, publish after `Close` a no-op; paging tie-breakers; Live split across T008/T009
 - v1 (2026-10-31) — revised to spec v2 and D16, still draft: resume by row id replaced by a connect snapshot taken after subscribing and written outside the 64-message buffer; replace-by-exchange for `entries` and `exchange`; `snapshot_error` with `retry: 30000` (E22); reconnect is a new stream (AC50); row-id resume tests replaced; plan tightened
 - v1 (2026-10-31) — T009 split, still draft: snapshot and `snapshot_error` (T009), sent-record and convergence (T010); later tasks renumbered T011–T017
+- v2 (2026-10-31) — reopened: spec v3 changed its contract sections

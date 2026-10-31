@@ -1,12 +1,13 @@
 ---
 feature: 009-web-ui
-status: approved
-version: 1
-approved: 2026-10-31T15:40:51Z
-approved-by: human
-sha256: 01f4acedc9153efdb464b1c9a0a70207e3afbf3d2e502b1cc34558d0f42c9676
-fingerprint: 57c1e6b4720ee4436d70fadfffea3bb5129da6f0faab729f33532fde21bff750
-plan-fingerprint: 3477955d7335b8b010a038de30fa863e3dd6b88dc47f99fb28877213fa68b70b
+status: draft
+version: 2
+approved:
+approved-by:
+sha256:
+fingerprint:
+plan-fingerprint:
+previous: fa06c47
 ---
 # Tasks — 009-web-ui
 
@@ -175,3 +176,4 @@ plan-fingerprint: 3477955d7335b8b010a038de30fa863e3dd6b88dc47f99fb28877213fa68b7
 - v1 (2026-10-31) — review fixes, still draft: T003 no longer depends on T002 and is high risk (the kit allows only low or high); T008 split into T008 (hub, coalescing, stats-only for unwatched sessions, publish after stop) and T009 (resume, entry updates); later tasks renumbered T010–T016; new tests for tie-broken paging, OnCommit timing, changed-entry re-send and rebuild timing
 - v1 (2026-10-31) — revised to spec v2 and D16, still draft: T009 builds the connect snapshot (taken after subscribing, written outside the live buffer), `snapshot_error` with `retry: 30000`, the per-stream record and replace-by-exchange; row-id resume tests replaced by snapshot tests; the Q2 gate is gone; T013 reconnect is a new stream with no refetch and keeps the snapshot-error state
 - v1 (2026-10-31) — T009 split, still draft: T009 is the connect snapshot and `snapshot_error`, T010 the per-stream record, entry-update convergence and `applyEvents` (depends on T009); later tasks renumbered T011–T017
+- v2 (2026-10-31) — reopened: spec v3 changed its contract sections
