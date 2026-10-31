@@ -69,6 +69,17 @@ capture:
   # Env: GATEWAY_CAPTURE_MEMORY_LIMIT
   memory_limit: 268435456
 
+# The web UI: a read-only page on its own listener. Loopback only, with no auth: the
+# address must be 127.0.0.0/8, ::1 or localhost, and differ from listen_addr.
+ui:
+  # false means no UI listener and nothing logged about the UI.
+  # Env: GATEWAY_UI_ENABLED
+  enabled: true
+
+  # Address to listen on, as host:port. Loopback only; an error otherwise.
+  # Env: GATEWAY_UI_LISTEN_ADDR
+  listen_addr: 127.0.0.1:7199
+
 # Rate limiting: per gateway key, requests and tokens per minute, counted on model calls
 # only (POST /v1/messages for Anthropic). Off by default; when off no key is required.
 # Clients send their key in the x-gateway-key header (see docs/clients/claude-code.md).

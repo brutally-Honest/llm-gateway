@@ -19,6 +19,7 @@ type Config struct {
 	Upstreams       map[string]Upstream // by adapter name; nil when Options.Upstreams is empty
 	Capture         Capture
 	RateLimit       RateLimit
+	UI              UI
 }
 
 // Options says where Load looks.
@@ -77,6 +78,8 @@ const (
 	reasonInvalidAddress    = "invalid address"
 	reasonInvalidURL        = "invalid url"
 	reasonInvalidValue      = "invalid value"
+	reasonNotLoopback       = "not loopback"
+	reasonSameAsListen      = "same as listen_addr"
 )
 
 // Defaults is the configuration with no file and no env.
@@ -87,6 +90,7 @@ func Defaults() Config {
 		ShutdownTimeout: 10 * time.Minute,
 		Capture:         defaultCapture(),
 		RateLimit:       defaultRateLimit(),
+		UI:              defaultUI(),
 	}
 }
 
@@ -109,6 +113,7 @@ func settingsFor(specs []UpstreamSpec) []setting {
 		s = append(s, upstreamSettings(spec.Name)...)
 	}
 	s = append(s, captureSettings()...)
+	s = append(s, uiSettings()...)
 	return append(s, ratelimitSettings()...)
 }
 
@@ -121,15 +126,21 @@ func envName(key string) string {
 	return "GATEWAY_" + strings.ToUpper(envNameReplacer.Replace(key))
 }
 
-func setListenAddr(c *Config, v string) string {
+// validAddress is host:port with a non-empty host and a numeric port.
+func validAddress(v string) bool {
 	host, port, err := net.SplitHostPort(v)
 	// An empty host binds every interface. That must be written out as 0.0.0.0 or
 	// [::], so it is never the result of a missing host.
 	if err != nil || host == "" {
-		return reasonInvalidAddress
+		return false
 	}
 	// Base 10 and 16 bits: an integer from 0 to 65535, so named ports are rejected.
-	if _, err := strconv.ParseUint(port, 10, 16); err != nil {
+	_, err = strconv.ParseUint(port, 10, 16)
+	return err == nil
+}
+
+func setListenAddr(c *Config, v string) string {
+	if !validAddress(v) {
 		return reasonInvalidAddress
 	}
 	c.ListenAddr = v

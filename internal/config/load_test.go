@@ -54,9 +54,12 @@ var defaultCaptureWant = Capture{Enabled: true, QueueSize: 256, Workers: 2, MaxB
 // defaultRateLimitWant is the ratelimit block with no file and no env (spec 006, Config).
 var defaultRateLimitWant = RateLimit{Strategy: "fixed_window_memory"}
 
+// defaultUIWant is the ui block with no file and no env (spec 009, Config).
+var defaultUIWant = UI{Enabled: true, ListenAddr: "127.0.0.1:7199"}
+
 // AC5: with no config, the listen address is loopback on 7197.
 func TestDefaults(t *testing.T) {
-	want := Config{ListenAddr: "127.0.0.1:7197", LogLevel: "info", ShutdownTimeout: 10 * time.Minute, Capture: defaultCaptureWant, RateLimit: defaultRateLimitWant}
+	want := Config{ListenAddr: "127.0.0.1:7197", LogLevel: "info", ShutdownTimeout: 10 * time.Minute, Capture: defaultCaptureWant, RateLimit: defaultRateLimitWant, UI: defaultUIWant}
 	if got := Defaults(); !reflect.DeepEqual(got, want) {
 		t.Errorf("Defaults() = %+v, want %+v", got, want)
 	}
@@ -132,7 +135,7 @@ func TestLoad_Precedence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Config{ListenAddr: "127.0.0.1:2", LogLevel: "warn", ShutdownTimeout: 7 * time.Second, Capture: defaultCaptureWant, RateLimit: defaultRateLimitWant}
+	want := Config{ListenAddr: "127.0.0.1:2", LogLevel: "warn", ShutdownTimeout: 7 * time.Second, Capture: defaultCaptureWant, RateLimit: defaultRateLimitWant, UI: defaultUIWant}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("Load() = %+v, want %+v", cfg, want)
 	}
