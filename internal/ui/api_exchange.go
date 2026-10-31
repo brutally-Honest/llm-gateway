@@ -96,7 +96,13 @@ func nonNil(h http.Header) http.Header {
 	return h
 }
 
+// bodyCSP is the policy of every response from the body endpoint.
+const bodyCSP = "default-src 'none'; sandbox"
+
 func (d Deps) getBody(w http.ResponseWriter, r *http.Request) {
+	// Stored bodies are data, never a page: nothing in them may run or load. Every answer
+	// from this endpoint, its errors included, carries the strict policy (AC33).
+	w.Header().Set("Content-Security-Policy", bodyCSP)
 	part := r.URL.Query().Get("part")
 	if part != "request" && part != "response" {
 		writeErr(w, http.StatusBadRequest, "bad_request", "part must be request or response")
@@ -144,8 +150,6 @@ func (d Deps) getBody(w http.ResponseWriter, r *http.Request) {
 	}
 	h := w.Header()
 	h.Set("Content-Type", ct)
-	// Stored bodies are data, never a page: nothing in them may run or load.
-	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	if truncated {
 		h.Set("X-Body-Truncated", "true")
 	}

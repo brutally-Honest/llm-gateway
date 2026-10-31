@@ -360,4 +360,26 @@ func TestUI_BodyEndpointSendsStricterCSP(t *testing.T) {
 	if rec.Header().Get("X-Content-Type-Options") != "nosniff" || rec.Header().Get("Referrer-Policy") != "no-referrer" {
 		t.Errorf("body endpoint lost nosniff/referrer headers")
 	}
+	// The endpoint's own errors carry the strict policy too.
+	for _, c := range []struct {
+		name, path string
+		code       int
+		errCode    string
+	}{
+		{"missing part", "/api/exchanges/html/body", 400, "bad_request"},
+		{"bad part", "/api/exchanges/html/body?part=both", 400, "bad_request"},
+		{"unknown exchange", "/api/exchanges/nope/body?part=response", 404, "not_found"},
+		{"body not stored", "/api/exchanges/html/body?part=request", 404, "body_not_stored"},
+	} {
+		rec := e.get(c.path)
+		if rec.Code != c.code || !strings.Contains(rec.Body.String(), `"code":"`+c.errCode+`"`) {
+			t.Errorf("%s: %d %s, want %d %s", c.name, rec.Code, rec.Body, c.code, c.errCode)
+		}
+		if got := rec.Header().Get("Content-Security-Policy"); got != "default-src 'none'; sandbox" {
+			t.Errorf("%s: CSP = %q, want default-src 'none'; sandbox", c.name, got)
+		}
+		if rec.Header().Get("X-Content-Type-Options") != "nosniff" || rec.Header().Get("Referrer-Policy") != "no-referrer" {
+			t.Errorf("%s: lost nosniff/referrer headers", c.name)
+		}
+	}
 }
