@@ -156,7 +156,7 @@ func (r *Reader) exchangeCtx(ctx context.Context, id string) (ExchangeRow, error
 // Last reads the exchange that started last, or ErrNotFound on an empty store. Ties
 // go to the one stored last.
 func (r *Reader) Last() (ExchangeRow, error) {
-	row := r.db.QueryRowContext(context.Background(), `SELECT ` + exchangeColumns +
+	row := r.db.QueryRowContext(context.Background(), `SELECT `+exchangeColumns+
 		` FROM exchanges ORDER BY started_at DESC, rowid DESC LIMIT 1`)
 	ex, err := scanExchange(row)
 	if err != nil {
