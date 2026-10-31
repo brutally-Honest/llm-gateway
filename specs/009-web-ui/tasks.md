@@ -1,12 +1,12 @@
 ---
 feature: 009-web-ui
-status: draft
+status: approved
 version: 3
-approved:
-approved-by:
-sha256:
-fingerprint:
-plan-fingerprint:
+approved: 2026-10-31T16:07:44Z
+approved-by: human
+sha256: 0afa1df4e0e7a95ca4334c339b189fc99ce8893a51f4bb6688d4cdc6ee48f3d3
+fingerprint: 8c499f774f6d1241c59ad2dc2b8557b062d84dc5fe0ba57595472c3c1243ab6c
+plan-fingerprint: 060da350aa26bcd11e9bba9846962e4a9c772a0bd2227d5cff95f8fcffa5f4c1
 previous: 45916f6
 ---
 # Tasks — 009-web-ui
@@ -78,7 +78,7 @@ previous: 45916f6
 
 ### T007 — Serve timeline, exchange detail and bodies
 - Do: `ui/entries.go` (kind mapping, ids, 16 KiB truncation), `ui/api_timeline.go` (`after`, `next_after`, `stream_since`), `ui/api_exchange.go` (detail, body with 5 MiB cap).
-- Tests: TestAPI_TimelineStableIdsAndOrder (AC18); TestAPI_TimelineCutsAt16KiB (AC18); TestUI_TimelineMatchesCLIViewer (AC11); TestAPI_TimelineFoldedExchangeFlagsMissingUsage (E15); TestAPI_ExchangeDetail (AC19); TestAPI_BodyTruncatesAt5MiB (AC20, E7); TestAPI_BodyNotStored404 (AC20, E8); TestAPI_NotFoundAndBadRequestCodes (AC21)
+- Tests: TestAPI_TimelineStableIdsAndOrder (AC18); TestAPI_TimelineCutsAt16KiB (AC18); TestUI_TimelineMatchesCLIViewer (AC11); TestAPI_TimelineFoldedExchangeFlagsMissingUsage (E15); TestAPI_ExchangeDetail (AC19); TestAPI_BodyTruncatesAt5MiB (AC20, E7); TestAPI_BodyNotStored404 (AC20, E8); TestAPI_NotFoundAndBadRequestCodes (AC21); TestAPI_TimelineOmitsUnreadableReasoning (Q1 in plan.md, AC18, AC11: for a session whose stored reasoning block has no readable thinking text, the timeline API returns no thinking entry for it, no entry carries [reasoning] as thinking text, and the assistant message entry still matches the CLI viewer (text [reasoning]); the fixture is a stored reasoning block with no provider block-type name in any form, as T003's fixture in internal/timeline/stats_test.go)
 - AC: AC11, AC18, AC19, AC20, AC21
 - Commit: feat(ui): add timeline and exchange api
 - Depends: T003, T005
@@ -188,3 +188,4 @@ previous: 45916f6
 - v2 (2026-10-31) — reopened: spec v3 changed its contract sections
 - v2 (2026-10-31) — CR-001: new T018 reworks done T002 (cursor to after); T003 gains the fixture fix; T006, T007, T012 wording and test name use `after` / `next_after`; T006 depends on T018
 - v3 (2026-10-31) — reopened: CR-002: T007 gains an API test for unreadable reasoning
+- v3 (2026-10-31) — CR-002: T007 Tests line gains TestAPI_TimelineOmitsUnreadableReasoning
