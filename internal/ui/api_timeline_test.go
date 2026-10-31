@@ -345,3 +345,19 @@ func TestAPI_ToolEntriesCarryToolCallID(t *testing.T) {
 		t.Fatalf("missing tool entries: %v", p.Entries)
 	}
 }
+
+func TestUI_BodyEndpointSendsStricterCSP(t *testing.T) {
+	e := newAPIEnv(t)
+	html := []byte(`<html><script>alert(1)</script></html>`)
+	e.saveBody("html", http.Header{"Content-Type": {"text/html"}}, html, true)
+	rec := e.get("/api/exchanges/html/body?part=response")
+	if rec.Code != 200 || rec.Body.String() != string(html) {
+		t.Fatalf("body = %d %q", rec.Code, rec.Body)
+	}
+	if got := rec.Header().Get("Content-Security-Policy"); got != "default-src 'none'; sandbox" {
+		t.Errorf("body CSP = %q, want default-src 'none'; sandbox", got)
+	}
+	if rec.Header().Get("X-Content-Type-Options") != "nosniff" || rec.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Errorf("body endpoint lost nosniff/referrer headers")
+	}
+}

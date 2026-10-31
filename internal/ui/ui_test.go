@@ -6,8 +6,11 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/brutally-honest/llm-gateway/internal/store"
 )
 
 const addr = "127.0.0.1:7199"
@@ -201,6 +204,45 @@ func TestUI_LoopbackHostWrongPortIs421(t *testing.T) {
 	for _, host := range []string{"127.0.0.1", "localhost", "[::1]", "127.0.0.2"} {
 		for _, bad := range []string{host + ":7200", host} {
 			wantEnvelope(t, do(t, h, "GET", "/api/health", map[string]string{"Host": bad}), 421, "bad_host")
+		}
+	}
+}
+
+func TestUI_NonBodyResponsesSendStandardCSP(t *testing.T) {
+	e := newAPIEnv(t)
+	e.save("a", "k", "cc", 1)
+	r, err := store.OpenReader(e.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	h := newRouter(Deps{Addr: addr, Reader: r, Now: func() time.Time { return baseTime }},
+		func(r chi.Router) { r.Get("/boom", func(http.ResponseWriter, *http.Request) { panic("x") }) })
+	cases := []struct {
+		name, method, path string
+		hdr                map[string]string
+		code               int
+	}{
+		{"page", "GET", "/", nil, 200},
+		{"asset redirect", "GET", "/index.html", nil, 301},
+		{"missing asset", "GET", "/missing.js", nil, 404},
+		{"api", "GET", "/api/health", nil, 200},
+		{"api sessions", "GET", "/api/sessions", nil, 200},
+		{"api exchange", "GET", "/api/exchanges/a", nil, 200},
+		{"api 404", "GET", "/api/nope", nil, 404},
+		{"api 405", "POST", "/api/health", nil, 405},
+		{"static 405", "POST", "/", nil, 405},
+		{"421", "GET", "/", map[string]string{"Host": "evil.example"}, 421},
+		{"403", "GET", "/api/health", map[string]string{"Origin": "http://evil.example"}, 403},
+		{"500", "GET", "/api/boom", nil, 500},
+	}
+	for _, c := range cases {
+		rec := do(t, h, c.method, c.path, c.hdr)
+		if rec.Code != c.code {
+			t.Errorf("%s: status = %d, want %d", c.name, rec.Code, c.code)
+		}
+		if got := rec.Header().Get("Content-Security-Policy"); got != csp {
+			t.Errorf("%s: CSP = %q, want standard", c.name, got)
 		}
 	}
 }
