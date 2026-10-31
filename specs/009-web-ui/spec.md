@@ -1,15 +1,15 @@
 ---
 feature: 009-web-ui
 kind: feat
-status: draft
+status: approved
 version: 2
 created: 2026-10-31
 supersedes:
 branch: feat/009-web-ui
-approved:
-approved-by:
-sha256:
-fingerprint:
+approved: 2026-10-31T15:32:36Z
+approved-by: human
+sha256: f650f7516b84231b2a7539a31ebc30ff1dfa8d7d0b09e84578cac4bd5d486fb9
+fingerprint: 7db1fba8de90bf2daf7e0dcd63e861315208b433215a7e39b15384154de9895e
 previous: 87c8c4b
 ---
 # Web UI
@@ -112,7 +112,8 @@ loopback address (research D8).
   return the session's entries ordered by (exchange start time, exchange id, index within the
   exchange), at most `limit` (default 500, capped at 2000), starting after the opaque `cursor`
   (none = from the start), plus `next_cursor` (null when no more) and `stream_since`, the
-  highest store row id among the session's exchanges included in this answer (research D12).
+  highest store row id among the session's exchanges included in this answer (research D12); the
+  page may pass it as `?since`, but no result depends on it (AC24, research D16).
   Each entry has the id `<exchange_id>:<index>`, where index is its position within its own
   exchange's entries; for the same stored exchanges every call returns the same ids. Entry
   kinds are: user prompt, assistant text, thinking (when the stored message content holds a
@@ -132,44 +133,54 @@ loopback address (research D8).
 - **AC21** — When an `{id}` names no session or exchange, the system shall answer 404 with code
   `not_found`; when `limit`, `cursor` or `since` is malformed, it shall answer 400 with code
   `bad_request`.
-- **AC22** — When `GET /api/stream` is open, the system shall send an SSE event `session`
-  carrying the updated session summary (AC15 shape) each time a session gains a committed
-  exchange.
+- **AC22** — When `GET /api/stream` is opened or reopened, the system shall first send the first
+  page of the sessions list (AC15 order and default limit) as one `session` event per session
+  (AC15 shape), then, while it is open, a `session` event carrying the updated summary each time
+  a session gains a committed exchange. The page applies a `session` event by replacing that
+  session's row by id.
 - **AC23** — When `GET /api/sessions/{id}/stream` is open and the session gains a committed
-  exchange, the system shall send one SSE event `entries` carrying that one exchange's timeline
-  entries (AC18 shape and ids), with the event id set to the exchange's store row id (the
-  store's insert order, which only grows).
-- **AC24** — When a session stream is opened with `Last-Event-ID: <row id>` (or, for the first
-  connection, `?since=<row id>`; the header wins when both are present), the system shall first
-  send, in row-id order, one `entries` event for each of the session's exchanges stored after
-  that row id, then continue live, so no exchange is skipped or sent twice. Opened with
-  neither, it sends only exchanges committed after it opened.
+  exchange, the system shall send one SSE event `entries` carrying that one exchange's full
+  timeline entry list (AC18 shape and ids), with the event id set to the exchange's store row id.
+  The page applies it like an `exchange` event: it replaces every entry it holds for that
+  exchange id.
+- **AC24** — When a session stream is opened or reopened, with or without `Last-Event-ID` or
+  `?since=<row id>`, the system shall first send a snapshot of the session: one `exchange` event
+  per stored exchange of the session, in timeline order, each carrying that exchange's full
+  current entry list (AC18 shape and ids); then continue live. The snapshot is taken after the
+  stream is subscribed, so no exchange committed around the open is missed; one sent both in the
+  snapshot and live is replaced, never duplicated. `Last-Event-ID` and `?since` are accepted
+  (malformed values are 400, AC21) but do not narrow the snapshot: correctness never depends on
+  row-id order, which can differ from commit order when capture runs several workers
+  (research D16).
 - **AC25** — When an exchange that started before exchanges already shown is committed after
   them (for example a concurrent sub-agent call that finished later), the page shall insert its
   entries at their sorted position by (exchange start time, exchange id, index) without
-  reloading, ignoring any entry whose id it already has; and a reload shall show the same
-  entries in the same positions.
+  reloading, replacing any entries it already holds for that exchange id (never keeping an
+  entry just because its id is known); and a reload shall show the same entries in the same
+  positions.
 - **AC26** — When an SSE stream is open, the system shall send a heartbeat comment at least
   every 15 s.
 - **AC54** — When an exchange is committed to a session that has an open stream, the system
   shall recompute that session's exchanges that started after the committed exchange's start
-  time, and for each one whose entries differ from what was last published for it (or for which
-  nothing is recorded), send an SSE event `exchange` carrying that exchange's full, current entry
-  list (AC18 shape and ids). The page shall replace all entries for that exchange id in place.
-  The `entries` event and these `exchange` events form one batch for the committed exchange's
-  row id (research D14).
-- **AC55** — When any sequence of exchanges is committed to a session out of start order, the
-  page's live view of that session shall equal a fresh reload of it, which shall equal the CLI
-  viewer's timeline for the same store (entry ids, order, kinds and text, apart from the 16 KiB
-  cut).
+  time, and for each one whose entries differ from what that stream last sent for it (or for
+  which that stream has sent nothing), send on that stream an SSE event `exchange` carrying that
+  exchange's full, current entry list (AC18 shape and ids). The record of what was sent is kept
+  per open stream, not per session. The page shall replace all entries for that exchange id in
+  place. The `entries` event and these `exchange` events form one batch for the committed
+  exchange's row id (research D14).
+- **AC55** — When any sequence of exchanges is committed to a session out of start order or out
+  of row-id order, including across stream drops and reconnects, the page's live view of that
+  session shall equal a fresh reload of it, which shall equal the CLI viewer's timeline for the
+  same store (entry ids, order, kinds and text, apart from the 16 KiB cut).
 
 ### Live updates
 - **AC27** — When the capture pipeline commits an exchange, the system shall publish it to the
   UI's broadcaster only after it is stored, so the UI never shows anything that isn't stored.
 - **AC28** — When publishing to subscribers, the system shall never block the capture worker:
   a publish to any number of subscribers, slow or not, returns without waiting on them.
-- **AC29** — When a subscriber's buffer of 64 messages is full, the system shall drop that
-  subscriber and close its stream; other subscribers are unaffected.
+- **AC29** — When a subscriber's buffer of 64 live messages is full, the system shall drop that
+  subscriber and close its stream; other subscribers are unaffected. The connect snapshot
+  (AC22, AC24) is written by the stream itself and does not pass through that buffer.
 - **AC30** — When 32 SSE streams are already open and another is requested, the system shall
   answer 503 with the JSON error envelope (code `too_many_streams`).
 
@@ -220,9 +231,9 @@ loopback address (research D8).
 - **AC49** — When the OS prefers a dark or light colour scheme, the page shall use the matching
   theme.
 - **AC50** — When an SSE connection fails or is dropped, the page shall keep showing the history
-  it has, show "live: disconnected, retrying", and on reconnecting refetch the session's
-  timeline through the API and open a new stream with `?since=<stream_since>`, so it misses
-  nothing and depends on no state the gateway kept for the old connection (AC24, AC54).
+  it has, show "live: disconnected, retrying", and on reconnecting open a new stream whose
+  snapshot replaces every exchange it holds, so it misses nothing and depends on no state the
+  gateway kept for the old connection (AC24, AC54).
 
 ### Docs
 - **AC51** — When the change is merged, ADR 0009 (web UI: vanilla JS, read-only, loopback-only,
@@ -253,12 +264,13 @@ loopback address (research D8).
   exchange's entries slot in at their sorted position, and any later-started exchange whose
   entries the late one changed (its best match moved) is re-sent whole as an `exchange` event
   and replaced in place; live, reload and CLI agree (AC23, AC25, AC54, AC55)
-- **E20** — A connection drops in the middle of one row id's batch → `Last-Event-ID` is still
-  the previous row id, so the whole batch is sent again; replacing by exchange id and ignoring
-  known entry ids make that harmless (AC24, AC54, research D14)
-- **E21** — Session goes inactive, or the gateway restarts → the record of what was last
-  published is dropped; a later commit finds nothing recorded and re-sends every later-started
-  exchange whole, and a reconnecting page refetches through the API (AC50, AC54)
+- **E20** — A connection drops in the middle of one row id's batch → the reconnect's snapshot
+  replaces every exchange, so the half-sent batch leaves nothing stale (AC24, AC54, research
+  D14, D16)
+- **E21** — The stream closes, the session goes inactive, or the gateway restarts → that
+  stream's record of what it sent is dropped; a later commit on a stream with nothing recorded
+  re-sends every later-started exchange whole, and a reconnecting page gets a full snapshot
+  (AC24, AC50, AC54)
 - **E7** — A stored body larger than 5 MiB → first 5 MiB and `X-Body-Truncated: true`; a body
   truncated by capture keeps the capture flag in the detail (AC19, AC20)
 - **E8** — A body not stored (capture dropped or no body) → 404 `body_not_stored`; the page says
@@ -272,7 +284,7 @@ loopback address (research D8).
 - **E12** — 33rd SSE subscriber → 503; the page shows "live: disconnected, retrying" and keeps
   the history (AC30, AC50)
 - **E13** — Gateway restarted while the page is open → the stream drops, the page retries,
-  refetches the timeline and opens a new stream from its `stream_since` (AC24, AC50)
+  opens a new stream and its snapshot replaces every exchange (AC24, AC50)
 - **E14** — A session that went inactive while open → its stream stays open until closed; no
   new subscription is made on the next visit (AC46)
 - **E15** — Exchange still unparsed or parse failed → the timeline shows it as the CLI viewer
@@ -281,11 +293,21 @@ loopback address (research D8).
   address → config error (AC4)
 - **E17** — UI port already in use → startup error; the proxy does not start either (AC7)
 - **E18** — Page loads the timeline, and an exchange is committed before its stream opens → the
-  stream opened with `?since=<stream_since>` sends it; one already in the timeline answer is not
-  sent again, and the page ignores an id it already has (AC18, AC24, AC25)
+  stream's snapshot carries it; an exchange already in the timeline answer arrives again in the
+  snapshot and replaces itself, so nothing is lost or shown twice (AC18, AC24, AC25)
 - **E19** — `gateway backfill-sessions` assigns old exchanges to a session while its page is
-  open → they are not streamed (their row ids are below the stream's position) and appear on
-  reload (AC24)
+  open → nothing is sent when they are assigned (backfill does not publish); they appear on the
+  next reload or reconnect snapshot, or when a later commit re-sends them as later-started
+  exchanges (AC24, AC54)
+- **E22** — The connect snapshot fails (store timeout or other store error) → the server sends
+  an SSE `snapshot_error` event whose data is the JSON error envelope with code `timeout` or
+  `store_error` and a message holding no captured data, sets `retry: 30000`, and closes the
+  stream; the page shows an error state for that session (keeping any history it has) and does
+  not reconnect sooner than that retry. When the server closes the stream, the browser also
+  fires its native `error` event; the page keeps the snapshot-error state shown through that
+  event and through the reconnect attempt (not replacing it with "live: disconnected,
+  retrying"), and clears it only when a later snapshot succeeds (AC10, AC24, AC50, research
+  D16)
 
 ## Constraints
 - Proxying and capture never wait on the UI: the UI has its own listener, its own read-only
@@ -296,21 +318,27 @@ loopback address (research D8).
 - Frontend structure: each component has one `render(data)` that rebuilds its own subtree from
   data; state lives in one small store module; no two-way binding.
 - Captured content is untrusted: rendered as text only (AC35), strict CSP (AC33).
-- Bounds: 64-message buffer per subscriber, 32 SSE subscribers, 16 KiB per text field in the
-  timeline API, 5 MiB per body response, 200 sessions or 2000 entries per page.
+- Bounds: 64-message buffer of live messages per subscriber (the connect snapshot is not
+  counted), 32 SSE subscribers, 16 KiB per text field in the timeline API and the streams, 5 MiB
+  per body response, 200 sessions or 2000 entries per page.
 - `make verify` stays green under `-race`.
 - Required tests, among the others the plan lists: out-of-order completion (an exchange that
   started earlier but is stored later appears at its sorted position, both in the live
   `entries` event the page receives and in the timeline API after it; AC18, AC23, AC25); resume
-  (`Last-Event-ID` and `?since=` each yield exactly the session's exchanges stored after that
-  row id, in row-id order, none skipped or repeated; AC24); stable ids (two timeline calls
-  over the same store return the same ids; AC18); and convergence (a fixture where a
+  (a stream opened or reopened with no header, with `Last-Event-ID` or with `?since=` first sends
+  a snapshot equal to a fresh timeline call, and an exchange committed out of row-id order, with
+  a lower row id than one already sent, still reaches the page; AC24, AC55); stable ids (two
+  timeline calls over the same store return the same ids; AC18); convergence (a fixture where a
   late-stored, earlier-started exchange changes the best match of an exchange the page already
   has: the `exchange` event re-sends that exchange, and the live view built from the events
-  equals a fresh timeline call equals the CLI viewer's output; AC54, AC55).
-- The record of what was last published per exchange is in memory, only for sessions that are
-  active and have a stream open, and is dropped when the session goes inactive or the gateway
-  restarts; correctness never depends on it surviving (AC50, AC54).
+  equals a fresh timeline call equals the CLI viewer's output; AC54, AC55); and snapshot failure
+  (`TestStream_SnapshotFailureSendsErrorAndLongRetry`: a store that fails or times out during
+  the connect snapshot yields a `snapshot_error` event with code `timeout` or `store_error`, a
+  `retry: 30000` field, and a closed stream, with no `exchange` event sent; E22).
+- The record of what was last sent per exchange is in memory, kept per open stream (not per
+  session), only while that stream is open and its session active, and is dropped when the
+  stream closes, the session goes inactive or the gateway restarts; correctness never depends on
+  it surviving, nor on row-id order (AC24, AC50, AC54).
 - No JS test framework: the frontend is checked by the embedded-assets test and the human's
   manual check.
 
@@ -333,7 +361,8 @@ feature:
   cost; routing and real auth removed from v1 (ADR 0010).
 
 Smaller choices made while writing this spec, where the requirement left room, are logged with
-their reasons in `research.md` (D1–D14; D11 supersedes D1, D14 supersedes D11's known limit).
+their reasons in `research.md` (D1–D16; D11 supersedes D1, D14 supersedes D11's known limit,
+D16 supersedes D11(c), D12 and D14's resume rule).
 
 ## Agnosticism check
 Touches no axis: the UI reads only canonical events and stored exchanges through the timeline
@@ -359,3 +388,8 @@ None. The requirement's decisions are recorded above; smaller choices are in res
   - review: changed exchanges are re-sent whole as `exchange` events and replaced in place, so
     live = reload = CLI (AC54, AC55; AC50, E6, E13, E20, E21; research D14).
 - v2 (2026-10-31) — reopened: AC54, AC24, AC55 and Constraints: the sent-record is kept per open stream, not per active session. On every connect or reconnect, a stream first sends a full snapshot of what it watches (the open session's exchanges as replace events, or the first page of the sessions/ungrouped list), then live events. Last-Event-ID and ?since are accepted, but correctness never depends on row-id order. The page applies exchange events as replace-by-exchange-id and never ignores an id it already holds.
+  - AC22, AC23, AC24, AC25, AC29, AC50, AC54, AC55; E13, E18, E19, E20, E21; Constraints:
+    connect snapshot replaces row-id resume; replace-by-exchange for every entry event; record
+    per open stream (research D16, Q2).
+  - E22 and a required test: a failed connect snapshot sends an SSE `snapshot_error` event, `retry: 30000`
+    and closes; the page shows an error state and does not hot-loop (research D16 addendum).

@@ -123,6 +123,34 @@ writing spec v1; approving the spec confirms them.
   session and row id and signals without blocking; a broadcaster goroutine reads what changed
   and fans out. — why: a store read on the capture path would slow capture whenever the UI is
   open.
+- D16 (2026-10-31) — Supersedes D11(c), D12's resume role and D14's "Last-Event-ID resumes the
+  batch" rule (spec v2, `/al-change` by the user, answering Q2's problem with its option A). Every
+  stream connect or reconnect starts with a full snapshot of what it watches: a session stream
+  sends one `exchange` event per stored exchange of the session, in timeline order; `/api/stream`
+  sends the first page of the sessions list as `session` events. Then live events follow. The
+  page applies `entries` and `exchange` events alike as replace-by-exchange-id and never keeps an
+  entry because its id is already known. `Last-Event-ID` and `?since` are still accepted and
+  validated, and event ids are still row ids, but nothing depends on them. The sent-record of
+  AC54 is per open stream. — why: the row id is assigned at `SaveExchange` but the commit is
+  signalled after `SaveParse`, and capture runs two workers by default, so commit order can
+  differ from row-id order and a row-id resume can skip an exchange for good; a snapshot on
+  connect cannot. Cost: one session's worth of events per connect, local only.
+  Pick of mine where the change left room: the ungrouped list has no stream (AC38 asks for no live
+  updates), so the `/api/stream` snapshot is the sessions list only; and the snapshot is written
+  by the stream handler directly, so it does not count against the 64-message live buffer (else
+  any session with more than 64 exchanges would drop its own subscriber on connect).
+  Addendum (2026-10-31, the user): when the connect snapshot fails (store timeout or other
+  store error), the stream sends an SSE `error` event carrying the JSON error envelope (code
+  `timeout` or `store_error`, message without captured data, as D5), sets `retry: 30000`, and
+  closes. The page shows an error state for that session and does not reconnect faster than
+  that (spec E22, `TestStream_SnapshotFailureSendsErrorAndLongRetry`). — why: a snapshot that
+  fails on every connect would otherwise turn EventSource's default ~3 s retry into a hot loop
+  of whole-session store reads against a store that is already struggling.
+  Correction (2026-10-31, the user): the event is named `snapshot_error`, not `error`, wherever
+  the addendum above says `error`, because a server event named `error` collides with
+  EventSource's native `error` event. The server's close still makes the browser fire its
+  native `error`; the page keeps the snapshot-error state through it and through the reconnect
+  attempt, and clears it only when a later snapshot succeeds (spec E22).
 
 ## Notes
 - 2026-10-31 — Grounding read while drafting: `store.OpenReader` already opens `mode=ro` and is
