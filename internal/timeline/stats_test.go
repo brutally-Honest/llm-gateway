@@ -57,22 +57,30 @@ func TestBuild_ThinkingTextFromStoredBlock(t *testing.T) {
 	f := newFake()
 	f.exchange("A", 1, "ok")
 	think := f.put(`{"type":"thinking","thinking":"hmm"}`)
-	redacted := f.put(`{"type":"redacted_thinking","data":"zzz"}`)
+	// A reasoning block whose stored content holds no readable thinking text.
+	unreadable := f.put(`{"data":"zzz"}`)
 	text := f.put(`{"type":"text","text":"hi"}`)
 	mk := func(blocks ...map[string]string) {
 		p, _ := json.Marshal(map[string]any{"role": "assistant", "blocks": blocks})
 		f.add("A", store.EventRow{Kind: "message", ContentHash: hashOf(string(p)), Payload: p})
 	}
 	mk(map[string]string{"hash": think, "type": "reasoning"}, map[string]string{"hash": text, "type": "text"})
-	mk(map[string]string{"hash": redacted, "type": "reasoning"})
+	mk(map[string]string{"hash": unreadable, "type": "reasoning"})
 	var got []timeline.Entry
 	for _, e := range build(t, f, timeline.Options{}) {
 		if e.Kind == timeline.KindMessage {
 			got = append(got, e)
 		}
 	}
-	if len(got) != 2 || got[0].Thinking != "hmm" || got[0].Text != "[reasoning]\nhi" || got[1].Thinking != "" {
-		t.Fatalf("entries = %+v", got)
+	if len(got) != 2 {
+		t.Fatalf("message entries = %+v, want 2", got)
+	}
+	if got[0].Thinking != "hmm" || got[0].Text != "[reasoning]\nhi" {
+		t.Fatalf("readable block: entry = %+v", got[0])
+	}
+	// No readable thinking text: nothing is invented, so no thinking entry follows from it.
+	if got[1].Thinking != "" || got[1].ThinkingOmitted != 0 || got[1].Text != "[reasoning]" {
+		t.Fatalf("unreadable block: entry = %+v", got[1])
 	}
 }
 
