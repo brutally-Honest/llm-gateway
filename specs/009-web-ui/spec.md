@@ -1,16 +1,16 @@
 ---
 feature: 009-web-ui
 kind: feat
-status: approved
-version: 3
+status: draft
+version: 4
 created: 2026-10-31
 supersedes:
 branch: feat/009-web-ui
-approved: 2026-10-31T15:52:53Z
-approved-by: human
-sha256: a8e45c0a979846853cb3557af5f0f9a3f448d486a021a6c7b28c40040ddf63f8
-fingerprint: 5fec66999c80961105a1e4db530b14bfd4bf92adb75229b01aa742b731df8414
-previous: ae25bf8
+approved:
+approved-by:
+sha256:
+fingerprint:
+previous: 1587b97
 ---
 # Web UI
 
@@ -398,3 +398,4 @@ None. The requirement's decisions are recorded above; smaller choices are in res
     field `next_cursor` is now `next_after`, same opaque keyset semantics and 400 on a malformed
     value; E1, E4, E5 and the Decisions line reworded to match. Reason: "cursor" is a client name
     the purity test bans (AC12, D10). Earlier changelog lines keep their wording as history.
+- v4 (2026-10-31) — reopened: CR-003: Rename tool_use_id to tool_call_id, two-level CSP, and T005/T008 gaps
