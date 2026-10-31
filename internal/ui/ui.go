@@ -27,6 +27,8 @@ type Deps struct {
 	Log  *zap.Logger
 	// Reader is the read-only store view; nil leaves the store routes unmounted.
 	Reader *store.Reader
+	// Hub fans commits out to SSE streams; nil leaves the stream routes unmounted.
+	Hub *Hub
 	// Now is the clock for the active flag; nil is time.Now.
 	Now func() time.Time
 }
@@ -67,6 +69,9 @@ func newRouter(d Deps, extra ...func(chi.Router)) chi.Router {
 		if d.Reader != nil {
 			mountSessions(api, d)
 			mountExchanges(api, d)
+		}
+		if d.Hub != nil {
+			mountStreams(api, d)
 		}
 		for _, m := range extra {
 			m(api)
