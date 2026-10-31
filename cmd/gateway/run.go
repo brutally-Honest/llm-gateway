@@ -242,22 +242,28 @@ func run(ctx context.Context, d deps) int {
 		zap.Strings("env_overrides", src.EnvOverrides),
 	)
 
-	select {
-	case <-ctx.Done():
-	case err := <-serveErr:
-		log.Error("serve failed", zap.Error(err))
-		stopCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
-		defer cancel()
-		stopUI(stopCtx, uiSrv, capt, log)
-		capt.stop(stopCtx, log)
-		return exitRuntime
-	case err := <-uiErr:
-		log.Error("ui serve failed", zap.Error(err))
-		stopCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
-		defer cancel()
-		_ = srv.Shutdown(stopCtx)
-		capt.stop(stopCtx, log)
-		return exitRuntime
+wait:
+	for {
+		select {
+		case <-ctx.Done():
+			break wait
+		case err := <-serveErr:
+			log.Error("serve failed", zap.Error(err))
+			stopCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+			defer cancel()
+			stopUI(stopCtx, uiSrv, capt, log)
+			capt.stop(stopCtx, log)
+			return exitRuntime
+		case err := <-uiErr:
+			// The UI never fails proxying or capture: only the UI stops. Closing the hub
+			// makes later commits a no-op; the reader closes with capture at shutdown.
+			log.Error("ui serve failed; the ui is off, the proxy keeps running", zap.Error(err))
+			if capt != nil && capt.hub != nil {
+				capt.hub.Close()
+			}
+			_ = uiSrv.Close()
+			uiSrv, uiErr = nil, nil
+		}
 	}
 
 	// ctx is already cancelled, so the shutdown deadline needs a fresh context.

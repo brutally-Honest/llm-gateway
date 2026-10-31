@@ -206,3 +206,59 @@ func TestRun_ProxyUnaffectedByStuckUISubscriber(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0", code)
 	}
 }
+
+// The spec's Goal: a UI server that fails while the gateway runs stops the UI only. The
+// proxy keeps serving, the failure is logged once, and a later signal exits cleanly.
+func TestRun_UIServeFailureKeepsProxy(t *testing.T) {
+	const path = "/anthropic/v1/messages"
+	inTempDir(t, nil)
+	env := uiEnv(t, map[string]string{"GATEWAY_LOG_LEVEL": "debug"})
+	uiLn := make(chan net.Listener, 1)
+	g := startGateway(t, options{env: env, realListen: true, bound: func(addr string, ln net.Listener) {
+		if addr == env["GATEWAY_UI_LISTEN_ADDR"] {
+			uiLn <- ln
+		}
+	}})
+	addr, _ := g.waitLine("gateway started")["addr"].(string)
+	url := "http://" + addr
+	ui := uiAddr(g)
+
+	// Closing the UI's listener under it makes its Serve return an error.
+	_ = (<-uiLn).Close()
+	failed := func() int {
+		n := 0
+		for _, l := range g.lines() {
+			if m, _ := l["msg"].(string); strings.HasPrefix(m, "ui serve failed") {
+				n++
+			}
+		}
+		return n
+	}
+	for deadline := time.Now().Add(5 * time.Second); failed() == 0; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the ui failure was never logged")
+		}
+	}
+
+	select {
+	case code := <-g.code:
+		g.code <- code
+		t.Fatalf("run exited with %d after the ui failed, want it still serving", code)
+	default:
+	}
+	for range 3 {
+		if code, err := do(t, http.MethodPost, url+path, nil, `{"hello":"world"}`); err != nil || code != http.StatusOK {
+			t.Fatalf("proxy after the ui failed: status %d, err %v", code, err)
+		}
+	}
+	if c, err := net.Dial("tcp", ui); err == nil {
+		_ = c.Close()
+		t.Errorf("ui address %s still accepts connections", ui)
+	}
+	if n := failed(); n != 1 {
+		t.Errorf("ui failure logged %d times, want 1", n)
+	}
+	if code := g.stop(); code != exitOK {
+		t.Errorf("exit code = %d, want %d", code, exitOK)
+	}
+}
