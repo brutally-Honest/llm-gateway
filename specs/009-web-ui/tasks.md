@@ -1,12 +1,12 @@
 ---
 feature: 009-web-ui
-status: draft
+status: approved
 version: 2
-approved:
-approved-by:
-sha256:
-fingerprint:
-plan-fingerprint:
+approved: 2026-10-31T15:56:14Z
+approved-by: human
+sha256: cbf8566074752af64d8e4459fc938e32707066304542cb32e30d0b11e60c13f8
+fingerprint: 4c2bc90b21296f6725e9b2817b3832319fcf9cf5999a154e17bb75a6230c761d
+plan-fingerprint: 060da350aa26bcd11e9bba9846962e4a9c772a0bd2227d5cff95f8fcffa5f4c1
 previous: fa06c47
 ---
 # Tasks — 009-web-ui
@@ -31,12 +31,21 @@ previous: fa06c47
 - Size: M
 - Risk: high
 
+### T018 — Rename the store paging key from cursor to after
+- Do: `internal/store/reader_ctx.go` and `reader_ctx_test.go`: rename the exported `SessionCursor` / `UngroupedCursor` types, parameters and comments to `SessionAfter` / `UngroupedAfter` ("after key"), so nothing in `store` contains the substring "cursor" (purity test, CR-001). No behaviour change.
+- Tests: existing T002 tests unchanged apart from the renamed identifiers (TestReader_SessionPageTiesBrokenByKey, TestReader_UngroupedPageTiesBrokenByRequestID, TestReader_SessionPageWalkNoDuplicates); TestCore_NoProviderOrClientIdentifiers passes over `../store` (AC12); `make verify` green
+- AC: AC15 (rework), AC16 (rework)
+- Commit: refactor(store): rename paging key to after
+- Depends: T002
+- Size: S
+- Risk: low
+
 ### T003 — Extend timeline for stable entries and cheap stats
-- Do: `internal/timeline`: `Options.Cut`, `Entry.Index`, `Entry.Thinking`, `SessionStats` (counts + usage Summary without content reads); CLI output untouched.
+- Do: `internal/timeline`: `Options.Cut`, `Entry.Index`, `Entry.Thinking`, `SessionStats` (counts + usage Summary without content reads); CLI output untouched. Also fix the `internal/timeline/stats_test.go:60` fixture (CR-001 finding): model the case in canonical form, a stored reasoning block whose content has no readable thinking text (whatever canonical block type and content the store actually holds for it), with no provider block-type name anywhere in the test. The test must not construct any banned word by concatenation, encoding or similar; the purity test is not weakened.
 - Tests: existing timeline and viewer tests unchanged; TestBuild_EntryIndexIsPositionWithinExchange (AC18); TestBuild_CutOptionLeavesCLIDefault (AC11); TestSessionStats_MatchesBuildCountsAndUsage (AC11, E15); TestBuild_ThinkingTextFromStoredBlock (AC18); TestBuild_EarlierStartedExchangeChangesLaterEntries (AC54: pins that entries are not append-only: storing an exchange that started earlier changes a later-started exchange's entries; if the timeline ever becomes append-only this test fails, and the re-send rule in T010 can be simplified)
 - AC: AC11, AC18, AC54
 - Commit: feat(timeline): add entry index, cut length and stats
-- Depends: —
+- Depends: T018
 - Size: M
 - Risk: high
 
@@ -59,16 +68,16 @@ previous: fa06c47
 - Risk: high
 
 ### T006 — Serve sessions and ungrouped lists
-- Do: `ui/api_sessions.go`: `/api/sessions`, `/api/ungrouped`, `/api/sessions/{id}`; opaque id and cursor codecs with list-kind tag; summary built from `SessionStats`; active window constant.
-- Tests: TestAPI_SessionsPagedNewestFirst (AC15); TestAPI_UngroupedSummaryShape (AC16); TestAPI_SessionSummary (AC17); TestAPI_EmptyStoreEmptyLists (E1); TestAPI_LimitValidation (E3, AC21); TestAPI_CursorFromOtherListIs400 (E4); TestAPI_PagingWhileSessionMovesNoDuplicates (E5)
+- Do: `ui/api_sessions.go`: `/api/sessions`, `/api/ungrouped`, `/api/sessions/{id}`; opaque id and `after` codecs with list-kind tag (`?after=`, `next_after`; no identifier or test name contains "cursor", CR-001); summary built from `SessionStats`; active window constant.
+- Tests: TestAPI_SessionsPagedNewestFirst (AC15); TestAPI_UngroupedSummaryShape (AC16); TestAPI_SessionSummary (AC17); TestAPI_EmptyStoreEmptyLists (E1); TestAPI_LimitValidation (E3, AC21); TestAPI_AfterFromOtherListIs400 (E4); TestAPI_PagingWhileSessionMovesNoDuplicates (E5)
 - AC: AC15, AC16, AC17, AC21
 - Commit: feat(ui): add sessions and ungrouped api
-- Depends: T003, T005
+- Depends: T003, T005, T018
 - Size: M
 - Risk: low
 
 ### T007 — Serve timeline, exchange detail and bodies
-- Do: `ui/entries.go` (kind mapping, ids, 16 KiB truncation), `ui/api_timeline.go` (cursor, `stream_since`), `ui/api_exchange.go` (detail, body with 5 MiB cap).
+- Do: `ui/entries.go` (kind mapping, ids, 16 KiB truncation), `ui/api_timeline.go` (`after`, `next_after`, `stream_since`), `ui/api_exchange.go` (detail, body with 5 MiB cap).
 - Tests: TestAPI_TimelineStableIdsAndOrder (AC18); TestAPI_TimelineCutsAt16KiB (AC18); TestUI_TimelineMatchesCLIViewer (AC11); TestAPI_TimelineFoldedExchangeFlagsMissingUsage (E15); TestAPI_ExchangeDetail (AC19); TestAPI_BodyTruncatesAt5MiB (AC20, E7); TestAPI_BodyNotStored404 (AC20, E8); TestAPI_NotFoundAndBadRequestCodes (AC21)
 - AC: AC11, AC18, AC19, AC20, AC21
 - Commit: feat(ui): add timeline and exchange api
@@ -113,7 +122,7 @@ previous: fa06c47
 - Risk: high
 
 ### T012 — Frontend shell, sessions list and ungrouped list
-- Do: `internal/ui/web/`: `index.html`, `style.css` (light/dark), `app.js` hash router, `store.js`, `api.js`, `entries.js` helpers (time format, local time + relative hover), `session-list` and ungrouped components with Load more, live row updates from `/api/stream` (a session that moves to the top while the user pages is shown there by the live update, and Load more skips nothing it has not shown); Go scan tests for the embed.
+- Do: `internal/ui/web/`: `index.html`, `style.css` (light/dark), `app.js` hash router, `store.js`, `api.js`, `entries.js` helpers (time format, local time + relative hover), `session-list` and ungrouped components with Load more (sends `?after=`, reads `next_after`), live row updates from `/api/stream` (a session that moves to the top while the user pages is shown there by the live update, and Load more skips nothing it has not shown); Go scan tests for the embed.
 - Tests: TestWeb_ReferencedAssetsAreEmbedded (AC36); TestWeb_NoInlineOrExternalReferences (AC34); TestWeb_NoHTMLInjectionSinks (AC35, E9)
 - AC: AC34, AC35, AC36, AC37, AC38, AC48, AC49
 - Commit: feat(ui): add web shell and session lists
@@ -177,3 +186,4 @@ previous: fa06c47
 - v1 (2026-10-31) — revised to spec v2 and D16, still draft: T009 builds the connect snapshot (taken after subscribing, written outside the live buffer), `snapshot_error` with `retry: 30000`, the per-stream record and replace-by-exchange; row-id resume tests replaced by snapshot tests; the Q2 gate is gone; T013 reconnect is a new stream with no refetch and keeps the snapshot-error state
 - v1 (2026-10-31) — T009 split, still draft: T009 is the connect snapshot and `snapshot_error`, T010 the per-stream record, entry-update convergence and `applyEvents` (depends on T009); later tasks renumbered T011–T017
 - v2 (2026-10-31) — reopened: spec v3 changed its contract sections
+- v2 (2026-10-31) — CR-001: new T018 reworks done T002 (cursor to after); T003 gains the fixture fix; T006, T007, T012 wording and test name use `after` / `next_after`; T006 depends on T018

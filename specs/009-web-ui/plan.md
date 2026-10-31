@@ -1,12 +1,12 @@
 ---
 feature: 009-web-ui
-status: draft
+status: approved
 version: 2
-approved:
-approved-by:
-sha256:
-fingerprint:
-spec-fingerprint:
+approved: 2026-10-31T15:56:12Z
+approved-by: human
+sha256: ab7ca115e59843c9841cb16aaaeb7fbbe23d7ed2440b859733148413ff94f769
+fingerprint: 060da350aa26bcd11e9bba9846962e4a9c772a0bd2227d5cff95f8fcffa5f4c1
+spec-fingerprint: 5fec66999c80961105a1e4db530b14bfd4bf92adb75229b01aa742b731df8414
 previous: fa06c47
 ---
 # Plan — 009-web-ui
@@ -65,8 +65,8 @@ context plus a 5 s timeout (AC10): `DeadlineExceeded` is 504 `timeout`, `Cancele
 `store_error` with a fixed message (D5).
 Paging is keyset with a unique tie-breaker already in the CLI sort: sessions by `MAX(started_at) DESC` then
 `principal_id, client, session_key` (`reader_sessions.go:29-30`); ungrouped by `started_at DESC, request_id`
-(`:98`); timeline by (start, request id, index). Cursors hold the full tuple, so tied rows are neither
-repeated nor skipped. A live session can move up past the cursor while the user pages: Load more never
+(`:98`); timeline by (start, request id, index). The `after` values hold the full tuple, so tied rows are neither
+repeated nor skipped. Paging parameter is `?after=`, response field `next_after` (CR-001). A live session can move up past the `after` position while the user pages: Load more never
 repeats it, and `/api/stream` session events move it to the top in place.
 
 **Timeline extensions (AC11, AC18, AC35).** `internal/timeline`: `Options.Cut int` (0 keeps
@@ -75,7 +75,7 @@ its exchange, set by `BuildWithUsage`); `Entry.Thinking` filled only when the st
 thinking text (Q1: otherwise no `thinking` entry). `timeline.SessionStats(src, row)` returns model-call,
 tool-call, error counts and the usage `Summary` from exchanges+events only (no content reads), sharing `callUsage`.
 The UI entry mapping (D2) lives in `internal/ui/entries.go`: id `<request_id>:<index>`, `Omitted > 0` becomes
-`truncated: true`. Cursors are opaque base64url of (start, request id, index), the order `BuildWithUsage` emits.
+`truncated: true`. `after` values are opaque base64url of (start, request id, index), the order `BuildWithUsage` emits.
 Entries are **not** append-only: each exchange's entries are its diff against the best-matching exchange that
 *started* earlier (`build.go:124`, `bestMatch` at `:195`), so a late-stored, earlier-started exchange can
 change a later exchange's entries and shift its indexes. `<request_id>:<index>` is stable only within one
@@ -84,10 +84,10 @@ version of an exchange, so the unit of update is the whole exchange, replaced by
 
 **API (AC13-AC21).** Routes under `/api`: health, sessions, ungrouped, sessions/{id}, timeline, exchanges/{id},
 body, stream, sessions/{id}/stream. A method guard answers 405+`Allow: GET` (HEAD included) before routing;
-`writeErr(w, status, code, msg)` is the only error path. Session `{id}` and cursors are opaque base64url
-(D3); a cursor carries a list-kind tag, so one from another list is 400 (E4). Limits: sessions/ungrouped
+`writeErr(w, status, code, msg)` is the only error path. Session `{id}` and `after` values are opaque base64url
+(D3); an `after` value carries a list-kind tag, so one from another list is 400 (E4). Limits: sessions/ungrouped
 default 50 cap 200, timeline default 500 cap 2000; `limit<=0` or non-numeric is 400, above cap clamps (E3).
-Timeline: build the whole session via `BuildWithUsage`, map, slice after the cursor; `stream_since` comes
+Timeline: build the whole session via `BuildWithUsage`, map, slice after the `after` value; `stream_since` comes
 from the same read as the exchanges and is informational only (AC18). Body: `Content(hash)`, first 5 MiB,
 `X-Body-Truncated`, stored `content-type` (404 `body_not_stored` if hash empty/missing). Active =
 `now - last_at < ActiveWindow` (const 5 min, D9). `since`/`Last-Event-ID` malformed is 400 (AC21).
@@ -188,6 +188,8 @@ showing it through the native `error` event and the reconnect attempt; it clears
 | AC55 | ui/stream_test | TestLive_ConvergesWithReloadAndCLI |
 
 ## Test strategy
+Vocabulary rule (CR-001): no identifier, file, test name or comment in `store`, `timeline`, `ui` or `web/` may
+contain the substring "cursor" (the purity test bans it, AC12); the paging key is `after` / `next_after`.
 Behaviour tests over a real temp store and `httptest` servers, under `-race`; the stream's snapshot source is a
 small interface so tests inject a failing or slow store (E22). Named tests are in the AC table; tasks.md maps
 E1-E22 to tests. Required: out-of-order `TestLive_OutOfOrderInsertsAtSortedPosition`; resume
@@ -211,3 +213,4 @@ stable ids `TestAPI_TimelineStableIdsAndOrder`; convergence `TestLive_ConvergesW
 - v1 (2026-10-31) — revised to spec v2 and D16, still draft: resume by row id replaced by a connect snapshot taken after subscribing and written outside the 64-message buffer; replace-by-exchange for `entries` and `exchange`; `snapshot_error` with `retry: 30000` (E22); reconnect is a new stream (AC50); row-id resume tests replaced; plan tightened
 - v1 (2026-10-31) — T009 split, still draft: snapshot and `snapshot_error` (T009), sent-record and convergence (T010); later tasks renumbered T011–T017
 - v2 (2026-10-31) — reopened: spec v3 changed its contract sections
+- v2 (2026-10-31) — CR-001: paging parameter `cursor` renamed `after` (`next_after`) in Design; vocabulary rule added to Test strategy; T002 reworked as T018
