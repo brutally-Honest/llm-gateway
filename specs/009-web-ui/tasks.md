@@ -1,12 +1,12 @@
 ---
 feature: 009-web-ui
-status: draft
+status: approved
 version: 4
-approved:
-approved-by:
-sha256:
-fingerprint:
-plan-fingerprint:
+approved: 2026-10-31T16:51:31Z
+approved-by: human
+sha256: 20689a1ac4cb2e0b69374a56179c21ccbfba5a596b637b76beb0698890acec38
+fingerprint: 8bfc6a875a66e1b75c5f90c68cd0a537933dbbd2be7f81f9a10c2dcc635af613
+plan-fingerprint: e2962ea3ecddb732149bde3bdebbea7a69e3cdf1405e3596e96c3a58b845a6d0
 previous: 1578dc6
 ---
 # Tasks — 009-web-ui
@@ -85,12 +85,48 @@ previous: 1578dc6
 - Size: L
 - Risk: high
 
+### T019 — Rename tool_use_id to tool_call_id in the UI API
+- Do: `internal/ui/entries.go` (struct field `ToolCallID`, json tag `tool_call_id`) and every `internal/ui` test and fixture using the old name; no behaviour change.
+- Tests: existing T007 tests pass with the renamed field (TestAPI_TimelineStableIdsAndOrder, TestUI_TimelineMatchesCLIViewer); TestAPI_ToolEntriesCarryToolCallID (AC18: tool call and tool result JSON carry `tool_call_id` and not `tool_use_id`); TestCore_NoProviderOrClientIdentifiers green over `../ui` (AC12); `make verify` green
+- AC: AC18 (rework), AC12
+- Commit: refactor(ui): rename tool call id field
+- Depends: T007
+- Size: S
+- Risk: low
+
+### T020 — Accept loopback host forms on the UI port
+- Do: `internal/ui/ui.go` `allowedHosts` accepts `127.0.0.1`, `localhost`, `[::1]` and the configured listen host, each only with the configured UI port; any other port, or a missing port where the listener needs one, gets 421.
+- Tests: TestUI_AllLoopbackHostFormsAccepted (AC31: 127.0.0.1, localhost, [::1] and a 127.0.0.2 listen host each served; evil.example still 421); TestUI_LoopbackHostWrongPortIs421 (AC31, D8: a wrong port on each of the four host forms, and a missing port, each answer 421)
+- AC: AC31 (rework)
+- Commit: fix(ui): accept loopback host forms on the ui port
+- Depends: T019
+- Size: S
+- Risk: low
+
+### T021 — Restrict static files to GET
+- Do: `internal/ui/middleware.go` answers non-GET outside `/api` with 405 and `Allow: GET` (D4).
+- Tests: TestUI_StaticNonGETIs405 (D4, AC13: POST, PUT, DELETE, HEAD on `/` and an asset answer 405 with `Allow: GET`)
+- AC: AC13 (rework)
+- Commit: fix(ui): restrict static files to get
+- Depends: T020
+- Size: S
+- Risk: low
+
+### T022 — Pin the CSP per response type
+- Do: tests only; no production change expected.
+- Tests: TestUI_BodyEndpointSendsStricterCSP (AC33: the body endpoint answers `default-src 'none'; sandbox`); TestUI_NonBodyResponsesSendStandardCSP (AC33: page, asset, API, SSE, 404, 405, 421 all send the standard CSP)
+- AC: AC33 (rework)
+- Commit: test(ui): pin csp per response type
+- Depends: T021
+- Size: S
+- Risk: low
+
 ### T008 — Add the hub and basic live streams
 - Do: `ui/hub.go`: `Publish` is a non-blocking `select` on the queue and a `done` channel, and the queue is never closed, so a publish after `Close` is a silent no-op (no panic recovery involved); dispatcher drains every queued commit and coalesces by session, so N queued commits for one session give one read; a full timeline build only when at least one session stream watches that session, otherwise `SessionStats` only for `/api/stream`; bounded subscribers (64), 32 stream cap, `Close`. `ui/stream.go`: `/api/stream`, `/api/sessions/{id}/stream` live events only (the connect snapshot is T009, entry updates T010), heartbeat.
-- Tests: TestHub_PublishNeverBlocks (AC28); TestHub_PublishAfterCloseIsNoOp (AC2, AC28: neither panics nor blocks, under `-race`); TestHub_CoalescesQueuedCommitsPerSession (AC23, AC28: N commits queued for one session before the dispatcher runs → one session read and one batch carrying all N exchanges); TestHub_UnwatchedSessionGetsStatsOnly (AC22, AC28: commits for a session with no session stream do no timeline build and still produce the `/api/stream` session event); TestHub_FullBufferDropsOnlyThatSubscriber (AC29, E11); TestStream_33rdIs503 (AC30, E12); TestStream_GlobalSendsLiveSessionEvent (AC22); TestStream_SessionSendsEntriesWithRowID (AC23); TestStream_HeartbeatEveryInterval (AC26)
+- Tests: TestHub_PublishNeverBlocks (AC28); TestHub_PublishAfterCloseIsNoOp (AC2, AC28: neither panics nor blocks, under `-race`); TestHub_CoalescesQueuedCommitsPerSession (AC23, AC28: N commits queued for one session before the dispatcher runs → one session read and one batch carrying all N exchanges); TestHub_UnwatchedSessionGetsStatsOnly (AC22, AC28: commits for a session with no session stream do no timeline build and still produce the `/api/stream` session event); TestHub_FullBufferDropsOnlyThatSubscriber (AC29, E11); TestStream_33rdIs503 (AC30, E12); TestStream_GlobalSendsLiveSessionEvent (AC22); TestStream_SessionSendsEntriesWithRowID (AC23); TestStream_HeartbeatEveryInterval (AC26); TestHub_PublishReturnsWhenQueueFull (AC28: with the dispatcher blocked and the hub's own queue full, Publish returns immediately and the hub takes the overflow path, closing all streams; run under -race)
 - AC: AC2, AC22, AC23, AC26, AC28, AC29, AC30
 - Commit: feat(ui): add live stream hub
-- Depends: T004, T007
+- Depends: T004, T007, T019, T020, T021, T022
 - Size: M
 - Risk: high
 
@@ -132,14 +168,14 @@ previous: 1578dc6
 - Manual: M1 — open the page against a real store: empty store shows an empty state; sessions table, active badge, Load more, ungrouped list, light/dark follow the OS, a prompt containing `<script>` shows literally.
 
 ### T013 — Frontend session timeline
-- Do: `web/session-view.js` and `tool-card.js`, `model-chip.js`: header totals, turns, tool call and result cards, chips, truncated link, text filter and tool picker, copy buttons, sorted insertion and replace-by-exchange (for `entries` and `exchange` events alike) in `entries.js`.
+- Do: `web/session-view.js` and `tool-card.js`, `model-chip.js`: header totals, turns, tool call and result cards (paired by `tool_call_id`), chips, truncated link, text filter and tool picker, copy buttons, sorted insertion and replace-by-exchange (for `entries` and `exchange` events alike) in `entries.js`.
 - Tests: none — frontend has no JS test framework (spec); the sorted-insert and replace rules are proven by TestLive_OutOfOrderInsertsAtSortedPosition and TestLive_ConvergesWithReloadAndCLI in T010
 - AC: AC39, AC40, AC41, AC42, AC43, AC44
 - Commit: feat(ui): add session timeline view
 - Depends: T007, T012
 - Size: L
 - Risk: low
-- Manual: M2 — open a real Claude Code session: turns start at prompts, tool calls pair with results (pending shown while waiting, red on error), chips show unknown counters as unknown, filters and copy work, "truncated, open raw" links to the exchange.
+- Manual: M2 — open a real Claude Code session: turns start at prompts, tool calls pair with results by `tool_call_id` (pending shown while waiting, red on error), chips show unknown counters as unknown, filters and copy work, "truncated, open raw" links to the exchange.
 
 ### T014 — Frontend live updates and reconnect
 - Do: `api.js` session stream (no `?since`, no timeline refetch: a reconnect is a new stream whose snapshot replaces every exchange held), subscribe only for active sessions, autoscroll rule, "live: disconnected, retrying" banner, snapshot-error state set by `snapshot_error`, kept through the native `error` event and the reconnect attempt, cleared on the first snapshot event of a later connection.
@@ -190,3 +226,4 @@ previous: 1578dc6
 - v3 (2026-10-31) — reopened: CR-002: T007 gains an API test for unreadable reasoning
 - v3 (2026-10-31) — CR-002: T007 Tests line gains TestAPI_TimelineOmitsUnreadableReasoning
 - v4 (2026-10-31) — reopened: spec v4 changed its contract sections
+- v5 (2026-10-31) — CR-003: new T019, T020, T021, T022 rework done T007 and T005; T008 gains TestHub_PublishReturnsWhenQueueFull and depends on T019 to T022; T013 wording uses tool_call_id

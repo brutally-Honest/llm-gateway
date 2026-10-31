@@ -1,12 +1,12 @@
 ---
 feature: 009-web-ui
-status: draft
+status: approved
 version: 3
-approved:
-approved-by:
-sha256:
-fingerprint:
-spec-fingerprint:
+approved: 2026-10-31T16:51:28Z
+approved-by: human
+sha256: 616e8cc51501f5da1e0ce5baa9d1d5ca3775279a76b1eb533741998cadb5be52
+fingerprint: e2962ea3ecddb732149bde3bdebbea7a69e3cdf1405e3596e96c3a58b845a6d0
+spec-fingerprint: 665ac9bd04ff253338b0fef5b401ac657fe99866a32f1cbae2509bb8e9b03759
 previous: 45916f6
 ---
 # Plan — 009-web-ui
@@ -134,7 +134,7 @@ nil is a no-op; a panic is recovered and logged. `Store` interface unchanged.
 **Security (AC8, AC31-AC35).** Middleware order: security headers (every response, including 421/403/500),
 recover (logs path, 500 envelope if nothing written), Host check (421), Origin check (403; no CORS header
 ever). Allowed set from the bound port and `ui.listen_addr` host (D8). Static files via an embedded `fs.FS`
-server, GET only. Tests scan `web/` for absolute URLs, inline script/style and `on*=` (AC34), and `web/*.js`
+server, GET only (other methods 405 with `Allow: GET`). The exchange body endpoint overrides the CSP with `default-src 'none'; sandbox` (AC33); every other response carries the standard CSP. The entry JSON field is `tool_call_id` (AC18). Tests scan `web/` for absolute URLs, inline script/style and `on*=` (AC34), and `web/*.js`
 for `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write` (AC35; captured data uses `textContent`).
 
 **Process wiring (AC1, AC2, AC5-AC7).** `run.go`: after `startCapture` and proxy bind, if `cfg.UI.Enabled && capt != nil`
@@ -165,9 +165,9 @@ showing it through the native `error` event and the reconnect attempt; it clears
 | AC8 | ui/middleware.go | TestUI_PanicRecoveredKeepsServing |
 | AC9, AC10 | store/reader_ctx.go, ui/errors.go | TestReader_WriteThroughReaderFails, TestUI_StoreTimeoutIs504, TestReader_CancelledContextAbandonsQuery |
 | AC11 | timeline/, ui/entries.go | TestUI_TimelineMatchesCLIViewer, TestSessionStats_MatchesBuildCountsAndUsage |
-| AC12, AC13, AC14 | core/purity_test.go, ui/api.go | TestCore_NoProviderOrClientIdentifiers (adds ../ui), TestAPI_NonGETIs405WithAllow, TestAPI_Health |
+| AC12, AC13, AC14 | core/purity_test.go, ui/api.go | TestCore_NoProviderOrClientIdentifiers (adds ../ui), TestAPI_NonGETIs405WithAllow, TestUI_StaticNonGETIs405, TestAPI_Health |
 | AC15, AC16, AC17 | ui/api_sessions.go, store/reader_ctx.go | TestAPI_SessionsPagedNewestFirst, TestAPI_UngroupedSummaryShape, TestAPI_SessionSummary, TestReader_SessionPageTiesBrokenByKey, TestReader_UngroupedPageTiesBrokenByRequestID |
-| AC18 | ui/api_timeline.go | TestAPI_TimelineStableIdsAndOrder, TestAPI_TimelineCutsAt16KiB |
+| AC18 | ui/api_timeline.go | TestAPI_TimelineStableIdsAndOrder, TestAPI_TimelineCutsAt16KiB, TestAPI_ToolEntriesCarryToolCallID |
 | AC19, AC20 | ui/api_exchange.go | TestAPI_ExchangeDetail, TestAPI_BodyTruncatesAt5MiB, TestAPI_BodyNotStored404 |
 | AC21 | ui/api.go, stream.go | TestAPI_NotFoundAndBadRequestCodes, TestStream_LastEventIDAndSinceValidatedNotNarrowing |
 | AC22 | ui/stream.go | TestStream_GlobalSnapshotThenSessionEvent, TestHub_UnwatchedSessionGetsStatsOnly |
@@ -175,9 +175,9 @@ showing it through the native `error` event and the reconnect attempt; it clears
 | AC24 | ui/stream.go | TestStream_SnapshotEqualsFreshTimelineWithAndWithoutResumeInputs, TestStream_CommitOutOfRowIDOrderStillReachesPage, TestStream_CommitDuringSnapshotNotMissed |
 | AC25 | web/entries.js, ui/stream_test | TestLive_OutOfOrderInsertsAtSortedPosition |
 | AC26, AC27 | ui/stream.go, capture/pipeline.go | TestStream_HeartbeatEveryInterval, TestSink_OnCommitAfterStore, TestSink_OnCommitSeesEventsThroughReadOnlyReader, TestSink_OnCommitAfterSaveParseFails |
-| AC28 | ui/hub.go, capture | TestHub_PublishNeverBlocks, TestHub_PublishAfterCloseIsNoOp, TestSink_SlowOnCommitDoesNotStallWorker, TestSink_PanickingOnCommitIsRecovered |
+| AC28 | ui/hub.go, capture | TestHub_PublishNeverBlocks, TestHub_PublishReturnsWhenQueueFull, TestHub_PublishAfterCloseIsNoOp, TestSink_SlowOnCommitDoesNotStallWorker, TestSink_PanickingOnCommitIsRecovered |
 | AC29, AC30 | ui/hub.go, stream.go | TestHub_FullBufferDropsOnlyThatSubscriber, TestStream_SnapshotLargerThan64DoesNotDropSubscriber, TestStream_33rdIs503 |
-| AC31, AC32, AC33 | ui/middleware.go | TestUI_BadHostIs421, TestUI_BadOriginIs403NoCORS, TestUI_SecurityHeadersOnEveryResponse |
+| AC31, AC32, AC33 | ui/middleware.go | TestUI_BadHostIs421, TestUI_AllLoopbackHostFormsAccepted, TestUI_LoopbackHostWrongPortIs421, TestUI_BadOriginIs403NoCORS, TestUI_SecurityHeadersOnEveryResponse, TestUI_BodyEndpointSendsStricterCSP, TestUI_NonBodyResponsesSendStandardCSP |
 | AC34, AC35, AC36 | ui/web, ui/web.go | TestWeb_NoInlineOrExternalReferences, TestWeb_NoHTMLInjectionSinks, TestWeb_ReferencedAssetsAreEmbedded |
 | AC37, AC38 | web/session-list.js, app.js | manual M1 (T012, T017) |
 | AC39, AC40, AC41, AC42, AC43, AC44 | web/session-view.js, tool-card.js, model-chip.js | manual M2 |
@@ -215,3 +215,4 @@ stable ids `TestAPI_TimelineStableIdsAndOrder`; convergence `TestLive_ConvergesW
 - v2 (2026-10-31) — reopened: spec v3 changed its contract sections
 - v2 (2026-10-31) — CR-001: paging parameter `cursor` renamed `after` (`next_after`) in Design; vocabulary rule added to Test strategy; T002 reworked as T018
 - v3 (2026-10-31) — reopened: spec v4 changed its contract sections
+- v4 (2026-10-31) — CR-003: tool_call_id field name, two-level CSP, Host forms and static GET-only tests added to AC coverage; no design change
