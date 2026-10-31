@@ -154,6 +154,16 @@ writing spec v1; approving the spec confirms them.
   EventSource's native `error` event. The server's close still makes the browser fire its
   native `error`; the page keeps the snapshot-error state through it and through the reconnect
   attempt, and clears it only when a later snapshot succeeds (spec E22).
+- D17 (2026-10-31, signed off by the user) — The purity test (`internal/core/purity_test.go`,
+  AC12, D10) gets one narrow exemption: in a file under `internal/ui/web/` ending in `.css`, the
+  CSS property name `cursor` at the start of a declaration line (`^\s*cursor\s*:`) is not
+  counted. Only that name is removed before the scan, so the rest of the line is still checked.
+  The word stays banned everywhere else: in JS, HTML and Go, in other CSS positions (selectors,
+  values, comments, a declaration after other text on its line), and in stylesheets outside
+  `internal/ui/web/`. `TestPurity_CursorExemptionIsNarrow` pins each of those cases. — why: the
+  ban is a substring match aimed at the client name, and it also caught the standard CSS
+  property, which the frontend needs for a pointer on buttons. Every other banned word, and
+  every other use of this one, keeps the check as strict as before.
 
 ## Notes
 - 2026-10-31 — Grounding read while drafting: `store.OpenReader` already opens `mode=ro` and is
