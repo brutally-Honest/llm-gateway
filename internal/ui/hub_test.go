@@ -199,16 +199,20 @@ func TestHub_UnwatchedSessionGetsStatsOnly(t *testing.T) {
 }
 
 func TestHub_NobodyWatchingDoesNoRead(t *testing.T) {
+	// The dispatcher is driven by hand, so whether anyone was subscribed when a commit
+	// was handled never depends on goroutine timing.
 	f := &fakeRead{}
 	h := testHub(16, f)
 	defer h.Close()
-	h.start()
-	h.Publish(commit("a"))
+	h.dispatch([]capture.Committed{commit("a")})
+	if n := f.count(); n != 0 {
+		t.Fatalf("reads with nobody watching = %d, want 0", n)
+	}
 	glob, _ := h.subscribe("")
-	h.Publish(commit("b"))
+	h.dispatch([]capture.Committed{commit("b")})
 	recv(t, glob)
-	if f.count() > 1 {
-		t.Fatalf("reads = %d", f.count())
+	if n := f.count(); n != 1 {
+		t.Fatalf("reads after a global subscriber joined = %d, want 1", n)
 	}
 }
 
