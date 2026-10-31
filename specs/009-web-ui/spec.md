@@ -1,16 +1,16 @@
 ---
 feature: 009-web-ui
 kind: feat
-status: approved
-version: 2
+status: draft
+version: 3
 created: 2026-10-31
 supersedes:
 branch: feat/009-web-ui
-approved: 2026-10-31T15:32:36Z
-approved-by: human
-sha256: f650f7516b84231b2a7539a31ebc30ff1dfa8d7d0b09e84578cac4bd5d486fb9
-fingerprint: 7db1fba8de90bf2daf7e0dcd63e861315208b433215a7e39b15384154de9895e
-previous: 87c8c4b
+approved:
+approved-by:
+sha256:
+fingerprint:
+previous: ae25bf8
 ---
 # Web UI
 
@@ -393,3 +393,4 @@ None. The requirement's decisions are recorded above; smaller choices are in res
     per open stream (research D16, Q2).
   - E22 and a required test: a failed connect snapshot sends an SSE `snapshot_error` event, `retry: 30000`
     and closes; the page shows an error state and does not hot-loop (research D16 addendum).
+- v3 (2026-10-31) — reopened: CR-001: Rename the paging parameter cursor to after
