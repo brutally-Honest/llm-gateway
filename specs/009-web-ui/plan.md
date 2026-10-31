@@ -1,13 +1,13 @@
 ---
 feature: 009-web-ui
-status: approved
-version: 2
-approved: 2026-10-31T15:56:12Z
-approved-by: human
-sha256: ab7ca115e59843c9841cb16aaaeb7fbbe23d7ed2440b859733148413ff94f769
-fingerprint: 060da350aa26bcd11e9bba9846962e4a9c772a0bd2227d5cff95f8fcffa5f4c1
-spec-fingerprint: 5fec66999c80961105a1e4db530b14bfd4bf92adb75229b01aa742b731df8414
-previous: fa06c47
+status: draft
+version: 3
+approved:
+approved-by:
+sha256:
+fingerprint:
+spec-fingerprint:
+previous: 45916f6
 ---
 # Plan — 009-web-ui
 
@@ -214,3 +214,4 @@ stable ids `TestAPI_TimelineStableIdsAndOrder`; convergence `TestLive_ConvergesW
 - v1 (2026-10-31) — T009 split, still draft: snapshot and `snapshot_error` (T009), sent-record and convergence (T010); later tasks renumbered T011–T017
 - v2 (2026-10-31) — reopened: spec v3 changed its contract sections
 - v2 (2026-10-31) — CR-001: paging parameter `cursor` renamed `after` (`next_after`) in Design; vocabulary rule added to Test strategy; T002 reworked as T018
+- v3 (2026-10-31) — reopened: spec v4 changed its contract sections

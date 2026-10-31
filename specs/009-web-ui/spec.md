@@ -1,15 +1,15 @@
 ---
 feature: 009-web-ui
 kind: feat
-status: draft
+status: approved
 version: 4
 created: 2026-10-31
 supersedes:
 branch: feat/009-web-ui
-approved:
-approved-by:
-sha256:
-fingerprint:
+approved: 2026-10-31T16:47:35Z
+approved-by: human
+sha256: e1dc7bd447407ec526c591e75be6d21f2c9766aa3cd3e0a9d02daea71f539f55
+fingerprint: 665ac9bd04ff253338b0fef5b401ac657fe99866a32f1cbae2509bb8e9b03759
 previous: 1587b97
 ---
 # Web UI
@@ -117,7 +117,7 @@ loopback address (research D8).
   Each entry has the id `<exchange_id>:<index>`, where index is its position within its own
   exchange's entries; for the same stored exchanges every call returns the same ids. Entry
   kinds are: user prompt, assistant text, thinking (when the stored message content holds a
-  thinking block), tool call (name, tool_use_id, input JSON), tool result (tool_use_id,
+  thinking block), tool call (name, tool_call_id, input JSON), tool result (tool_call_id,
   is_error, content text), model call (exchange id, model, status, duration, usage), error,
   and the CLI viewer's other kinds (research D2). Each entry carries its id, exchange id, index
   and exchange start time. A text field longer than 16 KiB is cut at 16 KiB with `truncated: true`.
@@ -190,9 +190,12 @@ loopback address (research D8).
 - **AC32** — When a request carries an Origin header that is not one of the UI origins, the
   system shall answer 403; no response from the UI carries any CORS header.
 - **AC33** — When the UI answers any request (pages, assets, API, SSE, errors), the response
-  shall carry `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self';
-  img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'`,
-  `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`.
+  shall carry `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and a
+  `Content-Security-Policy`: `default-src 'self'; script-src 'self'; style-src 'self';
+  img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'`, except that
+  a response from the exchange body endpoint (AC20) carries
+  `Content-Security-Policy: default-src 'none'; sandbox` instead, so a stored HTML body can
+  never run.
 - **AC34** — When the page loads, it shall load no inline script or style and request nothing
   outside the UI origin (no CDN, no web font).
 - **AC35** — When the page shows captured content (prompts, text, thinking, tool input, tool
@@ -210,7 +213,7 @@ loopback address (research D8).
 - **AC39** — When `#/sessions/{id}` is opened, the page shall show a header with the session's
   totals and the entries in order, grouped into turns that each start at a user prompt.
 - **AC40** — When the timeline shows a tool call, it shall show it and its result (paired by
-  tool_use_id) as one card: tool name, collapsible pretty-printed input, collapsible result, a
+  tool_call_id) as one card: tool name, collapsible pretty-printed input, collapsible result, a
   red marker when is_error is true, and "pending" while no result has arrived.
 - **AC41** — When the timeline shows a model call, it shall show a chip with model, status,
   duration and the four token counters, with unknown counters shown as unknown, not 0.
@@ -399,3 +402,7 @@ None. The requirement's decisions are recorded above; smaller choices are in res
     value; E1, E4, E5 and the Decisions line reworded to match. Reason: "cursor" is a client name
     the purity test bans (AC12, D10). Earlier changelog lines keep their wording as history.
 - v4 (2026-10-31) — reopened: CR-003: Rename tool_use_id to tool_call_id, two-level CSP, and T005/T008 gaps
+  - AC18, AC40 (CR-003): the tool-call field is `tool_call_id` (was `tool_use_id`), the canonical
+    name the store and timeline already use; `tool_use_id` is a provider wire name the purity test
+    bans (AC12, D10). AC33 (CR-003): the exchange body endpoint carries the stricter
+    `default-src 'none'; sandbox` CSP instead of the standard one; every other response is unchanged.

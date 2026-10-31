@@ -1,13 +1,13 @@
 ---
 feature: 009-web-ui
-status: approved
-version: 3
-approved: 2026-10-31T16:07:44Z
-approved-by: human
-sha256: 0afa1df4e0e7a95ca4334c339b189fc99ce8893a51f4bb6688d4cdc6ee48f3d3
-fingerprint: 8c499f774f6d1241c59ad2dc2b8557b062d84dc5fe0ba57595472c3c1243ab6c
-plan-fingerprint: 060da350aa26bcd11e9bba9846962e4a9c772a0bd2227d5cff95f8fcffa5f4c1
-previous: 45916f6
+status: draft
+version: 4
+approved:
+approved-by:
+sha256:
+fingerprint:
+plan-fingerprint:
+previous: 1578dc6
 ---
 # Tasks — 009-web-ui
 
@@ -189,3 +189,4 @@ previous: 45916f6
 - v2 (2026-10-31) — CR-001: new T018 reworks done T002 (cursor to after); T003 gains the fixture fix; T006, T007, T012 wording and test name use `after` / `next_after`; T006 depends on T018
 - v3 (2026-10-31) — reopened: CR-002: T007 gains an API test for unreadable reasoning
 - v3 (2026-10-31) — CR-002: T007 Tests line gains TestAPI_TimelineOmitsUnreadableReasoning
+- v4 (2026-10-31) — reopened: spec v4 changed its contract sections
