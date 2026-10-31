@@ -2,6 +2,8 @@ package ui
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"sort"
 	"sync"
@@ -43,6 +45,8 @@ func (s sessIdent) id() string {
 type liveExchange struct {
 	RowID     int64
 	RequestID string
+	StartedAt int64
+	Hash      string // of the marshalled entry list; a stream compares it with what it last sent
 	Entries   []entryJSON
 }
 
@@ -50,7 +54,9 @@ type liveExchange struct {
 // changed after it is built. A global stream gets Summary; a session stream gets Exchanges.
 type liveMsg struct {
 	Summary   *sessionSummary
-	Exchanges []liveExchange
+	Exchanges []liveExchange // the committed exchanges, in row id order
+	All       []liveExchange // every exchange of the session, in timeline order
+	Inactive  bool           // the session's last exchange started over ActiveWindow ago (E21)
 }
 
 // readFn reads what a batch of commits to one session needs: the summary and/or the
@@ -297,7 +303,7 @@ func (h *Hub) dispatch(batch []capture.Committed) {
 		}
 		if session && len(m.Exchanges) > 0 {
 			for _, s := range h.targets(id, false) {
-				h.send(s, liveMsg{Exchanges: m.Exchanges})
+				h.send(s, liveMsg{Exchanges: m.Exchanges, All: m.All, Inactive: m.Inactive})
 			}
 		}
 	}
@@ -338,6 +344,14 @@ func readLive(ctx context.Context, d Deps, who sessIdent, ids []string, summary,
 			}
 		}
 		sort.Slice(m.Exchanges, func(i, j int) bool { return m.Exchanges[i].RowID < m.Exchanges[j].RowID })
+		m.All = all
+		if n := len(all); n > 0 {
+			last := all[0].StartedAt
+			for _, x := range all {
+				last = max(last, x.StartedAt)
+			}
+			m.Inactive = d.now().Sub(time.Unix(0, last)) >= ActiveWindow
+		}
 	}
 	return m, nil
 }
@@ -370,9 +384,18 @@ func sessionExchanges(c *store.CtxReader, who sessIdent) ([]liveExchange, error)
 		if !ok {
 			i = len(out)
 			at[e.ExchangeID] = i
-			out = append(out, liveExchange{RowID: rowID[e.ExchangeID], RequestID: e.ExchangeID})
+			out = append(out, liveExchange{RowID: rowID[e.ExchangeID], RequestID: e.ExchangeID,
+				StartedAt: byID[e.ExchangeID].StartedAt})
 		}
 		out[i].Entries = append(out[i].Entries, e)
+	}
+	for i := range out {
+		b, err := json.Marshal(out[i].Entries)
+		if err != nil {
+			return nil, err
+		}
+		sum := sha256.Sum256(b)
+		out[i].Hash = string(sum[:])
 	}
 	return out, nil
 }

@@ -66,7 +66,8 @@ func (h *Hub) serve(w http.ResponseWriter, r *http.Request, session string) {
 	hd.Set("Content-Type", "text/event-stream")
 	hd.Set("Cache-Control", "no-cache")
 	w.WriteHeader(http.StatusOK)
-	if !h.sendSnapshot(w, r, rc, session) {
+	sent, ok := h.sendSnapshot(w, r, rc, session)
+	if !ok {
 		return
 	}
 	// ": open" follows the snapshot, so a client that sees the stream open knows the
@@ -88,7 +89,7 @@ func (h *Hub) serve(w http.ResponseWriter, r *http.Request, session string) {
 		case <-tick.C:
 			_, err = fmt.Fprint(w, ": ping\n\n")
 		case m := <-sub.ch:
-			err = writeLive(w, m)
+			err = writeLive(w, m, sent)
 		}
 		if err != nil || rc.Flush() != nil {
 			return
@@ -97,14 +98,15 @@ func (h *Hub) serve(w http.ResponseWriter, r *http.Request, session string) {
 }
 
 // sendSnapshot writes the connect snapshot straight to the response, outside the
-// subscriber buffer. On a read failure it sends snapshot_error and reports false.
-func (h *Hub) sendSnapshot(w http.ResponseWriter, r *http.Request, rc *http.ResponseController, session string) bool {
+// subscriber buffer. On a read failure it sends snapshot_error and reports false. It returns
+// this stream's sent-record: per exchange, the hash of the entry list just sent (AC54).
+func (h *Hub) sendSnapshot(w http.ResponseWriter, r *http.Request, rc *http.ResponseController, session string) (map[string]string, bool) {
 	ctx, cancel := storeCtx(r)
 	defer cancel()
 	snap, err := h.snap(ctx, session)
 	if err != nil {
 		if errors.Is(err, context.Canceled) && r.Context().Err() != nil {
-			return false
+			return nil, false
 		}
 		code, msg := "store_error", "the store could not be read"
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -114,32 +116,38 @@ func (h *Hub) sendSnapshot(w http.ResponseWriter, r *http.Request, rc *http.Resp
 		_, werr := fmt.Fprintf(w, "retry: %d\nevent: snapshot_error\ndata: %s\n\n", snapshotRetryMS, b)
 		_ = werr
 		_ = rc.Flush()
-		return false
+		return nil, false
 	}
 	for i := range snap.Sessions {
 		b, err := json.Marshal(snap.Sessions[i])
 		if err != nil {
-			return false
+			return nil, false
 		}
 		if _, err := fmt.Fprintf(w, "event: session\ndata: %s\n\n", b); err != nil {
-			return false
+			return nil, false
 		}
 	}
+	sent := make(map[string]string, len(snap.Exchanges))
 	for _, x := range snap.Exchanges {
+		sent[x.RequestID] = x.Hash
 		b, err := json.Marshal(x.Entries)
 		if err != nil {
-			return false
+			return nil, false
 		}
 		if _, err := fmt.Fprintf(w, "event: exchange\ndata: %s\n\n", b); err != nil {
-			return false
+			return nil, false
 		}
 	}
-	return rc.Flush() == nil
+	return sent, rc.Flush() == nil
 }
 
-// writeLive writes one live message: a session event, or one entries event per exchange
-// with the exchange's store row id as the event id.
-func writeLive(w http.ResponseWriter, m liveMsg) error {
+// writeLive writes one live message: a session event, or one batch for the committed
+// exchanges. The batch is an entries event per committed exchange, then an exchange event
+// with the whole list for every exchange that started after the earliest committed one
+// and differs from what this stream last sent (AC54). Only the batch's last event has an
+// id, the highest row id in it (D14). sent is this stream's record; an inactive session
+// drops it (E21).
+func writeLive(w http.ResponseWriter, m liveMsg, sent map[string]string) error {
 	if m.Summary != nil {
 		b, err := json.Marshal(m.Summary)
 		if err != nil {
@@ -149,12 +157,53 @@ func writeLive(w http.ResponseWriter, m liveMsg) error {
 			return err
 		}
 	}
+	if len(m.Exchanges) == 0 {
+		return nil
+	}
+	if m.Inactive {
+		clear(sent)
+	}
+	type ev struct {
+		name string
+		x    liveExchange
+	}
+	var batch []ev
+	var maxRow int64
+	first := -1
+	committed := make(map[string]bool, len(m.Exchanges))
 	for _, x := range m.Exchanges {
-		b, err := json.Marshal(x.Entries)
+		batch = append(batch, ev{"entries", x})
+		sent[x.RequestID] = x.Hash
+		committed[x.RequestID] = true
+		maxRow = max(maxRow, x.RowID)
+		for i, a := range m.All {
+			if a.RequestID == x.RequestID && (first < 0 || i < first) {
+				first = i
+			}
+		}
+	}
+	if first >= 0 {
+		for _, a := range m.All[first+1:] {
+			if committed[a.RequestID] || sent[a.RequestID] == a.Hash {
+				continue
+			}
+			batch = append(batch, ev{"exchange", a})
+			sent[a.RequestID] = a.Hash
+		}
+	}
+	if m.Inactive {
+		clear(sent)
+	}
+	for i, e := range batch {
+		b, err := json.Marshal(e.x.Entries)
 		if err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(w, "event: entries\nid: %d\ndata: %s\n\n", x.RowID, b); err != nil {
+		id := ""
+		if i == len(batch)-1 {
+			id = fmt.Sprintf("id: %d\n", maxRow)
+		}
+		if _, err := fmt.Fprintf(w, "event: %s\n%sdata: %s\n\n", e.name, id, b); err != nil {
 			return err
 		}
 	}

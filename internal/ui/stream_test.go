@@ -10,7 +10,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,6 +21,7 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/capture"
 	"github.com/brutally-honest/llm-gateway/internal/core"
 	"github.com/brutally-honest/llm-gateway/internal/store"
+	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
 
 type streamEnv struct {
@@ -462,4 +465,301 @@ func (e *streamEnv) freshTimeline() []map[string]any {
 		e.t.Fatal(err)
 	}
 	return p.Entries
+}
+
+// applyEvents mirrors the page: entries and exchange events alike replace every entry of
+// their exchange id, and the view is ordered by (exchange start, exchange id, index). An
+// entry is never kept because its id is known.
+func applyEvents(evs []sseEvent) []map[string]any {
+	byEx := map[string][]map[string]any{}
+	for _, ev := range evs {
+		if ev.event != "entries" && ev.event != "exchange" {
+			continue
+		}
+		var es []map[string]any
+		if err := json.Unmarshal([]byte(ev.data), &es); err != nil || len(es) == 0 {
+			continue
+		}
+		byEx[es[0]["exchange_id"].(string)] = es
+	}
+	ids := make([]string, 0, len(byEx))
+	for id := range byEx {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		a, b := byEx[ids[i]][0]["start"].(string), byEx[ids[j]][0]["start"].(string)
+		if a != b {
+			return a < b
+		}
+		return ids[i] < ids[j]
+	})
+	var out []map[string]any
+	for _, id := range ids {
+		out = append(out, byEx[id]...)
+	}
+	return out
+}
+
+// take reads n real events.
+func (s *sse) take(n int) []sseEvent {
+	s.t.Helper()
+	var out []sseEvent
+	for len(out) < n {
+		out = append(out, s.nextData())
+	}
+	return out
+}
+
+func (e *streamEnv) publish(ids ...string) {
+	for _, id := range ids {
+		e.hub.Publish(capture.Committed{RequestID: id, PrincipalID: core.PrincipalLocal, Client: "cc", SessionKey: "k"})
+	}
+}
+
+func (e *streamEnv) sessionPath() string { return "/api/sessions/" + sid() + "/stream" }
+
+// twoThreads stores A (start 10) and B (start 20) unparsed, with B's thread parsed and
+// published; A's parse is still to come. B then shows all of q1, r1, q2.
+func (e *streamEnv) twoThreads() {
+	e.save("A", "k", "cc", 10)
+	e.save("B", "k", "cc", 20)
+	e.parseMsgs("B", "ok", []any{"user", text("q1")}, []any{"assistant", text("r1")}, []any{"user", text("q2")})
+}
+
+func (e *streamEnv) commitAParse() {
+	e.parseMsgs("A", "ok", []any{"user", text("q1")}, []any{"assistant", text("r1")})
+	e.publish("A")
+}
+
+func TestStream_LaterStartedExchangeResentWhole(t *testing.T) {
+	e := newStreamEnv(t, nil)
+	e.twoThreads()
+	s := e.open(e.sessionPath())
+	snap := s.take(2)
+	e.commitAParse()
+	batch := s.take(2)
+	if batch[0].event != "entries" || batch[0].id != "" {
+		t.Fatalf("first = %+v", batch[0])
+	}
+	if batch[1].event != "exchange" || batch[1].id != "1" {
+		t.Fatalf("second = %+v, want exchange carrying the batch id 1", batch[1])
+	}
+	b := decodeEntries(t, batch[1].data)
+	if b[0]["exchange_id"] != "B" || len(b) != 2 { // model_call + q2 only
+		t.Fatalf("B resent = %v", b)
+	}
+	if got := applyEvents(append(snap, batch...)); !reflect.DeepEqual(got, e.freshTimeline()) {
+		t.Fatalf("view = %v", got)
+	}
+}
+
+func TestStream_ReceivedEntryUpdatedAfterLaterCommit(t *testing.T) {
+	e := newStreamEnv(t, nil)
+	e.twoThreads()
+	s := e.open(e.sessionPath())
+	snap := s.take(2)
+	e.publish("B") // B's own entries are sent live
+	live := s.take(1)
+	had := string(live[0].data)
+	e.commitAParse()
+	rest := s.take(2)
+	if rest[1].event != "exchange" || rest[1].data == had {
+		t.Fatalf("B not re-sent with changed entries: %+v", rest)
+	}
+	for _, en := range applyEvents(append(append(snap, live...), rest...)) {
+		if en["id"] == "B:2" || en["text"] == "r1" && en["exchange_id"] == "B" {
+			t.Fatalf("stale entry kept: %v", en)
+		}
+	}
+}
+
+func TestStream_RecordPerStreamNotPerSession(t *testing.T) {
+	e := newStreamEnv(t, nil)
+	e.twoThreads()
+	first := e.open(e.sessionPath())
+	first.take(2)
+	e.commitAParse()
+	first.take(2)
+	// A stream opened now is seeded from its own snapshot, which already has the new B;
+	// the next commit that leaves B alone sends B on neither stream.
+	second := e.open(e.sessionPath())
+	second.take(2)
+	e.save("C", "k", "cc", 30)
+	e.parseMsgs("C", "ok", []any{"user", text("q1")}, []any{"assistant", text("r1")}, []any{"user", text("q2")}, []any{"user", text("q3")})
+	e.publish("C")
+	for name, s := range map[string]*sse{"first": first, "second": second} {
+		evs := s.take(1)
+		if evs[0].event != "entries" || evs[0].id != "3" {
+			t.Fatalf("%s: %+v", name, evs[0])
+		}
+	}
+	// Both streams now hold C; a third that never saw A's change gets all of it from its snapshot.
+	third := e.open(e.sessionPath())
+	if got := applyEvents(third.take(3)); !reflect.DeepEqual(got, e.freshTimeline()) {
+		t.Fatalf("third = %v", got)
+	}
+}
+
+func TestStream_RecordDroppedWhenInactive(t *testing.T) {
+	var inactive atomic.Bool
+	e := newStreamEnv(t, func(h *Hub) {
+		orig := h.read
+		h.read = func(ctx context.Context, who sessIdent, ids []string, summary, entries bool) (liveMsg, error) {
+			m, err := orig(ctx, who, ids, summary, entries)
+			m.Inactive = inactive.Load()
+			return m, err
+		}
+	})
+	e.twoThreads()
+	s := e.open(e.sessionPath())
+	s.take(2)
+	e.commitAParse() // active: B re-sent because its list changed
+	s.take(2)
+	e.publish("A") // active, nothing changed: entries only
+	if ev := s.nextData(); ev.event != "entries" {
+		t.Fatalf("active repeat = %+v", ev)
+	}
+	inactive.Store(true)
+	e.publish("A")
+	evs := s.take(2)
+	if evs[0].event != "entries" || evs[1].event != "exchange" || decodeEntries(t, evs[1].data)[0]["exchange_id"] != "B" {
+		t.Fatalf("inactive must resend every later-started exchange: %+v", evs)
+	}
+	e.publish("A") // the record stayed dropped, so B goes out again
+	if evs := s.take(2); evs[1].event != "exchange" {
+		t.Fatalf("record not dropped: %+v", evs)
+	}
+}
+
+func TestStream_ResendBatchAfterDropIsHarmless(t *testing.T) {
+	e := newStreamEnv(t, nil)
+	e.twoThreads()
+	s := e.open(e.sessionPath())
+	s.take(2)
+	e.commitAParse()
+	s.take(1) // the connection dies after the entries event only
+	_ = s.resp.Body.Close()
+	re := e.open(e.sessionPath())
+	got := applyEvents(re.take(2))
+	if !reflect.DeepEqual(got, e.freshTimeline()) {
+		t.Fatalf("reconnect view = %v", got)
+	}
+}
+
+func TestStream_ExchangeCommittedBeforeOpenSentOnce(t *testing.T) {
+	e := newStreamEnv(t, nil)
+	e.save("A", "k", "cc", 10)
+	e.parseMsgs("A", "ok", []any{"user", text("q1")})
+	e.publish("A") // committed before the stream opens
+	s := e.open(e.sessionPath())
+	evs := s.take(1)
+	e.publish("A") // the late live copy of the same commit
+	evs = append(evs, s.take(1)...)
+	got := applyEvents(evs)
+	if !reflect.DeepEqual(got, e.freshTimeline()) || len(got) != 2 {
+		t.Fatalf("view = %v", got)
+	}
+}
+
+func TestLive_OutOfOrderInsertsAtSortedPosition(t *testing.T) {
+	e := newStreamEnv(t, nil)
+	e.save("B", "k", "cc", 20)
+	e.save("C", "k", "cc", 30)
+	e.save("A", "k", "cc", 10)
+	s := e.open(e.sessionPath())
+	evs := s.take(3)
+	e.parseMsgs("C", "ok", []any{"user", text("c")})
+	e.publish("C")
+	evs = append(evs, s.take(1)...)
+	e.parseMsgs("A", "ok", []any{"user", text("a")}) // started first, committed last
+	e.publish("A")
+	evs = append(evs, s.take(1)...)
+	got := applyEvents(evs)
+	var order []string
+	for _, en := range got {
+		if n := len(order); n == 0 || order[n-1] != en["exchange_id"] {
+			order = append(order, en["exchange_id"].(string))
+		}
+	}
+	if !reflect.DeepEqual(order, []string{"A", "B", "C"}) {
+		t.Fatalf("order = %v", order)
+	}
+	if !reflect.DeepEqual(got, e.freshTimeline()) {
+		t.Fatalf("live != reload:\n%v\n%v", got, e.freshTimeline())
+	}
+}
+
+func TestLive_ConvergesWithReloadAndCLI(t *testing.T) {
+	e := newStreamEnv(t, nil)
+	e.twoThreads()
+	e.save("C", "k", "cc", 30)
+	s := e.open(e.sessionPath())
+	evs := s.take(3)
+	e.parseMsgs("C", "ok", []any{"user", text("q1")}, []any{"assistant", text("r1")}, []any{"user", text("q2")}, []any{"assistant", text("r2")})
+	e.publish("C")
+	evs = append(evs, s.take(1)...)
+	e.commitAParse()
+	evs = append(evs, s.take(2)...)
+	live := applyEvents(evs)
+	if !reflect.DeepEqual(live, e.freshTimeline()) {
+		t.Fatalf("live != reload:\n%v\n%v", live, e.freshTimeline())
+	}
+	// The CLI viewer's timeline for the same store: same exchanges, order and text.
+	if got, want := textsOf(live), cliTexts(t, e); !reflect.DeepEqual(got, want) {
+		t.Fatalf("live != cli:\n%v\n%v", got, want)
+	}
+}
+
+// textsOf lists (exchange id, text) of the live entries that carry text, in order.
+func textsOf(es []map[string]any) [][2]string {
+	var out [][2]string
+	for _, en := range es {
+		if t, _ := en["text"].(string); t != "" {
+			out = append(out, [2]string{en["exchange_id"].(string), t})
+		}
+	}
+	return out
+}
+
+// cliTexts builds the timeline the way the CLI viewer does: timeline.Build straight on the reader.
+func cliTexts(t *testing.T, e *streamEnv) [][2]string {
+	t.Helper()
+	r, err := store.OpenReader(e.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = r.Close() }()
+	row, err := r.WithContext(t.Context()).SessionByKey(core.PrincipalLocal, "cc", "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	built, err := timeline.Build(r, row, timeline.Options{Cut: entryCut})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out [][2]string
+	for _, en := range built {
+		if en.Text != "" && en.Kind == timeline.KindMessage {
+			out = append(out, [2]string{en.RequestID, en.Text})
+		}
+	}
+	return out
+}
+
+func TestLive_ReconnectSnapshotReplacesEverything(t *testing.T) {
+	e := newStreamEnv(t, nil)
+	e.twoThreads()
+	s := e.open(e.sessionPath())
+	evs := s.take(2)
+	_ = s.resp.Body.Close() // dropped; commits go on unseen
+	e.commitAParse()
+	e.save("C", "k", "cc", 30)
+	e.parseMsgs("C", "ok", []any{"user", text("q1")}, []any{"assistant", text("r1")}, []any{"user", text("q2")}, []any{"user", text("q3")})
+	e.publish("C")
+	re := e.open(e.sessionPath())
+	// The new snapshot replaces whatever the old view held.
+	view := applyEvents(append(evs, re.take(3)...))
+	if !reflect.DeepEqual(view, e.freshTimeline()) {
+		t.Fatalf("view = %v\nreload = %v", view, e.freshTimeline())
+	}
 }
