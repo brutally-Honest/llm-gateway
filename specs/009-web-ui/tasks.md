@@ -1,13 +1,13 @@
 ---
 feature: 009-web-ui
-status: approved
-version: 2
-approved: 2026-10-31T15:56:14Z
-approved-by: human
-sha256: cbf8566074752af64d8e4459fc938e32707066304542cb32e30d0b11e60c13f8
-fingerprint: 4c2bc90b21296f6725e9b2817b3832319fcf9cf5999a154e17bb75a6230c761d
-plan-fingerprint: 060da350aa26bcd11e9bba9846962e4a9c772a0bd2227d5cff95f8fcffa5f4c1
-previous: fa06c47
+status: draft
+version: 3
+approved:
+approved-by:
+sha256:
+fingerprint:
+plan-fingerprint:
+previous: 45916f6
 ---
 # Tasks — 009-web-ui
 
@@ -187,3 +187,4 @@ previous: fa06c47
 - v1 (2026-10-31) — T009 split, still draft: T009 is the connect snapshot and `snapshot_error`, T010 the per-stream record, entry-update convergence and `applyEvents` (depends on T009); later tasks renumbered T011–T017
 - v2 (2026-10-31) — reopened: spec v3 changed its contract sections
 - v2 (2026-10-31) — CR-001: new T018 reworks done T002 (cursor to after); T003 gains the fixture fix; T006, T007, T012 wording and test name use `after` / `next_after`; T006 depends on T018
+- v3 (2026-10-31) — reopened: CR-002: T007 gains an API test for unreadable reasoning
