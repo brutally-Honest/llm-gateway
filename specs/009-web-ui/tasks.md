@@ -112,6 +112,15 @@ previous: 1578dc6
 - Size: S
 - Risk: low
 
+### T023 — fix: refusedURL picks a freed port that a parallel test can rebind, so the unreachable-upstream cases flake with 404
+- Do: reproduce and fix: refusedURL picks a freed port that a parallel test can rebind, so the unreachable-upstream cases flake with 404
+- Tests: a regression test that fails before the fix and passes after it (refusedURL picks a freed port that a parallel test can rebind, so the unreachable-upstream cases flake with 404)
+- AC: none — bug fix: refusedURL picks a freed port that a parallel test can rebind, so the unreachable-upstream cases flake with 404
+- Commit: fix(web-ui): refusedurl picks a freed port that a parallel test can
+- Depends: —
+- Size: S
+- Risk: low
+
 ### T022 — Pin the CSP per response type
 - Do: tests only; no production change expected.
 - Tests: TestUI_BodyEndpointSendsStricterCSP (AC33: the body endpoint answers `default-src 'none'; sandbox`); TestUI_NonBodyResponsesSendStandardCSP (AC33: page, asset, API, SSE, 404, 405, 421 all send the standard CSP)
