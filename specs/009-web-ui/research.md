@@ -173,3 +173,4 @@ writing spec v1; approving the spec confirms them.
   `internal/core/purity_test.go` and lists `../timeline` with the full forbidden list.
 - 2026-10-31 — Exchange timings: the store holds `started_at`, `ttfb_ns` and `ended_at`; duration
   is `ended_at - started_at`.
+- 2026-10-31 — For T016 (docs, the user's request): T012 added a second frontend component, `internal/ui/web/ungrouped-list.js` (the `#/ungrouped` view), beside `session-list.js`; the plan named only `session-list`. The README's UI section and ADR 0009 should list it with the other components.
