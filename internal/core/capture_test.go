@@ -489,3 +489,25 @@ func TestAccessLog_CaptureField(t *testing.T) {
 		}
 	})
 }
+
+// AC18: the captured request header shows x-gateway-key as [REDACTED], and the value
+// appears nowhere in the stored exchange's request headers.
+func TestCapture_RedactsGatewayKey(t *testing.T) {
+	checkNoLeaksAtEnd(t)
+	up := newUpstream(t, nil)
+	sink := &recordingSink{}
+	g := startCaptureGateway(t, testAdapter{}, up.URL, core.Capture{Sink: sink, Budget: core.NewBudget(1 << 20), MaxBodyBytes: 1 << 20})
+
+	res, _ := g.raw(t, "POST /t/v1/x HTTP/1.1\r\nHost: x\r\nX-Gateway-Key: gw-sekrit\r\nContent-Length: 4\r\n\r\nbody")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", res.StatusCode)
+	}
+	if v := up.only(t).Header.Values("X-Gateway-Key"); len(v) != 0 {
+		t.Errorf("upstream got X-Gateway-Key = %q, want it stripped", v)
+	}
+	ex := sink.wait(t, 1)[0]
+	if got := ex.RequestHeader.Values("X-Gateway-Key"); !slices.Equal(got, []string{core.Redacted}) {
+		t.Errorf("stored X-Gateway-Key = %q, want [REDACTED]", got)
+	}
+	ex.Release()
+}

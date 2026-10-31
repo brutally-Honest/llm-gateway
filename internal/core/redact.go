@@ -10,9 +10,13 @@ import (
 // captured exchange.
 const Redacted = "[REDACTED]"
 
+// gatewayKeyHeader carries the gateway's own client key. It is gateway-owned, not
+// provider-shaped, so it is stripped and redacted on every route.
+const gatewayKeyHeader = "X-Gateway-Key"
+
 // secretHeaders are the generic HTTP auth headers core always redacts, whatever the
 // adapter declares.
-var secretHeaders = []string{"Authorization", "Proxy-Authorization", "Cookie", "Set-Cookie"}
+var secretHeaders = []string{"Authorization", "Proxy-Authorization", "Cookie", "Set-Cookie", gatewayKeyHeader}
 
 // redactHeader returns a clone of h in which every value of core's secret headers and
 // of the names in secret is Redacted. Names are matched case-insensitively and kept,

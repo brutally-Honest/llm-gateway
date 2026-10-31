@@ -19,6 +19,7 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/core"
 	"github.com/brutally-honest/llm-gateway/internal/logging"
 	"github.com/brutally-honest/llm-gateway/internal/protocols/anthropic"
+	"github.com/brutally-honest/llm-gateway/internal/ratelimit"
 	"github.com/brutally-honest/llm-gateway/internal/server"
 	"github.com/brutally-honest/llm-gateway/internal/store"
 )
@@ -173,7 +174,20 @@ func run(ctx context.Context, d deps) int {
 		return exitRuntime
 	}
 
-	registry := core.NewRegistry(log, capt.options()...)
+	opts := capt.options()
+	if cfg.RateLimit.Enabled {
+		limiter, err := ratelimit.New(cfg.RateLimit)
+		if err != nil {
+			_, _ = capt.close(context.Background())
+			_ = ln.Close()
+			log.Error("invalid config", zap.String("key", "ratelimit.strategy"), zap.String("reason", reasonInvalidValue))
+			return exitConfig
+		}
+		opts = append(opts, core.WithGuard(func(a core.Adapter) func(http.Handler) http.Handler {
+			return ratelimit.Middleware(limiter, a, log)
+		}))
+	}
+	registry := core.NewRegistry(log, opts...)
 	for _, p := range profiles {
 		registry.AddProfile(p)
 	}

@@ -54,6 +54,9 @@ func newProxy(a Adapter, up config.Upstream, identify func(*http.Request) string
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			rewrite(pr, prefix, base)
 			teeRequest(pr)
+			// The gateway's own credential never goes upstream. Capture has snapshotted
+			// it above, where redaction hides its value.
+			pr.Out.Header.Del(gatewayKeyHeader)
 			watchRequestBody(pr)
 		},
 		ModifyResponse: modifyResponse,
@@ -152,6 +155,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.PrincipalID = p.principal.Resolve(r)
 		m.start = time.Now()
 		w = p.capture.startCapture(m, w, r)
+		// Observing is off unless the middleware asked for it (rate limiting off
+		// means no wrapper), and independent of capture: it wraps the tee, not the
+		// other way round.
+		if ra, ok := p.adapter.(RateLimitAdapter); ok && m.OnUsage != nil {
+			m.usage = newUsageWriter(w, ra, p.log.With(zap.String("request_id", m.RequestID)))
+			w = m.usage
+		}
 		if p.capture != nil {
 			m.sessionKey = p.readSessionKey(m.RequestID, r)
 		}
