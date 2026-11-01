@@ -27,6 +27,13 @@ async function load(kind, after) {
   }
 }
 
+// liveText is the header status for a stream state.
+function liveText(state) {
+  if (state === "connected") return "live";
+  if (state === "snapshot_error") return "live: snapshot failed, retrying in 30 s";
+  return "live: disconnected, retrying";
+}
+
 function stopStream() {
   if (closeStream) closeStream();
   closeStream = null;
@@ -40,7 +47,7 @@ function startStream() {
       if (name === "session") store.set({ sessions: upsertSession(store.get().sessions, data) });
     },
     (st) => {
-      liveEl.textContent = st === "connected" ? "live" : "live: disconnected, retrying";
+      liveEl.textContent = liveText(st);
     },
   );
 }
@@ -96,7 +103,7 @@ async function showSession(id) {
       else live({ entries: replaceExchange(st.entries, data), snapshotError: "" });
     },
     (state) => {
-      liveEl.textContent = state === "connected" ? "live" : "live: disconnected, retrying";
+      liveEl.textContent = liveText(state);
     },
     `sessions/${encodeURIComponent(id)}/stream`,
   );

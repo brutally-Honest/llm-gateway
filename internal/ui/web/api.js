@@ -46,13 +46,20 @@ const snapshotRetry = 30000;
 // openStream opens /api/<path> and calls onEvent(name, data) and onState(state). The
 // browser retries a dropped connection itself; when it gives up for good (readyState
 // CLOSED, as after a 503 too_many_streams or shutting_down), a new stream is opened with
-// backoff, 1 s doubling to 30 s, reset by a successful snapshot. It returns a close function.
+// backoff, 1 s doubling to 30 s, reset by a successful snapshot. States are connected,
+// disconnected and snapshot_error; after snapshot_error no other state is reported until a
+// later snapshot succeeds (E22). It returns a close function.
 export function openStream(onEvent, onState, path = "stream") {
   let es = null;
   let timer = null;
   let closed = false;
   let delay = firstDelay;
   let holdUntil = 0; // no reopen before this time, set by snapshot_error
+  let snapshotFailed = false; // set by snapshot_error, cleared by the next successful snapshot
+  // the connection state is not reported while a snapshot error stands (E22)
+  const report = (state) => {
+    if (!snapshotFailed) onState(state);
+  };
 
   const reopenLater = () => {
     const wait = Math.max(delay, holdUntil - Date.now());
@@ -65,10 +72,10 @@ export function openStream(onEvent, onState, path = "stream") {
     if (closed) return;
     const cur = new EventSource(`/api/${path}`);
     es = cur;
-    cur.onopen = () => onState("connected");
+    cur.onopen = () => report("connected");
     cur.onerror = () => {
       if (closed || es !== cur) return;
-      onState("disconnected");
+      report("disconnected");
       if (cur.readyState === EventSource.CLOSED) {
         cur.close();
         reopenLater();
@@ -77,8 +84,17 @@ export function openStream(onEvent, onState, path = "stream") {
     for (const name of ["session", "exchange", "entries", "snapshot_error"]) {
       cur.addEventListener(name, (e) => {
         if (closed || es !== cur) return;
-        if (name === "snapshot_error") holdUntil = Date.now() + snapshotRetry;
-        else delay = firstDelay; // the snapshot arrived
+        if (name === "snapshot_error") {
+          holdUntil = Date.now() + snapshotRetry;
+          snapshotFailed = true;
+          onState("snapshot_error");
+        } else {
+          delay = firstDelay; // the snapshot arrived
+          if (snapshotFailed) {
+            snapshotFailed = false;
+            onState("connected");
+          }
+        }
         try {
           onEvent(name, JSON.parse(e.data));
         } catch {
