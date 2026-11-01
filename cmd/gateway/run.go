@@ -18,6 +18,7 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/clients/claudecode"
 	"github.com/brutally-honest/llm-gateway/internal/config"
 	"github.com/brutally-honest/llm-gateway/internal/core"
+	"github.com/brutally-honest/llm-gateway/internal/hooks"
 	"github.com/brutally-honest/llm-gateway/internal/logging"
 	"github.com/brutally-honest/llm-gateway/internal/protocols/anthropic"
 	"github.com/brutally-honest/llm-gateway/internal/ratelimit"
@@ -157,7 +158,7 @@ func run(ctx context.Context, d deps) int {
 	var capt *captureRun
 	if cfg.Capture.Enabled {
 		var code int
-		if capt, code = startCapture(cfg.Capture, cfg.UI.Enabled, d, log); capt == nil {
+		if capt, code = startCapture(cfg.Capture, cfg.Hooks, cfg.UI.Enabled, profiles, d, log); capt == nil {
 			return code
 		}
 	} else if cfg.UI.Enabled {
@@ -206,6 +207,28 @@ func run(ctx context.Context, d deps) int {
 			return exitRuntime
 		}
 	}
+	// The hook route is always mounted; with capture off it answers and counts only.
+	hookSink, hookOn := capt.hookSink(), true
+	stopHooks := func() {} // capture on: the sink stops with capture
+	if hookSink == nil {
+		hookOn = false
+		hookSink = hooks.NewSink(hookConfig(cfg.Hooks, profiles), nil, log)
+		// No "capture stopped" line is written with capture off, so the hook counters
+		// (capture_off above all) get a line of their own.
+		stopHooks = func() {
+			hookSink.Close(context.Background())
+			hc := hookSink.Counts()
+			log.Info("hook ingest stopped",
+				zap.Int64("hooks_queue_full", hc.QueueFull),
+				zap.Int64("hooks_oversize", hc.Oversize),
+				zap.Int64("hooks_capture_off", hc.CaptureOff),
+				zap.Int64("hooks_not_json", hc.NotJSON),
+				zap.Int64("hooks_store_failed", hc.StoreFailed),
+			)
+		}
+		defer hookSink.Close(context.Background()) // the early returns; Close is idempotent
+	}
+	hookHandler := hooks.NewHandler(hookSink, log, cfg.Capture.MaxBodyBytes, hookOn)
 	registry := core.NewRegistry(log, opts...)
 	for _, p := range profiles {
 		registry.AddProfile(p)
@@ -214,7 +237,7 @@ func run(ctx context.Context, d deps) int {
 		registry.AddAdapter(a, cfg.Upstreams[a.Name()])
 	}
 	// The adapters' prefixes first, then the test-only routes.
-	mounts := append([]func(chi.Router){registry.Mount}, d.mount...)
+	mounts := append([]func(chi.Router){registry.Mount, hookHandler.Mount}, d.mount...)
 	srv := server.New(log, mounts...)
 	serveErr := logging.Go(log, "serve", func() error { return srv.Serve(ln) })
 
@@ -253,6 +276,7 @@ wait:
 			defer cancel()
 			stopUI(stopCtx, uiSrv, capt, log)
 			capt.stop(stopCtx, log)
+			stopHooks()
 			return exitRuntime
 		case err := <-uiErr:
 			// The UI never fails proxying or capture: only the UI stops. Closing the hub
@@ -283,9 +307,11 @@ wait:
 		}
 		_ = srv.Close() // cut what is left; its error adds nothing to the exit code
 		capt.stop(shutdownCtx, log)
+		stopHooks()
 		return exitRuntime
 	}
 	capt.stop(shutdownCtx, log)
+	stopHooks()
 	if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Error("serve failed", zap.Error(err))
 		return exitRuntime
@@ -323,6 +349,7 @@ const reasonInvalidValue = "invalid value"
 type captureRun struct {
 	store        capture.Store
 	sink         *capture.Sink
+	hooks        *hooks.Sink // nil when the store cannot save hook events
 	budget       *core.Budget
 	maxBodyBytes int64
 	// reader and hub are set only when the UI is on.
@@ -330,12 +357,37 @@ type captureRun struct {
 	hub    *ui.Hub
 }
 
+// hookSink is the hook sink, or nil with capture off or a store that cannot save hooks.
+func (c *captureRun) hookSink() *hooks.Sink {
+	if c == nil {
+		return nil
+	}
+	return c.hooks
+}
+
+// hookConfig sizes the hook sink and finds a client's mapper through its profile.
+func hookConfig(h config.Hooks, profiles []core.Profile) hooks.Config {
+	return hooks.Config{
+		QueueSize: h.QueueSize, Workers: h.Workers, MemoryLimit: h.MemoryLimit,
+		Mappers: func(client string) core.HarnessMapper {
+			for _, p := range profiles {
+				if p.Name() == client {
+					if m, ok := p.(core.HarnessMapper); ok {
+						return m
+					}
+				}
+			}
+			return nil
+		},
+	}
+}
+
 // hasUI reports whether the UI is on for this run.
 func (c *captureRun) hasUI() bool { return c != nil && c.hub != nil }
 
 // startCapture resolves capture.dir, opens the store and starts the sink. On failure
 // it logs one line and returns nil and the exit code.
-func startCapture(c config.Capture, withUI bool, d deps, log *zap.Logger) (*captureRun, int) {
+func startCapture(c config.Capture, h config.Hooks, withUI bool, profiles []core.Profile, d deps, log *zap.Logger) (*captureRun, int) {
 	dir, ok := captureDir(c, d.lookupEnv, log)
 	if !ok {
 		return nil, exitConfig
@@ -371,8 +423,12 @@ func startCapture(c config.Capture, withUI bool, d deps, log *zap.Logger) (*capt
 		cfg.OnCommit = hub.Publish
 	}
 	sink := capture.NewSink(cfg, st, log)
+	var hookSink *hooks.Sink
+	if hs, ok := st.(hooks.Store); ok {
+		hookSink = hooks.NewSink(hookConfig(h, profiles), hs, log)
+	}
 	return &captureRun{
-		store: st, sink: sink, budget: core.NewBudget(c.MemoryLimit), maxBodyBytes: c.MaxBodyBytes,
+		store: st, sink: sink, hooks: hookSink, budget: core.NewBudget(c.MemoryLimit), maxBodyBytes: c.MaxBodyBytes,
 		reader: reader, hub: hub,
 	}, exitOK
 }
@@ -415,6 +471,9 @@ func (c *captureRun) close(ctx context.Context) (undrained int, err error) {
 	if c.hub != nil {
 		c.hub.Close()
 	}
+	if c.hooks != nil {
+		c.hooks.Close(ctx)
+	}
 	undrained = c.sink.Close(ctx)
 	err = c.store.Close()
 	if c.reader != nil {
@@ -435,7 +494,16 @@ func (c *captureRun) stop(ctx context.Context, log *zap.Logger) {
 		log.Warn("store close failed", zap.Error(err))
 	}
 	counts := c.sink.Counts()
+	var hc hooks.Counts
+	if c.hooks != nil {
+		hc = c.hooks.Counts()
+	}
 	log.Info("capture stopped",
+		zap.Int64("hooks_queue_full", hc.QueueFull),
+		zap.Int64("hooks_oversize", hc.Oversize),
+		zap.Int64("hooks_capture_off", hc.CaptureOff),
+		zap.Int64("hooks_not_json", hc.NotJSON),
+		zap.Int64("hooks_store_failed", hc.StoreFailed),
 		zap.Int("undrained", undrained),
 		zap.Int64("dropped_queue_full", counts.DroppedQueueFull),
 		zap.Int64("dropped_memory", c.budget.Dropped()),
