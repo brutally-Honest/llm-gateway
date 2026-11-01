@@ -50,6 +50,8 @@ type Counts struct {
 	QueueFull int64
 	// Oversize is every delivery dropped because its body would cross the memory limit.
 	Oversize int64
+	// CaptureOff is every delivery answered but not stored because capture is off.
+	CaptureOff int64
 	// NotJSON is every stored delivery whose body is not valid JSON.
 	NotJSON int64
 	// StoreFailed is every SaveHook that failed.
@@ -83,6 +85,7 @@ type Sink struct {
 	queueFull   atomic.Int64
 	oversize    atomic.Int64
 	notJSON     atomic.Int64
+	captureOff  atomic.Int64
 	storeFailed atomic.Int64
 	abandoned   atomic.Int64
 }
@@ -131,6 +134,15 @@ func (s *Sink) Submit(client string, body []byte) bool {
 	return false
 }
 
+// RecordOversize counts and logs one delivery the handler refused for its size.
+func (s *Sink) RecordOversize(client string, limit int64) {
+	s.oversize.Add(1)
+	s.log.Warn("hook event dropped: body over limit", zap.String("client", client), zap.Int64("limit", limit))
+}
+
+// RecordCaptureOff counts one delivery answered but not stored because capture is off.
+func (s *Sink) RecordCaptureOff() { s.captureOff.Add(1) }
+
 // Close stops accepting, then lets the workers drain the queue until ctx is done, at
 // which point it cancels the workers' context and returns how many deliveries were
 // left unstored. Later calls return 0.
@@ -171,6 +183,7 @@ func (s *Sink) Counts() Counts {
 	return Counts{
 		QueueFull:   s.queueFull.Load(),
 		Oversize:    s.oversize.Load(),
+		CaptureOff:  s.captureOff.Load(),
 		NotJSON:     s.notJSON.Load(),
 		StoreFailed: s.storeFailed.Load(),
 	}

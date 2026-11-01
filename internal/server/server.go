@@ -34,6 +34,10 @@ func New(log *zap.Logger, mount ...func(chi.Router)) *Server {
 	for _, m := range mount {
 		m(r)
 	}
+	// /_gateway/ is the gateway's own prefix: anything under it that no route above
+	// claimed is answered here, never forwarded to a provider. chi prefers the more
+	// specific routes mounted above.
+	r.Handle("/_gateway/*", http.NotFoundHandler())
 	s.srv = &http.Server{
 		Handler: r,
 		// Slowloris guard. No ReadTimeout or WriteTimeout: a write timeout would cut

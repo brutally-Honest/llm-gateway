@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -355,5 +356,23 @@ func TestErrorLog(t *testing.T) {
 	lines := h.lines()
 	if len(lines) != 1 || lines[0]["level"] != "warn" || lines[0]["logger"] != "http" {
 		t.Errorf("ErrorLog wrote %v, want one warn line from the http logger", lines)
+	}
+}
+
+func TestServer_ReservedPrefixUnknownIs404NotForwarded(t *testing.T) {
+	var forwarded atomic.Bool
+	h := start(t, func(r chi.Router) {
+		r.HandleFunc("/*", func(http.ResponseWriter, *http.Request) { forwarded.Store(true) })
+		r.Post("/_gateway/known", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) })
+	})
+	for path, want := range map[string]int{"/_gateway/nope": 404, "/_gateway/hooks/x/y": 404, "/_gateway/known": 204} {
+		req, _ := http.NewRequest("POST", h.url+path, nil)
+		resp, _ := h.do(req)
+		if resp.StatusCode != want {
+			t.Fatalf("%s: %d, want %d", path, resp.StatusCode, want)
+		}
+	}
+	if forwarded.Load() {
+		t.Fatal("reserved prefix reached the catch-all")
 	}
 }
