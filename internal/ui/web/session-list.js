@@ -22,20 +22,17 @@ export class SessionList extends HTMLElement {
     this.replaceChildren();
     if (data.error) return this.append(note("error", data.error));
     if (data.items.length === 0) return this.append(note("empty", "No sessions captured yet."));
-    const table = document.createElement("table");
-    const head = document.createElement("tr");
-    for (const h of ["Client", "Models", "First", "Last", "Exchanges", "Model calls", "Tool calls", "Errors", "Tokens", ""]) {
-      const th = document.createElement("th");
-      th.textContent = h;
-      head.append(th);
-    }
-    table.append(head);
+    const { table, body } = tableWithHead([
+      ["Client"], ["Models"], ["First"], ["Last"], ["Exchanges", "num"], ["Model calls", "num"],
+      ["Tool calls", "num"], ["Errors", "num"], ["Tokens", "num"], [""],
+    ]);
     for (const s of data.items) {
       const tr = document.createElement("tr");
       cell(tr, s.client);
       cell(tr, s.models.join(", "));
       for (const iso of [s.first_at, s.last_at]) {
         const td = document.createElement("td");
+        td.className = "time";
         td.append(timeElement(iso));
         tr.append(td);
       }
@@ -51,12 +48,31 @@ export class SessionList extends HTMLElement {
         b.textContent = "active";
         td.append(b);
       }
-      table.append(tr);
+      body.append(tr);
     }
     this.append(table);
     const more = loadMore(data, data.onMore);
     if (more) this.append(more);
   }
+}
+
+// tableWithHead builds a table whose header cells carry the same class as their
+// column's values, so right-aligned numbers sit under right-aligned headers.
+export function tableWithHead(columns) {
+  const table = document.createElement("table");
+  const thead = document.createElement("thead");
+  const head = document.createElement("tr");
+  for (const [label, cls] of columns) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    if (cls) th.className = cls;
+    th.textContent = label;
+    head.append(th);
+  }
+  thead.append(head);
+  const body = document.createElement("tbody");
+  table.append(thead, body);
+  return { table, body };
 }
 
 export function note(cls, text) {

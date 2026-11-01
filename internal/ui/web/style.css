@@ -25,7 +25,8 @@ a { color: var(--accent); }
 .muted { color: var(--muted); }
 table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: .35rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
-td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.time { white-space: nowrap; }
 .badge { background: var(--badge); color: #fff; border-radius: 3px; padding: 0 .4rem; font-size: .8em; }
 button {
   font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 4px; padding: .3rem .8rem;

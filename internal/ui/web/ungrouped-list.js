@@ -1,5 +1,5 @@
 import { timeElement, usageText } from "./entries.js";
-import { loadMore, note } from "./session-list.js";
+import { loadMore, note, tableWithHead } from "./session-list.js";
 
 // UngroupedList renders data = { items, next_after, error, onMore }.
 export class UngroupedList extends HTMLElement {
@@ -7,17 +7,11 @@ export class UngroupedList extends HTMLElement {
     this.replaceChildren();
     if (data.error) return this.append(note("error", data.error));
     if (data.items.length === 0) return this.append(note("empty", "No ungrouped exchanges."));
-    const table = document.createElement("table");
-    const head = document.createElement("tr");
-    for (const h of ["Time", "Client", "Models", "Tokens", "Errors"]) {
-      const th = document.createElement("th");
-      th.textContent = h;
-      head.append(th);
-    }
-    table.append(head);
+    const { table, body } = tableWithHead([["Time"], ["Client"], ["Models"], ["Tokens", "num"], ["Errors", "num"]]);
     for (const x of data.items) {
       const tr = document.createElement("tr");
       const t = document.createElement("td");
+      t.className = "time";
       const a = document.createElement("a");
       a.href = `#/exchange/${encodeURIComponent(x.id)}`;
       a.append(timeElement(x.first_at));
@@ -29,7 +23,7 @@ export class UngroupedList extends HTMLElement {
         td.textContent = text;
         tr.append(td);
       }
-      table.append(tr);
+      body.append(tr);
     }
     this.append(table);
     const more = loadMore(data, data.onMore);
