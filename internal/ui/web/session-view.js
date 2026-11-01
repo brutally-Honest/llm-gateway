@@ -132,6 +132,8 @@ export class SessionView extends HTMLElement {
   entryNode(e, results) {
     switch (e.kind) {
       case "user_prompt":
+        // a user message with no text of its own (one that only carries tool results) has no Prompt block
+        if (!(e.text || "").trim() && !e.truncated) return null;
         return textBlock(e, "Prompt", "prompt");
       case "assistant_text":
         return textBlock(e, "Assistant", "assistant");
