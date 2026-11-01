@@ -24,7 +24,7 @@ export class SessionList extends HTMLElement {
     if (data.items.length === 0) return this.append(note("empty", "No sessions captured yet."));
     const { table, body } = tableWithHead([
       ["Client"], ["Models"], ["First"], ["Last"], ["Exchanges", "num"], ["Model calls", "num"],
-      ["Tool calls", "num"], ["Errors", "num"], ["Tokens", "num"], [""],
+      ["Tool calls", "num"], ["Errors", "num"], ["Tokens", "usage"], [""],
     ]);
     for (const s of data.items) {
       const tr = document.createElement("tr");
@@ -44,7 +44,7 @@ export class SessionList extends HTMLElement {
       cell(tr, String(s.model_calls), "num");
       cell(tr, String(s.tool_calls), "num");
       cell(tr, String(s.errors), "num");
-      cell(tr, usageText(s.usage), "num");
+      cell(tr, usageText(s.usage), "usage");
       const td = cell(tr, "");
       if (s.active) {
         const b = document.createElement("span");

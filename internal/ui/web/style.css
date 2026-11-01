@@ -59,3 +59,4 @@ button {
   cursor: pointer;
 }
 .body pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: .2rem 0; font: 13px/1.4 ui-monospace, monospace; }
+td.usage, th.usage { font-variant-numeric: tabular-nums; min-width: 16rem; }

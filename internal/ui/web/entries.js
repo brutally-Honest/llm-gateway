@@ -43,9 +43,20 @@ export function addUnique(rows, items) {
   return rows.concat(items.filter((i) => !seen.has(i.id)));
 }
 
+// usageText is the usage totals in the same words as the CLI viewer: all four counters,
+// unknown when no call reported one, then the partial, incomplete and errored flags.
 export function usageText(u) {
-  const n = (c) => (c.value === null || c.value === undefined ? "?" : String(c.value));
-  return `in ${n(u.input)} / out ${n(u.output)}`;
+  if (!u.calls) return "no model calls";
+  if (u.all_errored) return `no usage (${u.errored} errored)`;
+  const n = (c) => counterText(c.value);
+  let s = `input ${n(u.input)}, output ${n(u.output)}, cache-write ${n(u.cache_write)}, cache-read ${n(u.cache_read)}`;
+  if (u.partial > 0) s += `; partial (${u.partial} calls)`;
+  if (u.missing > 0) s += `; incomplete: ${u.missing} of ${u.reporting + u.missing} model calls missing usage`;
+  for (const [name, c] of [["input", u.input], ["output", u.output], ["cache-write", u.cache_write], ["cache-read", u.cache_read]]) {
+    if (c.unreported > 0) s += `; ${name} incomplete (${c.unreported} calls did not report)`;
+  }
+  if (u.errored > 0) s += `; ${u.errored} errored`;
+  return s;
 }
 
 // startKey pads the fraction of an RFC 3339 instant to nanoseconds so instants compare as strings.
