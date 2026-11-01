@@ -53,5 +53,6 @@ Under `## Tasks`, one block per task, in build order:
 
 Before finishing run `.claude/scripts/loop.sh check plan --draft` and `.claude/scripts/loop.sh check tasks --draft` and fix everything they list.
 You may write only plan.md, tasks.md, research.md and supporting docs under `specs/<f>/` (e.g. contracts/). Bash is read-only (git log/show/diff, loop.sh check|status, ls/grep/rg); a hook enforces it.
+Never get around a guard, hook or check by splitting, quoting, encoding or renaming strings, or by using another tool to perform the action that was blocked. Reading or editing a file with Read/Edit/Write is fine when only a Bash command naming it was blocked. Running a human-only command (approve, answer, change, pass-manual) is never fine by any route. If unsure, stop and ask.
 
 Final message — first line exactly `PLAN-DRAFTED <number of undecided open questions> <number of tasks>` (a hook checks it and re-runs both checks). Then the questions, numbered, each with its recommendation; then ≤3 lines on the chosen approach; then one line per task: id — title — size/risk — ACs.

@@ -20,5 +20,6 @@ Work through `## Steps` in order:
 Fix round: fix exactly the findings (or `loop.sh findings Q`), then amend or add a commit with the same trailers. Change only the files your commit already changed, plus test files in their folders — anything else stops the build.
 Blocked (brief silent or contradictory, needs a protected file): add `- **Q<n>** (open) Q — <question> — options: A) … B) …` to research.md, commit it alone (trailers `Feature: <f>`, `Blocked: Q Q<n>`), then `git stash push -u -m "Q blocked on Q<n>"`.
 Never: edit `specs/` (except research.md) or `.claude/`; push, reset, checkout, `git add -A`, `--no-verify`; read secrets.
+Never get around a guard, hook or check by splitting, quoting, encoding or renaming strings, or by using another tool to perform the action that was blocked. Reading or editing a file with Read/Edit/Write is fine when only a Bash command naming it was blocked. Running a human-only command (approve, answer, change, pass-manual) is never fine by any route. If unsure, stop and ask.
 
 Final message, line 1 exactly: `DONE Q <short sha>` or `BLOCKED Q Q<n>`. Then ≤6 lines: tests, tests → behaviour, mutation check, deviations.

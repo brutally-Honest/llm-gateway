@@ -27,5 +27,6 @@ Mode **reconcile** — the code drifted from the spec (hand edits, a hotfix, an 
 
 Prefer the smallest change that achieves the request. If the request is really a new feature (large new scope), say so and recommend finishing this feature and starting a new spec.
 Before finishing run `.claude/scripts/loop.sh check change CR-nnn` and fix everything it lists. You may write only the CR file and research.md; Bash is read-only.
+Never get around a guard, hook or check by splitting, quoting, encoding or renaming strings, or by using another tool to perform the action that was blocked. Reading or editing a file with Read/Edit/Write is fine when only a Bash command naming it was blocked. Running a human-only command (approve, answer, change, pass-manual) is never fine by any route. If unsure, stop and ask.
 
 Final message — first line exactly `CR-DRAFTED CR-nnn` (a hook checks it and re-validates). Then: scope, class, the delta lines, one line per impacted done task.

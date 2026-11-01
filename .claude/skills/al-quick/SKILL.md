@@ -32,3 +32,5 @@ Run `.claude/scripts/loop.sh check brief`. If it says the change is too big for 
 Show the brief in a few lines and end with: "Type `/al-approve brief` to approve and build it, or tell me what to change."
 
 You never approve. Only the user can, with `/al-approve brief`; the build starts right after.
+
+Never get around a guard, hook or check by splitting, quoting, encoding or renaming strings, or by using another tool to perform the action that was blocked. Reading or editing a file with Read/Edit/Write is fine when only a Bash command naming it was blocked. approve, /al-change and pass-manual are human-only by any route. Run loop.sh answer only after the human has answered, and record their answer as given: if they picked an option, record that option's text, never your own rewording. Never write loop state or task status by hand. If unsure, stop and ask.
