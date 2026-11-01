@@ -2,6 +2,7 @@ import { getJSON, openStream } from "./api.js";
 import { addUnique, replaceExchange, upsertSession } from "./entries.js";
 import { createStore } from "./store.js";
 import { note } from "./session-list.js";
+import "./exchange-detail.js";
 import "./session-view.js";
 import "./ungrouped-list.js";
 
@@ -101,6 +102,20 @@ async function showSession(id) {
   );
 }
 
+// showExchange loads one exchange's detail; its bodies load only when their sections open.
+async function showExchange(id) {
+  const mine = ++seq;
+  const el = document.createElement("exchange-detail");
+  app.replaceChildren(el);
+  el.render({ exchange: null, error: "" });
+  try {
+    const exchange = await getJSON(`exchanges/${encodeURIComponent(id)}`);
+    if (mine === seq) el.render({ exchange, error: "" });
+  } catch (e) {
+    if (mine === seq) el.render({ exchange: null, error: e.message });
+  }
+}
+
 function show(kind, tag) {
   const el = document.createElement(tag);
   app.replaceChildren(el);
@@ -129,6 +144,8 @@ function route() {
     show("ungrouped", "ungrouped-list");
   } else if (h.startsWith("#/sessions/")) {
     showSession(decodeURIComponent(h.slice("#/sessions/".length)));
+  } else if (h.startsWith("#/exchanges/")) {
+    showExchange(decodeURIComponent(h.slice("#/exchanges/".length)));
   } else {
     app.replaceChildren(note("empty", "Nothing here."));
   }

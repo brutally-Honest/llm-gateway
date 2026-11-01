@@ -50,3 +50,10 @@ button {
 .model-chip.is-error { color: #cf222e; }
 .copy { padding: 0 .5rem; font-size: .85em; }
 .truncated { display: block; font-size: .85em; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: .2rem 1rem; margin: .3rem 0; }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.detail { border-top: 1px solid var(--line); padding: .4rem 0; }
+.detail h2 { font-size: .95rem; margin: .4rem 0; }
+.body { padding: .3rem 0; }
+.body summary { cursor: pointer; }
+.body pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: .2rem 0; font: 13px/1.4 ui-monospace, monospace; }
