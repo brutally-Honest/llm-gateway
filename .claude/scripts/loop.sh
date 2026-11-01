@@ -234,7 +234,7 @@ latest_held() { # -> "id status" of the task that most recently became STOPPED o
 }
 
 next_step() {
-	local st q ce c
+	local st q ce c hid hst
 	if is_quick; then
 		st=$(art_state "$(art brief)")
 		case $st in
@@ -271,10 +271,12 @@ next_step() {
 	q=$(open_questions | tr '\n' ' ')
 	[ -n "$q" ] && { echo "answer $q: /al-answer <Qn> <your answer>, then /al-resume"; return; }
 	last_stop_next && return
-	set -- $(latest_held)
-	case ${2:-} in
-		STOPPED) stopped_msg "$1"; return ;;
-		ESCALATED) escalated_msg "$1"; return ;;
+	read -r hid hst <<EOF
+$(latest_held)
+EOF
+	case $hst in
+		STOPPED) stopped_msg "$hid"; return ;;
+		ESCALATED) escalated_msg "$hid"; return ;;
 	esac
 	for c in $(task_ids "$(art tasks)"); do
 		case $(state_get "$c") in PASS | NEEDS-HUMAN) ;; *) in_list "$c" "$(done_tasks)" || { echo "/al-implement"; return; } ;; esac

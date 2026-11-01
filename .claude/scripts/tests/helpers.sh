@@ -1,4 +1,8 @@
+# shellcheck shell=bash
 # helpers.sh — shared setup and assertions for the kit's shell tests. Sourced, never run.
+# The variables set here for the tests (L, TMP_REPO, ...) are read by the test scripts
+# that source this file, which shellcheck can't see from here.
+# shellcheck disable=SC2034
 #
 # Every test works in a throwaway git repo under a temp dir, with a copy of the kit, so
 # the scripts resolve REPO, .claude/ and .agent-loop/ inside it and never touch the real
