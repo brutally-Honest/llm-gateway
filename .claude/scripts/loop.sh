@@ -463,7 +463,7 @@ pre_task() { # id -> 0 ok (base recorded) | 1 with STOP-REASON lines
 	fi
 	record_base "$id"
 	sfile_set "rounds.$id" 0
-	rm -f "$(sdir)/findings.$id" "$(sdir)/watch.$id" "$(sdir)/reason.$id" "$(sdir)/end.$id"
+	rm -f "$(sdir)/findings.$id" "$(sdir)/watch.$id" "$(sdir)/reason.$id" "$(sdir)/end.$id" "$(sdir)/pending.$id"
 	state_set "$id" IN-PROGRESS
 	[ "$id" = Q ] || state_set BRANCH CLEARED
 	log_event "$id pre-task ok base=$(short "$(sfile_get "base.$id")")"
@@ -586,19 +586,29 @@ record_commits() { # id "shas" -> .agent-loop/<f>/commits ("sha task" lines): th
 }
 
 bump() { # id source -> prints ACTION
+	# The round asked for is only pending (pending.<id>) until an implementer's result for it is
+	# logged (fix_round_ran); asking again before that asks for the same round, using none up.
 	local r max
 	max=$(cfg FIX_ROUNDS)
-	r=$(sfile_get "rounds.$1"); r=$(( ${r:-0} + 1 ))
+	r=$(sfile_get "pending.$1")
+	[ -n "$r" ] || { r=$(sfile_get "rounds.$1"); r=$(( ${r:-0} + 1 )); }
 	if [ "$r" -gt "$max" ]; then
+		rm -f "$(sdir)/pending.$1"
 		state_set "$1" STOPPED fix-limit
 		log_event "$1 STOP fix-limit ($max fix rounds used)"
 		echo "ACTION stop fix-limit $1"
 	else
-		sfile_set "rounds.$1" "$r"
-		log_event "$1 fix round $r/$max ($2)"
+		sfile_set "pending.$1" "$r"
+		log_event "$1 fix round $r/$max asked for ($2)"
 		model_for "$1"
 		echo "ACTION fix $1 $2 $r/$max model=$CV"
 	fi
+}
+
+fix_round_ran() { # id -> an implementer reported on the pending fix round: it is used now
+	local r; r=$(sfile_get "pending.$1"); [ -n "$r" ] || return 0
+	sfile_set "rounds.$1" "$r"; rm -f "$(sdir)/pending.$1"
+	log_event "$1 fix round $r/$(cfg FIX_ROUNDS) ran"
 }
 
 act_implement() { model_for "$1"; echo "ACTION implement $1 model=$CV"; }
@@ -850,6 +860,7 @@ cmd_log() {
 				PASS | NEEDS-HUMAN | '') log_event "$id $agent CONTRACT result for a task that is not in progress"
 					echo "ACTION stop contract $id ($id is not in progress — run loop.sh next to get the current action)"; return 0 ;;
 			esac
+			fix_round_ran "$id"
 			case $verdict in
 				DONE) log_event "$id $agent DONE $(short)"; log_done "$id" ;;
 				BLOCKED)
@@ -997,7 +1008,7 @@ paragraphs_naming() { # file section "AC1|AC3" -> the section's paragraphs that 
 cmd_task() { # the context pack: everything one task needs, so agents read more only when they must
 	local id=${1:-} r b acs re a eids
 	resolve_feature; [ -n "$id" ] || die "usage: task <ID>"
-	r=$(sfile_get "rounds.$id")
+	r=$(sfile_get "pending.$id"); [ -n "$r" ] || r=$(sfile_get "rounds.$id")
 	echo "FEATURE $F   KIND $(fm_get "$(art spec)" kind)$(fm_get "$(art brief)" kind)   ROUND ${r:-0}/$(cfg FIX_ROUNDS)"
 	model_for "$id"
 	echo "SETTINGS model=$CV   review=$(cfg REVIEW)   verify=$(cfg VERIFY) (the script runs it — you run targeted tests only)"
@@ -1274,7 +1285,7 @@ cmd_answer() { # Qn <answer> — record your answer, commit research.md, restore
 		git stash pop -q "$ref" || die "$id's earlier attempt ($ref) didn't apply cleanly onto HEAD.
   do this: resolve the conflict in the files git lists, then /al-resume"
 	fi
-	record_base "$id"; sfile_set "rounds.$id" 0
+	record_base "$id"; sfile_set "rounds.$id" 0; rm -f "$(sdir)/pending.$id"
 	state_set "$id" IN-PROGRESS "restored after $q"
 	log_event "$id resumes after $q${ref:+ with its stashed attempt}"
 	echo "ANSWERED $q — $id continues${ref:+ from its earlier attempt (restored in the working tree)}"
