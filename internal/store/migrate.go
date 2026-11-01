@@ -71,6 +71,28 @@ CREATE INDEX events_principal ON events(principal_id, kind);
 ALTER TABLE exchanges ADD COLUMN session_key TEXT;
 CREATE INDEX exchanges_session ON exchanges(principal_id, client, session_key, started_at);
 `,
+	// 3: harness hook events (feature 010). No header column: nothing credential-
+	// bearing can land. Identical payloads are separate rows; dedup is read-side.
+	`
+CREATE TABLE hook_events (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  seq          INTEGER NOT NULL,
+  principal_id TEXT NOT NULL,
+  client       TEXT NOT NULL,
+  session_key  TEXT,
+  tool_use_id  TEXT,
+  phase        TEXT NOT NULL,
+  source_name  TEXT NOT NULL,
+  tool_name    TEXT NOT NULL,
+  agent_id     TEXT NOT NULL,
+  agent_type   TEXT NOT NULL,
+  input_hash   TEXT REFERENCES content(hash),
+  payload_hash TEXT NOT NULL REFERENCES content(hash),
+  received_at  INTEGER NOT NULL
+);
+CREATE INDEX hook_events_session ON hook_events(principal_id, client, session_key, received_at, seq);
+CREATE INDEX hook_events_tool_use ON hook_events(tool_use_id);
+`,
 }
 
 // migrate brings the database to len(migrations) inside one BEGIN IMMEDIATE, so
