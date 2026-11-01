@@ -30,8 +30,11 @@ func TestBinary_SignalShutdown(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			cmd := exec.Command(bin)
 			cmd.Dir = t.TempDir() // no config.yaml
-			// The store goes in a temp dir, never the default data dir (spec 002, Do).
-			cmd.Env = append(gatewayFreeEnv(), "GATEWAY_LISTEN_ADDR=127.0.0.1:0", "GATEWAY_CAPTURE_DIR="+t.TempDir())
+			// The store goes in a temp dir, never the default data dir (spec 002, Do). The UI
+			// gets a free port on another loopback address, so a gateway already running on
+			// the default UI port cannot stop this one from starting.
+			cmd.Env = append(gatewayFreeEnv(), "GATEWAY_LISTEN_ADDR=127.0.0.1:0", "GATEWAY_UI_LISTEN_ADDR=127.0.0.2:0",
+				"GATEWAY_CAPTURE_DIR="+t.TempDir())
 			stdout, err := cmd.StdoutPipe()
 			if err != nil {
 				t.Fatal(err)

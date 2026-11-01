@@ -45,3 +45,9 @@ func MigrationCountForTest() int { return len(migrations) }
 
 // MigrationForTest is the text of migration step n (1-based).
 func MigrationForTest(n int) string { return migrations[n-1] }
+
+// ExecForTest runs a statement through the reader's connection.
+func (r *Reader) ExecForTest(q string) error {
+	_, err := r.db.Exec(q)
+	return err
+}

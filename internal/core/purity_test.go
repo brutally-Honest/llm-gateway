@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -51,6 +52,7 @@ func TestCore_NoProviderOrClientIdentifiers(t *testing.T) {
 		{"../store", names},
 		{"../contentcoding", names},
 		{"../timeline", full},
+		{"../ui", full},                       // the web UI: Go files and the embedded web/ files
 		{"../../cmd/gateway/viewer.go", full}, // the viewer commands; a single file, as run.go names a profile
 	}
 	for _, d := range dirs {
@@ -76,11 +78,8 @@ func checkDir(t *testing.T, dir string, forbidden []string) {
 			return err
 		}
 		checked++
-		lower := strings.ToLower(string(b))
-		for _, word := range forbidden {
-			if strings.Contains(lower, word) {
-				t.Errorf("%s contains %q; this package must not spell it", path, word)
-			}
+		for _, word := range forbiddenIn(path, b, forbidden) {
+			t.Errorf("%s contains %q; this package must not spell it", path, word)
 		}
 		return nil
 	})
@@ -89,5 +88,65 @@ func checkDir(t *testing.T, dir string, forbidden []string) {
 	}
 	if checked == 0 {
 		t.Fatalf("no files checked under %s; the walk is not looking at it", dir)
+	}
+}
+
+// forbiddenIn returns the forbidden words that b, the contents of path, spells.
+func forbiddenIn(path string, b []byte, forbidden []string) []string {
+	lower := strings.ToLower(string(b))
+	if isWebCSS(path) {
+		lower = cssPropertyName.ReplaceAllString(lower, "$1$2")
+	}
+	var found []string
+	for _, word := range forbidden {
+		if strings.Contains(lower, word) {
+			found = append(found, word)
+		}
+	}
+	return found
+}
+
+// cssPropertyName matches the CSS property "cursor" where a declaration starts a line;
+// forbiddenIn removes only that name, so the rest of the line is still checked. It is the
+// one exemption from the client names, signed off by the user (specs/009-web-ui
+// research.md D17): the word stays banned everywhere else, the same CSS file included.
+var cssPropertyName = regexp.MustCompile(`(?m)^(\s*)cursor(\s*:)`)
+
+// isWebCSS reports whether path is a stylesheet of the embedded web UI.
+func isWebCSS(path string) bool {
+	p := filepath.ToSlash(path)
+	return strings.HasPrefix(p, "../ui/web/") && strings.HasSuffix(p, ".css")
+}
+
+// D17: the CSS property exemption is that narrow. Only a declaration of the property at
+// the start of a line, in a stylesheet under ui/web/, passes; the word anywhere else fails.
+func TestPurity_CursorExemptionIsNarrow(t *testing.T) {
+	cases := []struct {
+		name, path, body string
+		pass             bool
+	}{
+		{"css property", "../ui/web/style.css", "button {\n  cursor: pointer;\n}\n", true},
+		{"css property, indented with a tab and spaced", "../ui/web/style.css", "\tcursor : default;\n", true},
+		{"css property, upper case", "../ui/web/style.css", "  CURSOR: pointer;\n", true},
+		{"css property after other text on its line", "../ui/web/style.css", "button { cursor: pointer; }\n", false},
+		{"css comment", "../ui/web/style.css", "/* cursor */\n", false},
+		{"css comment after the property", "../ui/web/style.css", "  cursor: pointer; /* cursor */\n", false},
+		{"css selector", "../ui/web/style.css", ".cursor { color: red; }\n", false},
+		{"css value", "../ui/web/style.css", "  content: \"cursor\";\n", false},
+		{"css outside ui/web", "../ui/style.css", "  cursor: pointer;\n", false},
+		{"js string", "../ui/web/app.js", "const s = \"cursor\";\n", false},
+		{"js property line", "../ui/web/app.js", "  cursor: 1,\n", false},
+		{"html", "../ui/web/index.html", "<p>cursor</p>\n", false},
+		{"go", "../ui/ui.go", "// cursor\n", false},
+	}
+	for _, c := range cases {
+		got := forbiddenIn(c.path, []byte(c.body), names)
+		if pass := len(got) == 0; pass != c.pass {
+			t.Errorf("%s: forbidden words %v, want pass=%v", c.name, got, c.pass)
+		}
+	}
+	// The exemption covers the client name only: other words on that line still fail.
+	if got := forbiddenIn("../ui/web/style.css", []byte("  cursor: claude;\n"), names); len(got) != 1 || got[0] != "claude" {
+		t.Errorf("other names on the property line: %v, want [claude]", got)
 	}
 }

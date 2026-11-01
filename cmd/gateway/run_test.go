@@ -64,7 +64,12 @@ type options struct {
 	accepted chan struct{}
 	// openStore, if set, replaces store.Open.
 	openStore func(dir string, log *zap.Logger) (capture.Store, error)
+	// bound, if set, gets every listener run binds, keyed by the address run asked for.
+	bound func(addr string, ln net.Listener)
 }
+
+// defaultUIAddr is ui.listen_addr when no test sets it.
+const defaultUIAddr = "127.0.0.1:7199"
 
 // signalListener signals accepted after each connection Accept returns.
 type signalListener struct {
@@ -101,10 +106,15 @@ func startGateway(t *testing.T, o options) *gateway {
 			if o.listenErr != nil {
 				return nil, o.listenErr
 			}
-			if !o.realListen {
+			asked := addr
+			// The default UI address is never bound for real, so no test needs 7199 free.
+			if !o.realListen || addr == defaultUIAddr {
 				addr = "127.0.0.1:0"
 			}
 			ln, err := net.Listen(network, addr)
+			if err == nil && o.bound != nil {
+				o.bound(asked, ln)
+			}
 			if err != nil || o.accepted == nil {
 				return ln, err
 			}
@@ -197,11 +207,12 @@ func (g *gateway) wait() int {
 	}
 }
 
-// listened returns the addresses run asked listen for.
+// listened returns the addresses run asked listen for, apart from the default UI
+// address, which the proxy-listener tests did not set and do not assert on.
 func (g *gateway) listened() []string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return slices.Clone(g.listen)
+	return slices.DeleteFunc(slices.Clone(g.listen), func(a string) bool { return a == defaultUIAddr })
 }
 
 // AC3: one startup line with version, the bound address and the config source.

@@ -311,3 +311,25 @@ func TestBuild_TextAtExactLimitIsNotCut(t *testing.T) {
 		t.Fatalf("cut at the limit: len %d omitted %d", len(out[1].Text), out[1].Omitted)
 	}
 }
+
+func TestBuild_ToolResultStringContentIsDecodedText(t *testing.T) {
+	f := newFake()
+	f.exchange("A", 1, "ok")
+	f.msg("A", "user", "run it")
+	f.toolCall("A", "c1", "Run", `{"x":1}`)
+	f.toolResult("A", "c1", `"Exit code 1\ncat: /nope: No such file"`, true)
+	f.toolResult("A", "c2", `[{"type":"text","text":"a\nb"}]`, false)
+	got := map[string]string{}
+	for _, e := range build(t, f, timeline.Options{}) {
+		if e.Kind == timeline.KindToolResult {
+			got[e.ToolCallID] = e.Text
+		}
+	}
+	if want := "Exit code 1\ncat: /nope: No such file"; got["c1"] != want {
+		t.Errorf("string content = %q, want %q", got["c1"], want)
+	}
+	// content that is not a JSON string stays as stored
+	if want := `[{"type":"text","text":"a\nb"}]`; got["c2"] != want {
+		t.Errorf("array content = %q, want %q", got["c2"], want)
+	}
+}

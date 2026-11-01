@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/brutally-honest/llm-gateway/internal/store"
@@ -30,6 +31,16 @@ type Source interface {
 type Options struct {
 	// Full keeps every entry whole instead of cutting at DefaultEntryLimit.
 	Full bool
+	// Cut is the most bytes an entry's text keeps when Full is not set; 0 keeps
+	// DefaultEntryLimit.
+	Cut int
+}
+
+func (o Options) limit() int {
+	if o.Cut > 0 {
+		return o.Cut
+	}
+	return DefaultEntryLimit
 }
 
 // Kind names an entry.
@@ -55,6 +66,8 @@ type Entry struct {
 	Kind      Kind
 	RequestID string
 	Start     int64 // unix nanoseconds of the exchange's start
+	// Index is the entry's position among its own exchange's entries.
+	Index int
 
 	Method, Path string
 	Status       int
@@ -67,6 +80,11 @@ type Entry struct {
 	Text       string
 	// Omitted is how many bytes of Text were cut off; 0 when nothing was.
 	Omitted int
+	// Thinking is the readable text of the message's thinking blocks; empty when
+	// the message has none or they are redacted or not stored.
+	Thinking string
+	// ThinkingOmitted is how many bytes of Thinking were cut off.
+	ThinkingOmitted int
 	// Partial marks an entry built from an exchange or event that is incomplete.
 	Partial bool
 	// Call is the usage of the model call this exchange or folded entry stands for;
@@ -118,7 +136,7 @@ func BuildWithUsage(src Source, session store.SessionRow, opts Options) ([]Entry
 			if fe.Call != nil {
 				calls = append(calls, *fe.Call)
 			}
-			out = append(out, fe)
+			out = append(out, fe) // Index 0
 			continue
 		}
 		lcp, best := bestMatch(earlier, hashes)
@@ -126,6 +144,9 @@ func BuildWithUsage(src Source, session store.SessionRow, opts Options) ([]Entry
 		entries, err := exchangeEntries(src, ex, evs, lcp, best, opts)
 		if err != nil {
 			return nil, Summary{}, err
+		}
+		for i := range entries {
+			entries[i].Index = i
 		}
 		entries[0].Call = callOf(ex, evs)
 		if entries[0].Call != nil {
@@ -272,7 +293,7 @@ func exchangeEntries(src Source, ex store.ExchangeRow, evs []store.EventRow, sha
 			var p toolResultPayload
 			_ = json.Unmarshal(e.Payload, &p)
 			en.IsError = p.IsError
-			en.Text, err = rawContent(src, e.ContentHash)
+			en.Text, err = toolResultText(src, e.ContentHash)
 		case "error":
 			en.Kind = KindError
 			var p errorPayload
@@ -287,7 +308,8 @@ func exchangeEntries(src Source, ex store.ExchangeRow, evs []store.EventRow, sha
 			return nil, err
 		}
 		if !opts.Full {
-			en.Text, en.Omitted = cut(en.Text, DefaultEntryLimit)
+			en.Text, en.Omitted = cut(en.Text, opts.limit())
+			en.Thinking, en.ThinkingOmitted = cut(en.Thinking, opts.limit())
 		}
 		out = append(out, en)
 	}
@@ -301,6 +323,7 @@ func fillMessage(src Source, e store.EventRow, en *Entry) error {
 	}
 	en.Role = p.Role
 	var text string
+	var thinking []string
 	for _, b := range p.Blocks {
 		var part string
 		switch b.Type {
@@ -311,6 +334,15 @@ func fillMessage(src Source, e store.EventRow, en *Entry) error {
 			}
 			part = blockText(raw)
 		case "reasoning", "media", "unknown":
+			if b.Type == "reasoning" {
+				raw, err := content(src, b.Hash)
+				if err != nil {
+					return err
+				}
+				if t := thinkingText(raw); t != "" {
+					thinking = append(thinking, t)
+				}
+			}
 			part = "[" + b.Type + "]"
 		default: // tool blocks show as their own tool events
 			continue
@@ -321,7 +353,20 @@ func fillMessage(src Source, e store.EventRow, en *Entry) error {
 		text += part
 	}
 	en.Text = text
+	en.Thinking = strings.Join(thinking, "\n")
 	return nil
+}
+
+// thinkingText is the "thinking" string of a stored thinking block; a redacted,
+// missing or unreadable block has none.
+func thinkingText(raw []byte) string {
+	var t struct {
+		Thinking string `json:"thinking"`
+	}
+	if raw == nil || json.Unmarshal(raw, &t) != nil {
+		return ""
+	}
+	return t.Thinking
 }
 
 // content reads stored content; absent content is nil, not an error.
@@ -346,6 +391,23 @@ func rawContent(src Source, hash string) (string, error) {
 	}
 	if b == nil {
 		return NotStored, nil
+	}
+	return string(b), nil
+}
+
+// toolResultText is the tool result's content decoded to text when it is stored as a
+// JSON string, else the content as stored (an array of blocks keeps its JSON form).
+func toolResultText(src Source, hash string) (string, error) {
+	b, err := content(src, hash)
+	if err != nil {
+		return "", err
+	}
+	if b == nil {
+		return NotStored, nil
+	}
+	var s string
+	if json.Unmarshal(b, &s) == nil {
+		return s, nil
 	}
 	return string(b), nil
 }

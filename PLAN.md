@@ -104,6 +104,7 @@ A lower priority never degrades a higher one.
 - Being a harness or agent runtime of any kind
 - Cross-protocol translation (e.g. an Anthropic-format client → an OpenAI-only model). Designed for, not built.
 - Multi-user features: virtual keys, per-user budgets, user management, hosted UI. The seams exist (§2, "Scale"); the features don't.
+- Routing (same-protocol model aliases, weighted selection, fallback, circuit breaker) and real auth (virtual keys, SSO, a gateway token on tunnelled routes). Removed from v1 by [ADR 0010](docs/decisions/0010-remove-routing-and-auth-from-v1.md); the seams in §2 stay.
 - Semantic caching, MCP, A2A, admin UI, SDK
 
 ## 7. Phases
@@ -118,12 +119,16 @@ Each phase maps to one or more features, and each feature gets its own spec fold
 | 3 | Sessions & timeline | Group Claude Code requests into sessions via `x-claude-code-session-id`; viewer | Claude Code sessions replay as ordered timelines: prompt → tool calls → results. The timeline reads only canonical events, never Anthropic wire types, enforced by a purity test on the timeline package |
 | 4 | Usage (tokens) | Usage from the provider's response: the four counters (input, output, cache write, cache read) per model call, shown per exchange and summed per session; no prices | Every model call shows the counters from its provider usage event; session totals sum them and mark unknown, partial, or errored calls, never as 0 |
 | 5 | Rate limiting | Per gateway key, requests and tokens per minute enforced by the gateway; in-memory fixed window in v1 behind a `Limiter` strategy (Redis deferred, [ADR 0008](docs/decisions/0008-in-memory-fixed-window-limiter.md)); well-formed 429s with `retry-after` | Over a limit, Claude Code gets a 429 and backs off and retries cleanly |
+| A | Web UI | A read-only local page on its own loopback listener: sessions, timelines built from canonical events, live updates for active sessions, exchange detail ([ADR 0009](docs/decisions/0009-web-ui-vanilla-js-read-only.md)) | A session replays in the browser as `gateway timeline` prints it, and an active session updates within moments of each exchange being stored; the UI never blocks or fails proxying or capture |
 | 6 | Ground truth (optional) | Ingest harness hooks / OTel events; correlate with captured tool calls | The timeline shows "model asked" vs "harness did" |
-| 7 | Routing | Same-protocol model aliases, weighted selection, fallback + circuit breaker | A model swap via config needs no restart and doesn't break the client |
+| C | File system and network visibility | Show file-system and network activity alongside the timeline and the captured tool calls | Defined in its own spec when it starts |
+| 7 | Routing: **removed from v1** ([ADR 0010](docs/decisions/0010-remove-routing-and-auth-from-v1.md)) | Same-protocol model aliases, weighted selection, fallback + circuit breaker. Not scheduled | Not in v1 |
 | 8 | Self-observability | Prometheus, OTel → Jaeger, Grafana | The gateway's own p50/p99 overhead is visible |
 | 9 | Cost: pricing table keyed by provider + model, needs API billing to verify | Price each model call from the Phase 4 counters using a pricing table keyed by provider + model; estimate audit (OQ-4) | Per-session cost matches the provider console within tolerance; unknown models are shown as `unknown` |
 
 The former Phase 3 (a second wire protocol and its client profile, gateway token auth, a public tunnel) was removed and the later phases moved up by one ([ADR 0006](docs/decisions/0006-drop-cursor-from-v1.md)).
+
+The v1 order is now A (web UI) → 6 (ground truth) → C (file system and network) → 9 (cost). Routing (old Phase 7) and real auth are removed from v1 ([ADR 0010](docs/decisions/0010-remove-routing-and-auth-from-v1.md)). Self-observability (Phase 8) is unchanged.
 
 Later, each as a new adapter or profile: OpenAI Responses (Codex), OpenAI Chat Completions (Cursor and others), Gemini (Gemini CLI, Antigravity), Bedrock/Vertex formats, cross-protocol translation, eBPF-level fs/network tracing. Each new protocol's decoder must map its provider usage to the four Phase 4 counters with the meaning defined in `specs/005-session-token-usage/spec.md` (Terms): input is uncached input only, so input + cache write + cache read is the full prompt.
 
@@ -150,7 +155,8 @@ Status: **Decided** = settled; **Proposed** = my default, confirmed in the phase
 | Token estimation | **tiktoken-go** for OpenAI-family models | Independent count to audit provider-reported usage. | Its accuracy for non-OpenAI tokenizers (Claude, Gemini) is the problem in OQ-4. | Decided for OpenAI; **Open** for others | Phase 9 |
 | Testing | **Table-driven tests, `-race`, testcontainers-go, recorded stream fixtures** per protocol | Race detector catches tee/capture concurrency bugs. testcontainers gives real Redis/DB, not mocks that lie. Recorded real SSE streams (golden files) let each adapter be tested without live API calls or cost. | **Mocked stores only:** they pass while the real thing fails. **Live-API tests in CI:** cost money and flake. | Decided | Phase 0 |
 | Packaging | **docker-compose** for the stack; gateway also runnable as a plain binary | One command brings up store, Redis, Prometheus, Grafana, Jaeger. Running the binary directly keeps the dev loop fast. | **Kubernetes:** irrelevant for local single-user. | Decided | Phase 0 |
-| Viewer | **Local CLI first** (`gateway sessions`, `gateway timeline`); a web UI later, once the canonical event model is stable | Greppable and fast to build, and it reads canonical events directly. Long timelines and nested sub-agents are a later need. | **Small local web UI now:** better for long timelines, but it freezes presentation before the model has met a second protocol. **Grafana panels only:** poor for reading conversations. | Decided ([ADR 0007](docs/decisions/0007-viewer-cli-first.md)) | Phase 3 |
+| Viewer | **Local CLI** (`gateway sessions`, `gateway timeline`), greppable and reading canonical events directly | Fast to build, and it reads canonical events directly. | **Grafana panels only:** poor for reading conversations. | Superseded for the web UI by [ADR 0009](docs/decisions/0009-web-ui-vanilla-js-read-only.md); the CLI stays ([ADR 0007](docs/decisions/0007-viewer-cli-first.md)) | Phase 3 |
+| Web UI | **Vanilla JS** (ES modules, custom elements, `<template>`, `fetch`, `EventSource`, hash routing) embedded with `go:embed`; no npm, no build step | No Node in the build, so the binary stays one static file. The page reads the same timeline entries as the CLI. Read-only, loopback only. | **React and Preact + Vite:** need Node in the build. **htmx:** a dependency that limits a rich timeline. **Preact + htm:** kept as the recorded fallback if vanilla becomes too costly. | Decided ([ADR 0009](docs/decisions/0009-web-ui-vanilla-js-read-only.md)) | Phase A (web UI) |
 
 ---
 
@@ -315,7 +321,7 @@ What is repo-specific, and so belongs here:
 
 ### Scopes
 
-A scope is a noun naming the area touched, matching this codebase: `proxy`, `capture`, `anthropic`, `openai-chat`, `claude-code`, `cost`, `ratelimit`, `routing`, `store`, `observability`, `config`, `server` (`internal/server`, `cmd/gateway`), `logging`, `deploy` (Dockerfile, compose, image), `docs`, `repo` (repo-level tooling, hooks, process docs).
+A scope is a noun naming the area touched, matching this codebase: `proxy`, `capture`, `anthropic`, `openai-chat`, `claude-code`, `cost`, `ratelimit`, `routing`, `store`, `observability`, `config`, `server` (`internal/server`, `cmd/gateway`), `logging`, `ui` (`internal/ui`, the web page and its API), `deploy` (Dockerfile, compose, image), `docs`, `repo` (repo-level tooling, hooks, process docs).
 
 **Branch and commit agree.** Commits on `feat/003-sessions-and-timeline` use scopes from that feature.
 

@@ -24,6 +24,7 @@ type fileConfig struct {
 	Upstreams map[string]upstreamFile `yaml:"upstreams"`
 	Capture   captureFile             `yaml:"capture"`
 	RateLimit ratelimitFile           `yaml:"ratelimit"`
+	UI        uiFile                  `yaml:"ui"`
 }
 
 // upstreamFile is one upstreams.<name> block. Like fileConfig, its tags are the known
@@ -79,6 +80,9 @@ func fileValues(f *fileConfig) map[string]*string {
 	for field, p := range stringFields(&f.RateLimit) {
 		values[ratelimitKey(field)] = p
 	}
+	for field, p := range stringFields(&f.UI) {
+		values[uiKey(field)] = p
+	}
 	return values
 }
 
@@ -87,6 +91,8 @@ func fileValues(f *fileConfig) map[string]*string {
 func Load(opts Options) (Config, Source, error) {
 	cfg := Defaults()
 	src := Source{EnvOverrides: []string{}}
+	// origin is where each key's value came from, for errors found after both are read.
+	origin := map[string]string{}
 	settings := settingsFor(opts.Upstreams)
 	if len(opts.Upstreams) > 0 {
 		cfg.Upstreams = make(map[string]Upstream, len(opts.Upstreams))
@@ -116,6 +122,7 @@ func Load(opts Options) (Config, Source, error) {
 			if reason := s.apply(&cfg, *v); reason != "" {
 				return Config{}, Source{}, &Error{Key: s.key, Source: path, Reason: reason, Line: lines[s.key]}
 			}
+			origin[s.key] = path
 		}
 		if err := applyKeys(&cfg, path, keys, lines); err != nil {
 			return Config{}, Source{}, err
@@ -134,8 +141,12 @@ func Load(opts Options) (Config, Source, error) {
 			if reason := s.apply(&cfg, v); reason != "" {
 				return Config{}, Source{}, &Error{Key: s.key, Source: name, Reason: reason}
 			}
+			origin[s.key] = name
 			src.EnvOverrides = append(src.EnvOverrides, s.key)
 		}
+	}
+	if err := validateUI(&cfg, origin[uiListenKey]); err != nil {
+		return Config{}, Source{}, err
 	}
 	if err := validateRateLimit(&cfg, src.File); err != nil {
 		return Config{}, Source{}, err
@@ -317,10 +328,21 @@ func parseFile(path string, data []byte, specs []UpstreamSpec) (map[string]*stri
 		}
 		return nil
 	}
+	// walkUI checks the block under `ui`: one level of fields.
+	walkUI := func(k, v *yaml.Node) error {
+		if isNull(v) {
+			return nil
+		}
+		if v.Kind != yaml.MappingNode {
+			return fail(k.Value, reasonInvalidType, k.Line)
+		}
+		return walkFields(v, uiKey, stringFields(&uiFile{}))
+	}
 	blocks := map[string]func(k, v *yaml.Node) error{
 		"upstreams": walkUpstreams,
 		"capture":   walkCapture,
 		"ratelimit": walkRateLimit,
+		"ui":        walkUI,
 	}
 	if root := documentRoot(&doc); root != nil {
 		if root.Kind != yaml.MappingNode {
