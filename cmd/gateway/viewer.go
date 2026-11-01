@@ -138,6 +138,10 @@ func runSessions(d deps) int {
 	if err != nil {
 		return v.fail("cannot read store", err)
 	}
+	hookCount, err := v.r.UngroupedHookCount()
+	if err != nil {
+		return v.fail("cannot read store", err)
+	}
 	var ungroupedUsage timeline.Summary
 	if sum.Count > 0 {
 		if _, ungroupedUsage, _, err = timeline.ListUngrouped(v.r, 1); err != nil {
@@ -151,8 +155,8 @@ func runSessions(d deps) int {
 	if err := renderRows(&out, rows, l); err != nil {
 		return v.fail("cannot read store", err)
 	}
-	if sum.Count > 0 {
-		u := timeline.UngroupedSummary{Count: sum.Count, First: sum.First, Last: sum.Last, Usage: ungroupedUsage}
+	if sum.Count > 0 || hookCount > 0 {
+		u := timeline.UngroupedSummary{Count: sum.Count, First: sum.First, Last: sum.Last, Usage: ungroupedUsage, HookCount: hookCount}
 		if err := renderUngrouped(&out, u, l); err != nil {
 			return v.fail("cannot read store", err)
 		}

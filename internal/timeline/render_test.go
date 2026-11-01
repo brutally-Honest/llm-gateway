@@ -320,3 +320,108 @@ func TestRender_NonModelExchangeUnchanged(t *testing.T) {
 		t.Fatalf("line = %v", l)
 	}
 }
+
+func renderEntries(t *testing.T, es []timeline.Entry) string {
+	t.Helper()
+	var b bytes.Buffer
+	if err := timeline.RenderText(&b, es, time.UTC); err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
+}
+
+func TestRender_ShowsStateAndInputDiffers(t *testing.T) {
+	out := renderEntries(t, []timeline.Entry{{Kind: timeline.KindToolCall, Name: "Bash", ToolCallID: "t1", Text: `{"a":1}`,
+		State: timeline.StateAskedNotRun, Reason: timeline.ReasonDenied, InputDiffers: true, HookInput: `{"a":2}`}})
+	for _, w := range []string{"[asked-not-run: denied]", "[input differs]", `hook input: {"a":2}`} {
+		if !strings.Contains(out, w) {
+			t.Errorf("missing %q in %q", w, out)
+		}
+	}
+	out = renderEntries(t, []timeline.Entry{{Kind: timeline.KindToolCall, Name: "Bash", ToolCallID: "t1",
+		State: timeline.StateAskedRanReported, Outcome: timeline.OutcomeFailed}})
+	if !strings.Contains(out, "[asked+ran+reported: failed]") || strings.Contains(out, "input differs") {
+		t.Errorf("got %q", out)
+	}
+}
+
+func TestRender_UnmatchedHookLinesInTimeOrder(t *testing.T) {
+	f := newFake()
+	f.thread("r1", 5*sec, "u:hi")
+	f.hook("post_tool", "x1", sec, "p1")
+	f.hook("pre_tool", "", 9*sec, "p2")
+	es := build(t, f, timeline.Options{})
+	out := renderEntries(t, es)
+	a, b, c := strings.Index(out, "(x1)"), strings.Index(out, "== "), strings.Index(out, "pre_tool")
+	if a < 0 || b < 0 || c < 0 || a >= b || b >= c {
+		t.Fatalf("order wrong (%d %d %d): %q", a, b, c, out)
+	}
+	if !strings.Contains(out, "[ran-not-asked-or-not-captured]") {
+		t.Errorf("no state: %q", out)
+	}
+}
+
+func TestRender_ShowsAgentLabels(t *testing.T) {
+	out := renderEntries(t, []timeline.Entry{
+		{Kind: timeline.KindToolCall, Name: "Bash", ToolCallID: "t1", AgentID: "a1", AgentType: "Explore"},
+		{Kind: timeline.KindHarness, Phase: "pre_tool", Name: "Bash", AgentID: "a2", AgentType: "Plan"}})
+	for _, w := range []string{"agent=a1/Explore", "agent=a2/Plan"} {
+		if !strings.Contains(out, w) {
+			t.Errorf("missing %q in %q", w, out)
+		}
+	}
+}
+
+func TestTimelineJSON_IncludesStatesAndHookEvents(t *testing.T) {
+	var b bytes.Buffer
+	es := []timeline.Entry{
+		{Kind: timeline.KindToolCall, ToolCallID: "t1", State: timeline.StateAskedNotRun, Reason: "denied", InputDiffers: true, HookInput: "{}", AgentID: "a"},
+		{Kind: timeline.KindHarness, Phase: "post_tool", ToolCallID: "x", State: timeline.StateUnmatched, AgentType: "Plan"}}
+	if err := timeline.RenderJSON(&b, es, time.UTC); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(b.String()), "\n")
+	var m0, m1 map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &m0); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(lines[1]), &m1); err != nil {
+		t.Fatal(err)
+	}
+	if m0["state"] != "asked-not-run" || m0["reason"] != "denied" || m0["input_differs"] != true || m0["agent_id"] != "a" {
+		t.Errorf("tool call: %v", m0)
+	}
+	if m1["type"] != "harness" || m1["phase"] != "post_tool" || m1["state"] != timeline.StateUnmatched || m1["agent_type"] != "Plan" {
+		t.Errorf("hook: %v", m1)
+	}
+}
+
+func TestSessions_HooksOnlyLabelled(t *testing.T) {
+	r := rows()
+	r[0].HooksOnly = true
+	var b bytes.Buffer
+	if err := timeline.RenderSessionsText(&b, r, time.UTC); err != nil || !strings.Contains(b.String(), "hooks only") {
+		t.Fatalf("text %q %v", b.String(), err)
+	}
+	b.Reset()
+	if err := timeline.RenderSessionsJSON(&b, r, time.UTC); err != nil || !strings.Contains(b.String(), `"hooks_only":true`) {
+		t.Fatalf("json %q %v", b.String(), err)
+	}
+	b.Reset()
+	_ = timeline.RenderSessionsText(&b, rows(), time.UTC)
+	if strings.Contains(b.String(), "hooks only") {
+		t.Errorf("label on normal session: %q", b.String())
+	}
+}
+
+func TestSessions_UngroupedShowsHookCount(t *testing.T) {
+	var b bytes.Buffer
+	u := timeline.UngroupedSummary{HookCount: 3}
+	if err := timeline.RenderUngroupedRowText(&b, u, time.UTC); err != nil || !strings.Contains(b.String(), "3 hook events") {
+		t.Fatalf("text %q %v", b.String(), err)
+	}
+	b.Reset()
+	if err := timeline.RenderUngroupedRowJSON(&b, u, time.UTC); err != nil || !strings.Contains(b.String(), `"hook_events":3`) {
+		t.Fatalf("json %q %v", b.String(), err)
+	}
+}
