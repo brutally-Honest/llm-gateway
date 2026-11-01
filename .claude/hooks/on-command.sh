@@ -26,7 +26,8 @@ sid=$(jq -r '.session_id // ""' <<<"$input")
 name=${name##*:}; name=${name##*/}
 case $name in al-approve | al-plan | al-implement | al-resume | al-change | al-fix | al-answer | al-status | al-pause) ;; *) exit 0 ;; esac
 name=${name#al-}
-[ -n "$cwd" ] && cd "$cwd" 2>/dev/null
+# a working directory that can't be entered: nothing to act on
+if [ -n "$cwd" ] && ! cd "$cwd" 2>/dev/null; then exit 0; fi
 git rev-parse --show-toplevel >/dev/null 2>&1 || exit 0
 [ -n "${AGENT_LOOP_DEBUG:-}" ] && { r=$(git rev-parse --show-toplevel 2>/dev/null) && mkdir -p "$r/.agent-loop" && printf '%s on-command %s\n' "$(date -u +%H:%M:%S)" "$input" >> "$r/.agent-loop/hook-debug.log"; }
 

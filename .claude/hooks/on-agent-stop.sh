@@ -20,7 +20,8 @@ cwd=$(jq -r '.cwd // ""' <<<"$input")
 msg=$(jq -r '.last_assistant_message // ""' <<<"$input")
 
 case $role in implementer | quick-builder | reviewer | planner | impact-analyst | spec-critic) ;; *) exit 0 ;; esac
-[ -n "$cwd" ] && cd "$cwd" 2>/dev/null
+# a working directory that can't be entered: nothing to act on
+if [ -n "$cwd" ] && ! cd "$cwd" 2>/dev/null; then exit 0; fi
 git rev-parse --show-toplevel >/dev/null 2>&1 || exit 0
 HOOKS=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SCRIPTS="$HOOKS/../scripts"

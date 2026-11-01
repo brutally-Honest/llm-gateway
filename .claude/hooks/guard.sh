@@ -48,7 +48,10 @@ case $role in
 esac
 kit() { case $class in builder | reader | writer) return 0 ;; esac; return 1; }
 
-[ -n "$cwd" ] && cd "$cwd" 2>/dev/null
+# fail closed: without its working directory the guard can't tell which repo or policy applies
+if [ -n "$cwd" ] && ! cd "$cwd" 2>/dev/null; then
+	deny "the guard can't enter the working directory $cwd, so it can't check this call — blocked. Check that the directory exists and is readable."
+fi
 git rev-parse --show-toplevel >/dev/null 2>&1 || pass   # not a git repo: no policy
 # shellcheck source=../scripts/lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../scripts/lib.sh"
