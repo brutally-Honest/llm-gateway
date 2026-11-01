@@ -58,6 +58,35 @@ func TestCore_NoProviderOrClientIdentifiers(t *testing.T) {
 	for _, d := range dirs {
 		checkDir(t, d.dir, d.forbidden)
 	}
+	checkNoHarnessEvents(t, "../hooks")
+}
+
+// checkNoHarnessEvents fails for every non-test .go file directly in dir that names a
+// hook event from harnessEventRE, and when dir holds no such file. Test files are
+// skipped: hook payload fixtures legitimately carry event names.
+func checkNoHarnessEvents(t *testing.T, dir string) {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, path := range files {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		checked++
+		for _, m := range harnessEventRE.FindAll(b, -1) {
+			t.Errorf("%s names the hook event %q; only %s may", path, m, harnessProfileDir)
+		}
+	}
+	if checked == 0 {
+		t.Fatalf("no files checked under %s; the walk is not looking at it", dir)
+	}
 }
 
 // checkDir fails the test for every file under dir that contains a forbidden word, and
