@@ -1,7 +1,8 @@
 import { getJSON, openStream } from "./api.js";
-import { addUnique, upsertSession } from "./entries.js";
+import { addUnique, replaceExchange, upsertSession } from "./entries.js";
 import { createStore } from "./store.js";
 import { note } from "./session-list.js";
+import "./session-view.js";
 import "./ungrouped-list.js";
 
 const app = document.getElementById("app");
@@ -43,6 +44,51 @@ function startStream() {
   );
 }
 
+let seq = 0;
+
+// showSession loads the summary and every timeline page, then, for an active session,
+// opens its stream. A stale load (the route changed meanwhile) is dropped.
+async function showSession(id) {
+  const mine = ++seq;
+  const el = document.createElement("session-view");
+  app.replaceChildren(el);
+  const st = { summary: null, entries: [], error: "", snapshotError: "" };
+  const draw = () => el.render(st);
+  draw();
+  const set = (patch) => {
+    if (mine !== seq) return;
+    Object.assign(st, patch);
+    draw();
+  };
+  try {
+    const summary = await getJSON(`sessions/${encodeURIComponent(id)}`);
+    if (mine !== seq) return;
+    set({ summary });
+    let after;
+    do {
+      const page = await getJSON(`sessions/${encodeURIComponent(id)}/timeline`, { after, limit: 2000 });
+      if (mine !== seq) return;
+      set({ entries: st.entries.concat(page.entries) });
+      after = page.next_after;
+    } while (after);
+    if (!summary.active) return;
+  } catch (e) {
+    set({ error: e.message });
+    return;
+  }
+  closeStream = openStream(
+    (name, data) => {
+      if (name === "snapshot_error") set({ snapshotError: data.error ? data.error.message : "unknown" });
+      else if (name === "session") set({ summary: data, snapshotError: "" });
+      else set({ entries: replaceExchange(st.entries, data), snapshotError: "" });
+    },
+    (state) => {
+      liveEl.textContent = state === "connected" ? "live" : "live: disconnected, retrying";
+    },
+    `sessions/${encodeURIComponent(id)}/stream`,
+  );
+}
+
 function show(kind, tag) {
   const el = document.createElement(tag);
   app.replaceChildren(el);
@@ -62,12 +108,15 @@ function route() {
   if (view) view();
   view = null;
   stopStream();
+  seq++;
   const h = location.hash || "#/";
   if (h === "#/") {
     show("sessions", "session-list");
     startStream();
   } else if (h === "#/ungrouped") {
     show("ungrouped", "ungrouped-list");
+  } else if (h.startsWith("#/sessions/")) {
+    showSession(decodeURIComponent(h.slice("#/sessions/".length)));
   } else {
     app.replaceChildren(note("empty", "Nothing here."));
   }

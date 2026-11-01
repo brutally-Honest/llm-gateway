@@ -17,11 +17,11 @@ export async function getJSON(path, params = {}) {
 }
 
 // openStream opens /api/stream and calls onEvent(name, data). It returns a close function.
-export function openStream(onEvent, onState) {
-  const es = new EventSource("/api/stream");
+export function openStream(onEvent, onState, path = "stream") {
+  const es = new EventSource(`/api/${path}`);
   es.onopen = () => onState("connected");
   es.onerror = () => onState("disconnected");
-  for (const name of ["session", "exchange", "entries"]) {
+  for (const name of ["session", "exchange", "entries", "snapshot_error"]) {
     es.addEventListener(name, (e) => {
       try {
         onEvent(name, JSON.parse(e.data));

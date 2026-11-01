@@ -28,7 +28,11 @@ export class SessionList extends HTMLElement {
     ]);
     for (const s of data.items) {
       const tr = document.createElement("tr");
-      cell(tr, s.client);
+      const client = cell(tr, "");
+      const link = document.createElement("a");
+      link.href = `#/sessions/${encodeURIComponent(s.id)}`;
+      link.textContent = s.client;
+      client.append(link);
       cell(tr, s.models.join(", "));
       for (const iso of [s.first_at, s.last_at]) {
         const td = document.createElement("td");
