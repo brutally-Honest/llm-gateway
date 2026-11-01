@@ -63,10 +63,23 @@ snapshot() { SNAP=$(mktemp -d "${TMPDIR:-/tmp}/al-snap.XXXXXX") && cp -Rp "$SPEC
 restore() { [ -n "$SNAP" ] || return 0; git reset -q -- "$SPECS_DIR/$F" 2>/dev/null; cp -Rp "$SNAP/." "$SPECS_DIR/$F/"; rm -rf "$SNAP"; SNAP=""; }
 done_snap() { [ -n "$SNAP" ] && rm -rf "$SNAP"; SNAP=""; }
 
-commit_docs() { # subject body
-	local out
-	git add -- "$SPECS_DIR/$F" || return 1
-	out=$(git commit -q -m "$1" -m "$2" -- "$SPECS_DIR/$F" 2>&1) || { printf '%s\n' "$out"; return 1; }
+KIT_ACTION=approve   # the Kit: trailer of this run's commit (approve | change | reopen)
+written() { # the files under specs/<f>/ this run wrote: they differ from the snapshot taken before it
+	local f
+	find "$SPECS_DIR/$F" -type f | sort | while IFS= read -r f; do
+		cmp -s "$f" "$SNAP/${f#"$SPECS_DIR/$F/"}" || printf '%s\n' "$f"
+	done
+}
+
+commit_docs() { # subject body — commits only what this run wrote; your other edits in specs/<f>/ stay as they are
+	local out f
+	local -a fs=()
+	while IFS= read -r f; do [ -n "$f" ] && fs+=("$f"); done <<EOF
+$(written)
+EOF
+	[ ${#fs[@]} -gt 0 ] || { echo "nothing was written, so there is nothing to commit"; return 1; }
+	git add -- "${fs[@]}" || return 1
+	out=$(git commit -q -m "$1" -m "$2" -m "Kit: $KIT_ACTION" -- "${fs[@]}" 2>&1) || { printf '%s\n' "$out"; return 1; }
 }
 
 finish_commit() { # subject body
@@ -347,6 +360,6 @@ case $target in
 	plan) approve_plan ;;
 	tasks) approve_tasks ;;
 	brief) approve_brief ;;
-	change) approve_change ;;
-	reopen) reopen_cmd ;;
+	change) KIT_ACTION=change; approve_change ;;
+	reopen) KIT_ACTION=reopen; reopen_cmd ;;
 esac

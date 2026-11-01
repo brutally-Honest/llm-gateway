@@ -82,8 +82,9 @@ t "the tasks.md commit subject fits 72 bytes"
 subject=$(git log -1 --format=%s)
 [ "$(printf '%s' "$subject" | LC_ALL=C wc -c)" -le 72 ] && pass || fail "subject too long: $subject"
 
-t "the tasks.md commit body is the full bug text"
-assert_eq "$BUG" "$(git log -1 --format=%b | sed '/^$/d')" "commit body"
+t "the tasks.md commit body is the full bug text, then the Kit trailer"
+assert_eq "$BUG
+Kit: add-fix" "$(git log -1 --format=%b | sed '/^$/d')" "commit body"
 
 t "the new task's Do: line carries the full bug text"
 assert_contains "$(cat "specs/$F/tasks.md")" "- Do: reproduce and fix: $BUG" "tasks.md"

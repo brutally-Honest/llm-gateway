@@ -14,7 +14,8 @@ prompt=$(jq -r '.prompt // ""' <<<"$input")
 sid=$(jq -r '.session_id // ""' <<<"$input")
 cwd=$(jq -r '.cwd // ""' <<<"$input")
 [ -n "$sid" ] || exit 0
-[ -n "$cwd" ] && cd "$cwd" 2>/dev/null
+# a working directory that can't be entered: nothing to act on
+if [ -n "$cwd" ] && ! cd "$cwd" 2>/dev/null; then exit 0; fi
 r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 [ -n "${AGENT_LOOP_DEBUG:-}" ] && { mkdir -p "$r/.agent-loop" && printf '%s on-prompt %s\n' "$(date -u +%H:%M:%S)" "$input" >> "$r/.agent-loop/hook-debug.log"; }
 

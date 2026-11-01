@@ -39,20 +39,27 @@ render() { # template dest   (uses F KIND TITLE SUP CR BRANCH); .claude/template
 		-e "s|{{TITLE}}|${TITLE:-$F}|g" -e "s|{{SUPERSEDES}}|${SUP:-}|g" -e "s|{{CR}}|${CR:-}|g" -e 's/^\([a-z-]*\): $/\1:/' "$src" > "$2"
 }
 
-run_verify() { # [why] -> 0 = green. Records HEAD as green only when verify ran on a clean tree and left it clean.
-	local log out rc before
-	log=$(VLOG)
-	if [ -z "$VERIFY_CMD" ]; then { verify_unset_msg; echo; } > "$log"; return 1; fi # unset is red, never a silent green
-	# Verify writes outside the repo and the log moves in only after it exits, so
-	# .agent-loop/ holds still while verify runs (the kit's runner checks that).
-	out=$(mktemp "${TMPDIR:-/tmp}/al-verify.XXXXXX") || die "cannot create a temp file for verify's output"
+run_readonly() { # name cmd log -> the command's exit code (1 if it changed the working tree); its output in log
+	local out rc before
+	# The command writes outside the repo and the log moves in only after it exits, so
+	# .agent-loop/ holds still while it runs (the kit's runner checks that).
+	out=$(mktemp "${TMPDIR:-/tmp}/al-$1.XXXXXX") || die "cannot create a temp file for $1's output"
 	before=$(git status --porcelain)
-	(bash -c "$VERIFY_CMD") > "$out" 2>&1; rc=$?
+	(bash -c "$2") > "$out" 2>&1; rc=$?
 	if [ "$(git status --porcelain)" != "$before" ]; then
-		printf '\nagent-loop: verify changed files in the working tree — verify must be read-only:\n%s\n' "$(git status --short)" >> "$out"
+		printf '\nagent-loop: %s changed files in the working tree — %s must be read-only:\n%s\n' "$1" "$1" "$(git status --short)" >> "$out"
 		rc=1
 	fi
-	mv -f "$out" "$log"
+	mv -f "$out" "$3"
+	return $rc
+}
+
+run_verify() { # [why] -> 0 = green. Records HEAD as green only when verify ran on a clean tree and left it clean.
+	local log rc before
+	log=$(VLOG)
+	if [ -z "$VERIFY_CMD" ]; then { verify_unset_msg; echo; } > "$log"; return 1; fi # unset is red, never a silent green
+	before=$(git status --porcelain)
+	run_readonly verify "$VERIFY_CMD" "$log"; rc=$?
 	if [ $rc = 0 ] && [ -z "$before" ] && [ -n "${F:-}" ]; then sfile_set green "$(git rev-parse HEAD)"; fi
 	if [ -n "${F:-}" ] && [ -n "${1:-}" ]; then
 		if [ $rc = 0 ]; then log_event "VERIFY green $1 at $(short)"; else log_event "VERIFY red $1 at $(short)"; fi
@@ -95,7 +102,7 @@ autocommit_research() { # commit research.md when it is the only uncommitted cha
 	local st r="$SPECS_DIR/$F/research.md"
 	st=$(git status --porcelain); [ -n "$st" ] || return 0
 	printf '%s\n' "$st" | grep -v " $r\$" | grep -q . && return 0
-	git add -- "$r" && git commit -q -m "docs($F): update research notes" -- "$r" && echo "Committed your research.md changes."
+	git add -- "$r" && git commit -q -m "docs($F): update research notes" -m "Kit: research" -- "$r" && echo "Committed your research.md changes."
 }
 
 draft_crs() { local c; for c in $(cr_files); do [ "$(fm_get "$c" status)" = draft ] && basename "$c" .md; done; return 0; }
@@ -191,13 +198,49 @@ art_line() { # name
 	printf '  %-9s %s%s\n' "$1.md" "$st" "$extra"
 }
 
+stopped_msg() { # id -> what to do about a STOPPED task, by why it stopped
+	local id=$1 b
+	b=$(short "$(sfile_get "base.$id")")
+	case $(state_detail "$id") in
+		scope) echo "$id's fix round changed files outside the task's own (loop.sh findings $id lists them): undo those by hand and /al-resume, or accept it as it is (loop.sh accept $id '<reason>')" ;;
+		*) echo "$id hit the fix-round limit: its last attempt is committed on top of $b. Fix it by hand and /al-resume, accept it as it is (loop.sh accept $id '<reason>'), or drop it (git reset --hard $b), edit the task in tasks.md, and /al-resume" ;;
+	esac
+}
+escalated_msg() { echo "$1 needs your decision (the reviewer's ESCALATE): /al-change the spec, or fix the code yourself; then /al-resume"; }
+
+last_stop_next() { # -> the Next line for the latest stop (loop.sh stop), while its task is still where that stop left it
+	local line kind id rest r
+	line=$(sfile_get laststop); [ -n "$line" ] || return 1
+	[ "$(state_get "$(sfile_get laststop.id)")" = "$(sfile_get laststop.state)" ] || return 1
+	line=${line#ACTION stop }; kind=${line%% *}; rest=${line#"$kind"}; rest=${rest# }; id=${rest%% *}; rest=${rest#"$id"}; rest=${rest# }
+	case $kind in
+		fix-limit) [ "$(state_get "$id")" = STOPPED ] && stopped_msg "$id" ;;
+		scope) [ "$(state_get "$id")" = STOPPED ] && stopped_msg "$id" ;;
+		escalate | ask-escalate) escalated_msg "$id" ;;
+		pre-task)
+			r=$(sfile_get stopreason | sed -n 's/^STOP-REASON //p' | head -1)
+			echo "the build couldn't start $id: ${r:-see the report above}. Fix that, then /al-resume" ;;
+		contract) echo "$id: an agent's report broke the loop's contract ${rest:-(see the run log)} — /al-resume picks $id up again" ;;
+		dirty-tree) echo "$id reported NEEDS-HUMAN but left uncommitted changes: commit or stash them, then /al-resume" ;;
+		keep) echo "$id's unfinished work is in the tree as your change: commit it (or not), then /al-resume runs $id from the new HEAD" ;;
+		interrupted | ask-dirty) echo "$id was interrupted and left uncommitted work: /al-resume asks what to do with it" ;;
+		*) return 1 ;;
+	esac
+}
+
+latest_held() { # -> "id status" of the task that most recently became STOPPED or ESCALATED and still is
+	[ -f "$(sdir)/state" ] || return 0
+	awk -F '\t' '{ s[$1] = $2; n[$1] = NR } END { for (k in s) if ((s[k] == "STOPPED" || s[k] == "ESCALATED") && k ~ /^T[0-9]/ && n[k] > m) { m = n[k]; w = k " " s[k] } if (w != "") print w }' "$(sdir)/state"
+}
+
 next_step() {
-	local st q ce c
+	local st q ce c hid hst
 	if is_quick; then
 		st=$(art_state "$(art brief)")
 		case $st in
 			draft) echo "review $(art brief), then /al-approve brief (it builds right after)" ;;
-			approved) [ "$(state_get Q)" = PASS ] && echo "done — read the report (loop.sh report) and open the PR" || echo "/al-implement" ;;
+			approved) if [ "$(state_get Q)" = PASS ]; then echo "done — read the report (loop.sh report) and open the PR"
+				else last_stop_next || echo "/al-implement"; fi ;;
 			*) art_why "$(art brief)" "$st" ;;
 		esac
 		return
@@ -227,12 +270,14 @@ next_step() {
 	ce=$(chain_errors tasks) || { echo "$ce"; return; }
 	q=$(open_questions | tr '\n' ' ')
 	[ -n "$q" ] && { echo "answer $q: /al-answer <Qn> <your answer>, then /al-resume"; return; }
-	for c in $(task_ids "$(art tasks)"); do
-		case $(state_get "$c") in
-			STOPPED) echo "$c hit the fix-round limit: its last attempt is committed on top of $(short "$(sfile_get "base.$c")"). Fix it by hand and /al-resume, or drop it (git reset --hard $(short "$(sfile_get "base.$c")")), edit the task in tasks.md, and /al-resume"; return ;;
-			ESCALATED) echo "$c needs your decision (the reviewer's ESCALATE): /al-change the spec, or fix the code yourself; then /al-resume"; return ;;
-		esac
-	done
+	last_stop_next && return
+	read -r hid hst <<EOF
+$(latest_held)
+EOF
+	case $hst in
+		STOPPED) stopped_msg "$hid"; return ;;
+		ESCALATED) escalated_msg "$hid"; return ;;
+	esac
 	for c in $(task_ids "$(art tasks)"); do
 		case $(state_get "$c") in PASS | NEEDS-HUMAN) ;; *) in_list "$c" "$(done_tasks)" || { echo "/al-implement"; return; } ;; esac
 	done
@@ -240,7 +285,7 @@ next_step() {
 	for c in $(task_ids "$(art tasks)"); do [ "$(state_get "$c")" = NEEDS-HUMAN ] && nh="$nh $c"; done
 	st=$(state_get BRANCH); [ "$(cfg REVIEW)" = none ] && st=PASS
 	case $st in
-		PASS | FIX | ESCALATE | OFF) echo "done — read the report (loop.sh report)${nh:+, do the manual checks for$nh}, then open the PR" ;;
+		PASS | FIX | ESCALATE | OFF) echo "done — read the report (loop.sh report)${nh:+, do the manual checks for$nh (record each: loop.sh pass-manual <ID> '<reason>')}, then open the PR" ;;
 		*) echo "/al-implement (branch review pending)" ;;
 	esac
 }
@@ -463,7 +508,7 @@ pre_task() { # id -> 0 ok (base recorded) | 1 with STOP-REASON lines
 	fi
 	record_base "$id"
 	sfile_set "rounds.$id" 0
-	rm -f "$(sdir)/findings.$id" "$(sdir)/watch.$id" "$(sdir)/reason.$id" "$(sdir)/end.$id"
+	rm -f "$(sdir)/findings.$id" "$(sdir)/watch.$id" "$(sdir)/reason.$id" "$(sdir)/end.$id" "$(sdir)/pending.$id" "$(sdir)/scope.$id"
 	state_set "$id" IN-PROGRESS
 	[ "$id" = Q ] || state_set BRANCH CLEARED
 	log_event "$id pre-task ok base=$(short "$(sfile_get "base.$id")")"
@@ -473,21 +518,77 @@ pre_task() { # id -> 0 ok (base recorded) | 1 with STOP-REASON lines
 PE=0
 pe() { printf '  - %s\n' "$*"; PE=1; }
 
+# --- which commits are a task's work ------------------------------------------------
+# A task's work is its "Task: <id>" commits in base..end. The kit's own commits (answer,
+# approve, change, accept, ...) carry "Kit: <action>" and are never the task's: they are
+# recognised by that trailer alone, never by their subject.
+kit_trailer() { git log -1 --format='%(trailers:key=Kit,valueonly)' "$1" | sed '/^$/d' | head -1; }
+# the implementer's own question commit when it stops BLOCKED ("Blocked: <id> Qn", research.md only)
+blocked_for() { git log -1 --format='%(trailers:key=Blocked,valueonly)' "$2" | grep -q "^$1 Q[0-9]"; }
+task_commits() { # id -> the task's own commits, oldest first (TRAILERS=off: every commit without a Kit trailer)
+	local id=$1 base c trl
+	base=$(sfile_get "base.$id"); [ -n "$base" ] || return 0
+	trl=$(cfg TRAILERS)
+	for c in $(git rev-list --reverse "$base..$(task_end "$id")"); do
+		[ -n "$(kit_trailer "$c")" ] && continue
+		blocked_for "$id" "$c" && continue
+		if [ "$trl" = off ] || git log -1 --format=%B "$c" | grep -qx "Task: $id"; then echo "$c"; fi
+	done
+}
+commit_paths() { git diff-tree -r --no-commit-id --name-only --root "$1"; }   # sha -> the files it changed
+task_paths() { local c; for c in $(task_commits "$1"); do commit_paths "$c"; done | sort -u; }
+own_diff() { # id git-diff-args... -> git diff <args> base end, limited to the files the task's own commits changed
+	local id=$1 p; shift
+	local -a ps=()
+	while IFS= read -r p; do [ -n "$p" ] && ps+=(":(literal)$p"); done <<EOF
+$(task_paths "$id")
+EOF
+	[ ${#ps[@]} -gt 0 ] || return 0
+	git diff "$@" "$(sfile_get "base.$id")" "$(task_end "$id")" -- "${ps[@]}"
+}
+
+in_fix_scope() { # path "scope files" -> 0 when a fix round may change the path: a scope file, a test file
+	# in a scope file's folder, or research.md (where questions go)
+	[ "$1" = "$SPECS_DIR/$F/research.md" ] && return 0
+	in_list "$1" "$2" && return 0
+	match_globs "$1" "$TEST_GLOBS" || return 1
+	printf '%s\n' "$2" | D="$(dirname "$1")" awk 'NF { d = $0; if (sub(/\/[^\/]*$/, "", d) == 0) d = "."; if (d == ENVIRON["D"]) { f = 1; exit } } END { exit !f }'
+}
+
 post_task() { # id [quick|full] -> 0 ok | 1 + problems.  quick = no verify (used by the SubagentStop hook)
-	local id=$1 mode=${2:-full} end base commits c msg p tests changed kind w="" skips ce
+	local id=$1 mode=${2:-full} end base commits own c msg p tests changed kind w="" skips ce scope
 	PE=0
+	rm -f "$(sdir)/scopefail.$id"
 	base=$(sfile_get "base.$id"); [ -n "$base" ] || { pe "no base recorded for $id (pre-task never ran)"; return 1; }
 	end=$(task_end "$id")
 	tree_clean || pe "working tree not clean: $(git status --short | head -5 | tr '\n' ' ')"
 	commits=$(git rev-list "$base..$end")
-	[ -n "$commits" ] || pe "no new commit since $(short "$base")"
-	if [ "$(cfg TRAILERS)" != off ]; then
-		for c in $commits; do
-			msg=$(git log -1 --format=%B "$c")
-			printf '%s\n' "$msg" | grep -qx "Task: $id" || pe "commit $(short "$c") lacks the trailer 'Task: $id'"
-			printf '%s\n' "$msg" | grep -qx "Feature: $F" || pe "commit $(short "$c") lacks the trailer 'Feature: $F'"
-		done
-	fi
+	own=$(task_commits "$id")
+	if [ -z "$commits" ]; then pe "no new commit since $(short "$base")"
+	elif [ -z "$own" ]; then pe "no commit with the trailer 'Task: $id' since $(short "$base")"; fi
+	for c in $commits; do
+		if [ -n "$(kit_trailer "$c")" ]; then
+			# a kit commit only ever writes this feature's specs folder; anything else is not the kit's
+			while IFS= read -r p; do
+				case $p in "$SPECS_DIR/$F"/* | '') ;; *) pe "kit commit $(short "$c") changes $p outside $SPECS_DIR/$F/" ;; esac
+			done <<EOF
+$(commit_paths "$c")
+EOF
+			continue
+		fi
+		if blocked_for "$id" "$c"; then
+			while IFS= read -r p; do
+				case $p in "$SPECS_DIR/$F/research.md" | '') ;; *) pe "blocked-question commit $(short "$c") changes $p — it may only change $SPECS_DIR/$F/research.md" ;; esac
+			done <<EOF
+$(commit_paths "$c")
+EOF
+			continue
+		fi
+		[ "$(cfg TRAILERS)" != off ] || continue
+		msg=$(git log -1 --format=%B "$c")
+		printf '%s\n' "$msg" | grep -qx "Task: $id" || { pe "commit $(short "$c") lacks the trailer 'Task: $id'"; continue; }
+		printf '%s\n' "$msg" | grep -qx "Feature: $F" || pe "commit $(short "$c") lacks the trailer 'Feature: $F'"
+	done
 	while IFS= read -r p; do
 		[ -n "$p" ] || continue
 		case $p in
@@ -499,14 +600,24 @@ post_task() { # id [quick|full] -> 0 ok | 1 + problems.  quick = no verify (used
 		match_globs "$p" "$WATCHED_GLOBS" && w="${w}WATCH changed $p — reviewer: is this needed, and does it weaken a check?
 "
 	done <<EOF
-$(git diff --name-only "$base" "$end")
+$(task_paths "$id")
 EOF
+	scope=$(sfile_get "scope.$id")
+	if [ -n "$scope" ]; then   # in fix rounds (an empty scope — no commit yet when they began — limits nothing)
+		while IFS= read -r p; do
+			[ -n "$p" ] && ! in_fix_scope "$p" "$scope" || continue
+			pe "changed $p — outside the scope of its fix rounds: they may change only $(printf '%s\n' "$scope" | paste -sd' ' -) and test files in those folders"
+			sfile_set "scopefail.$id" 1
+		done <<EOF
+$(task_paths "$id")
+EOF
+	fi
 	if is_quick; then tests=$(section "$(art brief)" "Steps" | grep 'Tests:' | grep -viE 'Tests:[[:space:]]*none')
 	else tests=$(task_field "$(art tasks)" "$id" Tests); case $tests in [Nn]one* | '') tests="" ;; esac; fi
 	if [ -n "$tests" ]; then
 		changed=""
 		while IFS= read -r p; do [ -n "$p" ] && match_globs "$p" "$TEST_GLOBS" && changed=1; done <<EOF
-$(git diff --name-only --diff-filter=AM "$base" "$end")
+$(own_diff "$id" --name-only --diff-filter=AM)
 EOF
 		[ -n "$changed" ] || pe "the task names tests but no test file was added or changed (TEST_GLOBS in loop.conf)"
 	fi
@@ -514,7 +625,7 @@ EOF
 		[ -n "$p" ] && match_globs "$p" "$TEST_GLOBS" && w="${w}WATCH deleted test file $p — reviewer: must be justified by the spec
 "
 	done <<EOF
-$(git diff --name-only --diff-filter=D "$base" "$end")
+$(own_diff "$id" --name-only --diff-filter=D)
 EOF
 	kind=$(fm_get "$(art spec)" kind)$(fm_get "$(art brief)" kind)
 	if [ "$kind" = refactor ]; then
@@ -522,10 +633,10 @@ EOF
 			[ -n "$p" ] && match_globs "$p" "$TEST_GLOBS" && w="${w}WATCH refactor modified existing test $p — behaviour must not change
 "
 		done <<EOF
-$(git diff --name-only --diff-filter=M "$base" "$end")
+$(own_diff "$id" --name-only --diff-filter=M)
 EOF
 	fi
-	skips=$(git diff "$base" "$end" -U0 | grep '^+' | grep -v '^+++' \
+	skips=$(own_diff "$id" -U0 | grep '^+' | grep -v '^+++' \
 		| grep -E 't\.Skip\(|\.skip\(|(^|[^A-Za-z_])x(it|describe|test)\(|\.only\(|@Disabled|pytest\.mark\.skip|(it|test)\.todo\(|//[[:space:]]*nolint|eslint-disable' | head -5)
 	[ -n "$skips" ] && w="${w}$(printf '%s\n' "$skips" | sed 's/^/WATCH added skip\/disable marker: /')
 "
@@ -536,10 +647,19 @@ EOF
 $(tail -25 "$(VLOG)")"
 		else
 			log_event "$id verify deferred (VERIFY=$(cfg VERIFY))"
+			# the must-hold check runs after every task the full verify skips
+			if [ -n "$TASK_CHECK_CMD" ]; then
+				if run_readonly task-check "$TASK_CHECK_CMD" "$(sdir)/task-check.log"; then log_event "TASK-CHECK green after $id at $(short)"
+				else
+					log_event "TASK-CHECK red after $id at $(short)"
+					pe "task check is red ($TASK_CHECK_CMD):
+$(tail -25 "$(sdir)/task-check.log")"
+				fi
+			fi
 		fi
 	fi
 	sfile_set "watch.$id" "$w"
-	[ "$mode" = full ] && [ $PE = 0 ] && record_commits "$id" "$commits"
+	[ "$mode" = full ] && [ $PE = 0 ] && record_commits "$id" "$own"
 	[ -n "$w" ] && printf '%s' "$w"
 	return $PE
 }
@@ -550,19 +670,31 @@ record_commits() { # id "shas" -> .agent-loop/<f>/commits ("sha task" lines): th
 }
 
 bump() { # id source -> prints ACTION
+	# The round asked for is only pending (pending.<id>) until an implementer's result for it is
+	# logged (fix_round_ran); asking again before that asks for the same round, using none up.
 	local r max
 	max=$(cfg FIX_ROUNDS)
-	r=$(sfile_get "rounds.$1"); r=$(( ${r:-0} + 1 ))
+	r=$(sfile_get "pending.$1")
+	[ -n "$r" ] || { r=$(sfile_get "rounds.$1"); r=$(( ${r:-0} + 1 )); }
 	if [ "$r" -gt "$max" ]; then
+		rm -f "$(sdir)/pending.$1"
 		state_set "$1" STOPPED fix-limit
 		log_event "$1 STOP fix-limit ($max fix rounds used)"
 		echo "ACTION stop fix-limit $1"
 	else
-		sfile_set "rounds.$1" "$r"
-		log_event "$1 fix round $r/$max ($2)"
+		# the files a fix round may change: the task's own, as they are when its first round is asked for
+		[ -f "$(sdir)/scope.$1" ] || sfile_set "scope.$1" "$(task_paths "$1")"
+		sfile_set "pending.$1" "$r"
+		log_event "$1 fix round $r/$max asked for ($2)"
 		model_for "$1"
 		echo "ACTION fix $1 $2 $r/$max model=$CV"
 	fi
+}
+
+fix_round_ran() { # id -> an implementer reported on the pending fix round: it is used now
+	local r; r=$(sfile_get "pending.$1"); [ -n "$r" ] || return 0
+	sfile_set "rounds.$1" "$r"; rm -f "$(sdir)/pending.$1"
+	log_event "$1 fix round $r/$(cfg FIX_ROUNDS) ran"
 }
 
 act_implement() { model_for "$1"; echo "ACTION implement $1 model=$CV"; }
@@ -602,7 +734,7 @@ risk_reason() { # id -> REVIEW=risk: reviewed if high risk, big, watched, or tou
 		echo "reviewed: the task says Risk: high"; return 0
 	fi
 	base=$(sfile_get "base.$id")
-	n=$(git diff --numstat "$base" "$(task_end "$id")" 2>/dev/null | awk '{ n += $1 + $2 } END { print n + 0 }')
+	n=$(own_diff "$id" --numstat 2>/dev/null | awk '{ n += $1 + $2 } END { print n + 0 }')
 	max=$(cfg REVIEW_LINES)
 	[ "$n" -gt "$max" ] && { echo "reviewed: $n changed lines (REVIEW_LINES=$max)"; return 0; }
 	w=$(sfile_get "watch.$id" | awk 'NF { print; exit }')
@@ -612,7 +744,7 @@ risk_reason() { # id -> REVIEW=risk: reviewed if high risk, big, watched, or tou
 		while IFS= read -r p; do
 			[ -n "$p" ] && match_globs "$p" "$globs" && { echo "reviewed: touched $p (REVIEW_GLOBS)"; return 0; }
 		done <<EOF
-$(git diff --name-only "$base" "$(task_end "$id")" 2>/dev/null)
+$(task_paths "$id")
 EOF
 	fi
 	echo "skipped: low risk ($n changed lines, no watched files)"
@@ -722,6 +854,7 @@ cmd_start() {
 	case $sid in '' | *'$'* | *CLAUDE_SESSION_ID*) warn "no session id — the orchestrator write-lock is off for this run"; sid="" ;; esac
 	ensure_state
 	[ -f "$(sdir)/paused" ] && { log_event "RESUME ($(cut -d' ' -f1 "$(sdir)/paused"))"; rm -f "$(sdir)/paused"; }
+	rm -f "$(sdir)/laststop" "$(sdir)/laststop.id" "$(sdir)/laststop.state" "$(sdir)/stopreason"   # a new run: the last stop is history
 	if [ -n "$sid" ]; then sfile_set lock "$sid $(now)"; fi
 	log_event "RUN START head=$(short) session=${sid:-none}"
 	if [ "$(cfg VERIFY)" = task ] && tree_clean && [ "$(sfile_get green)" != "$(git rev-parse HEAD)" ]; then
@@ -760,7 +893,7 @@ cmd_next() {
 		case $st in
 			PASS) echo "ACTION finish" ;;
 			IMPLEMENTED) after_implemented Q ;;
-			*) if out=$(pre_task Q); then act_implement Q; else printf '%s\n' "$out"; log_event "STOP pre-task Q"; echo "ACTION stop pre-task Q"; fi ;;
+			*) if out=$(pre_task Q); then act_implement Q; else printf '%s\n' "$out"; sfile_set stopreason "$out"; log_event "STOP pre-task Q"; echo "ACTION stop pre-task Q"; fi ;;
 		esac
 		return 0
 	fi
@@ -786,7 +919,7 @@ cmd_next() {
 		[ -z "$st" ] && in_list "$id" "$(done_tasks)" && continue
 		case $st in PASS | NEEDS-HUMAN) continue ;; esac
 		if out=$(pre_task "$id"); then act_implement "$id"
-		else printf '%s\n' "$out"; log_event "STOP pre-task $id"; echo "ACTION stop pre-task $id"; fi
+		else printf '%s\n' "$out"; sfile_set stopreason "$out"; log_event "STOP pre-task $id"; echo "ACTION stop pre-task $id"; fi
 		return 0
 	done
 	final_verify || return 0
@@ -814,6 +947,7 @@ cmd_log() {
 				PASS | NEEDS-HUMAN | '') log_event "$id $agent CONTRACT result for a task that is not in progress"
 					echo "ACTION stop contract $id ($id is not in progress — run loop.sh next to get the current action)"; return 0 ;;
 			esac
+			fix_round_ran "$id"
 			case $verdict in
 				DONE) log_event "$id $agent DONE $(short)"; log_done "$id" ;;
 				BLOCKED)
@@ -853,7 +987,13 @@ cmd_log() {
 
 release_lock() { rm -f "$(sdir)/lock"; }
 
-cmd_stop() { resolve_feature; log_event "STOP $*"; release_lock; cmd_report; }
+cmd_stop() { # '<the ACTION stop line>' -> records it as the latest stop (the report's Next follows it), then the report
+	local line id
+	resolve_feature; log_event "STOP $*"; release_lock
+	line="$*"; id=${line#ACTION stop }; id=${id#* }; id=${id%% *}
+	sfile_set laststop "$line"; sfile_set laststop.id "$id"; sfile_set laststop.state "$(state_get "$id")"
+	cmd_report
+}
 cmd_finish() { resolve_feature; log_event "RUN END"; release_lock; cmd_report; rm -f "$(sdir)/run.conf"; }
 log_done() { # id -> the script's checks on a reported (or resumed) DONE, then review or a fix round
 	local id=$1 out
@@ -864,6 +1004,12 @@ log_done() { # id -> the script's checks on a reported (or resumed) DONE, then r
 	else
 		sfile_set "findings.$id" "$out"
 		echo "post-task checks failed for $id:"; printf '%s\n' "$out"
+		if [ -f "$(sdir)/scopefail.$id" ]; then   # out of scope is never fixed by another round
+			rm -f "$(sdir)/pending.$id"
+			state_set "$id" STOPPED scope
+			log_event "$id STOP scope (a fix round changed files outside the task's own)"
+			echo "ACTION stop scope $id"; return 0
+		fi
 		log_event "$id post-task FAILED"
 		bump "$id" post-task
 	fi
@@ -961,7 +1107,7 @@ paragraphs_naming() { # file section "AC1|AC3" -> the section's paragraphs that 
 cmd_task() { # the context pack: everything one task needs, so agents read more only when they must
 	local id=${1:-} r b acs re a eids
 	resolve_feature; [ -n "$id" ] || die "usage: task <ID>"
-	r=$(sfile_get "rounds.$id")
+	r=$(sfile_get "pending.$id"); [ -n "$r" ] || r=$(sfile_get "rounds.$id")
 	echo "FEATURE $F   KIND $(fm_get "$(art spec)" kind)$(fm_get "$(art brief)" kind)   ROUND ${r:-0}/$(cfg FIX_ROUNDS)"
 	model_for "$id"
 	echo "SETTINGS model=$CV   review=$(cfg REVIEW)   verify=$(cfg VERIFY) (the script runs it — you run targeted tests only)"
@@ -1040,8 +1186,9 @@ cmd_review_info() {
 				task_block "$(art tasks)" "$id"
 			fi
 			echo "RANGE $(short "$base")..$(short "$(task_end "$id")")   (git diff $(short "$base")..$(short "$(task_end "$id")"))"
+			echo "COMMITS $(for c in $(task_commits "$id"); do short "$c"; done | tr '\n' ' ')  (the task's own; kit commits in the range are not its work)"
 			echo "ROUND $(sfile_get "rounds.$id")/$(cfg FIX_ROUNDS)"
-			git diff --stat "$base" "$(task_end "$id")" | tail -25
+			own_diff "$id" --stat | tail -25
 			sfile_get "watch.$id"
 			verify_line
 			;;
@@ -1185,7 +1332,7 @@ cmd_add_fix() { # <the bug, in words> -> a not-started task "Tnnn — fix: <bug>
 		die "the fix task would make tasks.md invalid, so nothing was added:
 $tmp"
 	fi
-	if ! tmp=$(git commit -q -m "$(fit_subject "docs($F): add $next — fix: " "$subj")" -m "$bug" -- "$t" 2>&1); then
+	if ! tmp=$(git commit -q -m "$(fit_subject "docs($F): add $next — fix: " "$subj")" -m "$bug" -m "Kit: add-fix" -- "$t" 2>&1); then
 		git reset -q -- "$t" 2>/dev/null; git checkout -q -- "$t"
 		die "committing tasks.md failed, so nothing was added (tasks.md is back as it was):
 $tmp"
@@ -1214,6 +1361,7 @@ cmd_answer() { # Qn <answer> — record your answer, commit research.md, restore
 	local q=${1:-} txt r id ref
 	resolve_feature
 	shift || true; txt="$*"
+	q=${q%[:,]}   # "/al-answer Q2: yes" reads as Q2
 	case $q in Q[0-9]*) ;; *) die "say which question and the answer.
   do this: /al-answer Q2 <your answer>" ;; esac
 	[ -n "$txt" ] || die "the answer is missing.
@@ -1228,7 +1376,7 @@ cmd_answer() { # Qn <answer> — record your answer, commit research.md, restore
 		{ print }
 		index(line, "<!--") && !index(line, "-->") { incom = 1 }
 		index(line, "-->") { incom = 0 }' "$r" > "$r.new" && mv "$r.new" "$r"
-	git commit -q -m "docs($F): answer $q" -m "$txt" -- "$r" || die "committing research.md failed"
+	git commit -q -m "docs($F): answer $q" -m "$txt" -m "Kit: answer" -- "$r" || die "committing research.md failed"
 	log_event "$q answered: $txt"
 	id=$(awk -F '\t' -v q="$q" '{ s[$1] = $2; d[$1] = $3 } END { for (k in s) if (s[k] == "BLOCKED" && d[k] == q) print k }' "$(sdir)/state" 2>/dev/null | head -1)
 	if [ -z "$id" ]; then echo "ANSWERED $q"; echo "ACTION next"; return 0; fi
@@ -1237,22 +1385,69 @@ cmd_answer() { # Qn <answer> — record your answer, commit research.md, restore
 		git stash pop -q "$ref" || die "$id's earlier attempt ($ref) didn't apply cleanly onto HEAD.
   do this: resolve the conflict in the files git lists, then /al-resume"
 	fi
-	record_base "$id"; sfile_set "rounds.$id" 0
+	record_base "$id"; sfile_set "rounds.$id" 0; rm -f "$(sdir)/pending.$id" "$(sdir)/scope.$id"
 	state_set "$id" IN-PROGRESS "restored after $q"
 	log_event "$id resumes after $q${ref:+ with its stashed attempt}"
 	echo "ANSWERED $q — $id continues${ref:+ from its earlier attempt (restored in the working tree)}"
 	model_for "$id"; echo "ACTION implement $id model=$CV"
 }
 
-cmd_accept() { # Tn <reason> — you accept what the reviewer escalated; the task passes, the risk is on record
-	local id=${1:-} why
+record_decision() { # action subject line -> appends "- <date> <line>" under research.md's "## Human decisions"
+	# and commits research.md alone with the trailer "Kit: <action>" (loop state is gitignored; this lasts)
+	local r tmp out bak
+	r=$(art research)
+	bak=$(mktemp "${TMPDIR:-/tmp}/al.XXXXXX") || return 1
+	if [ -f "$r" ]; then cp -p "$r" "$bak"; else rm -f "$bak"; bak=""; fi
+	[ -f "$r" ] || printf -- '---\nfeature: %s\n---\n# Research & decisions — %s\n' "$F" "$F" > "$r"
+	tmp=$(mktemp "${TMPDIR:-/tmp}/al.XXXXXX") || return 1
+	L="- $(today) $3" awk '
+		/^## / { if (insec && !done) { print ENVIRON["L"]; print ""; done = 1 } insec = ($0 == "## Human decisions") }
+		{ print }
+		END { if (!done) { if (!insec) { print ""; print "## Human decisions" } print ENVIRON["L"] } }' "$r" > "$tmp" && cat "$tmp" > "$r"
+	rm -f "$tmp"
+	if git add -- "$r" && out=$(git commit -q -m "$2" -m "$3" -m "Kit: $1" -- "$r" 2>&1); then
+		[ -z "$bak" ] || rm -f "$bak"; return 0
+	fi
+	# the commit failed: research.md goes back to what it was (your uncommitted edits in it included)
+	git reset -q -- "$r" 2>/dev/null
+	if [ -n "$bak" ]; then cat "$bak" > "$r"; rm -f "$bak"; else rm -f "$r"; fi
+	printf '%s\n' "${out:-git add failed}"; return 1
+}
+
+cmd_accept() { # Tn <reason> — you accept a task the reviewer ESCALATED or the loop STOPPED; it passes, the reason is on record
+	local id=${1:-} why st d
 	resolve_feature
 	shift || true; why="$*"
-	[ "$(state_get "$id")" = ESCALATED ] || die "${id:-the task} is not waiting for your decision."
-	[ -n "$why" ] || why="accepted as is"
+	st=$(state_get "$id"); d=$(state_detail "$id")
+	case $st in
+		ESCALATED) [ -n "$why" ] || why="accepted as is" ;;
+		STOPPED) [ -n "$why" ] || die "say why $id is acceptable as it is — the reason is committed to $(art research).
+  do this: loop.sh accept $id '<reason>'" ;;
+		*) die "${id:-the task} is not waiting for your decision (it is ${st:-not started}; accept takes an ESCALATED or STOPPED task)." ;;
+	esac
+	record_decision accept "docs($F): accept $id" "$id accepted as it is (it was $st${d:+ $d}): $why" \
+		|| die "committing the decision to $(art research) failed, so $id was not accepted"
+	[ "$id" = Q ] || record_commits "$id" "$(task_commits "$id")"
 	state_set "$id" PASS "accepted by you: $why"; [ "$id" = Q ] || state_set BRANCH CLEARED
-	log_event "$id ACCEPTED by the user despite the reviewer's ESCALATE: $why"
+	log_event "$id ACCEPTED by the user ($st${d:+ $d}): $why"
 	if [ "$id" = Q ]; then echo "ACTION finish"; else echo "ACTION next"; fi
+}
+
+cmd_pass_manual() { # Tn <reason> — HUMAN-ONLY (guard.sh, settings.json): you ran a NEEDS-HUMAN task's manual check and it passed
+	local id=${1:-} why st
+	resolve_feature
+	shift || true; why="$*"
+	st=$(state_get "$id")
+	[ "$st" = NEEDS-HUMAN ] || die "${id:-the task} is not waiting for a manual check (it is ${st:-not started})."
+	[ -n "$why" ] || die "say how the manual check went — the reason is committed to $(art research).
+  do this: loop.sh pass-manual $id '<what you checked>'"
+	record_decision pass-manual "docs($F): pass $id manually" "$id manual check passed: $why" \
+		|| die "committing the decision to $(art research) failed, so $id was not passed"
+	[ "$id" = Q ] || record_commits "$id" "$(task_commits "$id")"
+	state_set "$id" PASS "manual check passed: $why"
+	log_event "$id PASS by the user's manual check: $why"
+	echo "PASSED $id — your manual check is on record in $(art research)"
+	echo "Next: $(next_step)"
 }
 
 cmd_lineage() {
@@ -1282,7 +1477,7 @@ cmd_report() {
 			st=$(state_get "$id"); d=$(state_detail "$id"); title=$(task_title "$(art tasks)" "$id")
 			[ -n "$st" ] || { in_list "$id" "$(done_tasks)" && st=PASS || st=todo; }
 			case $st in
-				NEEDS-HUMAN) printf '  %s  NEEDS-HUMAN  %s — check by hand: %s\n' "$id" "$title" "$(task_field "$(art tasks)" "$id" Manual)" ;;
+				NEEDS-HUMAN) printf '  %s  NEEDS-HUMAN  %s — check by hand: %s (then: loop.sh pass-manual %s '"'"'<reason>'"'"')\n' "$id" "$title" "$(task_field "$(art tasks)" "$id" Manual)" "$id" ;;
 				BLOCKED) printf '  %s  BLOCKED %s  %s — %s\n' "$id" "$d" "$title" "$(section "$(art research)" "Open questions" | grep -F "**$d**" | head -1)" ;;
 				*) printf '  %s  %-12s %s %s(fix rounds: %s)%s\n' "$id" "$st" "$title" "${d:+$d }" "$(sfile_get "rounds.$id")" "$(r=$(sfile_get "reason.$id"); [ -n "$r" ] && printf ' — %s' "$r")" ;;
 			esac
@@ -1345,6 +1540,7 @@ case $cmd in
 	add-fix) cmd_add_fix "$@" ;;
 	answer) cmd_answer "$@" ;;
 	accept) cmd_accept "$@" ;;
+	pass-manual) cmd_pass_manual "$@" ;;
 	lineage) cmd_lineage "$@" ;;
 	report) resolve_feature "${1:-}"; cmd_report ;;
 	doctor) cmd_doctor ;;

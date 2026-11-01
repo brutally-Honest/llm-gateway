@@ -1,4 +1,8 @@
+# shellcheck shell=bash
 # helpers.sh — shared setup and assertions for the kit's shell tests. Sourced, never run.
+# The variables set here for the tests (L, TMP_REPO, ...) are read by the test scripts
+# that source this file, which shellcheck can't see from here.
+# shellcheck disable=SC2034
 #
 # Every test works in a throwaway git repo under a temp dir, with a copy of the kit, so
 # the scripts resolve REPO, .claude/ and .agent-loop/ inside it and never touch the real
@@ -42,6 +46,46 @@ mk_repo() {
 	git add .gitignore .claude
 	git commit -q -m "chore(repo): seed test repo"
 }
+
+# mk_e2e [loop.conf lines...] — clones the e2e fixture (feature 001-e2e, approved, one task
+# T001) into a temp dir, swaps in the kit under test, appends the given loop.conf lines
+# (VERIFY_CMD="true" and an empty TASK_CHECK_CMD first, so checks pass unless a line says
+# otherwise), cds into it and
+# sets TMP_REPO and L (the loop script). Removed on exit.
+mk_e2e() {
+	local bundle="$KIT_SRC/scripts/tests/fixtures/e2e/repo.bundle" line
+	[ -f "$bundle" ] || { echo "  FAIL missing $bundle — build it with fixtures/e2e/make.sh" >&2; exit 1; }
+	TMP_REPO=$(mktemp -d "${TMPDIR:-/tmp}/al-e2e.XXXXXX") || exit 1
+	E2E_TMPS="${E2E_TMPS:-} $TMP_REPO"   # a test may build several; all go on exit
+	# shellcheck disable=SC2064
+	trap "rm -rf $E2E_TMPS" EXIT
+	git clone -q -b feat/001-e2e "$bundle" "$TMP_REPO"
+	cd "$TMP_REPO" || exit 1
+	git config user.name test
+	git config user.email test@example.invalid
+	git config commit.gpgsign false
+	git branch -q main origin/main
+	git remote remove origin
+	rm -rf .claude/scripts .claude/hooks .claude/templates .claude/agents
+	cp -R "$KIT_SRC/scripts" "$KIT_SRC/hooks" "$KIT_SRC/templates" "$KIT_SRC/agents" .claude/
+	rm -rf .claude/scripts/tests
+	cp "$KIT_SRC/loop.conf" .claude/loop.conf
+	printf '\nVERIFY_CMD="true"\nTASK_CHECK_CMD=""\n' >> .claude/loop.conf
+	for line in "$@"; do printf '%s\n' "$line" >> .claude/loop.conf; done
+	git add .claude && git commit -q -m "chore(repo): use the kit under test"
+	L=.claude/scripts/loop.sh
+}
+
+# task_commit <message subject> <path=content>... — writes the files and commits them as
+# T001 of 001-e2e (with both trailers)
+task_commit() {
+	local subj=$1 kv p; shift
+	for kv in "$@"; do p=${kv%%=*}; mkdir -p "$(dirname "$p")"; printf '%s\n' "${kv#*=}" > "$p"; git add -- "$p"; done
+	git commit -q -m "$subj" -m "Task: T001
+Feature: 001-e2e"
+}
+
+last() { tail -1; }
 
 # done_tests — exits non-zero when any check failed
 done_tests() {

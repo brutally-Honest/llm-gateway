@@ -126,7 +126,7 @@ check_tasks() { # file [draft|approve]
 	for t in $tids; do
 		blk=$(printf '%s\n' "$body" | task_block_stdin "$t")
 		[ -n "$(printf '%s\n' "$blk" | head -1 | sed -E 's/^### T[0-9]+[[:space:]]*(—|-|:)?[[:space:]]*//')" ] || err "$t has no title"
-		for x in Do Tests AC Commit; do
+		for x in 'Do' Tests AC Commit; do
 			[ -n "$(printf '%s\n' "$blk" | field_stdin "$x")" ] || err "$t is missing '- $x:'"
 		done
 		acs=$(printf '%s\n' "$blk" | field_stdin AC)
@@ -135,7 +135,7 @@ check_tasks() { # file [draft|approve]
 			*)
 				[ -n "$(printf '%s' "$acs" | ac_refs)" ] || err "$t: '- AC:' must list AC ids, or say 'none — <reason>'"
 				for a in $(printf '%s' "$acs" | ac_refs); do
-					if printf '%s' "$acs" | grep -qE "$a[[:space:]]*\(remove\)"; then
+					if printf '%s' "$acs" | grep -qE "${a}[[:space:]]*\(remove\)"; then
 						in_list "$a" "$all" || err "$t: $a is not in spec.md"
 					else
 						in_list "$a" "$ids" || err "$t: $a is not an active AC in spec.md"
@@ -214,7 +214,7 @@ _cr_task_cover() { # file body verb id opens dones crname
 	local body=$2 verb=$3 id=$4 opens=$5 dones=$6 cr=${7%.md} t acs okrm=0 okadd=0 builtrm=0
 	for t in $opens; do
 		acs=$(printf '%s\n' "$body" | task_block_stdin "$t" | field_stdin AC)
-		if printf '%s' "$acs" | grep -qE "$id[[:space:]]*\(remove\)"; then okrm=1
+		if printf '%s' "$acs" | grep -qE "${id}[[:space:]]*\(remove\)"; then okrm=1
 		elif printf '%s' "$acs" | ac_refs | grep -qx "$id"; then
 			okadd=1
 			[ "$verb" = REMOVED ] && err "$cr removes $id but open task $t still builds it — drop it or mark '$id (remove)'"

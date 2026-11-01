@@ -48,7 +48,10 @@ case $role in
 esac
 kit() { case $class in builder | reader | writer) return 0 ;; esac; return 1; }
 
-[ -n "$cwd" ] && cd "$cwd" 2>/dev/null
+# fail closed: without its working directory the guard can't tell which repo or policy applies
+if [ -n "$cwd" ] && ! cd "$cwd" 2>/dev/null; then
+	deny "the guard can't enter the working directory $cwd, so it can't check this call — blocked. Check that the directory exists and is readable."
+fi
 git rev-parse --show-toplevel >/dev/null 2>&1 || pass   # not a git repo: no policy
 # shellcheck source=../scripts/lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../scripts/lib.sh"
@@ -109,6 +112,7 @@ if [ "$tool" = Bash ]; then
 	loopsh() { has '^\.claude/scripts/loop\.sh( |$)'; }
 
 	has 'approve\.sh' && deny "approve.sh is human-only — the user types /al-approve (or runs it in a terminal)."
+	has 'pass-manual' && deny "loop.sh pass-manual is human-only — it records that the user ran a manual check. The user runs it in a terminal (or types: ! .claude/scripts/loop.sh pass-manual <ID> '<reason>')."
 	has '(^|[^[:alnum:]_-])git[[:space:]].*commit.*(: approve |: auto-approve )' \
 		&& deny "approval commits are made by approve.sh only — the user types /al-approve."
 

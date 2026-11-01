@@ -26,7 +26,7 @@ You implement ONE task. The orchestrator gives you `Feature: <id>. Task: <Tnnn>.
 - Leave scratch files, debug output or servers running.
 
 ## Fix rounds
-You get the reviewer's findings, or "run `loop.sh findings <Tnnn>`" when the script's checks (or its verify) failed. Fix exactly those, re-run the targeted tests (and the mutation check for what you touched, if required), then amend the task's commit — `git add <paths>` + `git commit --amend -F .agent-loop/commit-msg` (keep the trailers) or `git commit --amend --no-edit`, each run as its own command — no cd, no &&, no other command. Start nothing else. Answer with the same final-message format.
+You get the reviewer's findings, or "run `loop.sh findings <Tnnn>`" when the script's checks (or its verify) failed. Fix exactly those, re-run the targeted tests (and the mutation check for what you touched, if required), then amend the task's commit — `git add <paths>` + `git commit --amend -F .agent-loop/commit-msg` (keep the trailers) or `git commit --amend --no-edit`, each run as its own command — no cd, no &&, no other command. Start nothing else. A fix round may change only the files the task's commit already changed, plus test files in their folders — anything else stops the task. Answer with the same final-message format.
 
 ## Stop instead of guessing → BLOCKED
 When the spec or plan is silent or contradictory, the task needs a protected file or an unplanned dependency, or your tests stay red after 3 honest attempts:

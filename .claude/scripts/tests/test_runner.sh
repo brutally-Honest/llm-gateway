@@ -35,4 +35,25 @@ fake_test "mkdir -p '$ROOT/.agent-loop' && touch '$ROOT/.agent-loop/x'"
 out=$(bash "$ROOT/.claude/scripts/tests/run.sh" 2>&1); rc=$?
 assert_contains "$out" "the real .agent-loop/ changed" "runner output (rc $rc)"
 
+# the run also lints every .sh under .claude/ with "shellcheck -S warning"
+rm -rf "$ROOT/.agent-loop"
+t "a shellcheck finding in any kit script fails the run"
+mkdir -p "$ROOT/.claude/hooks"
+printf '#!/usr/bin/env bash\ncd /tmp\necho hi\n' > "$ROOT/.claude/hooks/bad.sh"
+fake_test 'exit 0'
+out=$(bash "$ROOT/.claude/scripts/tests/run.sh" 2>&1); rc=$?
+assert_eq 1 "$rc" "exit code ($out)"
+assert_contains "$out" "SC2164" "runner output"
+
+t "session worktrees and install backups under .claude/ are not linted"
+mkdir -p "$ROOT/.claude/worktrees/w" "$ROOT/.claude/agent-loop-backup-1"
+cp "$ROOT/.claude/hooks/bad.sh" "$ROOT/.claude/worktrees/w/"; mv "$ROOT/.claude/hooks/bad.sh" "$ROOT/.claude/agent-loop-backup-1/"
+out=$(bash "$ROOT/.claude/scripts/tests/run.sh" 2>&1); rc=$?
+assert_eq 0 "$rc" "exit code ($out)"
+
+t "without shellcheck the run fails and says to install it"
+out=$(SHELLCHECK=/no/such/shellcheck bash "$ROOT/.claude/scripts/tests/run.sh" 2>&1); rc=$?
+assert_eq 1 "$rc" "exit code ($out)"
+assert_contains "$out" "install shellcheck" "runner output"
+
 done_tests

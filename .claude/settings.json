@@ -20,7 +20,8 @@
       "Bash(make verify)"
     ],
     "deny": [
-      "Bash(*approve.sh*)"
+      "Bash(*approve.sh*)",
+      "Bash(*pass-manual*)"
     ]
   },
   "hooks": {

@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # lib.sh — shared helpers for the agent-loop scripts and hooks. Sourced, never run.
+# The config defaults set here (VERIFY_CMD, TEST_GLOBS, ...) are read by the scripts that
+# source this file, which shellcheck can't see from here.
+# shellcheck disable=SC2034
 #
 # Portable: bash 3.2+ (macOS default), POSIX awk (mawk/BWK/gawk), git, sha256sum|shasum.
 # Every parser here works on comment-stripped markdown, so the hints inside
@@ -20,6 +23,7 @@ al_init() {
 	cd "$REPO" || die "cannot cd to $REPO"
 	VERIFY_CMD=""
 	TEST_CMD=""
+	TASK_CHECK_CMD=""
 	BASE_BRANCH=""
 	SPECS_DIR="specs"
 	CONTRACT_SECTIONS="Goal|Non-goals|Acceptance criteria|Edge cases|Constraints"   # spec sections an approval covers

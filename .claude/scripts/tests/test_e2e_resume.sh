@@ -22,7 +22,7 @@ rm -rf .claude/scripts .claude/hooks .claude/templates .claude/agents
 cp -R "$KIT_SRC/scripts" "$KIT_SRC/hooks" "$KIT_SRC/templates" "$KIT_SRC/agents" .claude/
 rm -rf .claude/scripts/tests
 cp "$KIT_SRC/loop.conf" .claude/loop.conf
-printf '\nVERIFY_CMD="true"\n' >> .claude/loop.conf
+printf '\nVERIFY_CMD="true"\nTASK_CHECK_CMD=""\n' >> .claude/loop.conf
 git add .claude && git commit -q -m "chore(repo): use the kit under test"
 
 L=.claude/scripts/loop.sh

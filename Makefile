@@ -9,10 +9,10 @@ NOTES_REFSPEC := +refs/notes/*:refs/notes/*
 # `dev` when git can't describe the tree, e.g. a Docker build without .git.
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-.PHONY: setup setup-git setup-lint build run image test kit-test lint verify
+.PHONY: setup setup-git setup-lint setup-shellcheck build run image test kit-test lint verify
 
 # Idempotent: safe to run again at any time.
-setup: setup-git setup-lint
+setup: setup-git setup-lint setup-shellcheck
 	go mod download
 
 setup-git:
@@ -20,6 +20,15 @@ setup-git:
 	git config notes.rewriteRef refs/notes/commits
 	@git config --get-all remote.origin.fetch | grep -qxF '$(NOTES_REFSPEC)' || \
 		git config --add remote.origin.fetch '$(NOTES_REFSPEC)'
+
+# make kit-test (so make verify) lints the kit's scripts with shellcheck; setup only reports
+# whether it is installed (ADR 0011), because it comes from the system package manager.
+setup-shellcheck:
+	@if command -v shellcheck >/dev/null 2>&1; then \
+		echo "shellcheck $$(shellcheck --version | sed -n 's/^version: //p') found (make kit-test lints the kit's scripts with it)"; \
+	else \
+		echo 'shellcheck not found: install it (apt install shellcheck, or brew install shellcheck) — make kit-test and make verify fail without it'; \
+	fi
 
 # Installs the pinned binary into ./bin, not through the go.mod tool directive.
 setup-lint:
