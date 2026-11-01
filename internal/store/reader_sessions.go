@@ -14,6 +14,9 @@ type SessionRow struct {
 	First       int64  `json:"first"`
 	Last        int64  `json:"last"`
 	Count       int    `json:"count"`
+	// HooksOnly marks a session known only from hook events: no exchange carries
+	// its key. First and Last are then hook receive times and Count is 0.
+	HooksOnly bool `json:"hooks_only,omitempty"`
 }
 
 // UngroupedRow summarises the exchanges that carry no session key. Count 0 means
@@ -24,11 +27,21 @@ type UngroupedRow struct {
 	Last  int64 `json:"last"`
 }
 
-const sessionSelect = `SELECT principal_id, client, session_key, MIN(started_at), MAX(started_at), COUNT(*)
-	FROM exchanges WHERE session_key IS NOT NULL`
+// sessionSelect lists exchange sessions and, after them, sessions seen only in hook
+// events. Callers append AND conditions and sessionOrder.
+const sessionSelect = `SELECT principal_id, client, session_key, first, last, count, hooks_only FROM (
+	SELECT principal_id, client, session_key, MIN(started_at) AS first, MAX(started_at) AS last,
+		COUNT(*) AS count, 0 AS hooks_only
+	FROM exchanges WHERE session_key IS NOT NULL GROUP BY principal_id, client, session_key
+	UNION ALL
+	SELECT principal_id, client, session_key, MIN(received_at), MAX(received_at), 0, 1
+	FROM hook_events h WHERE session_key IS NOT NULL AND NOT EXISTS (
+		SELECT 1 FROM exchanges e WHERE e.principal_id = h.principal_id
+			AND e.client = h.client AND e.session_key = h.session_key)
+	GROUP BY principal_id, client, session_key
+) WHERE 1 = 1`
 
-const sessionOrder = ` GROUP BY principal_id, client, session_key
-	ORDER BY MAX(started_at) DESC, principal_id, client, session_key`
+const sessionOrder = ` ORDER BY last DESC, principal_id, client, session_key`
 
 // SessionRows lists sessions, newest last activity first; limit 0 lists all.
 func (r *Reader) SessionRows(limit int) ([]SessionRow, error) {
@@ -55,7 +68,7 @@ func (r *Reader) sessions(ctx context.Context, q string, args ...any) ([]Session
 	var out []SessionRow
 	for rows.Next() {
 		var s SessionRow
-		if err := rows.Scan(&s.PrincipalID, &s.Client, &s.SessionKey, &s.First, &s.Last, &s.Count); err != nil {
+		if err := rows.Scan(&s.PrincipalID, &s.Client, &s.SessionKey, &s.First, &s.Last, &s.Count, &s.HooksOnly); err != nil {
 			return nil, fmt.Errorf("store %s: sessions: %w", r.path, err)
 		}
 		out = append(out, s)
@@ -130,4 +143,66 @@ func (r *Reader) exchanges(ctx context.Context, tail string, args ...any) ([]Exc
 		return nil, fmt.Errorf("store %s: exchanges: %w", r.path, err)
 	}
 	return out, nil
+}
+
+// HookRow is one stored hook event. Payload and Input are content hashes.
+type HookRow struct {
+	Seq         int64  `json:"seq"`
+	PrincipalID string `json:"principal_id"`
+	Client      string `json:"client"`
+	SessionKey  string `json:"session_key"`
+	ToolUseID   string `json:"tool_use_id"`
+	Phase       string `json:"phase"`
+	SourceName  string `json:"source_name"`
+	ToolName    string `json:"tool_name"`
+	AgentID     string `json:"agent_id"`
+	AgentType   string `json:"agent_type"`
+	InputHash   string `json:"input_hash"`
+	PayloadHash string `json:"payload_hash"`
+	ReceivedAt  int64  `json:"received_at"`
+}
+
+const hookColumns = `seq, principal_id, client, COALESCE(session_key, ''), COALESCE(tool_use_id, ''),
+	phase, source_name, tool_name, agent_id, agent_type, COALESCE(input_hash, ''), payload_hash, received_at`
+
+// HookEvents reads one session's hook events by receive time, then seq. Principal
+// and client are part of the session's identity.
+func (r *Reader) HookEvents(principal, client, key string) ([]HookRow, error) {
+	return r.hookEventsCtx(context.Background(), principal, client, key)
+}
+
+func (r *Reader) hookEventsCtx(ctx context.Context, principal, client, key string) ([]HookRow, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT `+hookColumns+` FROM hook_events
+		WHERE principal_id = ? AND client = ? AND session_key = ? ORDER BY received_at, seq`,
+		principal, client, key)
+	if err != nil {
+		return nil, fmt.Errorf("store %s: hook events: %w", r.path, err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []HookRow
+	for rows.Next() {
+		var h HookRow
+		if err := rows.Scan(&h.Seq, &h.PrincipalID, &h.Client, &h.SessionKey, &h.ToolUseID, &h.Phase,
+			&h.SourceName, &h.ToolName, &h.AgentID, &h.AgentType, &h.InputHash, &h.PayloadHash, &h.ReceivedAt); err != nil {
+			return nil, fmt.Errorf("store %s: hook events: %w", r.path, err)
+		}
+		out = append(out, h)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store %s: hook events: %w", r.path, err)
+	}
+	return out, nil
+}
+
+// UngroupedHookCount counts hook events with no session key.
+func (r *Reader) UngroupedHookCount() (int, error) {
+	return r.ungroupedHookCountCtx(context.Background())
+}
+
+func (r *Reader) ungroupedHookCountCtx(ctx context.Context) (int, error) {
+	var n int
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM hook_events WHERE session_key IS NULL`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("store %s: ungrouped hook count: %w", r.path, err)
+	}
+	return n, nil
 }

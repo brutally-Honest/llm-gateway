@@ -39,6 +39,14 @@ func (c *CtxReader) UngroupedSummary() (UngroupedRow, error) {
 	return c.r.ungroupedSummaryCtx(c.ctx)
 }
 
+// HookEvents is Reader.HookEvents under the view's context.
+func (c *CtxReader) HookEvents(principal, client, key string) ([]HookRow, error) {
+	return c.r.hookEventsCtx(c.ctx, principal, client, key)
+}
+
+// UngroupedHookCount is Reader.UngroupedHookCount under the view's context.
+func (c *CtxReader) UngroupedHookCount() (int, error) { return c.r.ungroupedHookCountCtx(c.ctx) }
+
 // SessionAfter is the after key of a session page: the sort tuple of the last session
 // on that page, its last activity and identity. Sessions after it in SessionRows order
 // come next.
@@ -60,12 +68,12 @@ type UngroupedAfter struct {
 // after key (nil: from the start). The full tuple is compared, so sessions that share
 // a last activity are neither repeated nor skipped. limit must be positive.
 func (c *CtxReader) SessionPage(after *SessionAfter, limit int) ([]SessionRow, error) {
-	q, args := sessionSelect+` GROUP BY principal_id, client, session_key`, []any{}
+	q, args := sessionSelect, []any{}
 	if after != nil {
-		q += ` HAVING MAX(started_at) < ? OR (MAX(started_at) = ? AND (principal_id, client, session_key) > (?, ?, ?))`
+		q += ` AND (last < ? OR (last = ? AND (principal_id, client, session_key) > (?, ?, ?)))`
 		args = append(args, after.Last, after.Last, after.PrincipalID, after.Client, after.SessionKey)
 	}
-	q += ` ORDER BY MAX(started_at) DESC, principal_id, client, session_key LIMIT ?`
+	q += sessionOrder + ` LIMIT ?`
 	args = append(args, limit)
 	return c.r.sessions(c.ctx, q, args...)
 }
