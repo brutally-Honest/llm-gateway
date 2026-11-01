@@ -37,19 +37,61 @@ export async function getBody(id, part) {
   return { text: await res.text(), truncated: res.headers.get("X-Body-Truncated") === "true" };
 }
 
-// openStream opens /api/stream and calls onEvent(name, data). It returns a close function.
+// Reopen delays for a stream the browser has given up on (AC50, E12).
+const firstDelay = 1000;
+const maxDelay = 30000;
+// snapshotRetry is the retry the server sets with snapshot_error; the page never reopens sooner.
+const snapshotRetry = 30000;
+
+// openStream opens /api/<path> and calls onEvent(name, data) and onState(state). The
+// browser retries a dropped connection itself; when it gives up for good (readyState
+// CLOSED, as after a 503 too_many_streams or shutting_down), a new stream is opened with
+// backoff, 1 s doubling to 30 s, reset by a successful snapshot. It returns a close function.
 export function openStream(onEvent, onState, path = "stream") {
-  const es = new EventSource(`/api/${path}`);
-  es.onopen = () => onState("connected");
-  es.onerror = () => onState("disconnected");
-  for (const name of ["session", "exchange", "entries", "snapshot_error"]) {
-    es.addEventListener(name, (e) => {
-      try {
-        onEvent(name, JSON.parse(e.data));
-      } catch {
-        // ignore a malformed event
+  let es = null;
+  let timer = null;
+  let closed = false;
+  let delay = firstDelay;
+  let holdUntil = 0; // no reopen before this time, set by snapshot_error
+
+  const reopenLater = () => {
+    const wait = Math.max(delay, holdUntil - Date.now());
+    delay = Math.min(delay * 2, maxDelay);
+    timer = setTimeout(connect, wait);
+  };
+
+  function connect() {
+    timer = null;
+    if (closed) return;
+    const cur = new EventSource(`/api/${path}`);
+    es = cur;
+    cur.onopen = () => onState("connected");
+    cur.onerror = () => {
+      if (closed || es !== cur) return;
+      onState("disconnected");
+      if (cur.readyState === EventSource.CLOSED) {
+        cur.close();
+        reopenLater();
       }
-    });
+    };
+    for (const name of ["session", "exchange", "entries", "snapshot_error"]) {
+      cur.addEventListener(name, (e) => {
+        if (closed || es !== cur) return;
+        if (name === "snapshot_error") holdUntil = Date.now() + snapshotRetry;
+        else delay = firstDelay; // the snapshot arrived
+        try {
+          onEvent(name, JSON.parse(e.data));
+        } catch {
+          // ignore a malformed event
+        }
+      });
+    }
   }
-  return () => es.close();
+
+  connect();
+  return () => {
+    closed = true;
+    if (timer) clearTimeout(timer);
+    if (es) es.close();
+  };
 }
