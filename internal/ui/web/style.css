@@ -55,5 +55,7 @@ button {
 .detail { border-top: 1px solid var(--line); padding: .4rem 0; }
 .detail h2 { font-size: .95rem; margin: .4rem 0; }
 .body { padding: .3rem 0; }
-.body summary { cursor: pointer; }
+.body summary {
+  cursor: pointer;
+}
 .body pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: .2rem 0; font: 13px/1.4 ui-monospace, monospace; }
