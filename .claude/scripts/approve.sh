@@ -65,10 +65,15 @@ done_snap() { [ -n "$SNAP" ] && rm -rf "$SNAP"; SNAP=""; }
 
 KIT_ACTION=approve   # the Kit: trailer of this run's commit (approve | change | reopen)
 written() { # the files under specs/<f>/ this run wrote: they differ from the snapshot taken before it
-	local f
+	local f r="$SPECS_DIR/$F/research.md"
 	find "$SPECS_DIR/$F" -type f | sort | while IFS= read -r f; do
 		cmp -s "$f" "$SNAP/${f#"$SPECS_DIR/$F/"}" || printf '%s\n' "$f"
 	done
+	# the research.md "loop.sh new" made goes in with the first approval while it was never
+	# committed: left untracked, it would block the next branch switch or new feature
+	if [ -f "$r" ] && cmp -s "$r" "$SNAP/research.md" && [ -z "$(git log -1 --format=%H -- "$r")" ]; then
+		printf '%s\n' "$r"
+	fi
 }
 
 commit_docs() { # subject body — commits only what this run wrote; your other edits in specs/<f>/ stay as they are
