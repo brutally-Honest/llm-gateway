@@ -43,4 +43,13 @@ t "logging that round stops the task instead of passing or asking for another ro
 assert_eq "ACTION stop scope T001" "$($L log T001 implementer 'DONE T001 x' | last)" "log"
 assert_eq "STOPPED scope" "$(awk -F '\t' '$1 == "T001" { s = $2 " " $3 } END { print s }' .agent-loop/001-e2e/state)" "state"
 
+t "the report's Next says why it stopped: scope, not the fix-round limit"
+out=$($L stop 'ACTION stop scope T001' | grep '^Next: ')
+assert_contains "$out" "T001's fix round changed files outside the task's own" "Next"
+assert_not_contains "$out" "fix-round limit" "Next"
+
+t "after a new run starts (the stop line is history) the STOPPED task still reads as scope"
+$L start --session scope >/dev/null
+assert_contains "$($L status | grep '^Next: ')" "T001's fix round changed files outside the task's own" "Next"
+
 done_tests

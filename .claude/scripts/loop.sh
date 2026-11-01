@@ -198,13 +198,49 @@ art_line() { # name
 	printf '  %-9s %s%s\n' "$1.md" "$st" "$extra"
 }
 
+stopped_msg() { # id -> what to do about a STOPPED task, by why it stopped
+	local id=$1 b
+	b=$(short "$(sfile_get "base.$id")")
+	case $(state_detail "$id") in
+		scope) echo "$id's fix round changed files outside the task's own (loop.sh findings $id lists them): undo those by hand and /al-resume, or accept it as it is (loop.sh accept $id '<reason>')" ;;
+		*) echo "$id hit the fix-round limit: its last attempt is committed on top of $b. Fix it by hand and /al-resume, accept it as it is (loop.sh accept $id '<reason>'), or drop it (git reset --hard $b), edit the task in tasks.md, and /al-resume" ;;
+	esac
+}
+escalated_msg() { echo "$1 needs your decision (the reviewer's ESCALATE): /al-change the spec, or fix the code yourself; then /al-resume"; }
+
+last_stop_next() { # -> the Next line for the latest stop (loop.sh stop), while its task is still where that stop left it
+	local line kind id rest r
+	line=$(sfile_get laststop); [ -n "$line" ] || return 1
+	[ "$(state_get "$(sfile_get laststop.id)")" = "$(sfile_get laststop.state)" ] || return 1
+	line=${line#ACTION stop }; kind=${line%% *}; rest=${line#"$kind"}; rest=${rest# }; id=${rest%% *}; rest=${rest#"$id"}; rest=${rest# }
+	case $kind in
+		fix-limit) [ "$(state_get "$id")" = STOPPED ] && stopped_msg "$id" ;;
+		scope) [ "$(state_get "$id")" = STOPPED ] && stopped_msg "$id" ;;
+		escalate | ask-escalate) escalated_msg "$id" ;;
+		pre-task)
+			r=$(sfile_get stopreason | sed -n 's/^STOP-REASON //p' | head -1)
+			echo "the build couldn't start $id: ${r:-see the report above}. Fix that, then /al-resume" ;;
+		contract) echo "$id: an agent's report broke the loop's contract ${rest:-(see the run log)} — /al-resume picks $id up again" ;;
+		dirty-tree) echo "$id reported NEEDS-HUMAN but left uncommitted changes: commit or stash them, then /al-resume" ;;
+		keep) echo "$id's unfinished work is in the tree as your change: commit it (or not), then /al-resume runs $id from the new HEAD" ;;
+		interrupted | ask-dirty) echo "$id was interrupted and left uncommitted work: /al-resume asks what to do with it" ;;
+		*) return 1 ;;
+	esac
+}
+
+latest_held() { # -> "id status" of the task that most recently became STOPPED or ESCALATED and still is
+	[ -f "$(sdir)/state" ] || return 0
+	awk -F '\t' '{ s[$1] = $2; n[$1] = NR } END { for (k in s) if ((s[k] == "STOPPED" || s[k] == "ESCALATED") && k ~ /^T[0-9]/ && n[k] > m) { m = n[k]; w = k " " s[k] } if (w != "") print w }' "$(sdir)/state"
+}
+
 next_step() {
 	local st q ce c
 	if is_quick; then
 		st=$(art_state "$(art brief)")
 		case $st in
 			draft) echo "review $(art brief), then /al-approve brief (it builds right after)" ;;
-			approved) [ "$(state_get Q)" = PASS ] && echo "done — read the report (loop.sh report) and open the PR" || echo "/al-implement" ;;
+			approved) if [ "$(state_get Q)" = PASS ]; then echo "done — read the report (loop.sh report) and open the PR"
+				else last_stop_next || echo "/al-implement"; fi ;;
 			*) art_why "$(art brief)" "$st" ;;
 		esac
 		return
@@ -234,12 +270,12 @@ next_step() {
 	ce=$(chain_errors tasks) || { echo "$ce"; return; }
 	q=$(open_questions | tr '\n' ' ')
 	[ -n "$q" ] && { echo "answer $q: /al-answer <Qn> <your answer>, then /al-resume"; return; }
-	for c in $(task_ids "$(art tasks)"); do
-		case $(state_get "$c") in
-			STOPPED) echo "$c hit the fix-round limit: its last attempt is committed on top of $(short "$(sfile_get "base.$c")"). Fix it by hand and /al-resume, accept it as it is (loop.sh accept $c '<reason>'), or drop it (git reset --hard $(short "$(sfile_get "base.$c")")), edit the task in tasks.md, and /al-resume"; return ;;
-			ESCALATED) echo "$c needs your decision (the reviewer's ESCALATE): /al-change the spec, or fix the code yourself; then /al-resume"; return ;;
-		esac
-	done
+	last_stop_next && return
+	set -- $(latest_held)
+	case ${2:-} in
+		STOPPED) stopped_msg "$1"; return ;;
+		ESCALATED) escalated_msg "$1"; return ;;
+	esac
 	for c in $(task_ids "$(art tasks)"); do
 		case $(state_get "$c") in PASS | NEEDS-HUMAN) ;; *) in_list "$c" "$(done_tasks)" || { echo "/al-implement"; return; } ;; esac
 	done
@@ -816,6 +852,7 @@ cmd_start() {
 	case $sid in '' | *'$'* | *CLAUDE_SESSION_ID*) warn "no session id — the orchestrator write-lock is off for this run"; sid="" ;; esac
 	ensure_state
 	[ -f "$(sdir)/paused" ] && { log_event "RESUME ($(cut -d' ' -f1 "$(sdir)/paused"))"; rm -f "$(sdir)/paused"; }
+	rm -f "$(sdir)/laststop" "$(sdir)/laststop.id" "$(sdir)/laststop.state" "$(sdir)/stopreason"   # a new run: the last stop is history
 	if [ -n "$sid" ]; then sfile_set lock "$sid $(now)"; fi
 	log_event "RUN START head=$(short) session=${sid:-none}"
 	if [ "$(cfg VERIFY)" = task ] && tree_clean && [ "$(sfile_get green)" != "$(git rev-parse HEAD)" ]; then
@@ -854,7 +891,7 @@ cmd_next() {
 		case $st in
 			PASS) echo "ACTION finish" ;;
 			IMPLEMENTED) after_implemented Q ;;
-			*) if out=$(pre_task Q); then act_implement Q; else printf '%s\n' "$out"; log_event "STOP pre-task Q"; echo "ACTION stop pre-task Q"; fi ;;
+			*) if out=$(pre_task Q); then act_implement Q; else printf '%s\n' "$out"; sfile_set stopreason "$out"; log_event "STOP pre-task Q"; echo "ACTION stop pre-task Q"; fi ;;
 		esac
 		return 0
 	fi
@@ -880,7 +917,7 @@ cmd_next() {
 		[ -z "$st" ] && in_list "$id" "$(done_tasks)" && continue
 		case $st in PASS | NEEDS-HUMAN) continue ;; esac
 		if out=$(pre_task "$id"); then act_implement "$id"
-		else printf '%s\n' "$out"; log_event "STOP pre-task $id"; echo "ACTION stop pre-task $id"; fi
+		else printf '%s\n' "$out"; sfile_set stopreason "$out"; log_event "STOP pre-task $id"; echo "ACTION stop pre-task $id"; fi
 		return 0
 	done
 	final_verify || return 0
@@ -948,7 +985,13 @@ cmd_log() {
 
 release_lock() { rm -f "$(sdir)/lock"; }
 
-cmd_stop() { resolve_feature; log_event "STOP $*"; release_lock; cmd_report; }
+cmd_stop() { # '<the ACTION stop line>' -> records it as the latest stop (the report's Next follows it), then the report
+	local line id
+	resolve_feature; log_event "STOP $*"; release_lock
+	line="$*"; id=${line#ACTION stop }; id=${id#* }; id=${id%% *}
+	sfile_set laststop "$line"; sfile_set laststop.id "$id"; sfile_set laststop.state "$(state_get "$id")"
+	cmd_report
+}
 cmd_finish() { resolve_feature; log_event "RUN END"; release_lock; cmd_report; rm -f "$(sdir)/run.conf"; }
 log_done() { # id -> the script's checks on a reported (or resumed) DONE, then review or a fix round
 	local id=$1 out
