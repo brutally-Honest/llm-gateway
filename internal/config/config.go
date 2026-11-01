@@ -18,6 +18,7 @@ type Config struct {
 	ShutdownTimeout time.Duration
 	Upstreams       map[string]Upstream // by adapter name; nil when Options.Upstreams is empty
 	Capture         Capture
+	Hooks           Hooks
 	RateLimit       RateLimit
 	UI              UI
 }
@@ -89,6 +90,7 @@ func Defaults() Config {
 		LogLevel:        "info",
 		ShutdownTimeout: 10 * time.Minute,
 		Capture:         defaultCapture(),
+		Hooks:           defaultHooks(),
 		RateLimit:       defaultRateLimit(),
 		UI:              defaultUI(),
 	}
@@ -113,6 +115,7 @@ func settingsFor(specs []UpstreamSpec) []setting {
 		s = append(s, upstreamSettings(spec.Name)...)
 	}
 	s = append(s, captureSettings()...)
+	s = append(s, hooksSettings()...)
 	s = append(s, uiSettings()...)
 	return append(s, ratelimitSettings()...)
 }

@@ -23,6 +23,7 @@ type fileConfig struct {
 
 	Upstreams map[string]upstreamFile `yaml:"upstreams"`
 	Capture   captureFile             `yaml:"capture"`
+	Hooks     hooksFile               `yaml:"hooks"`
 	RateLimit ratelimitFile           `yaml:"ratelimit"`
 	UI        uiFile                  `yaml:"ui"`
 }
@@ -76,6 +77,9 @@ func fileValues(f *fileConfig) map[string]*string {
 	}
 	for field, p := range stringFields(&f.Capture) {
 		values[captureKey(field)] = p
+	}
+	for field, p := range stringFields(&f.Hooks) {
+		values[hooksKey(field)] = p
 	}
 	for field, p := range stringFields(&f.RateLimit) {
 		values[ratelimitKey(field)] = p
@@ -273,6 +277,16 @@ func parseFile(path string, data []byte, specs []UpstreamSpec) (map[string]*stri
 		}
 		return walkFields(v, captureKey, knownCapture)
 	}
+	// walkHooks checks the block under `hooks`: one level of fields.
+	walkHooks := func(k, v *yaml.Node) error {
+		if isNull(v) {
+			return nil
+		}
+		if v.Kind != yaml.MappingNode {
+			return fail(k.Value, reasonInvalidType, k.Line)
+		}
+		return walkFields(v, hooksKey, stringFields(&hooksFile{}))
+	}
 	// walkRateLimit checks the block under `ratelimit`: scalar fields, plus `keys`
 	// with one block of rpm/tpm per name.
 	walkRateLimit := func(k, v *yaml.Node) error {
@@ -341,6 +355,7 @@ func parseFile(path string, data []byte, specs []UpstreamSpec) (map[string]*stri
 	blocks := map[string]func(k, v *yaml.Node) error{
 		"upstreams": walkUpstreams,
 		"capture":   walkCapture,
+		"hooks":     walkHooks,
 		"ratelimit": walkRateLimit,
 		"ui":        walkUI,
 	}
