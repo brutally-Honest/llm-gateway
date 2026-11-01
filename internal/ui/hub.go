@@ -27,6 +27,11 @@ const (
 	hubQueueSize = 1024
 	// heartbeatEvery is the longest an open stream stays silent (AC26).
 	heartbeatEvery = 15 * time.Second
+	// hookRefreshEvery is the longest a session's hook events wait before one re-read (AC26).
+	hookRefreshEvery = 250 * time.Millisecond
+	// hooksExchange is the request id of the pseudo-exchange that carries a session's hook
+	// lines. Its entries have no exchange id.
+	hooksExchange = "hooks"
 )
 
 var (
@@ -57,11 +62,16 @@ type liveMsg struct {
 	Exchanges []liveExchange // the committed exchanges, in row id order
 	All       []liveExchange // every exchange of the session, in timeline order
 	Inactive  bool           // the session's last exchange started over ActiveWindow ago (E21)
+	Refresh   bool           // a hook refresh: send every exchange in All that differs from what was sent
 }
 
 // readFn reads what a batch of commits to one session needs: the summary and/or the
 // entries of the exchanges with these request ids, in row id order.
 type readFn func(ctx context.Context, who sessIdent, ids []string, summary, entries bool) (liveMsg, error)
+
+// pendingRefresh is a session's armed hook refresh. It is a pointer so a fired timer can
+// tell whether it is still the session's current one.
+type pendingRefresh struct{ timer *time.Timer }
 
 // subscriber is one open stream. Its buffer is the only way the hub talks to it.
 type subscriber struct {
@@ -79,6 +89,11 @@ type Hub struct {
 	read      readFn
 	snap      snapFn
 	heartbeat time.Duration
+	hookEvery time.Duration
+
+	// sendMu orders a session's read and send: an exchange commit and a hook refresh never
+	// interleave, so no stream gets an older read after a newer one.
+	sendMu sync.Mutex
 
 	q         chan capture.Committed
 	done      chan struct{}
@@ -89,6 +104,8 @@ type Hub struct {
 
 	mu   sync.Mutex
 	subs map[*subscriber]struct{}
+	// pending holds one refresh timer per session with hook events not yet re-read.
+	pending map[sessIdent]*pendingRefresh
 }
 
 // NewHub returns a running hub that reads from d.Reader.
@@ -104,8 +121,9 @@ func newHub(d Deps, queue int) *Hub {
 		log = zap.NewNop()
 	}
 	h := &Hub{
-		log: log, heartbeat: heartbeatEvery,
-		q: make(chan capture.Committed, queue), done: make(chan struct{}),
+		log: log, heartbeat: heartbeatEvery, hookEvery: hookRefreshEvery,
+		pending: map[sessIdent]*pendingRefresh{},
+		q:       make(chan capture.Committed, queue), done: make(chan struct{}),
 		subs: map[*subscriber]struct{}{},
 	}
 	h.ctx, h.cancel = context.WithCancel(context.Background())
@@ -139,11 +157,77 @@ func (h *Hub) Publish(c capture.Committed) {
 	}
 }
 
+// PublishHook notes that a hook event of this session is stored. Events of one session
+// inside the refresh window share one re-read, taken when the window ends, so the last
+// event always lands. It never waits, and does nothing when nobody watches the session.
+func (h *Hub) PublishHook(principal, client, sessionKey string) {
+	if sessionKey == "" {
+		return
+	}
+	who := sessIdent{principal, client, sessionKey}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	select {
+	case <-h.done:
+		return
+	default:
+	}
+	if _, ok := h.pending[who]; ok || !h.watchedLocked(who.id()) {
+		return
+	}
+	p := &pendingRefresh{}
+	p.timer = time.AfterFunc(h.hookEvery, func() {
+		logging.Go(h.log, "ui_hub_hook", func() error { h.refresh(who, p); return nil })
+	})
+	h.pending[who] = p
+}
+
+// watchedLocked reports whether any open stream wants updates of session id. h.mu is held.
+func (h *Hub) watchedLocked(id string) bool {
+	for s := range h.subs {
+		if s.session == "" || s.session == id {
+			return true
+		}
+	}
+	return false
+}
+
+// refresh re-reads a session after its hook window and sends the result. p is the refresh
+// that fired; if it is no longer the session's pending one, it was cancelled.
+func (h *Hub) refresh(who sessIdent, p *pendingRefresh) {
+	h.mu.Lock()
+	if h.pending[who] != p {
+		h.mu.Unlock()
+		return
+	}
+	delete(h.pending, who)
+	h.mu.Unlock()
+	h.sendMu.Lock()
+	defer h.sendMu.Unlock()
+	select {
+	case <-h.done:
+		return
+	default:
+	}
+	id := who.id()
+	global, session := h.watchers(id)
+	if !global && !session {
+		return
+	}
+	h.readAndSend(who, nil, global, session, true)
+}
+
 // Close stops the dispatcher and ends every open stream. It is safe to call twice.
 func (h *Hub) Close() {
 	h.closeOnce.Do(func() {
 		close(h.done)
 		h.cancel()
+		h.mu.Lock()
+		for who, p := range h.pending {
+			p.timer.Stop()
+			delete(h.pending, who)
+		}
+		h.mu.Unlock()
 	})
 }
 
@@ -164,9 +248,16 @@ func (h *Hub) subscribe(session string) (*subscriber, error) {
 	return s, nil
 }
 
+// unsubscribe removes s and stops the refresh timer of every session nobody watches now.
 func (h *Hub) unsubscribe(s *subscriber) {
 	h.mu.Lock()
 	delete(h.subs, s)
+	for who, p := range h.pending {
+		if !h.watchedLocked(who.id()) {
+			p.timer.Stop()
+			delete(h.pending, who)
+		}
+	}
 	h.mu.Unlock()
 }
 
@@ -185,6 +276,10 @@ func (h *Hub) dropAll() {
 	h.mu.Lock()
 	all := h.subs
 	h.subs = map[*subscriber]struct{}{}
+	for who, p := range h.pending {
+		p.timer.Stop()
+		delete(h.pending, who)
+	}
 	h.mu.Unlock()
 	for s := range all {
 		s.drop()
@@ -277,34 +372,42 @@ func (h *Hub) dispatch(batch []capture.Committed) {
 			return
 		default:
 		}
-		id := g.who.id()
-		global, session := h.watchers(id)
-		if !global && !session {
-			continue
+		h.sendMu.Lock()
+		global, session := h.watchers(g.who.id())
+		if global || session {
+			h.readAndSend(g.who, g.ids, global, session, false)
 		}
-		ctx, cancel := context.WithTimeout(h.ctx, storeTimeout)
-		m, err := h.read(ctx, g.who, g.ids, global, session)
-		cancel()
-		if err != nil {
-			// A stream that misses this update would stay stale: end them so they resync.
-			if h.ctx.Err() == nil {
-				h.log.Warn("ui hub read failed", zap.Error(err))
-			}
-			for _, s := range append(h.targets(id, true), h.targets(id, false)...) {
-				h.unsubscribe(s)
-				s.drop()
-			}
-			continue
+		h.sendMu.Unlock()
+	}
+}
+
+// readAndSend reads one session and hands the result to its watchers. A failed read drops
+// them, so they resync by snapshot. sendMu is held. A refresh sends the session streams
+// every exchange that differs, instead of the committed ones.
+func (h *Hub) readAndSend(who sessIdent, ids []string, global, session, refresh bool) {
+	id := who.id()
+	ctx, cancel := context.WithTimeout(h.ctx, storeTimeout)
+	m, err := h.read(ctx, who, ids, global, session)
+	cancel()
+	if err != nil {
+		// A stream that misses this update would stay stale: end them so they resync.
+		if h.ctx.Err() == nil {
+			h.log.Warn("ui hub read failed", zap.Error(err))
 		}
-		if global && m.Summary != nil {
-			for _, s := range h.targets(id, true) {
-				h.send(s, liveMsg{Summary: m.Summary})
-			}
+		for _, s := range append(h.targets(id, true), h.targets(id, false)...) {
+			h.unsubscribe(s)
+			s.drop()
 		}
-		if session && len(m.Exchanges) > 0 {
-			for _, s := range h.targets(id, false) {
-				h.send(s, liveMsg{Exchanges: m.Exchanges, All: m.All, Inactive: m.Inactive})
-			}
+		return
+	}
+	if global && m.Summary != nil {
+		for _, s := range h.targets(id, true) {
+			h.send(s, liveMsg{Summary: m.Summary})
+		}
+	}
+	if session && (refresh || len(m.Exchanges) > 0) {
+		for _, s := range h.targets(id, false) {
+			h.send(s, liveMsg{Exchanges: m.Exchanges, All: m.All, Inactive: m.Inactive, Refresh: refresh})
 		}
 	}
 }
@@ -348,7 +451,9 @@ func readLive(ctx context.Context, d Deps, who sessIdent, ids []string, summary,
 		if n := len(all); n > 0 {
 			last := all[0].StartedAt
 			for _, x := range all {
-				last = max(last, x.StartedAt)
+				if x.RequestID != hooksExchange {
+					last = max(last, x.StartedAt)
+				}
 			}
 			m.Inactive = d.now().Sub(time.Unix(0, last)) >= ActiveWindow
 		}
@@ -380,15 +485,15 @@ func sessionExchanges(c *store.CtxReader, who sessIdent) ([]liveExchange, error)
 	var out []liveExchange
 	at := map[string]int{}
 	for _, e := range mapEntries(built, byID) {
+		key := e.ExchangeID
 		if e.Kind == kindHookEvent {
-			continue // hook lines belong to no exchange; the live stream carries exchanges
+			key = hooksExchange // hook lines belong to no exchange: they travel as one pseudo-exchange
 		}
-		i, ok := at[e.ExchangeID]
+		i, ok := at[key]
 		if !ok {
 			i = len(out)
-			at[e.ExchangeID] = i
-			out = append(out, liveExchange{RowID: rowID[e.ExchangeID], RequestID: e.ExchangeID,
-				StartedAt: byID[e.ExchangeID].StartedAt})
+			at[key] = i
+			out = append(out, liveExchange{RowID: rowID[key], RequestID: key, StartedAt: byID[key].StartedAt})
 		}
 		out[i].Entries = append(out[i].Entries, e)
 	}

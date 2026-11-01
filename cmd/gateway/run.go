@@ -425,7 +425,12 @@ func startCapture(c config.Capture, h config.Hooks, withUI bool, profiles []core
 	sink := capture.NewSink(cfg, st, log)
 	var hookSink *hooks.Sink
 	if hs, ok := st.(hooks.Store); ok {
-		hookSink = hooks.NewSink(hookConfig(h, profiles), hs, log)
+		hcfg := hookConfig(h, profiles)
+		if hub != nil {
+			// A stored hook event reaches the open web UI streams (AC26).
+			hcfg.OnStored = func(s hooks.HookStored) { hub.PublishHook(s.Principal, s.Client, s.SessionKey) }
+		}
+		hookSink = hooks.NewSink(hcfg, hs, log)
 	}
 	return &captureRun{
 		store: st, sink: sink, hooks: hookSink, budget: core.NewBudget(c.MemoryLimit), maxBodyBytes: c.MaxBodyBytes,

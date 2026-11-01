@@ -157,6 +157,9 @@ func writeLive(w http.ResponseWriter, m liveMsg, sent map[string]string) error {
 			return err
 		}
 	}
+	if m.Refresh {
+		return writeRefresh(w, m, sent)
+	}
 	if len(m.Exchanges) == 0 {
 		return nil
 	}
@@ -206,6 +209,29 @@ func writeLive(w http.ResponseWriter, m liveMsg, sent map[string]string) error {
 		if _, err := fmt.Fprintf(w, "event: %s\n%sdata: %s\n\n", e.name, id, b); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// writeRefresh writes a hook refresh: an exchange event with the whole list for every
+// exchange in All, the hooks pseudo-exchange included, that differs from what this stream
+// last sent. There is no id: row ids belong to exchanges only.
+func writeRefresh(w http.ResponseWriter, m liveMsg, sent map[string]string) error {
+	for _, a := range m.All {
+		if h, ok := sent[a.RequestID]; ok && h == a.Hash {
+			continue
+		}
+		b, err := json.Marshal(a.Entries)
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "event: exchange\ndata: %s\n\n", b); err != nil {
+			return err
+		}
+		sent[a.RequestID] = a.Hash
+	}
+	if m.Inactive {
+		clear(sent)
 	}
 	return nil
 }
