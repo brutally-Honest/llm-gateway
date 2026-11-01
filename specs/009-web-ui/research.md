@@ -210,3 +210,35 @@ writing spec v1; approving the spec confirms them.
   page; (3) a new Claude Code session with a sub-agent task appears and updates live; (4) reload
   mid-session and gateway restart banner, then view equals reload; (5) devtools CSP and external
   request check; the light theme and OS theme switch from the 2026-11-01 notes above.
+- 2026-11-01 — Manual checks, all done by the user in the browser; T012, T013, T014, T015 and
+  T017 are passed by the user (the loop keeps them as NEEDS-HUMAN; this note is the record).
+  - M1 (T012): sessions list, active badge, live indicator, ungrouped list, empty state, light
+    and dark theme: pass. Load more not testable with real data (7 sessions); the API tests
+    cover it.
+  - M2 (T013): turns, tool input/result pairing, red on error (`cat /nonexistent-file` shows the
+    error badge and red border), `<script>` shown literally, unknown counters shown as unknown,
+    filters, copy, truncated view: pass. Found a tool result shown as a JSON-encoded string
+    (quotes and literal `\n`); the CLI viewer printed it the same way, so it was fixed in
+    `internal/timeline` for both (9485a5f, `TestBuild_ToolResultStringContentIsDecodedText`).
+    The CLI change was approved by the user: a string tool result now prints as text across
+    lines. Also fixed: an empty Prompt block on user messages that only carry tool results
+    (ca5ee28), and singular counts of one in the session header (3d4f5c0).
+  - M3 (T014): live updates, follow only at bottom, gateway restart banner then recovery, old
+    session has no stream: pass.
+  - M4 (T015): exchange detail opens from the timeline and from ungrouped rows, bodies readable,
+    "truncated, open raw" works: pass. "Missing body says not stored" is covered by the API
+    tests.
+  - T017: (1) sessions listed with correct totals, (3) a new session is listed and updates live,
+    including a sub-agent task, (4) reload keeps history and live resumes, restart banner, (5) no
+    CSP violations and no external requests in devtools, and the theme follows the OS when it is
+    switched: pass. (2) and (6) are recorded above by the T017 run.
+- 2026-11-01 — `TestBinary_SignalShutdown` failed whenever a gateway was running on the default
+  UI port 7199, since the test left the UI there; it now binds the UI to `127.0.0.2:0`
+  (test-only change).
+- 2026-11-01 — The console line "Medium parser loaded" (shown at app.js:2:9) is not from this
+  code: there is no `console.` call under `internal/ui/web/`, and app.js line 2 is an import.
+  It comes from a browser extension; nothing changed.
+- 2026-11-01 — Follow-up after 009 (the user's decision): tool result content stored as an array
+  of text blocks (`[{"type":"text","text":"…"}]`) still shows as JSON in the CLI and the UI.
+  It is not flattened in `internal/timeline`, because that array is Anthropic's shape. The
+  mapping to text belongs in the Anthropic parser (`internal/protocols/anthropic`).
