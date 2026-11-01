@@ -196,3 +196,17 @@ writing spec v1; approving the spec confirms them.
   client disconnected), which isn't an error event and so isn't counted.
 - 2026-11-01 — Add to T017's manual check (the user's request): switch the OS light/dark theme
   while the page is open and confirm the page follows it.
+- 2026-11-01 — T017 manual check, partial (agent run, not the browser walk). Gateway already running
+  from `bin/gateway` (pid 124500, defaults, 127.0.0.1:7199 and 7197); left running, not touched.
+  Read-only checks only. (6) Timing: largest captured session by exchange count is
+  `WyJsb2NhbCIsImNsYXVkZS1jb2RlIiwiYzI5NDVjNjgtYmE2YS00Y2IzLWJiZjctZDc3NDU1NjJmMzIzIl0`
+  (session key `c2945c68-ba6a-4cb3-bbf7-d7745562f323`, claude-code), 12 exchanges, 46 timeline
+  entries. `GET /api/sessions/{id}/timeline?limit=2000` returned 200 in 4 to 6 ms over three runs
+  (64810 bytes). `next_after` null. (2) API vs CLI: `gateway timeline -json` for the same session
+  gives 47 lines (12 `exchange` headers, one per model call, which the API folds into `model_call`,
+  plus `usage_total`). The message, tool_call, tool_result and error lines match the API entries
+  in kind and text, in the same order. Verified by script, not by eye in the page.
+  Not done by the agent, needs a human in a browser: (1) totals for the 8 listed sessions in the
+  page; (3) a new Claude Code session with a sub-agent task appears and updates live; (4) reload
+  mid-session and gateway restart banner, then view equals reload; (5) devtools CSP and external
+  request check; the light theme and OS theme switch from the 2026-11-01 notes above.
