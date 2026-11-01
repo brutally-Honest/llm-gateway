@@ -2,15 +2,22 @@ package hooks_test
 
 import (
 	"bytes"
+	"cmp"
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/brutally-honest/llm-gateway/internal/core"
 	"github.com/brutally-honest/llm-gateway/internal/hooks"
+	"github.com/brutally-honest/llm-gateway/internal/store"
+	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
 
 func newHandler(t *testing.T, st *fakeStore, q int, max int64, on bool) (http.Handler, *hooks.Sink, *bytes.Buffer) {
@@ -169,5 +176,114 @@ func TestHandler_CaptureOffCounts(t *testing.T) {
 	closeSink(t, s)
 	if len(st.records()) != 0 || s.Counts().CaptureOff != 1 {
 		t.Fatalf("recs=%d off=%d", len(st.records()), s.Counts().CaptureOff)
+	}
+}
+
+// reorderStore holds each save until the test opens its gate, so the test decides the
+// order in which the workers finish. Entry order is announced on entered; each finished
+// record is announced on finished after it is stored.
+type reorderStore struct {
+	entered  chan string
+	finished chan *store.HookRecord
+	gates    map[string]chan struct{}
+}
+
+func (f *reorderStore) SaveHook(ctx context.Context, h *store.HookRecord) error {
+	p := string(h.Payload)
+	f.entered <- p
+	select {
+	case <-f.gates[p]:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	f.finished <- h
+	return nil
+}
+
+// Events posted in order keep their posting order in the timeline even when the
+// writes finish out of order with several workers.
+func TestHandler_SeqFollowsPostingOrderWhenWritesFinishOutOfOrder(t *testing.T) {
+	const n = 4
+	st := &reorderStore{entered: make(chan string, n), finished: make(chan *store.HookRecord, n),
+		gates: map[string]chan struct{}{}}
+	for i := range n {
+		st.gates[strconv.Itoa(i)] = make(chan struct{})
+	}
+	log, _, _ := logger()
+	m := mapperFunc(func(b []byte) core.HarnessEvent {
+		return core.HarnessEvent{Phase: core.PhaseTurnEnd, SessionKey: "s", SourceName: "src-" + string(b)}
+	})
+	s := hooks.NewSink(hooks.Config{QueueSize: 8, Workers: n, MemoryLimit: 1 << 20, Mappers: findMapper("c", m)}, st, log)
+	defer closeSink(t, s)
+	r := chi.NewRouter()
+	hooks.NewHandler(s, log, 1024, true).Mount(r)
+	for i := range n {
+		if w := post(r, "127.0.0.1", strconv.Itoa(i), nil); w.Code != 200 {
+			t.Fatalf("post %d: %d", i, w.Code)
+		}
+	}
+	for range n {
+		select {
+		case <-st.entered:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the workers did not all start a write")
+		}
+	}
+	var done []*store.HookRecord
+	for i := n - 1; i >= 0; i-- { // finish the writes one at a time, last posted first
+		close(st.gates[strconv.Itoa(i)])
+		select {
+		case h := <-st.finished:
+			done = append(done, h)
+		case <-time.After(5 * time.Second):
+			t.Fatal("a released write did not finish")
+		}
+	}
+	if string(done[0].Payload) != strconv.Itoa(n-1) {
+		t.Fatalf("first finished payload %q, want %d", done[0].Payload, n-1)
+	}
+	written := slices.Clone(done) // finish order, kept before the sort below
+	slices.SortStableFunc(done, func(a, b *store.HookRecord) int { return cmp.Compare(a.Seq, b.Seq) })
+	for i, h := range done {
+		if string(h.Payload) != strconv.Itoa(i) {
+			t.Fatalf("timeline position %d holds payload %q, want %d", i, h.Payload, i)
+		}
+	}
+
+	// The timeline, built from a real store: the same events saved in the order their
+	// writes finished, all with one receive time, so only seq can order them.
+	dir := t.TempDir()
+	ss, err := store.Open(dir, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Unix(100, 0)
+	for _, h := range written {
+		cp := *h
+		cp.ReceivedAt = at
+		if err := ss.SaveHook(t.Context(), &cp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := ss.Close(); err != nil {
+		t.Fatal(err)
+	}
+	rd, err := store.OpenReader(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rd.Close() }()
+	session := store.SessionRow{PrincipalID: core.PrincipalLocal, Client: "c", SessionKey: "s"}
+	entries, err := timeline.Build(rd, session, timeline.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != n {
+		t.Fatalf("timeline has %d entries, want %d", len(entries), n)
+	}
+	for i, e := range entries {
+		if e.Kind != timeline.KindHarness || e.Text != "src-"+strconv.Itoa(i) {
+			t.Fatalf("timeline entry %d = %s %q, want harness src-%d", i, e.Kind, e.Text, i)
+		}
 	}
 }

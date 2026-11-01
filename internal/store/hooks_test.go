@@ -98,8 +98,10 @@ func TestSaveHook_IdenticalPayloadsBothStored(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := open(t, dir)
 	at := time.Unix(10, 0)
-	for range 2 {
-		if err := s.SaveHook(t.Context(), hookRec(`{"same":true}`, core.HarnessEvent{SessionKey: "s"}, at)); err != nil {
+	for i := range 2 {
+		h := hookRec(`{"same":true}`, core.HarnessEvent{SessionKey: "s"}, at)
+		h.Seq = int64(i + 1)
+		if err := s.SaveHook(t.Context(), h); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -162,5 +164,37 @@ func TestMigrate_V2StoreUpgradesKeepsData(t *testing.T) {
 	var k string
 	if err := raw.QueryRow(`SELECT session_key FROM exchanges WHERE request_id='old'`).Scan(&k); err != nil || k != "k" {
 		t.Fatalf("old exchange lost: %q %v", k, err)
+	}
+}
+
+// A hook event keeps the sequence number it was given at receive time, even when a
+// later write carries a lower one: the store never renumbers it.
+func TestSaveHook_SeqStoredAsGiven(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := open(t, dir)
+	first := hookRec(`{"n":1}`, core.HarnessEvent{}, time.Unix(1, 0))
+	first.Seq = 7
+	second := hookRec(`{"n":2}`, core.HarnessEvent{}, time.Unix(1, 0))
+	second.Seq = 3
+	for _, h := range []*store.HookRecord{first, second} {
+		if err := s.SaveHook(t.Context(), h); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := rawDB(t, dir).Query(`SELECT seq FROM hook_events ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var got []int64
+	for rows.Next() {
+		var n int64
+		if err := rows.Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, n)
+	}
+	if len(got) != 2 || got[0] != 7 || got[1] != 3 {
+		t.Fatalf("stored seq = %v, want [7 3]", got)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
@@ -20,6 +21,8 @@ type Handler struct {
 	log            *zap.Logger
 	maxBody        int64
 	captureEnabled bool
+	// seq numbers the deliveries this process receives, in arrival order.
+	seq atomic.Int64
 }
 
 // NewHandler makes the handler. maxBody is capture.max_body_bytes; with captureEnabled
@@ -55,7 +58,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case int64(len(body)) > h.maxBody:
 		h.sink.RecordOversize(client, h.maxBody)
 	default:
-		h.sink.Submit(client, body)
+		h.sink.Submit(client, h.seq.Add(1), body)
 	}
 	w.WriteHeader(http.StatusOK)
 }

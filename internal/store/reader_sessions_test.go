@@ -210,10 +210,12 @@ func TestReader_SessionsEmptyStore(t *testing.T) {
 	}
 }
 
+// saveHooks stores recs in order, numbering them 1, 2, ... as the sink would.
 func saveHooks(t *testing.T, dir string, recs ...*store.HookRecord) {
 	t.Helper()
 	s, _ := open(t, dir)
-	for _, h := range recs {
+	for i, h := range recs {
+		h.Seq = int64(i + 1)
 		if err := s.SaveHook(t.Context(), h); err != nil {
 			t.Fatal(err)
 		}

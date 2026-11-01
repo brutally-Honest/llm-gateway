@@ -60,6 +60,7 @@ type Counts struct {
 
 type item struct {
 	client     string
+	seq        int64
 	body       []byte
 	receivedAt time.Time
 }
@@ -109,10 +110,11 @@ func NewSink(cfg Config, st Store, log *zap.Logger) *Sink {
 	return s
 }
 
-// Submit queues one delivery without waiting; the sink owns body from here. It
+// Submit queues one delivery without waiting; the sink owns body from here. seq is the
+// delivery's sequence number, assigned by the caller when it received the delivery. It
 // returns false, counting and logging one line, when the sink is closed, the queue is
 // full or body would cross the memory limit.
-func (s *Sink) Submit(client string, body []byte) bool {
+func (s *Sink) Submit(client string, seq int64, body []byte) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	n := int64(len(body))
@@ -123,7 +125,7 @@ func (s *Sink) Submit(client string, body []byte) bool {
 			return false
 		}
 		select {
-		case s.queue <- item{client: client, body: body, receivedAt: time.Now()}:
+		case s.queue <- item{client: client, seq: seq, body: body, receivedAt: time.Now()}:
 			return true
 		default:
 		}
@@ -217,6 +219,7 @@ func (s *Sink) process(it item) {
 	rec := &store.HookRecord{
 		PrincipalID: core.PrincipalLocal,
 		Client:      client,
+		Seq:         it.seq,
 		ReceivedAt:  it.receivedAt,
 		Payload:     it.body,
 		Event:       ev,

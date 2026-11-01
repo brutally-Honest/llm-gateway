@@ -15,9 +15,11 @@ import (
 type HookRecord struct {
 	PrincipalID string
 	Client      string
-	ReceivedAt  time.Time
-	Payload     []byte // the body, byte-for-byte
-	Event       core.HarnessEvent
+	// Seq is the per-process sequence number, assigned when the delivery is received.
+	Seq        int64
+	ReceivedAt time.Time
+	Payload    []byte // the body, byte-for-byte
+	Event      core.HarnessEvent
 }
 
 // SaveHook stores one hook event: the payload (and the tool input, when there is
@@ -36,8 +38,8 @@ func (s *Store) SaveHook(ctx context.Context, h *HookRecord) error {
 		_, err := tx.ExecContext(ctx, `INSERT INTO hook_events (
 			seq, principal_id, client, session_key, tool_use_id, phase, source_name,
 			tool_name, agent_id, agent_type, input_hash, payload_hash, received_at
-		) VALUES ((SELECT COALESCE(MAX(seq), 0) + 1 FROM hook_events), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			h.PrincipalID, h.Client, nullString(e.SessionKey), nullString(e.ToolCallID),
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			h.Seq, h.PrincipalID, h.Client, nullString(e.SessionKey), nullString(e.ToolCallID),
 			string(e.Phase), e.SourceName, e.ToolName, e.AgentID, e.AgentType,
 			input, payloadHash, h.ReceivedAt.UnixNano())
 		if err != nil {
