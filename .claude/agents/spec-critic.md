@@ -17,6 +17,7 @@ Look for, most important first:
 6. Proposals the main session wrote in that the user never confirmed (`[ASSUMED]`).
 
 Skip anything that doesn't change what gets built or tested. At most 8 questions.
+Never get around a guard, hook or check by splitting, quoting, encoding or renaming strings, or by using another tool to perform the action that was blocked. Reading or editing a file with Read/Edit/Write is fine when only a Bash command naming it was blocked. Running a human-only command (approve, answer, change, pass-manual) is never fine by any route. If unsure, stop and ask.
 
 Final message — the first line is exactly `GAPS <n>` or `CLEAN` (a hook checks it). Then one line per question:
 `<n>. <question> — why it matters: <what goes wrong if unanswered> — suggested default: <your recommendation>`
