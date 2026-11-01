@@ -95,7 +95,7 @@ autocommit_research() { # commit research.md when it is the only uncommitted cha
 	local st r="$SPECS_DIR/$F/research.md"
 	st=$(git status --porcelain); [ -n "$st" ] || return 0
 	printf '%s\n' "$st" | grep -v " $r\$" | grep -q . && return 0
-	git add -- "$r" && git commit -q -m "docs($F): update research notes" -- "$r" && echo "Committed your research.md changes."
+	git add -- "$r" && git commit -q -m "docs($F): update research notes" -m "Kit: research" -- "$r" && echo "Committed your research.md changes."
 }
 
 draft_crs() { local c; for c in $(cr_files); do [ "$(fm_get "$c" status)" = draft ] && basename "$c" .md; done; return 0; }
@@ -473,21 +473,57 @@ pre_task() { # id -> 0 ok (base recorded) | 1 with STOP-REASON lines
 PE=0
 pe() { printf '  - %s\n' "$*"; PE=1; }
 
+# --- which commits are a task's work ------------------------------------------------
+# A task's work is its "Task: <id>" commits in base..end. The kit's own commits (answer,
+# approve, change, accept, ...) carry "Kit: <action>" and are never the task's: they are
+# recognised by that trailer alone, never by their subject.
+kit_trailer() { git log -1 --format='%(trailers:key=Kit,valueonly)' "$1" | sed '/^$/d' | head -1; }
+task_commits() { # id -> the task's own commits, oldest first (TRAILERS=off: every commit without a Kit trailer)
+	local id=$1 base c trl
+	base=$(sfile_get "base.$id"); [ -n "$base" ] || return 0
+	trl=$(cfg TRAILERS)
+	for c in $(git rev-list --reverse "$base..$(task_end "$id")"); do
+		[ -n "$(kit_trailer "$c")" ] && continue
+		if [ "$trl" = off ] || git log -1 --format=%B "$c" | grep -qx "Task: $id"; then echo "$c"; fi
+	done
+}
+commit_paths() { git diff-tree -r --no-commit-id --name-only --root "$1"; }   # sha -> the files it changed
+task_paths() { local c; for c in $(task_commits "$1"); do commit_paths "$c"; done | sort -u; }
+own_diff() { # id git-diff-args... -> git diff <args> base end, limited to the files the task's own commits changed
+	local id=$1 p; shift
+	local -a ps=()
+	while IFS= read -r p; do [ -n "$p" ] && ps+=(":(literal)$p"); done <<EOF
+$(task_paths "$id")
+EOF
+	[ ${#ps[@]} -gt 0 ] || return 0
+	git diff "$@" "$(sfile_get "base.$id")" "$(task_end "$id")" -- "${ps[@]}"
+}
+
 post_task() { # id [quick|full] -> 0 ok | 1 + problems.  quick = no verify (used by the SubagentStop hook)
-	local id=$1 mode=${2:-full} end base commits c msg p tests changed kind w="" skips ce
+	local id=$1 mode=${2:-full} end base commits own c msg p tests changed kind w="" skips ce
 	PE=0
 	base=$(sfile_get "base.$id"); [ -n "$base" ] || { pe "no base recorded for $id (pre-task never ran)"; return 1; }
 	end=$(task_end "$id")
 	tree_clean || pe "working tree not clean: $(git status --short | head -5 | tr '\n' ' ')"
 	commits=$(git rev-list "$base..$end")
-	[ -n "$commits" ] || pe "no new commit since $(short "$base")"
-	if [ "$(cfg TRAILERS)" != off ]; then
-		for c in $commits; do
-			msg=$(git log -1 --format=%B "$c")
-			printf '%s\n' "$msg" | grep -qx "Task: $id" || pe "commit $(short "$c") lacks the trailer 'Task: $id'"
-			printf '%s\n' "$msg" | grep -qx "Feature: $F" || pe "commit $(short "$c") lacks the trailer 'Feature: $F'"
-		done
-	fi
+	own=$(task_commits "$id")
+	if [ -z "$commits" ]; then pe "no new commit since $(short "$base")"
+	elif [ -z "$own" ]; then pe "no commit with the trailer 'Task: $id' since $(short "$base")"; fi
+	for c in $commits; do
+		if [ -n "$(kit_trailer "$c")" ]; then
+			# a kit commit only ever writes this feature's specs folder; anything else is not the kit's
+			while IFS= read -r p; do
+				case $p in "$SPECS_DIR/$F"/* | '') ;; *) pe "kit commit $(short "$c") changes $p outside $SPECS_DIR/$F/" ;; esac
+			done <<EOF
+$(commit_paths "$c")
+EOF
+			continue
+		fi
+		[ "$(cfg TRAILERS)" != off ] || continue
+		msg=$(git log -1 --format=%B "$c")
+		printf '%s\n' "$msg" | grep -qx "Task: $id" || { pe "commit $(short "$c") lacks the trailer 'Task: $id'"; continue; }
+		printf '%s\n' "$msg" | grep -qx "Feature: $F" || pe "commit $(short "$c") lacks the trailer 'Feature: $F'"
+	done
 	while IFS= read -r p; do
 		[ -n "$p" ] || continue
 		case $p in
@@ -499,14 +535,14 @@ post_task() { # id [quick|full] -> 0 ok | 1 + problems.  quick = no verify (used
 		match_globs "$p" "$WATCHED_GLOBS" && w="${w}WATCH changed $p — reviewer: is this needed, and does it weaken a check?
 "
 	done <<EOF
-$(git diff --name-only "$base" "$end")
+$(task_paths "$id")
 EOF
 	if is_quick; then tests=$(section "$(art brief)" "Steps" | grep 'Tests:' | grep -viE 'Tests:[[:space:]]*none')
 	else tests=$(task_field "$(art tasks)" "$id" Tests); case $tests in [Nn]one* | '') tests="" ;; esac; fi
 	if [ -n "$tests" ]; then
 		changed=""
 		while IFS= read -r p; do [ -n "$p" ] && match_globs "$p" "$TEST_GLOBS" && changed=1; done <<EOF
-$(git diff --name-only --diff-filter=AM "$base" "$end")
+$(own_diff "$id" --name-only --diff-filter=AM)
 EOF
 		[ -n "$changed" ] || pe "the task names tests but no test file was added or changed (TEST_GLOBS in loop.conf)"
 	fi
@@ -514,7 +550,7 @@ EOF
 		[ -n "$p" ] && match_globs "$p" "$TEST_GLOBS" && w="${w}WATCH deleted test file $p — reviewer: must be justified by the spec
 "
 	done <<EOF
-$(git diff --name-only --diff-filter=D "$base" "$end")
+$(own_diff "$id" --name-only --diff-filter=D)
 EOF
 	kind=$(fm_get "$(art spec)" kind)$(fm_get "$(art brief)" kind)
 	if [ "$kind" = refactor ]; then
@@ -522,10 +558,10 @@ EOF
 			[ -n "$p" ] && match_globs "$p" "$TEST_GLOBS" && w="${w}WATCH refactor modified existing test $p — behaviour must not change
 "
 		done <<EOF
-$(git diff --name-only --diff-filter=M "$base" "$end")
+$(own_diff "$id" --name-only --diff-filter=M)
 EOF
 	fi
-	skips=$(git diff "$base" "$end" -U0 | grep '^+' | grep -v '^+++' \
+	skips=$(own_diff "$id" -U0 | grep '^+' | grep -v '^+++' \
 		| grep -E 't\.Skip\(|\.skip\(|(^|[^A-Za-z_])x(it|describe|test)\(|\.only\(|@Disabled|pytest\.mark\.skip|(it|test)\.todo\(|//[[:space:]]*nolint|eslint-disable' | head -5)
 	[ -n "$skips" ] && w="${w}$(printf '%s\n' "$skips" | sed 's/^/WATCH added skip\/disable marker: /')
 "
@@ -539,7 +575,7 @@ $(tail -25 "$(VLOG)")"
 		fi
 	fi
 	sfile_set "watch.$id" "$w"
-	[ "$mode" = full ] && [ $PE = 0 ] && record_commits "$id" "$commits"
+	[ "$mode" = full ] && [ $PE = 0 ] && record_commits "$id" "$own"
 	[ -n "$w" ] && printf '%s' "$w"
 	return $PE
 }
@@ -602,7 +638,7 @@ risk_reason() { # id -> REVIEW=risk: reviewed if high risk, big, watched, or tou
 		echo "reviewed: the task says Risk: high"; return 0
 	fi
 	base=$(sfile_get "base.$id")
-	n=$(git diff --numstat "$base" "$(task_end "$id")" 2>/dev/null | awk '{ n += $1 + $2 } END { print n + 0 }')
+	n=$(own_diff "$id" --numstat 2>/dev/null | awk '{ n += $1 + $2 } END { print n + 0 }')
 	max=$(cfg REVIEW_LINES)
 	[ "$n" -gt "$max" ] && { echo "reviewed: $n changed lines (REVIEW_LINES=$max)"; return 0; }
 	w=$(sfile_get "watch.$id" | awk 'NF { print; exit }')
@@ -612,7 +648,7 @@ risk_reason() { # id -> REVIEW=risk: reviewed if high risk, big, watched, or tou
 		while IFS= read -r p; do
 			[ -n "$p" ] && match_globs "$p" "$globs" && { echo "reviewed: touched $p (REVIEW_GLOBS)"; return 0; }
 		done <<EOF
-$(git diff --name-only "$base" "$(task_end "$id")" 2>/dev/null)
+$(task_paths "$id")
 EOF
 	fi
 	echo "skipped: low risk ($n changed lines, no watched files)"
@@ -1040,8 +1076,9 @@ cmd_review_info() {
 				task_block "$(art tasks)" "$id"
 			fi
 			echo "RANGE $(short "$base")..$(short "$(task_end "$id")")   (git diff $(short "$base")..$(short "$(task_end "$id")"))"
+			echo "COMMITS $(for c in $(task_commits "$id"); do short "$c"; done | tr '\n' ' ')  (the task's own; kit commits in the range are not its work)"
 			echo "ROUND $(sfile_get "rounds.$id")/$(cfg FIX_ROUNDS)"
-			git diff --stat "$base" "$(task_end "$id")" | tail -25
+			own_diff "$id" --stat | tail -25
 			sfile_get "watch.$id"
 			verify_line
 			;;
@@ -1185,7 +1222,7 @@ cmd_add_fix() { # <the bug, in words> -> a not-started task "Tnnn — fix: <bug>
 		die "the fix task would make tasks.md invalid, so nothing was added:
 $tmp"
 	fi
-	if ! tmp=$(git commit -q -m "$(fit_subject "docs($F): add $next — fix: " "$subj")" -m "$bug" -- "$t" 2>&1); then
+	if ! tmp=$(git commit -q -m "$(fit_subject "docs($F): add $next — fix: " "$subj")" -m "$bug" -m "Kit: add-fix" -- "$t" 2>&1); then
 		git reset -q -- "$t" 2>/dev/null; git checkout -q -- "$t"
 		die "committing tasks.md failed, so nothing was added (tasks.md is back as it was):
 $tmp"
@@ -1228,7 +1265,7 @@ cmd_answer() { # Qn <answer> — record your answer, commit research.md, restore
 		{ print }
 		index(line, "<!--") && !index(line, "-->") { incom = 1 }
 		index(line, "-->") { incom = 0 }' "$r" > "$r.new" && mv "$r.new" "$r"
-	git commit -q -m "docs($F): answer $q" -m "$txt" -- "$r" || die "committing research.md failed"
+	git commit -q -m "docs($F): answer $q" -m "$txt" -m "Kit: answer" -- "$r" || die "committing research.md failed"
 	log_event "$q answered: $txt"
 	id=$(awk -F '\t' -v q="$q" '{ s[$1] = $2; d[$1] = $3 } END { for (k in s) if (s[k] == "BLOCKED" && d[k] == q) print k }' "$(sdir)/state" 2>/dev/null | head -1)
 	if [ -z "$id" ]; then echo "ANSWERED $q"; echo "ACTION next"; return 0; fi
