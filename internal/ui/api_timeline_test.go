@@ -490,3 +490,42 @@ func TestAPITimeline_AgentLabels(t *testing.T) {
 		t.Fatalf("agent labels missing: %v", p.Entries)
 	}
 }
+
+// A late-arriving earlier hook event must not move the ids of the hook lines that
+// already exist: an id is the stored row id, not the line's place on the page.
+func TestAPITimeline_HookLineIdsSurviveEarlierArrival(t *testing.T) {
+	e := newAPIEnv(t)
+	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-a"}, 2)
+	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-b"}, 3)
+	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-c"}, 4)
+	before := map[string]string{} // hook source name -> id
+	for _, en := range e.timeline("/api/sessions/" + sid() + "/timeline").Entries {
+		if en["kind"] == "hook_event" {
+			before[en["text"].(string)] = en["id"].(string)
+		}
+	}
+	if len(before) != 3 {
+		t.Fatalf("hook lines before = %v", before)
+	}
+	// Received before all three, with a sequence number from before a restart.
+	early := &store.HookRecord{PrincipalID: core.PrincipalLocal, Client: "cc", Seq: 1,
+		ReceivedAt: baseTime.Add(time.Second), Payload: []byte(`{"early":true}`),
+		Event: core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-early", SessionKey: "k"}}
+	if err := e.s.SaveHook(e.t.Context(), early); err != nil {
+		t.Fatal(err)
+	}
+	after := map[string]string{}
+	for _, en := range e.timeline("/api/sessions/" + sid() + "/timeline").Entries {
+		if en["kind"] == "hook_event" {
+			after[en["text"].(string)] = en["id"].(string)
+		}
+	}
+	if len(after) != 4 {
+		t.Fatalf("hook lines after = %v", after)
+	}
+	for name, id := range before {
+		if after[name] != id {
+			t.Errorf("hook line %s: id %q became %q", name, id, after[name])
+		}
+	}
+}

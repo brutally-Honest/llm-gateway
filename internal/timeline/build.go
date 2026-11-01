@@ -104,6 +104,8 @@ type Entry struct {
 	Phase        string
 	AgentID      string
 	AgentType    string
+	// HookID is the stored row id of the hook event a KindHarness entry stands for.
+	HookID int64
 }
 
 type thread struct {

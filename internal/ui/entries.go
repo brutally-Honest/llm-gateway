@@ -140,11 +140,11 @@ func mapEntries(entries []timeline.Entry, exs map[string]store.ExchangeRow) []en
 			add(e, entryJSON{Kind: kindToolResult, ToolCallID: e.ToolCallID, IsError: ptr(e.IsError),
 				Text: e.Text, Truncated: e.Omitted > 0, Partial: e.Partial})
 		case timeline.KindHarness:
-			// A hook event belongs to no exchange: it has no exchange id, and its id
-			// counts the hook events of the page.
+			// A hook event belongs to no exchange: it has no exchange id. Its id is the
+			// stored row id, so a later-arriving earlier event does not shift it.
 			i := hooks
 			hooks++
-			out = append(out, entryJSON{ID: "hook:" + strconv.Itoa(i), Index: i, Start: nsTime(e.Start), startNS: e.Start,
+			out = append(out, entryJSON{ID: "hook:" + strconv.FormatInt(e.HookID, 10), Index: i, Start: nsTime(e.Start), startNS: e.Start,
 				Kind: kindHookEvent, Name: e.Name, ToolCallID: e.ToolCallID, Text: e.Text, Phase: e.Phase,
 				State: e.State, AgentID: e.AgentID, AgentType: e.AgentType})
 		case timeline.KindError:

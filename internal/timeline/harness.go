@@ -163,7 +163,7 @@ func applyHarness(src Source, session store.SessionRow, exchangeEvents [][]store
 			continue
 		}
 		en := Entry{Kind: KindHarness, Start: h.ReceivedAt, ToolCallID: h.ToolUseID, Name: h.ToolName,
-			Phase: h.Phase, Text: h.SourceName, AgentID: h.AgentID, AgentType: h.AgentType}
+			Phase: h.Phase, Text: h.SourceName, AgentID: h.AgentID, AgentType: h.AgentType, HookID: h.ID}
 		if h.ToolUseID != "" {
 			en.State = StateUnmatched
 		}

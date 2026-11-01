@@ -147,6 +147,8 @@ func (r *Reader) exchanges(ctx context.Context, tail string, args ...any) ([]Exc
 
 // HookRow is one stored hook event. Payload and Input are content hashes.
 type HookRow struct {
+	// ID is the stored row id: unlike Seq it never restarts with the gateway.
+	ID          int64  `json:"id"`
 	Seq         int64  `json:"seq"`
 	PrincipalID string `json:"principal_id"`
 	Client      string `json:"client"`
@@ -162,7 +164,7 @@ type HookRow struct {
 	ReceivedAt  int64  `json:"received_at"`
 }
 
-const hookColumns = `seq, principal_id, client, COALESCE(session_key, ''), COALESCE(tool_use_id, ''),
+const hookColumns = `id, seq, principal_id, client, COALESCE(session_key, ''), COALESCE(tool_use_id, ''),
 	phase, source_name, tool_name, agent_id, agent_type, COALESCE(input_hash, ''), payload_hash, received_at`
 
 // HookEvents reads one session's hook events by receive time, then seq. Principal
@@ -182,7 +184,7 @@ func (r *Reader) hookEventsCtx(ctx context.Context, principal, client, key strin
 	var out []HookRow
 	for rows.Next() {
 		var h HookRow
-		if err := rows.Scan(&h.Seq, &h.PrincipalID, &h.Client, &h.SessionKey, &h.ToolUseID, &h.Phase,
+		if err := rows.Scan(&h.ID, &h.Seq, &h.PrincipalID, &h.Client, &h.SessionKey, &h.ToolUseID, &h.Phase,
 			&h.SourceName, &h.ToolName, &h.AgentID, &h.AgentType, &h.InputHash, &h.PayloadHash, &h.ReceivedAt); err != nil {
 			return nil, fmt.Errorf("store %s: hook events: %w", r.path, err)
 		}
