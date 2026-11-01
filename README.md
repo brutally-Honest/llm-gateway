@@ -8,7 +8,7 @@ and cost.
 It is **not** a harness — it never runs agents, executes tools or edits files — and it
 is not tied to one vendor.
 
-Status: **Phases 0–5** done, and the **web UI** (spec 009) is built. Claude Code proxies through
+Status: **Phases 0–5** and the **web UI** (spec 009) are done. Claude Code proxies through
 the gateway to Anthropic with capture, session timelines, token usage, per-key rate limiting and
 a live browser view (see `specs/`).
 
