@@ -16,6 +16,7 @@ type fake struct {
 	exchanges []store.ExchangeRow
 	events    map[string][]store.EventRow
 	contents  map[string][]byte
+	hooks     []store.HookRow
 }
 
 func newFake() *fake {
@@ -151,3 +152,9 @@ func (f *fake) usage(id string, partial bool, in, out, cw, cr *int64) {
 }
 
 func n(v int64) *int64 { return &v }
+
+// HookEvents returns every hook row whatever the key, so the tests show that Build
+// itself joins on the exact session key.
+func (f *fake) HookEvents(string, string, string) ([]store.HookRow, error) {
+	return f.hooks, nil
+}

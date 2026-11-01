@@ -25,6 +25,7 @@ type Source interface {
 	SessionExchanges(principal, client, key string) ([]store.ExchangeRow, error)
 	Events(requestID string) ([]store.EventRow, error)
 	Content(hash string) ([]byte, error)
+	HookEvents(principal, client, key string) ([]store.HookRow, error)
 }
 
 // Options changes how Build cuts entries.
@@ -55,6 +56,7 @@ const (
 	KindToolCall   Kind = "tool_call"   // Name, ToolCallID and Text (the input)
 	KindToolResult Kind = "tool_result" // ToolCallID, IsError and Text
 	KindError      Kind = "error"       // Status and Text
+	KindHarness    Kind = "harness"     // a hook event with no captured tool call; see harness.go
 )
 
 // MarkerDiverged is the text of the marker that precedes a rewritten history.
@@ -90,6 +92,18 @@ type Entry struct {
 	// Call is the usage of the model call this exchange or folded entry stands for;
 	// nil for any other entry.
 	Call *CallUsage
+
+	// Harness fields. On a tool call: State, Reason, Outcome, InputDiffers, HookInput
+	// and the agent labels. On a KindHarness entry: Phase, State, Name, ToolCallID,
+	// the agent labels and Text (the event's name as the client sent it).
+	State        string
+	Reason       string
+	Outcome      string
+	InputDiffers bool
+	HookInput    string
+	Phase        string
+	AgentID      string
+	AgentType    string
 }
 
 type thread struct {
@@ -115,12 +129,14 @@ func BuildWithUsage(src Source, session store.SessionRow, opts Options) ([]Entry
 		out     []Entry
 		earlier []thread
 		calls   []CallUsage
+		seen    [][]store.EventRow
 	)
 	for _, ex := range exchanges {
 		evs, err := loadEvents(src, ex)
 		if err != nil {
 			return nil, Summary{}, err
 		}
+		seen = append(seen, evs)
 		hashes := messageHashes(evs)
 		if len(hashes) == 0 || foldedParse(ex.Parse) {
 			fe := folded(ex)
@@ -153,6 +169,10 @@ func BuildWithUsage(src Source, session store.SessionRow, opts Options) ([]Entry
 			calls = append(calls, *entries[0].Call)
 		}
 		out = append(out, entries...)
+	}
+	out, err = applyHarness(src, session, seen, out, opts)
+	if err != nil {
+		return nil, Summary{}, err
 	}
 	return out, Summarize(calls), nil
 }
