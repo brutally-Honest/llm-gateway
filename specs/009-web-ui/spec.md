@@ -1,7 +1,7 @@
 ---
 feature: 009-web-ui
 kind: feat
-status: approved
+status: done
 version: 4
 created: 2026-10-31
 supersedes:

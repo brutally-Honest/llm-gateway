@@ -1,6 +1,6 @@
 ---
 feature: 009-web-ui
-status: approved
+status: done
 version: 3
 approved: 2026-10-31T16:51:28Z
 approved-by: human
