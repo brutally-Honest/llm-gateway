@@ -46,6 +46,12 @@ export class SessionList extends HTMLElement {
       cell(tr, String(s.errors), "num");
       cell(tr, usageText(s.usage), "usage");
       const td = cell(tr, "");
+      if (s.hooks_only) {
+        const b = document.createElement("span");
+        b.className = "badge harness";
+        b.textContent = "hooks only";
+        td.append(b);
+      }
       if (s.active) {
         const b = document.createElement("span");
         b.className = "badge";

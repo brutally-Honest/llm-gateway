@@ -38,6 +38,16 @@ function section(label, text, entry, open, onToggle, cls) {
   return d;
 }
 
+// harnessLabels are the hook-derived badges of a tool call: its state with reason and
+// outcome, the input-differs flag and the agent labels, in the CLI viewer's words.
+export function harnessLabels(e) {
+  const out = [];
+  if (e.state) out.push([e.state, e.reason, e.outcome].filter(Boolean).join(": "));
+  if (e.input_differs) out.push("input differs");
+  if (e.agent_id || e.agent_type) out.push(`agent ${e.agent_id || ""}/${e.agent_type || ""}`);
+  return out;
+}
+
 // ToolCard renders data = { call, result, prettyInput, isOpen(key), setOpen(key, open) }.
 // result is null while none has arrived.
 export class ToolCard extends HTMLElement {
@@ -60,7 +70,16 @@ export class ToolCard extends HTMLElement {
       this.classList.add("is-error");
     }
     if (state.textContent) head.append(state);
+    for (const text of harnessLabels(call)) {
+      const b = document.createElement("span");
+      b.className = "badge harness";
+      b.textContent = text;
+      head.append(b);
+    }
     this.append(head);
+    if (call.input_differs) {
+      this.append(section("hook input", call.hook_input || "", call, data.isOpen(`${call.id}:hook`), (o) => data.setOpen(`${call.id}:hook`, o), "tool-input"));
+    }
     this.append(section("input", data.prettyInput, call, data.isOpen(`${call.id}:in`), (o) => data.setOpen(`${call.id}:in`, o), "tool-input"));
     if (result) {
       this.append(section("result", result.text || "", result, data.isOpen(`${result.id}:out`), (o) => data.setOpen(`${result.id}:out`, o), "tool-result"));

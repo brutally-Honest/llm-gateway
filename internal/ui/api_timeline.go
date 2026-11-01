@@ -91,8 +91,16 @@ func (d Deps) getTimeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(rows) == 0 {
-		writeErr(w, http.StatusNotFound, "not_found", "no such session")
-		return
+		// A session known only from hook events has a timeline of hook lines (AC25).
+		hooks, err := c.HookEvents(principal, client, key)
+		if err != nil {
+			writeStoreErr(w, err)
+			return
+		}
+		if len(hooks) == 0 {
+			writeErr(w, http.StatusNotFound, "not_found", "no such session")
+			return
+		}
 	}
 	exs := make([]store.ExchangeRow, len(rows))
 	byID := make(map[string]store.ExchangeRow, len(rows))
@@ -111,7 +119,10 @@ func (d Deps) getTimeline(w http.ResponseWriter, r *http.Request) {
 	all := mapEntries(entries, byID)
 	pos := make([]position, len(all))
 	for i, e := range all {
-		pos[i] = position{start: byID[e.ExchangeID].StartedAt, req: e.ExchangeID, idx: e.Index}
+		pos[i] = position{start: e.startNS, req: e.ExchangeID, idx: e.Index}
+		if e.Kind == kindHookEvent {
+			pos[i].req = hookRequest
+		}
 	}
 	from := 0
 	if after != nil {

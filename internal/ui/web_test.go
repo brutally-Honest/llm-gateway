@@ -84,3 +84,22 @@ func TestWeb_NoHTMLInjectionSinks(t *testing.T) {
 		}
 	}
 }
+
+// TestWeb_ServesHarnessBadgeRendering: the tool card shows the state, the input-differs
+// flag and the agent labels, hook lines have a renderer, and the sessions list shows
+// the hooks-only label. All text goes through textContent (no HTML sinks, tested above).
+func TestWeb_ServesHarnessBadgeRendering(t *testing.T) {
+	files := webFiles(t)
+	want := map[string][]string{
+		"tool-card.js":    {"e.state", "input_differs", "agent_id", "agent_type", "hook_input"},
+		"session-view.js": {`case "hook_event"`},
+		"session-list.js": {"hooks_only", "hooks only"},
+	}
+	for name, subs := range want {
+		for _, sub := range subs {
+			if !strings.Contains(files[name], sub) {
+				t.Errorf("%s does not contain %q", name, sub)
+			}
+		}
+	}
+}

@@ -380,6 +380,9 @@ func sessionExchanges(c *store.CtxReader, who sessIdent) ([]liveExchange, error)
 	var out []liveExchange
 	at := map[string]int{}
 	for _, e := range mapEntries(built, byID) {
+		if e.Kind == kindHookEvent {
+			continue // hook lines belong to no exchange; the live stream carries exchanges
+		}
 		i, ok := at[e.ExchangeID]
 		if !ok {
 			i = len(out)

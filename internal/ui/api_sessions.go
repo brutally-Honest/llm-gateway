@@ -65,6 +65,8 @@ type sessionSummary struct {
 	Errors        int       `json:"errors"`
 	Usage         usageJSON `json:"usage"`
 	Active        bool      `json:"active"`
+	// HooksOnly marks a session known only from hook events (AC25).
+	HooksOnly bool `json:"hooks_only"`
 }
 
 type listPage struct {
@@ -95,7 +97,7 @@ func buildSummary(id string, row store.SessionRow, st timeline.Stats, now time.T
 		ID: id, SessionKey: row.SessionKey, Client: row.Client, Models: models,
 		FirstAt: nsTime(row.First), LastAt: nsTime(row.Last),
 		ExchangeCount: row.Count, ModelCalls: st.ModelCalls, ToolCalls: st.ToolCalls, Errors: st.Errors,
-		Usage: usageToJSON(st.Usage), Active: now.Sub(last) < ActiveWindow,
+		Usage: usageToJSON(st.Usage), Active: now.Sub(last) < ActiveWindow, HooksOnly: row.HooksOnly,
 	}
 }
 

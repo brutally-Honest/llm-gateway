@@ -334,7 +334,8 @@ func TestAPI_ToolEntriesCarryToolCallID(t *testing.T) {
 		}
 		// The entry's fields are exactly the API's tool fields: no other id name rides along.
 		allowed := map[string]bool{"id": true, "exchange_id": true, "index": true, "start": true, "kind": true,
-			"name": true, "tool_call_id": true, "text": true, "is_error": true, "truncated": true, "partial": true}
+			"name": true, "tool_call_id": true, "text": true, "is_error": true, "truncated": true, "partial": true,
+			"state": true}
 		for k := range en {
 			if !allowed[k] {
 				t.Fatalf("%s carries unexpected field %q: %v", kind, k, en)
@@ -381,5 +382,111 @@ func TestUI_BodyEndpointSendsStricterCSP(t *testing.T) {
 		if rec.Header().Get("X-Content-Type-Options") != "nosniff" || rec.Header().Get("Referrer-Policy") != "no-referrer" {
 			t.Errorf("%s: lost nosniff/referrer headers", c.name)
 		}
+	}
+}
+
+// toolSession stores one exchange holding a captured tool call "call_1" (input in).
+func (e *apiEnv) toolSession(input string) {
+	e.t.Helper()
+	e.save("a", "k", "cc", 1)
+	mp, _ := json.Marshal(map[string]any{"role": "assistant", "blocks": []map[string]string{{"hash": sha("msg"), "type": "text"}}})
+	evs := []core.StoredEvent{
+		{Seq: 0, Kind: core.KindRequest, Payload: []byte(`{"model":"m1"}`)},
+		{Seq: 1, Kind: core.KindMessage, ContentHash: sha("m"), Payload: mp},
+		{Seq: 2, Kind: core.KindToolCall, ToolCallID: "call_1", ContentHash: sha("in"),
+			Payload: []byte(`{"name":"bash","id":"call_1"}`)},
+	}
+	contents := []core.Content{{Hash: sha("msg"), Bytes: []byte(`{"type":"text","text":"run"}`)},
+		{Hash: sha("m"), Bytes: []byte(sha("m"))}, {Hash: sha("in"), Bytes: []byte(input)}}
+	if err := e.s.SaveParse(e.t.Context(), "a", core.PrincipalLocal, core.ParseOK, evs, contents); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+var hookSeq int64
+
+// hook stores a hook event of session "k" received at base+at seconds.
+func (e *apiEnv) hook(key string, ev core.HarnessEvent, at int) {
+	e.t.Helper()
+	hookSeq++
+	ev.SessionKey = key
+	rec := &store.HookRecord{PrincipalID: core.PrincipalLocal, Client: "cc", Seq: hookSeq,
+		ReceivedAt: baseTime.Add(time.Duration(at) * time.Second),
+		Payload:    []byte(fmt.Sprintf(`{"n":%d}`, hookSeq)), Event: ev}
+	if err := e.s.SaveHook(e.t.Context(), rec); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+func TestAPITimeline_StatesFlagsAndHookLines(t *testing.T) {
+	e := newAPIEnv(t)
+	e.toolSession(`{"a":1}`)
+	e.hook("k", core.HarnessEvent{Phase: core.PhasePreTool, ToolCallID: "call_1", ToolName: "bash", ToolInput: []byte(`{"a":2}`)}, 2)
+	e.hook("k", core.HarnessEvent{Phase: core.PhasePostTool, ToolCallID: "call_1", ToolName: "bash"}, 3)
+	e.hook("k", core.HarnessEvent{Phase: core.PhasePostTool, ToolCallID: "ghost", ToolName: "ls", SourceName: "evt-post"}, 4)
+	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-notice"}, 5)
+	p := e.timeline("/api/sessions/" + sid() + "/timeline")
+	var call map[string]any
+	var hooks []map[string]any
+	for _, en := range p.Entries {
+		switch en["kind"] {
+		case "tool_call":
+			call = en
+		case "hook_event":
+			hooks = append(hooks, en)
+		}
+	}
+	if call == nil || call["state"] != "ran-not-reported" || call["input_differs"] != true || call["hook_input"] != `{"a":2}` {
+		t.Fatalf("tool call = %v", call)
+	}
+	if len(hooks) != 2 {
+		t.Fatalf("hook lines = %v", hooks)
+	}
+	if hooks[0]["tool_call_id"] != "ghost" || hooks[0]["state"] != "ran-not-asked-or-not-captured" || hooks[0]["phase"] != "post_tool" || hooks[0]["name"] != "ls" {
+		t.Errorf("unmatched hook line = %v", hooks[0])
+	}
+	if hooks[1]["phase"] != "notice" || hooks[1]["id"] == hooks[0]["id"] {
+		t.Errorf("notice hook line = %v", hooks[1])
+	}
+	// Paging by next_after walks past hook lines without repeating or skipping.
+	var ids []string
+	path := "/api/sessions/" + sid() + "/timeline?limit=1"
+	for range 20 {
+		pg := e.timeline(path)
+		for _, en := range pg.Entries {
+			ids = append(ids, en["id"].(string))
+		}
+		if pg.NextAfter == nil {
+			break
+		}
+		path = "/api/sessions/" + sid() + "/timeline?limit=1&after=" + *pg.NextAfter
+	}
+	if len(ids) != len(p.Entries) {
+		t.Fatalf("paged ids %v, full %d entries", ids, len(p.Entries))
+	}
+	for i, en := range p.Entries {
+		if ids[i] != en["id"] {
+			t.Fatalf("paged %v differs from full at %d", ids, i)
+		}
+	}
+}
+
+func TestAPITimeline_AgentLabels(t *testing.T) {
+	e := newAPIEnv(t)
+	e.toolSession(`{"a":1}`)
+	e.hook("k", core.HarnessEvent{Phase: core.PhasePreTool, ToolCallID: "call_1", AgentID: "ag1", AgentType: "explore"}, 2)
+	e.hook("k", core.HarnessEvent{Phase: core.PhaseAgentStart, AgentID: "ag2", AgentType: "plan", SourceName: "evt-agent-start"}, 3)
+	p := e.timeline("/api/sessions/" + sid() + "/timeline")
+	seen := map[string]bool{}
+	for _, en := range p.Entries {
+		switch en["kind"] {
+		case "tool_call":
+			seen["call"] = en["agent_id"] == "ag1" && en["agent_type"] == "explore"
+		case "hook_event":
+			seen["hook"] = en["agent_id"] == "ag2" && en["agent_type"] == "plan"
+		}
+	}
+	if !seen["call"] || !seen["hook"] {
+		t.Fatalf("agent labels missing: %v", p.Entries)
 	}
 }
