@@ -43,3 +43,6 @@ feature: 010-harness-hooks
     in an interactive auto-mode session (task Manual line).
   - `input differs` (AC18): 0 of 16 PreToolUse events differed from the API-stream tool input
     (parsed JSON equality) with no other hook modifying input, so the flag should be rare.
+
+## Human decisions
+- 2026-11-01 T001 manual check passed: interactive auto-mode session on 2.1.316: SubagentStart/Stop and tool events inside the sub-agent carry agent_id and agent_type; sub-agent tool events carry their own tool_use_id; SubagentStart/Stop carry no tool_use_id; main-thread events have no agent_id; all events share one session_id; background sub-agent: the parent Agent call PostToolUse fires before the sub-agent tools run, so SubagentStop is the real end; PermissionDenied not observed because the model declined without calling the tool, so denied falls back to not run per AC16
