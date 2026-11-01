@@ -53,22 +53,11 @@ func phaseRank(p string) int {
 	return -1
 }
 
-// sortHooks gives hook rows one order whatever order they were read in.
+// sortHooks gives hook rows the store's order (receive time, seq, row id) whatever
+// order they were read in.
 func sortHooks(rows []store.HookRow) []store.HookRow {
 	out := append([]store.HookRow(nil), rows...)
-	sort.SliceStable(out, func(i, j int) bool {
-		a, b := out[i], out[j]
-		if a.ReceivedAt != b.ReceivedAt {
-			return a.ReceivedAt < b.ReceivedAt
-		}
-		if a.Seq != b.Seq {
-			return a.Seq < b.Seq
-		}
-		if ra, rb := phaseRank(a.Phase), phaseRank(b.Phase); ra != rb {
-			return ra < rb
-		}
-		return a.PayloadHash < b.PayloadHash
-	})
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Key().Less(out[j].Key()) })
 	return out
 }
 

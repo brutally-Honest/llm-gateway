@@ -49,7 +49,8 @@ type position struct {
 	row   int64
 }
 
-// after reports whether p sorts strictly after the token's position.
+// after reports whether p sorts strictly after the token's position. Two hook lines
+// that share a receive time compare by their hook key, the order the store reads in.
 func (p position) after(t afterToken) bool {
 	switch {
 	case p.start != t.At:
@@ -58,10 +59,8 @@ func (p position) after(t afterToken) bool {
 		return p.req > t.RequestID
 	case p.idx != t.Index:
 		return p.idx > t.Index
-	case p.seq != t.Seq:
-		return p.seq > t.Seq
 	}
-	return p.row > t.Row
+	return store.HookKey{ReceivedAt: t.At, Seq: t.Seq, ID: t.Row}.Less(store.HookKey{ReceivedAt: p.start, Seq: p.seq, ID: p.row})
 }
 
 func (d Deps) getTimeline(w http.ResponseWriter, r *http.Request) {

@@ -164,6 +164,29 @@ type HookRow struct {
 	ReceivedAt  int64  `json:"received_at"`
 }
 
+// HookKey is the order of hook lines: receive time, then seq, then stored row id. Seq
+// restarts with the gateway, so the row id is what keeps the order total. HookEvents
+// reads in this order (its ORDER BY), and the timeline and its paging compare by it.
+type HookKey struct {
+	ReceivedAt int64
+	Seq        int64
+	ID         int64
+}
+
+// Key is the row's place in the hook-line order.
+func (h HookRow) Key() HookKey { return HookKey{ReceivedAt: h.ReceivedAt, Seq: h.Seq, ID: h.ID} }
+
+// Less reports whether k sorts before o.
+func (k HookKey) Less(o HookKey) bool {
+	if k.ReceivedAt != o.ReceivedAt {
+		return k.ReceivedAt < o.ReceivedAt
+	}
+	if k.Seq != o.Seq {
+		return k.Seq < o.Seq
+	}
+	return k.ID < o.ID
+}
+
 const hookColumns = `id, seq, principal_id, client, COALESCE(session_key, ''), COALESCE(tool_use_id, ''),
 	phase, source_name, tool_name, agent_id, agent_type, COALESCE(input_hash, ''), payload_hash, received_at`
 

@@ -7,7 +7,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -565,5 +568,70 @@ func TestAPITimeline_HookPagingSurvivesEarlierArrival(t *testing.T) {
 	}
 	if len(got) != 2 || got[0] != want[2] || got[1] != want[3] {
 		t.Errorf("page 2 ids = %v, want the lines after page 1: %v", got, want[2:])
+	}
+}
+
+// Hook lines sort by receive time, seq and stored row id on every path. Seq restarts
+// with the gateway, so rows tie on receive time and seq; the store read, the one-page
+// timeline and the concatenation of all pages must still agree on the order.
+func TestAPITimeline_HookOrderTiesOnTimeAndSeq(t *testing.T) {
+	e := newAPIEnv(t)
+	rng := rand.New(rand.NewSource(19))
+	phases := []core.HarnessPhase{core.PhaseNotice, core.PhasePreTool, core.PhasePostTool}
+	for n := range 40 {
+		rec := &store.HookRecord{PrincipalID: core.PrincipalLocal, Client: "cc",
+			Seq:        int64(1 + rng.Intn(3)),
+			ReceivedAt: baseTime.Add(time.Duration(2+rng.Intn(3)) * time.Second),
+			Payload:    []byte(fmt.Sprintf(`{"n":%d,"r":%d}`, n, rng.Int())),
+			Event: core.HarnessEvent{Phase: phases[rng.Intn(len(phases))],
+				SourceName: fmt.Sprintf("evt-%d", n), SessionKey: "k"}}
+		if err := e.s.SaveHook(e.t.Context(), rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r, err := store.OpenReader(e.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	stored, err := r.HookEvents(core.PrincipalLocal, "cc", "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want []string
+	for _, h := range stored {
+		want = append(want, "hook:"+strconv.FormatInt(h.ID, 10))
+	}
+	if len(want) != 40 {
+		t.Fatalf("stored hook rows = %d, want 40", len(want))
+	}
+
+	url := "/api/sessions/" + sid() + "/timeline"
+	ids := func(p tlPage) []string {
+		var out []string
+		for _, en := range p.Entries {
+			out = append(out, en["id"].(string))
+		}
+		return out
+	}
+	if got := ids(e.timeline(url)); !slices.Equal(got, want) {
+		t.Fatalf("one page = %v, want the store order %v", got, want)
+	}
+	var paged []string
+	after := ""
+	for {
+		u := url + "?limit=3"
+		if after != "" {
+			u += "&after=" + after
+		}
+		p := e.timeline(u)
+		paged = append(paged, ids(p)...)
+		if p.NextAfter == nil {
+			break
+		}
+		after = *p.NextAfter
+	}
+	if !slices.Equal(paged, want) {
+		t.Errorf("concatenated pages = %v, want the store order %v", paged, want)
 	}
 }
