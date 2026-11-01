@@ -33,7 +33,13 @@ export function timeElement(iso) {
 export function upsertSession(rows, row) {
   const out = rows.filter((r) => r.id !== row.id);
   out.push(row);
-  out.sort((a, b) => (a.last_at < b.last_at ? 1 : a.last_at > b.last_at ? -1 : 0));
+  // compared as instants: RFC 3339 drops trailing zeros, so the raw strings misorder
+  // "…05.12Z" and "…05.123Z"; startKey pads them to nanoseconds
+  out.sort((a, b) => {
+    const x = startKey(a.last_at);
+    const y = startKey(b.last_at);
+    return x < y ? 1 : x > y ? -1 : 0;
+  });
   return out;
 }
 
@@ -59,7 +65,8 @@ export function usageText(u) {
   return s;
 }
 
-// startKey pads the fraction of an RFC 3339 instant to nanoseconds so instants compare as strings.
+// startKey pads the fraction of a UTC RFC 3339 instant to nanoseconds, so two instants
+// compare correctly as strings.
 function startKey(s) {
   const m = /^(.*?)(?:\.(\d+))?Z$/.exec(s || "");
   return m ? `${m[1]}.${(m[2] || "").padEnd(9, "0")}` : String(s);
