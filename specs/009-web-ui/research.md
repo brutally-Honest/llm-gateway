@@ -174,3 +174,25 @@ writing spec v1; approving the spec confirms them.
 - 2026-10-31 — Exchange timings: the store holds `started_at`, `ttfb_ns` and `ended_at`; duration
   is `ended_at - started_at`.
 - 2026-10-31 — For T016 (docs, the user's request): T012 added a second frontend component, `internal/ui/web/ungrouped-list.js` (the `#/ungrouped` view), beside `session-list.js`; the plan named only `session-list`. The README's UI section and ADR 0009 should list it with the other components.
+- 2026-11-01 — M1 (T012) passed, checked by the user against the real store: sessions list,
+  active badge, live indicator, ungrouped list, dark theme and empty state. Light theme is
+  deferred to T017. The `<script>` check is deferred to M2 (it needs T013). Load more was not
+  testable with real data (7 sessions); the API tests cover it. Column alignment fixed after the
+  check (79a796b).
+- 2026-11-01 — M1 finding (a), investigated only, no change: the single ungrouped exchange at
+  each Claude Code session's start is `HEAD /api/hello` (e.g. `DEWJFRZ45ZFAF2O3DGOIXZMHIZ`),
+  status 200, no body. It is Claude Code's connectivity probe at startup, sent by its Bun
+  runtime with only `Accept`, `Accept-Encoding` and `User-Agent: Bun/1.4.4`. It carries neither
+  `claude-cli/` in the User-Agent nor `X-App: cli`, so the claudecode profile doesn't match
+  (client `unknown`), and it carries no `X-Claude-Code-Session-Id`, so it has no session key.
+  It has no tokens because it isn't a model call (parse `skipped`). Ungrouped with an unknown
+  client is the expected result for it.
+- 2026-11-01 — M1 finding (b), investigated only, no change: the `Errors: 1` in almost every
+  session is the session's first exchange, a quota probe Claude Code sends at startup:
+  `POST /v1/messages?beta=true`, `max_tokens: 1`, one user message "quota", answered upstream
+  with 429 `rate_limit_error` (`x-should-retry: true`), e.g. `6NIMC6SADSLWGYJPPNXFVKF37N`. The
+  gateway passed it through verbatim and recorded an `error` event, so the count is correct.
+  Six sessions have one each. Session `f2a9e2b8…` also has a 499 (`BHL3F3XRMLU77Q25M57CFAAR33`,
+  client disconnected), which isn't an error event and so isn't counted.
+- 2026-11-01 — Add to T017's manual check (the user's request): switch the OS light/dark theme
+  while the page is open and confirm the page follows it.
