@@ -109,6 +109,7 @@ if [ "$tool" = Bash ]; then
 	loopsh() { has '^\.claude/scripts/loop\.sh( |$)'; }
 
 	has 'approve\.sh' && deny "approve.sh is human-only — the user types /al-approve (or runs it in a terminal)."
+	has 'pass-manual' && deny "loop.sh pass-manual is human-only — it records that the user ran a manual check. The user runs it in a terminal (or types: ! .claude/scripts/loop.sh pass-manual <ID> '<reason>')."
 	has '(^|[^[:alnum:]_-])git[[:space:]].*commit.*(: approve |: auto-approve )' \
 		&& deny "approval commits are made by approve.sh only — the user types /al-approve."
 

@@ -240,7 +240,7 @@ next_step() {
 	for c in $(task_ids "$(art tasks)"); do [ "$(state_get "$c")" = NEEDS-HUMAN ] && nh="$nh $c"; done
 	st=$(state_get BRANCH); [ "$(cfg REVIEW)" = none ] && st=PASS
 	case $st in
-		PASS | FIX | ESCALATE | OFF) echo "done — read the report (loop.sh report)${nh:+, do the manual checks for$nh}, then open the PR" ;;
+		PASS | FIX | ESCALATE | OFF) echo "done — read the report (loop.sh report)${nh:+, do the manual checks for$nh (record each: loop.sh pass-manual <ID> '<reason>')}, then open the PR" ;;
 		*) echo "/al-implement (branch review pending)" ;;
 	esac
 }
@@ -1371,6 +1371,23 @@ cmd_accept() { # Tn <reason> — you accept a task the reviewer ESCALATED or the
 	if [ "$id" = Q ]; then echo "ACTION finish"; else echo "ACTION next"; fi
 }
 
+cmd_pass_manual() { # Tn <reason> — HUMAN-ONLY (guard.sh, settings.json): you ran a NEEDS-HUMAN task's manual check and it passed
+	local id=${1:-} why st
+	resolve_feature
+	shift || true; why="$*"
+	st=$(state_get "$id")
+	[ "$st" = NEEDS-HUMAN ] || die "${id:-the task} is not waiting for a manual check (it is ${st:-not started})."
+	[ -n "$why" ] || die "say how the manual check went — the reason is committed to $(art research).
+  do this: loop.sh pass-manual $id '<what you checked>'"
+	record_decision pass-manual "docs($F): pass $id manually" "$id manual check passed: $why" \
+		|| die "committing the decision to $(art research) failed, so $id was not passed"
+	[ "$id" = Q ] || record_commits "$id" "$(task_commits "$id")"
+	state_set "$id" PASS "manual check passed: $why"
+	log_event "$id PASS by the user's manual check: $why"
+	echo "PASSED $id — your manual check is on record in $(art research)"
+	echo "Next: $(next_step)"
+}
+
 cmd_lineage() {
 	local b s d
 	resolve_feature "${1:-}"; b=$(base_branch)
@@ -1398,7 +1415,7 @@ cmd_report() {
 			st=$(state_get "$id"); d=$(state_detail "$id"); title=$(task_title "$(art tasks)" "$id")
 			[ -n "$st" ] || { in_list "$id" "$(done_tasks)" && st=PASS || st=todo; }
 			case $st in
-				NEEDS-HUMAN) printf '  %s  NEEDS-HUMAN  %s — check by hand: %s\n' "$id" "$title" "$(task_field "$(art tasks)" "$id" Manual)" ;;
+				NEEDS-HUMAN) printf '  %s  NEEDS-HUMAN  %s — check by hand: %s (then: loop.sh pass-manual %s '"'"'<reason>'"'"')\n' "$id" "$title" "$(task_field "$(art tasks)" "$id" Manual)" "$id" ;;
 				BLOCKED) printf '  %s  BLOCKED %s  %s — %s\n' "$id" "$d" "$title" "$(section "$(art research)" "Open questions" | grep -F "**$d**" | head -1)" ;;
 				*) printf '  %s  %-12s %s %s(fix rounds: %s)%s\n' "$id" "$st" "$title" "${d:+$d }" "$(sfile_get "rounds.$id")" "$(r=$(sfile_get "reason.$id"); [ -n "$r" ] && printf ' — %s' "$r")" ;;
 			esac
@@ -1461,6 +1478,7 @@ case $cmd in
 	add-fix) cmd_add_fix "$@" ;;
 	answer) cmd_answer "$@" ;;
 	accept) cmd_accept "$@" ;;
+	pass-manual) cmd_pass_manual "$@" ;;
 	lineage) cmd_lineage "$@" ;;
 	report) resolve_feature "${1:-}"; cmd_report ;;
 	doctor) cmd_doctor ;;
