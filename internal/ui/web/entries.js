@@ -94,12 +94,19 @@ export function pairTools(entries) {
   return results;
 }
 
-// groupTurns splits entries into turns, each starting at a user prompt. Entries before the
-// first prompt form a turn of their own.
+// isRealPrompt is true for a user message with text of its own. A user message that only
+// carries tool results has none: it neither starts a turn nor shows a Prompt block.
+export function isRealPrompt(e) {
+  return e.kind === "user_prompt" && (Boolean((e.text || "").trim()) || Boolean(e.truncated));
+}
+
+// groupTurns splits entries into turns, each starting at a real user prompt. Entries before
+// the first prompt form a turn of their own.
 export function groupTurns(entries) {
   const turns = [];
   for (const e of entries) {
-    if (e.kind === "user_prompt" || turns.length === 0) turns.push({ prompt: e.kind === "user_prompt" ? e : null, entries: [] });
+    const real = isRealPrompt(e);
+    if (real || turns.length === 0) turns.push({ prompt: real ? e : null, entries: [] });
     turns[turns.length - 1].entries.push(e);
   }
   return turns;

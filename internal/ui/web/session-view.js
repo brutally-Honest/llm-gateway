@@ -1,4 +1,4 @@
-import { countText, groupTurns, matchIds, pairTools, prettyJSON, timeElement, usageText } from "./entries.js";
+import { countText, groupTurns, isRealPrompt, matchIds, pairTools, prettyJSON, timeElement, usageText } from "./entries.js";
 import "./model-chip.js";
 import { note } from "./session-list.js";
 import { copyButton, truncatedLink } from "./tool-card.js";
@@ -132,8 +132,7 @@ export class SessionView extends HTMLElement {
   entryNode(e, results) {
     switch (e.kind) {
       case "user_prompt":
-        // a user message with no text of its own (one that only carries tool results) has no Prompt block
-        if (!(e.text || "").trim() && !e.truncated) return null;
+        if (!isRealPrompt(e)) return null; // only tool results: no Prompt block
         return textBlock(e, "Prompt", "prompt");
       case "assistant_text":
         return textBlock(e, "Assistant", "assistant");
