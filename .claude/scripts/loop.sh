@@ -1316,6 +1316,7 @@ cmd_answer() { # Qn <answer> — record your answer, commit research.md, restore
 	local q=${1:-} txt r id ref
 	resolve_feature
 	shift || true; txt="$*"
+	q=${q%[:,]}   # "/al-answer Q2: yes" reads as Q2
 	case $q in Q[0-9]*) ;; *) die "say which question and the answer.
   do this: /al-answer Q2 <your answer>" ;; esac
 	[ -n "$txt" ] || die "the answer is missing.
