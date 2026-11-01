@@ -67,5 +67,10 @@ so install it on any machine or harness that commits here.
 - Do not weaken lint, tests or config to make a check pass.
 - Do not add suppressions, skip tests, or delete assertions.
 - Do not add a dependency without an ADR.
+- Never get around a guard, hook or check by splitting, quoting, encoding or renaming
+  strings, or by using another tool to perform the action that was blocked. Reading or
+  editing a file with Read/Edit/Write is fine when only a Bash command naming it was
+  blocked. Running a human-only command (approve, answer, change, pass-manual) is never
+  fine by any route. If unsure, stop and ask.
 - When unsure, stop. Add the question to the feature's `research.md` under
   `## Open questions` as `- **Qn** (open) Tnnn — …`, and do not guess.
