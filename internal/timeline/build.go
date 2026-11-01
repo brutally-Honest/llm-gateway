@@ -293,7 +293,7 @@ func exchangeEntries(src Source, ex store.ExchangeRow, evs []store.EventRow, sha
 			var p toolResultPayload
 			_ = json.Unmarshal(e.Payload, &p)
 			en.IsError = p.IsError
-			en.Text, err = rawContent(src, e.ContentHash)
+			en.Text, err = toolResultText(src, e.ContentHash)
 		case "error":
 			en.Kind = KindError
 			var p errorPayload
@@ -391,6 +391,23 @@ func rawContent(src Source, hash string) (string, error) {
 	}
 	if b == nil {
 		return NotStored, nil
+	}
+	return string(b), nil
+}
+
+// toolResultText is the tool result's content decoded to text when it is stored as a
+// JSON string, else the content as stored (an array of blocks keeps its JSON form).
+func toolResultText(src Source, hash string) (string, error) {
+	b, err := content(src, hash)
+	if err != nil {
+		return "", err
+	}
+	if b == nil {
+		return NotStored, nil
+	}
+	var s string
+	if json.Unmarshal(b, &s) == nil {
+		return s, nil
 	}
 	return string(b), nil
 }
