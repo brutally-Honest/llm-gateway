@@ -229,7 +229,7 @@ next_step() {
 	[ -n "$q" ] && { echo "answer $q: /al-answer <Qn> <your answer>, then /al-resume"; return; }
 	for c in $(task_ids "$(art tasks)"); do
 		case $(state_get "$c") in
-			STOPPED) echo "$c hit the fix-round limit: its last attempt is committed on top of $(short "$(sfile_get "base.$c")"). Fix it by hand and /al-resume, or drop it (git reset --hard $(short "$(sfile_get "base.$c")")), edit the task in tasks.md, and /al-resume"; return ;;
+			STOPPED) echo "$c hit the fix-round limit: its last attempt is committed on top of $(short "$(sfile_get "base.$c")"). Fix it by hand and /al-resume, accept it as it is (loop.sh accept $c '<reason>'), or drop it (git reset --hard $(short "$(sfile_get "base.$c")")), edit the task in tasks.md, and /al-resume"; return ;;
 			ESCALATED) echo "$c needs your decision (the reviewer's ESCALATE): /al-change the spec, or fix the code yourself; then /al-resume"; return ;;
 		esac
 	done
@@ -1330,14 +1330,44 @@ cmd_answer() { # Qn <answer> — record your answer, commit research.md, restore
 	model_for "$id"; echo "ACTION implement $id model=$CV"
 }
 
-cmd_accept() { # Tn <reason> — you accept what the reviewer escalated; the task passes, the risk is on record
-	local id=${1:-} why
+record_decision() { # action subject line -> appends "- <date> <line>" under research.md's "## Human decisions"
+	# and commits research.md alone with the trailer "Kit: <action>" (loop state is gitignored; this lasts)
+	local r tmp out bak
+	r=$(art research)
+	bak=$(mktemp "${TMPDIR:-/tmp}/al.XXXXXX") || return 1
+	if [ -f "$r" ]; then cp -p "$r" "$bak"; else rm -f "$bak"; bak=""; fi
+	[ -f "$r" ] || printf -- '---\nfeature: %s\n---\n# Research & decisions — %s\n' "$F" "$F" > "$r"
+	tmp=$(mktemp "${TMPDIR:-/tmp}/al.XXXXXX") || return 1
+	L="- $(today) $3" awk '
+		/^## / { if (insec && !done) { print ENVIRON["L"]; print ""; done = 1 } insec = ($0 == "## Human decisions") }
+		{ print }
+		END { if (!done) { if (!insec) { print ""; print "## Human decisions" } print ENVIRON["L"] } }' "$r" > "$tmp" && cat "$tmp" > "$r"
+	rm -f "$tmp"
+	if git add -- "$r" && out=$(git commit -q -m "$2" -m "$3" -m "Kit: $1" -- "$r" 2>&1); then
+		[ -z "$bak" ] || rm -f "$bak"; return 0
+	fi
+	# the commit failed: research.md goes back to what it was (your uncommitted edits in it included)
+	git reset -q -- "$r" 2>/dev/null
+	if [ -n "$bak" ]; then cat "$bak" > "$r"; rm -f "$bak"; else rm -f "$r"; fi
+	printf '%s\n' "${out:-git add failed}"; return 1
+}
+
+cmd_accept() { # Tn <reason> — you accept a task the reviewer ESCALATED or the loop STOPPED; it passes, the reason is on record
+	local id=${1:-} why st d
 	resolve_feature
 	shift || true; why="$*"
-	[ "$(state_get "$id")" = ESCALATED ] || die "${id:-the task} is not waiting for your decision."
-	[ -n "$why" ] || why="accepted as is"
+	st=$(state_get "$id"); d=$(state_detail "$id")
+	case $st in
+		ESCALATED) [ -n "$why" ] || why="accepted as is" ;;
+		STOPPED) [ -n "$why" ] || die "say why $id is acceptable as it is — the reason is committed to $(art research).
+  do this: loop.sh accept $id '<reason>'" ;;
+		*) die "${id:-the task} is not waiting for your decision (it is ${st:-not started}; accept takes an ESCALATED or STOPPED task)." ;;
+	esac
+	record_decision accept "docs($F): accept $id" "$id accepted as it is (it was $st${d:+ $d}): $why" \
+		|| die "committing the decision to $(art research) failed, so $id was not accepted"
+	[ "$id" = Q ] || record_commits "$id" "$(task_commits "$id")"
 	state_set "$id" PASS "accepted by you: $why"; [ "$id" = Q ] || state_set BRANCH CLEARED
-	log_event "$id ACCEPTED by the user despite the reviewer's ESCALATE: $why"
+	log_event "$id ACCEPTED by the user ($st${d:+ $d}): $why"
 	if [ "$id" = Q ]; then echo "ACTION finish"; else echo "ACTION next"; fi
 }
 
