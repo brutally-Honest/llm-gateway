@@ -138,6 +138,15 @@ plan-fingerprint: 86f6047061c5c7913adc0b29ada922c9d9a9dfd42946a59452e91097655ca2
 - Size: M
 - Risk: low
 
+### T017 — fix: Hook line ids in the web API are positional (hook:<n>), so a late-arriving earlier hook event shifts the ids of later lines and the UI's open/filter state lands on the wrong line. Use the hook event's stored row id instead (hook:<row id>); not the sequence number, which restarts with the gateway. Regression test: build a session's hook lines, insert an earlier hook event, rebuild, and assert every existing line keeps its id.
+- Do: reproduce and fix: Hook line ids in the web API are positional (hook:<n>), so a late-arriving earlier hook event shifts the ids of later lines and the UI's open/filter state lands on the wrong line. Use the hook event's stored row id instead (hook:<row id>); not the sequence number, which restarts with the gateway. Regression test: build a session's hook lines, insert an earlier hook event, rebuild, and assert every existing line keeps its id.
+- Tests: a regression test that fails before the fix and passes after it (Hook line ids in the web API are positional (hook:<n>), so a late-arriving earlier hook event shifts the ids of later lines and the UI's open/filter state lands on the wrong line. Use the hook event's stored row id instead (hook:<row id>); not the sequence number, which restarts with the gateway. Regression test: build a session's hook lines, insert an earlier hook event, rebuild, and assert every existing line keeps its id.)
+- AC: none — bug fix: Hook line ids in the web API are positional (hook:<n>), so a late-arriving earlier hook event shifts the ids of later lines and the UI's open/filter state lands on the wrong line. Use the hook event's stored row id instead (hook:<row id>); not the sequence number, which restarts with the gateway. Regression test: build a session's hook lines, insert an earlier hook event, rebuild, and assert every existing line keeps its id.
+- Commit: fix(harness-hooks): hook line ids in the web api are positional hook n
+- Depends: —
+- Size: S
+- Risk: low
+
 ### T012 — Show states and hook events in the web UI
 - Do: `internal/ui/entries.go`, `api_timeline.go`, `api_sessions.go`, `web/`: same fields, flags, agent labels and hook lines from the timeline package; `hooks only` label in the sessions list.
 - Tests: TestAPITimeline_StatesFlagsAndHookLines (AC24); TestAPITimeline_AgentLabels (AC22); TestAPISessions_HooksOnlyLabel (AC25); TestWeb_ServesHarnessBadgeRendering (AC24)
