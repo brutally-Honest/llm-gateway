@@ -76,11 +76,23 @@ async function showSession(id) {
     set({ error: e.message });
     return;
   }
+  // follow new entries only when the page is already at the bottom (AC45)
+  const nearBottom = () => {
+    const d = document.documentElement;
+    return d.scrollHeight - (window.scrollY + window.innerHeight) <= 8;
+  };
+  const live = (patch) => {
+    const follow = nearBottom();
+    set(patch);
+    if (follow && mine === seq) window.scrollTo(0, document.documentElement.scrollHeight);
+  };
+  // The snapshot-error state survives the native error event and the reconnect; only the
+  // first exchange event of a later connection (its snapshot) clears it.
   closeStream = openStream(
     (name, data) => {
       if (name === "snapshot_error") set({ snapshotError: data.error ? data.error.message : "unknown" });
-      else if (name === "session") set({ summary: data, snapshotError: "" });
-      else set({ entries: replaceExchange(st.entries, data), snapshotError: "" });
+      else if (name === "session") live({ summary: data });
+      else live({ entries: replaceExchange(st.entries, data), snapshotError: "" });
     },
     (state) => {
       liveEl.textContent = state === "connected" ? "live" : "live: disconnected, retrying";
