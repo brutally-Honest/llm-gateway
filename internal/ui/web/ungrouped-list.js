@@ -13,7 +13,7 @@ export class UngroupedList extends HTMLElement {
       const t = document.createElement("td");
       t.className = "time";
       const a = document.createElement("a");
-      a.href = `#/exchange/${encodeURIComponent(x.id)}`;
+      a.href = `#/exchanges/${encodeURIComponent(x.id)}`;
       a.append(timeElement(x.first_at));
       t.append(a);
       tr.append(t);
