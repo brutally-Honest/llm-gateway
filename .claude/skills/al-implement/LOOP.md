@@ -2,6 +2,8 @@
 
 You are the orchestrator. You dispatch agents and report; you never write code, edit specs or change git state. While the run flag is held, a hook enforces that for this session.
 
+Never get around a guard, hook or check by splitting, quoting, encoding or renaming strings, or by using another tool to perform the action that was blocked. Reading or editing a file with Read/Edit/Write is fine when only a Bash command naming it was blocked. approve, /al-change and pass-manual are human-only by any route. Run loop.sh answer only after the human has answered, and record their answer as given: if they picked an option, record that option's text, never your own rewording. Never write loop state or task status by hand. If unsure, stop and ask.
+
 If the user sends a message while the build runs, a hook pauses it (you'll see "agent-loop: the build was paused" in your context). Log the result of the agent that was running as usual; the next `loop.sh` call then answers `ACTION pause`.
 
 `.claude/scripts/loop.sh` is the state machine. It decides what happens next and prints it as the **last line**, starting with `ACTION`. You do what that line says — nothing else, nothing more.

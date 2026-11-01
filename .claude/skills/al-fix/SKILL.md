@@ -23,5 +23,7 @@ Read the spec's acceptance criteria (spec.md or brief.md) for the behaviour the 
 2. If it printed `NEXT the build runs Tnnn now`: read `.claude/skills/al-implement/LOOP.md` and follow it exactly, using the session id above and no run flags. The loop builds the fix first; tell the user they can type any message to pause after it.
 3. Otherwise relay its NEXT line and stop.
 
+Never get around a guard, hook or check by splitting, quoting, encoding or renaming strings, or by using another tool to perform the action that was blocked. Reading or editing a file with Read/Edit/Write is fine when only a Bash command naming it was blocked. approve, /al-change and pass-manual are human-only by any route. Run loop.sh answer only after the human has answered, and record their answer as given: if they picked an option, record that option's text, never your own rewording. Never write loop state or task status by hand. If unsure, stop and ask.
+
 ## MODE quick — merged, or no feature here
 Follow `.claude/skills/al-quick/SKILL.md` with kind **fix**: a slug from the bug, `loop.sh new fix <slug> --quick` (from the base branch), then draft the brief — Change = repro, expected vs actual; AC1 = the fixed behaviour; S1 carries the regression test. Then hand back for `/al-approve brief` as /al-quick does.
