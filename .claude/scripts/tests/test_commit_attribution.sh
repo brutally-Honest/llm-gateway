@@ -56,6 +56,22 @@ out=$($L post-check T001 2>&1)
 assert_contains "$out" "commit $bad lacks the trailer 'Task: T001'" "post-check"
 git reset -q --hard HEAD~1
 
+t "the implementer's blocked-question commit (research.md, 'Blocked:' trailer) doesn't count"
+printf -- '- **Q2** (answered) T001 — x\n' >> "$R"
+git commit -q -m "docs(001-e2e): record q2 blocking t001" -m "Feature: 001-e2e
+Blocked: T001 Q2" -- "$R"
+out=$($L post-check T001 2>&1); rc=$?
+assert_eq 0 "$rc" "post-check exit ($out)"
+
+t "a 'Blocked:' commit that touches more than research.md fails"
+printf 'package demo\n' > demo/blocked.go; git add demo/blocked.go
+git commit -q -m "docs(001-e2e): record q3 blocking t001" -m "Feature: 001-e2e
+Blocked: T001 Q3"
+bad=$(git rev-parse --short HEAD)
+out=$($L post-check T001 2>&1)
+assert_contains "$out" "blocked-question commit $bad changes demo/blocked.go — it may only change specs/001-e2e/research.md" "post-check"
+git reset -q --hard HEAD~1
+
 t "logging DONE records only the task's own commit"
 out=$($L log T001 implementer "DONE T001 $(git rev-parse --short HEAD)")
 assert_eq "$own T001" "$(cat .agent-loop/001-e2e/commits)" "commits map ($out)"

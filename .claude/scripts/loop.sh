@@ -478,12 +478,15 @@ pe() { printf '  - %s\n' "$*"; PE=1; }
 # approve, change, accept, ...) carry "Kit: <action>" and are never the task's: they are
 # recognised by that trailer alone, never by their subject.
 kit_trailer() { git log -1 --format='%(trailers:key=Kit,valueonly)' "$1" | sed '/^$/d' | head -1; }
+# the implementer's own question commit when it stops BLOCKED ("Blocked: <id> Qn", research.md only)
+blocked_for() { git log -1 --format='%(trailers:key=Blocked,valueonly)' "$2" | grep -q "^$1 Q[0-9]"; }
 task_commits() { # id -> the task's own commits, oldest first (TRAILERS=off: every commit without a Kit trailer)
 	local id=$1 base c trl
 	base=$(sfile_get "base.$id"); [ -n "$base" ] || return 0
 	trl=$(cfg TRAILERS)
 	for c in $(git rev-list --reverse "$base..$(task_end "$id")"); do
 		[ -n "$(kit_trailer "$c")" ] && continue
+		blocked_for "$id" "$c" && continue
 		if [ "$trl" = off ] || git log -1 --format=%B "$c" | grep -qx "Task: $id"; then echo "$c"; fi
 	done
 }
@@ -523,6 +526,14 @@ post_task() { # id [quick|full] -> 0 ok | 1 + problems.  quick = no verify (used
 			# a kit commit only ever writes this feature's specs folder; anything else is not the kit's
 			while IFS= read -r p; do
 				case $p in "$SPECS_DIR/$F"/* | '') ;; *) pe "kit commit $(short "$c") changes $p outside $SPECS_DIR/$F/" ;; esac
+			done <<EOF
+$(commit_paths "$c")
+EOF
+			continue
+		fi
+		if blocked_for "$id" "$c"; then
+			while IFS= read -r p; do
+				case $p in "$SPECS_DIR/$F/research.md" | '') ;; *) pe "blocked-question commit $(short "$c") changes $p — it may only change $SPECS_DIR/$F/research.md" ;; esac
 			done <<EOF
 $(commit_paths "$c")
 EOF
