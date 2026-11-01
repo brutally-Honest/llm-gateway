@@ -147,7 +147,30 @@ func TestCapture_MemoryLimitDrops(t *testing.T) {
 	t.Run("crosses_limit_mid_stream", func(t *testing.T) {
 		checkNoLeaksAtEnd(t)
 		var sent []byte
-		up := newUpstream(t, streamEvents(5, 20, &sent))
+		// Event 0 goes out alone and the upstream waits for the test, so the tee's
+		// first reservation (20 bytes) is under the 50-byte budget however the copy
+		// loop is scheduled; events 1-4 then cross the limit.
+		release := make(chan struct{})
+		var once sync.Once
+		open := func() { once.Do(func() { close(release) }) }
+		t.Cleanup(open)
+		up := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			for i := range 5 {
+				ev := fmt.Sprintf("data: %d%s\n\n", i, strings.Repeat("x", 20-9))
+				sent = append(sent, ev...)
+				_, _ = io.WriteString(w, ev)
+				w.(http.Flusher).Flush()
+				if i == 0 {
+					select {
+					case <-release:
+					case <-r.Context().Done():
+						return
+					}
+				}
+			}
+		})
 		budget := core.NewBudget(50)
 		sink := &recordingSink{}
 		g := startCaptureGateway(t, testAdapter{}, up.URL, core.Capture{Sink: sink, Budget: budget, MaxBodyBytes: 1 << 20})
@@ -157,8 +180,14 @@ func TestCapture_MemoryLimitDrops(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		body, _ := io.ReadAll(res.Body)
+		first := make([]byte, 20)
+		if _, err := io.ReadFull(res.Body, first); err != nil {
+			t.Fatal(err)
+		}
+		open()
+		rest, _ := io.ReadAll(res.Body)
 		_ = res.Body.Close()
+		body := append(first, rest...)
 		if !bytes.Equal(body, sent) || len(body) != 100 {
 			t.Errorf("client got %q, want the whole stream %q", body, sent)
 		}
@@ -171,8 +200,8 @@ func TestCapture_MemoryLimitDrops(t *testing.T) {
 		if got := budget.InUse(); got != before {
 			t.Errorf("InUse = %d, want %d as before the request", got, before)
 		}
-		if budget.Peak() == 0 {
-			t.Error("Peak = 0: the stream reserved nothing before it crossed the limit")
+		if p := budget.Peak(); p < 20 || p > 50 {
+			t.Errorf("Peak = %d, want 20..50: event 0 reserved before the stream crossed the limit", p)
 		}
 		if got := budget.Dropped(); got != 1 {
 			t.Errorf("Dropped = %d, want the one exchange counted", got)
