@@ -39,20 +39,27 @@ render() { # template dest   (uses F KIND TITLE SUP CR BRANCH); .claude/template
 		-e "s|{{TITLE}}|${TITLE:-$F}|g" -e "s|{{SUPERSEDES}}|${SUP:-}|g" -e "s|{{CR}}|${CR:-}|g" -e 's/^\([a-z-]*\): $/\1:/' "$src" > "$2"
 }
 
-run_verify() { # [why] -> 0 = green. Records HEAD as green only when verify ran on a clean tree and left it clean.
-	local log out rc before
-	log=$(VLOG)
-	if [ -z "$VERIFY_CMD" ]; then { verify_unset_msg; echo; } > "$log"; return 1; fi # unset is red, never a silent green
-	# Verify writes outside the repo and the log moves in only after it exits, so
-	# .agent-loop/ holds still while verify runs (the kit's runner checks that).
-	out=$(mktemp "${TMPDIR:-/tmp}/al-verify.XXXXXX") || die "cannot create a temp file for verify's output"
+run_readonly() { # name cmd log -> the command's exit code (1 if it changed the working tree); its output in log
+	local out rc before
+	# The command writes outside the repo and the log moves in only after it exits, so
+	# .agent-loop/ holds still while it runs (the kit's runner checks that).
+	out=$(mktemp "${TMPDIR:-/tmp}/al-$1.XXXXXX") || die "cannot create a temp file for $1's output"
 	before=$(git status --porcelain)
-	(bash -c "$VERIFY_CMD") > "$out" 2>&1; rc=$?
+	(bash -c "$2") > "$out" 2>&1; rc=$?
 	if [ "$(git status --porcelain)" != "$before" ]; then
-		printf '\nagent-loop: verify changed files in the working tree — verify must be read-only:\n%s\n' "$(git status --short)" >> "$out"
+		printf '\nagent-loop: %s changed files in the working tree — %s must be read-only:\n%s\n' "$1" "$1" "$(git status --short)" >> "$out"
 		rc=1
 	fi
-	mv -f "$out" "$log"
+	mv -f "$out" "$3"
+	return $rc
+}
+
+run_verify() { # [why] -> 0 = green. Records HEAD as green only when verify ran on a clean tree and left it clean.
+	local log rc before
+	log=$(VLOG)
+	if [ -z "$VERIFY_CMD" ]; then { verify_unset_msg; echo; } > "$log"; return 1; fi # unset is red, never a silent green
+	before=$(git status --porcelain)
+	run_readonly verify "$VERIFY_CMD" "$log"; rc=$?
 	if [ $rc = 0 ] && [ -z "$before" ] && [ -n "${F:-}" ]; then sfile_set green "$(git rev-parse HEAD)"; fi
 	if [ -n "${F:-}" ] && [ -n "${1:-}" ]; then
 		if [ $rc = 0 ]; then log_event "VERIFY green $1 at $(short)"; else log_event "VERIFY red $1 at $(short)"; fi
@@ -602,6 +609,15 @@ EOF
 $(tail -25 "$(VLOG)")"
 		else
 			log_event "$id verify deferred (VERIFY=$(cfg VERIFY))"
+			# the must-hold check runs after every task the full verify skips
+			if [ -n "$TASK_CHECK_CMD" ]; then
+				if run_readonly task-check "$TASK_CHECK_CMD" "$(sdir)/task-check.log"; then log_event "TASK-CHECK green after $id at $(short)"
+				else
+					log_event "TASK-CHECK red after $id at $(short)"
+					pe "task check is red ($TASK_CHECK_CMD):
+$(tail -25 "$(sdir)/task-check.log")"
+				fi
+			fi
 		fi
 	fi
 	sfile_set "watch.$id" "$w"

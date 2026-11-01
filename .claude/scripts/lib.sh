@@ -20,6 +20,7 @@ al_init() {
 	cd "$REPO" || die "cannot cd to $REPO"
 	VERIFY_CMD=""
 	TEST_CMD=""
+	TASK_CHECK_CMD=""
 	BASE_BRANCH=""
 	SPECS_DIR="specs"
 	CONTRACT_SECTIONS="Goal|Non-goals|Acceptance criteria|Edge cases|Constraints"   # spec sections an approval covers

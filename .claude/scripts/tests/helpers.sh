@@ -45,13 +45,16 @@ mk_repo() {
 
 # mk_e2e [loop.conf lines...] — clones the e2e fixture (feature 001-e2e, approved, one task
 # T001) into a temp dir, swaps in the kit under test, appends the given loop.conf lines
-# (VERIFY_CMD="true" first, so verify passes unless a line says otherwise), cds into it and
+# (VERIFY_CMD="true" and an empty TASK_CHECK_CMD first, so checks pass unless a line says
+# otherwise), cds into it and
 # sets TMP_REPO and L (the loop script). Removed on exit.
 mk_e2e() {
 	local bundle="$KIT_SRC/scripts/tests/fixtures/e2e/repo.bundle" line
 	[ -f "$bundle" ] || { echo "  FAIL missing $bundle — build it with fixtures/e2e/make.sh" >&2; exit 1; }
 	TMP_REPO=$(mktemp -d "${TMPDIR:-/tmp}/al-e2e.XXXXXX") || exit 1
-	trap 'rm -rf "$TMP_REPO"' EXIT
+	E2E_TMPS="${E2E_TMPS:-} $TMP_REPO"   # a test may build several; all go on exit
+	# shellcheck disable=SC2064
+	trap "rm -rf $E2E_TMPS" EXIT
 	git clone -q -b feat/001-e2e "$bundle" "$TMP_REPO"
 	cd "$TMP_REPO" || exit 1
 	git config user.name test
@@ -63,7 +66,7 @@ mk_e2e() {
 	cp -R "$KIT_SRC/scripts" "$KIT_SRC/hooks" "$KIT_SRC/templates" "$KIT_SRC/agents" .claude/
 	rm -rf .claude/scripts/tests
 	cp "$KIT_SRC/loop.conf" .claude/loop.conf
-	printf '\nVERIFY_CMD="true"\n' >> .claude/loop.conf
+	printf '\nVERIFY_CMD="true"\nTASK_CHECK_CMD=""\n' >> .claude/loop.conf
 	for line in "$@"; do printf '%s\n' "$line" >> .claude/loop.conf; done
 	git add .claude && git commit -q -m "chore(repo): use the kit under test"
 	L=.claude/scripts/loop.sh
