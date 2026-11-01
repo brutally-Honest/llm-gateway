@@ -167,7 +167,7 @@ type HookRow struct {
 const hookColumns = `id, seq, principal_id, client, COALESCE(session_key, ''), COALESCE(tool_use_id, ''),
 	phase, source_name, tool_name, agent_id, agent_type, COALESCE(input_hash, ''), payload_hash, received_at`
 
-// HookEvents reads one session's hook events by receive time, then seq. Principal
+// HookEvents reads one session's hook events by receive time, then seq, then row id. Principal
 // and client are part of the session's identity.
 func (r *Reader) HookEvents(principal, client, key string) ([]HookRow, error) {
 	return r.hookEventsCtx(context.Background(), principal, client, key)
@@ -175,7 +175,7 @@ func (r *Reader) HookEvents(principal, client, key string) ([]HookRow, error) {
 
 func (r *Reader) hookEventsCtx(ctx context.Context, principal, client, key string) ([]HookRow, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT `+hookColumns+` FROM hook_events
-		WHERE principal_id = ? AND client = ? AND session_key = ? ORDER BY received_at, seq`,
+		WHERE principal_id = ? AND client = ? AND session_key = ? ORDER BY received_at, seq, id`,
 		principal, client, key)
 	if err != nil {
 		return nil, fmt.Errorf("store %s: hook events: %w", r.path, err)

@@ -106,6 +106,9 @@ type Entry struct {
 	AgentType    string
 	// HookID is the stored row id of the hook event a KindHarness entry stands for.
 	HookID int64
+	// HookSeq is the hook event's sequence number; with its receive time and HookID
+	// it is the entry's place in the timeline's order.
+	HookSeq int64
 }
 
 type thread struct {

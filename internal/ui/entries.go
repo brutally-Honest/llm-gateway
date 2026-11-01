@@ -80,8 +80,11 @@ type entryJSON struct {
 	AgentID      string `json:"agent_id,omitempty"`
 	AgentType    string `json:"agent_type,omitempty"`
 
-	// startNS is Start in unix nanoseconds, for paging.
+	// startNS is Start in unix nanoseconds, for paging. hookSeq and hookRow are a
+	// hook line's sequence number and stored row id, the rest of its paging key.
 	startNS int64
+	hookSeq int64
+	hookRow int64
 }
 
 // hookRequest is the exchange id a hook-event line sorts under: after every real
@@ -144,7 +147,8 @@ func mapEntries(entries []timeline.Entry, exs map[string]store.ExchangeRow) []en
 			// stored row id, so a later-arriving earlier event does not shift it.
 			i := hooks
 			hooks++
-			out = append(out, entryJSON{ID: "hook:" + strconv.FormatInt(e.HookID, 10), Index: i, Start: nsTime(e.Start), startNS: e.Start,
+			out = append(out, entryJSON{ID: "hook:" + strconv.FormatInt(e.HookID, 10), Index: i, Start: nsTime(e.Start),
+				startNS: e.Start, hookSeq: e.HookSeq, hookRow: e.HookID,
 				Kind: kindHookEvent, Name: e.Name, ToolCallID: e.ToolCallID, Text: e.Text, Phase: e.Phase,
 				State: e.State, AgentID: e.AgentID, AgentType: e.AgentType})
 		case timeline.KindError:

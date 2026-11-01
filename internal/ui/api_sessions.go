@@ -129,6 +129,9 @@ type afterToken struct {
 	RequestID string `json:"r,omitempty"`
 	// Index is the entry's position within its exchange (timeline lists only).
 	Index int `json:"i,omitempty"`
+	// Seq and Row are a hook line's sequence number and stored row id (timeline only).
+	Seq int64 `json:"q,omitempty"`
+	Row int64 `json:"h,omitempty"`
 }
 
 func encodeAfter(t afterToken) string {

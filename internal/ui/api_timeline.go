@@ -38,11 +38,15 @@ func mountExchanges(api chi.Router, d Deps) {
 	api.Get("/exchanges/{id}/body", d.getBody)
 }
 
-// position is an entry's sort tuple: exchange start, exchange id, index.
+// position is an entry's sort tuple: start, request id, index within the exchange,
+// then for a hook line its sequence number and stored row id. A hook line's start is
+// its receive time; its index is 0.
 type position struct {
 	start int64
 	req   string
 	idx   int
+	seq   int64
+	row   int64
 }
 
 // after reports whether p sorts strictly after the token's position.
@@ -52,8 +56,12 @@ func (p position) after(t afterToken) bool {
 		return p.start > t.At
 	case p.req != t.RequestID:
 		return p.req > t.RequestID
+	case p.idx != t.Index:
+		return p.idx > t.Index
+	case p.seq != t.Seq:
+		return p.seq > t.Seq
 	}
-	return p.idx > t.Index
+	return p.row > t.Row
 }
 
 func (d Deps) getTimeline(w http.ResponseWriter, r *http.Request) {
@@ -121,7 +129,7 @@ func (d Deps) getTimeline(w http.ResponseWriter, r *http.Request) {
 	for i, e := range all {
 		pos[i] = position{start: e.startNS, req: e.ExchangeID, idx: e.Index}
 		if e.Kind == kindHookEvent {
-			pos[i].req = hookRequest
+			pos[i] = position{start: e.startNS, req: hookRequest, seq: e.hookSeq, row: e.hookRow}
 		}
 	}
 	from := 0
@@ -137,7 +145,8 @@ func (d Deps) getTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 	if end < len(all) {
 		last := pos[end-1]
-		n := encodeAfter(afterToken{List: listTimeline, At: last.start, RequestID: last.req, Index: last.idx})
+		n := encodeAfter(afterToken{List: listTimeline, At: last.start, RequestID: last.req, Index: last.idx,
+			Seq: last.seq, Row: last.row})
 		page.NextAfter = &n
 	}
 	writeJSON(w, page)

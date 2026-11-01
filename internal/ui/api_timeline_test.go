@@ -529,3 +529,41 @@ func TestAPITimeline_HookLineIdsSurviveEarlierArrival(t *testing.T) {
 		}
 	}
 }
+
+// A late-arriving earlier hook event must not repeat or skip hook lines on the next
+// page: the after token is keyed on the line's receive time, seq and row id, not on
+// its place among the hook lines.
+func TestAPITimeline_HookPagingSurvivesEarlierArrival(t *testing.T) {
+	e := newAPIEnv(t)
+	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-a"}, 2)
+	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-b"}, 3)
+	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-c"}, 4)
+	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-d"}, 5)
+	url := "/api/sessions/" + sid() + "/timeline"
+	var want []string // ids of the lines that exist before page 1 is loaded
+	for _, en := range e.timeline(url).Entries {
+		want = append(want, en["id"].(string))
+	}
+	if len(want) != 4 {
+		t.Fatalf("hook lines = %v", want)
+	}
+	page1 := e.timeline(url + "?limit=2")
+	if page1.NextAfter == nil {
+		t.Fatalf("page 1 has no next_after: %v", page1.Entries)
+	}
+	// Received before the page boundary, so it sorts ahead of every line on page 1.
+	early := &store.HookRecord{PrincipalID: core.PrincipalLocal, Client: "cc", Seq: 1,
+		ReceivedAt: baseTime.Add(time.Second), Payload: []byte(`{"early":true}`),
+		Event: core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-early", SessionKey: "k"}}
+	if err := e.s.SaveHook(e.t.Context(), early); err != nil {
+		t.Fatal(err)
+	}
+	page2 := e.timeline(url + "?limit=2&after=" + *page1.NextAfter)
+	var got []string
+	for _, en := range page2.Entries {
+		got = append(got, en["id"].(string))
+	}
+	if len(got) != 2 || got[0] != want[2] || got[1] != want[3] {
+		t.Errorf("page 2 ids = %v, want the lines after page 1: %v", got, want[2:])
+	}
+}
