@@ -136,3 +136,8 @@ export function prettyJSON(text) {
 export function counterText(n) {
   return n === null || n === undefined ? "unknown" : String(n);
 }
+
+// countText is "1 <one>" for a count of 1, else "<n> <many>".
+export function countText(n, one, many) {
+  return `${n} ${n === 1 ? one : many}`;
+}

@@ -1,4 +1,4 @@
-import { groupTurns, matchIds, pairTools, prettyJSON, timeElement, usageText } from "./entries.js";
+import { countText, groupTurns, matchIds, pairTools, prettyJSON, timeElement, usageText } from "./entries.js";
 import "./model-chip.js";
 import { note } from "./session-list.js";
 import { copyButton, truncatedLink } from "./tool-card.js";
@@ -73,10 +73,10 @@ export class SessionView extends HTMLElement {
     const span = el("span", "muted");
     span.append(timeElement(s.first_at), " – ", timeElement(s.last_at));
     row.append(span);
-    row.append(el("span", "", `${s.exchange_count} exchanges`));
-    row.append(el("span", "", `${s.model_calls} model calls`));
-    row.append(el("span", "", `${s.tool_calls} tool calls`));
-    row.append(el("span", "", `${s.errors} errors`));
+    row.append(el("span", "", countText(s.exchange_count, "exchange", "exchanges")));
+    row.append(el("span", "", countText(s.model_calls, "model call", "model calls")));
+    row.append(el("span", "", countText(s.tool_calls, "tool call", "tool calls")));
+    row.append(el("span", "", countText(s.errors, "error", "errors")));
     row.append(el("span", "", `tokens ${usageText(s.usage)}`));
     if (s.active) row.append(el("span", "badge", "active"));
     this.header.append(row);
