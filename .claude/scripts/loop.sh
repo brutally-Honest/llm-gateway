@@ -463,7 +463,7 @@ pre_task() { # id -> 0 ok (base recorded) | 1 with STOP-REASON lines
 	fi
 	record_base "$id"
 	sfile_set "rounds.$id" 0
-	rm -f "$(sdir)/findings.$id" "$(sdir)/watch.$id" "$(sdir)/reason.$id" "$(sdir)/end.$id" "$(sdir)/pending.$id"
+	rm -f "$(sdir)/findings.$id" "$(sdir)/watch.$id" "$(sdir)/reason.$id" "$(sdir)/end.$id" "$(sdir)/pending.$id" "$(sdir)/scope.$id"
 	state_set "$id" IN-PROGRESS
 	[ "$id" = Q ] || state_set BRANCH CLEARED
 	log_event "$id pre-task ok base=$(short "$(sfile_get "base.$id")")"
@@ -499,9 +499,18 @@ EOF
 	git diff "$@" "$(sfile_get "base.$id")" "$(task_end "$id")" -- "${ps[@]}"
 }
 
+in_fix_scope() { # path "scope files" -> 0 when a fix round may change the path: a scope file, a test file
+	# in a scope file's folder, or research.md (where questions go)
+	[ "$1" = "$SPECS_DIR/$F/research.md" ] && return 0
+	in_list "$1" "$2" && return 0
+	match_globs "$1" "$TEST_GLOBS" || return 1
+	printf '%s\n' "$2" | D="$(dirname "$1")" awk 'NF { d = $0; if (sub(/\/[^\/]*$/, "", d) == 0) d = "."; if (d == ENVIRON["D"]) { f = 1; exit } } END { exit !f }'
+}
+
 post_task() { # id [quick|full] -> 0 ok | 1 + problems.  quick = no verify (used by the SubagentStop hook)
-	local id=$1 mode=${2:-full} end base commits own c msg p tests changed kind w="" skips ce
+	local id=$1 mode=${2:-full} end base commits own c msg p tests changed kind w="" skips ce scope
 	PE=0
+	rm -f "$(sdir)/scopefail.$id"
 	base=$(sfile_get "base.$id"); [ -n "$base" ] || { pe "no base recorded for $id (pre-task never ran)"; return 1; }
 	end=$(task_end "$id")
 	tree_clean || pe "working tree not clean: $(git status --short | head -5 | tr '\n' ' ')"
@@ -537,6 +546,16 @@ EOF
 	done <<EOF
 $(task_paths "$id")
 EOF
+	scope=$(sfile_get "scope.$id")
+	if [ -n "$scope" ]; then   # in fix rounds (an empty scope — no commit yet when they began — limits nothing)
+		while IFS= read -r p; do
+			[ -n "$p" ] && ! in_fix_scope "$p" "$scope" || continue
+			pe "changed $p — outside the scope of its fix rounds: they may change only $(printf '%s\n' "$scope" | paste -sd' ' -) and test files in those folders"
+			sfile_set "scopefail.$id" 1
+		done <<EOF
+$(task_paths "$id")
+EOF
+	fi
 	if is_quick; then tests=$(section "$(art brief)" "Steps" | grep 'Tests:' | grep -viE 'Tests:[[:space:]]*none')
 	else tests=$(task_field "$(art tasks)" "$id" Tests); case $tests in [Nn]one* | '') tests="" ;; esac; fi
 	if [ -n "$tests" ]; then
@@ -598,6 +617,8 @@ bump() { # id source -> prints ACTION
 		log_event "$1 STOP fix-limit ($max fix rounds used)"
 		echo "ACTION stop fix-limit $1"
 	else
+		# the files a fix round may change: the task's own, as they are when its first round is asked for
+		[ -f "$(sdir)/scope.$1" ] || sfile_set "scope.$1" "$(task_paths "$1")"
 		sfile_set "pending.$1" "$r"
 		log_event "$1 fix round $r/$max asked for ($2)"
 		model_for "$1"
@@ -911,6 +932,12 @@ log_done() { # id -> the script's checks on a reported (or resumed) DONE, then r
 	else
 		sfile_set "findings.$id" "$out"
 		echo "post-task checks failed for $id:"; printf '%s\n' "$out"
+		if [ -f "$(sdir)/scopefail.$id" ]; then   # out of scope is never fixed by another round
+			rm -f "$(sdir)/pending.$id"
+			state_set "$id" STOPPED scope
+			log_event "$id STOP scope (a fix round changed files outside the task's own)"
+			echo "ACTION stop scope $id"; return 0
+		fi
 		log_event "$id post-task FAILED"
 		bump "$id" post-task
 	fi
@@ -1285,7 +1312,7 @@ cmd_answer() { # Qn <answer> — record your answer, commit research.md, restore
 		git stash pop -q "$ref" || die "$id's earlier attempt ($ref) didn't apply cleanly onto HEAD.
   do this: resolve the conflict in the files git lists, then /al-resume"
 	fi
-	record_base "$id"; sfile_set "rounds.$id" 0; rm -f "$(sdir)/pending.$id"
+	record_base "$id"; sfile_set "rounds.$id" 0; rm -f "$(sdir)/pending.$id" "$(sdir)/scope.$id"
 	state_set "$id" IN-PROGRESS "restored after $q"
 	log_event "$id resumes after $q${ref:+ with its stashed attempt}"
 	echo "ANSWERED $q — $id continues${ref:+ from its earlier attempt (restored in the working tree)}"
