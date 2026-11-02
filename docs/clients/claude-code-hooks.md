@@ -91,6 +91,14 @@ Two more labels appear beside these:
 
 Sessions known only from hook events are listed as `hooks only`.
 
+Two viewer texts come from hook events. They appear in the CLI timeline, in `--json` and
+in the web UI:
+
+- **`… N bytes omitted`**: the hook input was cut for display. `N` is the number of bytes
+  cut. `--json` and the web entry carry the same count.
+- **`hook unknown: <name>`**: the event name is not one the gateway maps. The stored name
+  is shown as received.
+
 ## 5. Limits
 
 - **Gateway down or not started:** hook events are lost. Their calls show `no harness
@@ -101,6 +109,9 @@ Sessions known only from hook events are listed as `hooks only`.
   a tool on the file system or network (see [PLAN.md §3](../../PLAN.md#3-client-support)).
 - **Sub-agents:** their events carry an agent id and type, shown as labels on the event
   and its tool call. They are not nested under the parent's tool call.
+- **Hook events with no session id (known v1 gap):** they are stored, but `gateway sessions`
+  shows them only as a count. The web UI ungrouped list has no hook entries, so they are
+  not visible there. A session id known from an exchange or a hook event is listed normally.
 - **Capture off:** with `capture.enabled: false`, hook events are counted but not stored,
   so the timeline has nothing to show.
 - **Shared writer:** hook events and LLM captures share one SQLite writer. A large hook
