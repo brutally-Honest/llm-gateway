@@ -19,7 +19,12 @@ export const CHIP_KEYS = Object.keys(CHIPS);
 export function chipOf(call) {
   const c = call || {};
   const base = CHIPS[c.chip] || CHIPS["no-hooks"];
-  const title = [c.state, c.reason, c.outcome].filter(Boolean).join(": ") || base.text;
+  let title = [c.state, c.reason, c.outcome].filter(Boolean).join(": ") || base.text;
+  // A hook-seen call carries the outcome its hooks reported, not a matched one.
+  if (c.kind === "hook_event") {
+    title = [c.state, c.reason].filter(Boolean).join(": ") || base.text;
+    if (c.outcome) title += ` · hooks: ${c.outcome}`;
+  }
   return { ...base, title };
 }
 
@@ -171,7 +176,7 @@ function hookTurns(entries) {
       card.counts.tools++;
     }
     row.agent = row.agent || agentLabel(e);
-    row.chip = chipOf({ chip: e.chip });
+    row.chip = chipOf(e);
   }
   return { cards, turns: cards.filter((c) => c.kind === "turn"), note: "no model calls were captured" };
 }

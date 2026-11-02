@@ -110,6 +110,9 @@ type Entry struct {
 	State   string
 	Reason  string
 	Outcome string
+	// HookReason and HookOutcome are what a KindHarness entry's own hook phases say
+	// (denied; succeeded or failed). Display only; the text viewer does not print them.
+	HookReason, HookOutcome string
 	// Chip is the tool call's chip (ChipOf); set on a tool call and on a KindHarness
 	// entry that carries a tool call id.
 	Chip         string

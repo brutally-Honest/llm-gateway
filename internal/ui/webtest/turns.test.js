@@ -75,14 +75,15 @@ test("hooksOnlySessionStartsTurnsAtPrompt", () => {
   const h = (id, phase, extra = {}) => ({ id: `hook:${id}`, kind: "hook_event", phase, ...extra });
   const r = buildTurns([
     h(1, "prompt", { text: "first" }),
-    h(2, "pre_tool", { tool_call_id: "t1", name: "Bash", chip: "ok" }), h(3, "post_tool", { tool_call_id: "t1", name: "Bash", chip: "ok" }),
+    h(2, "pre_tool", { tool_call_id: "t1", name: "Bash", chip: "unmatched", state: "ran-not-asked-or-not-captured" }), h(3, "post_tool", { tool_call_id: "t1", name: "Bash", chip: "unmatched", state: "ran-not-asked-or-not-captured", outcome: "succeeded" }),
     h(4, "prompt", { text: "second" }),
-    h(5, "pre_tool", { tool_call_id: "t2", name: "Read", chip: "failed" }), h(6, "post_tool_failed", { tool_call_id: "t2", name: "Read", chip: "failed" }),
+    h(5, "pre_tool", { tool_call_id: "t2", name: "Read", chip: "unmatched", state: "ran-not-asked-or-not-captured" }), h(6, "post_tool_failed", { tool_call_id: "t2", name: "Read", chip: "unmatched", state: "ran-not-asked-or-not-captured", outcome: "failed" }),
   ]);
   assert.equal(r.turns.length, 2);
   assert.match(r.note, /no model calls/);
-  assert.equal(r.turns[0].tools[0].chip.text, "ok");
-  assert.equal(r.turns[1].tools[0].chip.text, "failed");
+  assert.equal(r.turns[0].tools[0].chip.text, "unmatched");
+  assert.equal(r.turns[1].tools[0].chip.text, "unmatched");
+  assert.equal(r.turns[1].tools[0].chip.title, "ran-not-asked-or-not-captured · hooks: failed");
   assert.equal(r.turns[0].calls.length, 0);
   assert.equal(r.turns[0].hooksOnly, true);
 });

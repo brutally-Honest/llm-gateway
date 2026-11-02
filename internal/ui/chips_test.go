@@ -96,13 +96,26 @@ func TestChips_ReportedFailedToolIsFailed(t *testing.T) {
 	assertListMatchesTimeline(t, e, "k", map[string]float64{"failed": 1, "ok": 0})
 }
 
-// A hooks-only session counts each hook-seen tool call once, by its own phases.
+// A hooks-only session shows every hook-seen tool call as unmatched, once per call; the
+// hook-derived outcome and reason ride along on the hook entries for display only.
 func TestChips_HooksOnlySession(t *testing.T) {
 	e := newAPIEnv(t)
 	e.hook("h", core.HarnessEvent{Phase: core.PhasePreTool, ToolCallID: "t1", ToolName: "bash"}, 1)
 	e.hook("h", core.HarnessEvent{Phase: core.PhasePostToolFailed, ToolCallID: "t1", ToolName: "bash"}, 2)
 	e.hook("h", core.HarnessEvent{Phase: core.PhasePostTool, ToolCallID: "t2", ToolName: "ls"}, 3)
 	e.hook("h", core.HarnessEvent{Phase: core.PhasePermissionDenied, ToolCallID: "t3", ToolName: "rm"}, 4)
-	e.hook("h", core.HarnessEvent{Phase: core.PhasePreTool, ToolCallID: "t4", ToolName: "cat"}, 5)
-	assertListMatchesTimeline(t, e, "h", map[string]float64{"failed": 1, "ok": 1, "not-run": 1, "pending": 1, "unmatched": 0})
+	assertListMatchesTimeline(t, e, "h", map[string]float64{"unmatched": 3, "failed": 0, "ok": 0, "not-run": 0, "pending": 0})
+	id := sessionID(store.SessionRow{PrincipalID: core.PrincipalLocal, Client: "cc", SessionKey: "h"})
+	want := map[string][2]string{"t1": {"", "failed"}, "t2": {"", "succeeded"}, "t3": {"denied", ""}}
+	for _, en := range e.timeline("/api/sessions/" + id + "/timeline").Entries {
+		w, ok := want[en["tool_call_id"].(string)]
+		if en["kind"] != "hook_event" || !ok {
+			continue
+		}
+		reason, _ := en["reason"].(string)
+		outcome, _ := en["outcome"].(string)
+		if en["state"] != "ran-not-asked-or-not-captured" || reason != w[0] || outcome != w[1] {
+			t.Errorf("hook entry = %v, want reason %q outcome %q", en, w[0], w[1])
+		}
+	}
 }

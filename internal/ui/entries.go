@@ -155,7 +155,7 @@ func mapEntries(entries []timeline.Entry, exs map[string]store.ExchangeRow, fact
 			out = append(out, entryJSON{ID: "hook:" + strconv.FormatInt(e.HookID, 10), Index: i, Start: nsTime(e.Start),
 				startNS: e.Start, hookSeq: e.HookSeq, hookRow: e.HookID,
 				Kind: kindHookEvent, Name: e.Name, ToolCallID: e.ToolCallID, Text: e.Text, Phase: e.Phase,
-				State: e.State, Chip: e.Chip, AgentID: e.AgentID, AgentType: e.AgentType})
+				State: e.State, Reason: e.HookReason, Outcome: e.HookOutcome, Chip: e.Chip, AgentID: e.AgentID, AgentType: e.AgentType})
 		case timeline.KindError:
 			add(e, entryJSON{Kind: kindError, Name: e.Name, Status: ptr(e.Status), Text: e.Text,
 				Truncated: e.Omitted > 0, Partial: e.Partial})

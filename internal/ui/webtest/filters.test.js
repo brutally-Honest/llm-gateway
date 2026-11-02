@@ -20,6 +20,12 @@ test("hasGapsMatchesUnmatchedAndPartial", () => {
   assert.deepEqual(filterSessions(hooks, { kind: "hooks" }).rows.map((r) => r.id), ["h"]);
 });
 
+test("hasGapsMatchesHooksOnlySession", () => {
+  const h = row("h", { hooks_only: true, has_calls: false, has_hooks: true,
+    tool_states: { ok: 0, failed: 0, "not-run": 0, unmatched: 2, pending: 0, "no-hooks": 0 } });
+  assert.deepEqual(filterSessions([h, row("d")], { kind: "gaps" }).rows.map((r) => r.id), ["h"]);
+});
+
 test("filterTextMatchesLoadedRows", () => {
   const rows = [row("a", { title: "Fix the Parser" }), row("b", { title: "other" })];
   const r = filterSessions(rows, { text: "parser", hasMore: true });

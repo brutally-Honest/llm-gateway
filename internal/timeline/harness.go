@@ -179,10 +179,8 @@ func applyHarness(src Source, session store.SessionRow, exchangeEvents [][]store
 		out[i].AgentID, out[i].AgentType = v.AgentID, v.AgentType
 	}
 
-	// Without any captured exchange, hook-seen tool calls are all there is: each gets
-	// the chip its own phases give. Otherwise a hook call matching no captured call is
-	// unmatched.
-	hookOnly := len(out) == 0
+	// A hook call matching no captured call is unmatched, in a hooks-only session too.
+	// Its reason and outcome come from its own hook phases and are only displayed.
 	hookRank := map[string]int{}
 	for _, h := range hooks {
 		if h.ToolUseID == "" {
@@ -202,9 +200,7 @@ func applyHarness(src Source, session store.SessionRow, exchangeEvents [][]store
 		if h.ToolUseID != "" {
 			en.State = StateUnmatched
 			en.Chip = ChipUnmatched
-			if hookOnly {
-				en.Chip = hookChip(hookRank[h.ToolUseID])
-			}
+			en.HookReason, en.HookOutcome = hookReasonOutcome(hookRank[h.ToolUseID])
 		}
 		loose = append(loose, en)
 	}
@@ -223,18 +219,18 @@ func applyHarness(src Source, session store.SessionRow, exchangeEvents [][]store
 	return append(merged, loose...), nil
 }
 
-// hookChip is the chip of a tool call seen only through hooks, from the highest phase
-// rank it reached.
-func hookChip(rank int) string {
+// hookReasonOutcome is what a hook-seen call's highest phase rank says: denied, or
+// whether it succeeded or failed.
+func hookReasonOutcome(rank int) (reason, outcome string) {
 	switch {
 	case rank >= phaseRank(string(core.PhasePostToolFailed)):
-		return ChipFailed
+		return "", OutcomeFailed
 	case rank >= phaseRank(string(core.PhasePostTool)):
-		return ChipOK
+		return "", OutcomeSucceeded
 	case rank == phaseRank(string(core.PhasePermissionDenied)):
-		return ChipNotRun
+		return ReasonDenied, ""
 	}
-	return ChipPending
+	return "", ""
 }
 
 // verdict derives one tool call's state from the session's hook rows (ordered, deduped).
