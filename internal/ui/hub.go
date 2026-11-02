@@ -56,7 +56,7 @@ type liveExchange struct {
 }
 
 // liveMsg is what a subscriber receives. It is shared between subscribers and never
-// changed after it is built. A global stream gets Summary; a session stream gets Exchanges.
+// changed after it is built. Both kinds get Summary; a session stream also gets Exchanges.
 type liveMsg struct {
 	Summary   *sessionSummary
 	Exchanges []liveExchange // the committed exchanges, in row id order
@@ -387,7 +387,7 @@ func (h *Hub) dispatch(batch []capture.Committed) {
 func (h *Hub) readAndSend(who sessIdent, ids []string, global, session, refresh bool) {
 	id := who.id()
 	ctx, cancel := context.WithTimeout(h.ctx, storeTimeout)
-	m, err := h.read(ctx, who, ids, global, session)
+	m, err := h.read(ctx, who, ids, true, session)
 	cancel()
 	if err != nil {
 		// A stream that misses this update would stay stale: end them so they resync.
@@ -407,7 +407,7 @@ func (h *Hub) readAndSend(who sessIdent, ids []string, global, session, refresh 
 	}
 	if session && (refresh || len(m.Exchanges) > 0) {
 		for _, s := range h.targets(id, false) {
-			h.send(s, liveMsg{Exchanges: m.Exchanges, All: m.All, Inactive: m.Inactive, Refresh: refresh})
+			h.send(s, liveMsg{Summary: m.Summary, Exchanges: m.Exchanges, All: m.All, Inactive: m.Inactive, Refresh: refresh})
 		}
 	}
 }
@@ -530,8 +530,22 @@ func readSnapshot(ctx context.Context, d Deps, session string) (snapshot, error)
 	c := d.Reader.WithContext(ctx)
 	if session != "" {
 		principal, client, key, _ := parseSessionID(session)
-		x, err := sessionExchanges(c, sessIdent{principal, client, key})
-		return snapshot{Exchanges: x}, err
+		who := sessIdent{principal, client, key}
+		var out snapshot
+		row, err := c.SessionByKey(principal, client, key)
+		switch {
+		case err == nil:
+			st, err := timeline.SessionStats(c, row)
+			if err != nil {
+				return snapshot{}, err
+			}
+			out.Sessions = append(out.Sessions, buildSummary(session, row, st, d.now()))
+		case !errors.Is(err, store.ErrNotFound):
+			return snapshot{}, err
+		}
+		x, err := sessionExchanges(c, who)
+		out.Exchanges = x
+		return out, err
 	}
 	rows, err := c.SessionPage(nil, defaultListLimit)
 	if err != nil {

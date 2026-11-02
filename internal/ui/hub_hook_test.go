@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -34,6 +35,7 @@ func TestHub_HookEventPushesSessionTimeline(t *testing.T) {
 	e := newStreamEnv(t, fastHooks)
 	e.toolSession(`{"a":1}`)
 	s := e.openRaw(e.sessionPath())
+	s.sessionFirst()
 	s.take(2) // exchange a, then the empty hooks snapshot
 	e.hookPre(2)
 	ev := s.nextData()
@@ -71,6 +73,7 @@ func TestHub_HookOnlySessionAppears(t *testing.T) {
 	e := newStreamEnv(t, fastHooks)
 	global := e.open("/api/stream")
 	sess := e.openRaw(e.sessionPath())
+	sess.skipSession = true // the hook creates the row; its summary is not under test here
 	if ev := sess.nextData(); ev.event != "hooks" || ev.data != "[]" {
 		t.Fatalf("snapshot = %+v", ev)
 	}
@@ -196,6 +199,7 @@ func TestHub_HookRefreshAndCommitInSameWindowSendEachChangeOnce(t *testing.T) {
 	e := newStreamEnv(t, func(h *Hub) { h.hookEvery = 150 * time.Millisecond })
 	e.toolSession(`{"a":1}`)
 	s := e.openRaw(e.sessionPath())
+	s.sessionFirst()
 	s.take(2)
 	e.save("c", "k", "cc", 10)
 	e.parseMsgs("c", "ok", []any{"user", text("later")})
@@ -304,6 +308,7 @@ func TestStream_LiveHookUpdateReplacesFirstSnapshotHookLines(t *testing.T) {
 	}
 
 	s := e.openRaw(e.sessionPath())
+	s.sessionFirst()
 	var wire []map[string]any
 	for i, want := range []string{"exchange", "hooks"} { // the connect snapshot: exchange a, then the hook lines
 		ev := s.nextData()
@@ -345,6 +350,7 @@ func TestStream_HooksSnapshotEmptyIsSentAndRemovesGroup(t *testing.T) {
 	e := newStreamEnv(t, fastHooks)
 	e.toolSession(`{"a":1}`)
 	s := e.openRaw(e.sessionPath())
+	s.sessionFirst()
 	if ev := s.nextData(); ev.event != "exchange" {
 		t.Fatalf("first = %+v", ev)
 	}
@@ -440,6 +446,7 @@ func TestHooksLive_CallStateConvergesAcrossLaterCommit(t *testing.T) {
 	e := newStreamEnv(t, fastHooks)
 	e.toolSession(`{"a":1}`)
 	s := e.openRaw(e.sessionPath())
+	s.sessionFirst()
 	var view []map[string]any
 	apply := func(n int) {
 		t.Helper()
@@ -520,5 +527,29 @@ func TestHooksOnly_HookWithinLastSecondNotInactive(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("hooks-only session not listed")
+	}
+}
+
+func TestHub_HookRefreshSendsSessionSummary(t *testing.T) {
+	e := newStreamEnv(t, fastHooks)
+	e.toolSession(`{"a":1}`)
+	s := e.openRaw(e.sessionPath())
+	s.sessionFirst()
+	s.take(2) // exchange a, empty hooks
+	s.skipSession = false
+	e.hookPre(2)
+	ev := s.nextData()
+	if ev.event != "session" {
+		t.Fatalf("first event after the hook = %q, want session", ev.event)
+	}
+	var got, want sessionSummary
+	if err := json.Unmarshal([]byte(ev.data), &got); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(e.reload()), &want); err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != sid() || got.ToolCalls != 1 || !reflect.DeepEqual(got, want) {
+		t.Fatalf("summary %+v != reload %+v", got, want)
 	}
 }

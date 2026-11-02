@@ -45,7 +45,7 @@ shows as `asked+ran+reported: succeeded`.
 | 3 | Prompt: `Run sleep 20 in the foreground.` Watch while it runs. | Live, with no reload: pending (~20 s), then asked+ran+reported: succeeded. ran-not-reported may flash briefly or be skipped when the next request follows within the refresh window. |
 | 4 | Prompt: `Create a file d.txt containing hello.` | In `-p` mode the denial reaches the model in the same turn: pending briefly, then asked-not-run: not run within the same turn. `d.txt` is not created. |
 | 5 | Prompt: `Use a sub-agent to list the files here.` | The sub-agent's calls carry its agent id and type. The Agent call briefly shows ran-not-reported before asked+ran+reported. |
-| 6 | Reload the page. | Tool cards, hook lines and entry counts are identical to the live view. |
+| 6 | Reload the page. | Tool cards, hook lines and entry counts are identical to the live view, and so are the session header's counts, token totals and last time. |
 | 7 | Run `XDG_DATA_HOME=/tmp/uicheck-data go run ./cmd/gateway timeline -last` from the repo root. | The same states as the UI. |
 | 8 | Run a prompt such as `Run ls.` without `ANTHROPIC_BASE_URL`, keeping `--settings /tmp/gw-hooks.json`, in a new session. | The sessions list labels a new session `hooks only`, and its entries show ran-not-asked-or-not-captured. |
 
@@ -54,7 +54,7 @@ next prompt.
 
 ## Known issues
 
-The session header does not update live (fix pending), so step 6 does not compare it.
+The session header's active label does not flip to inactive while the page stays open on a quiet session; a reload refreshes it.
 
 ## Known noise
 

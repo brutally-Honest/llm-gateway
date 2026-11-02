@@ -64,6 +64,7 @@ func (e *streamEnv) open(path string) *sse {
 	e.t.Helper()
 	s := e.openRaw(path)
 	s.skipEmptyHooks = true
+	s.skipSession = strings.HasPrefix(path, "/api/sessions/")
 	return s
 }
 
@@ -83,6 +84,8 @@ type sse struct {
 	sc   *bufio.Scanner
 	// skipEmptyHooks makes nextData pass over a hooks event with an empty list.
 	skipEmptyHooks bool
+	// skipSession makes nextData pass over a session event, which a session stream now sends.
+	skipSession bool
 }
 
 type sseEvent struct{ event, id, data, comment string }
@@ -112,11 +115,21 @@ func (s *sse) next() sseEvent {
 	return ev
 }
 
+// sessionFirst takes the session event a session stream sends before its snapshot, then
+// skips later session events so a test can count the exchange events alone.
+func (s *sse) sessionFirst() {
+	s.t.Helper()
+	if ev := s.nextData(); ev.event != "session" {
+		s.t.Fatalf("first event = %+v, want session", ev)
+	}
+	s.skipSession = true
+}
+
 // nextData skips comments and returns the next real event.
 func (s *sse) nextData() sseEvent {
 	s.t.Helper()
 	for {
-		if ev := s.next(); ev.event != "" && (!s.skipEmptyHooks || ev.event != "hooks" || ev.data != "[]") {
+		if ev := s.next(); ev.event != "" && (!s.skipEmptyHooks || ev.event != "hooks" || ev.data != "[]") && (!s.skipSession || ev.event != "session") {
 			return ev
 		}
 	}
@@ -273,10 +286,11 @@ func TestStream_SnapshotEqualsFreshTimelineWithAndWithoutResumeInputs(t *testing
 	want := e.freshTimeline()
 	path := "/api/sessions/" + sid() + "/stream"
 	for name, s := range map[string]*sse{
-		"none":          e.open(path),
+		"none":          e.openRaw(path),
 		"last-event-id": e.openWith(path, map[string]string{"Last-Event-ID": "2"}),
-		"since":         e.open(path + "?since=2"),
+		"since":         e.openRaw(path + "?since=2"),
 	} {
+		s.sessionFirst()
 		got := snapshotEntries(t, s, 3)
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s: snapshot = %v, want %v", name, got, want)
@@ -309,6 +323,7 @@ func TestStream_LastEventIDAndSinceValidatedNotNarrowing(t *testing.T) {
 	}
 	// A resume position past every row id still gets the whole session.
 	s := e.openWith(path+"?since=9999", map[string]string{"Last-Event-ID": "9999"})
+	s.sessionFirst()
 	if got := snapshotEntries(t, s, 3); !reflect.DeepEqual(got, e.freshTimeline()) {
 		t.Fatalf("narrowed snapshot: %v", got)
 	}
@@ -391,6 +406,7 @@ func TestStream_BackfilledExchangesAppearOnReconnectSnapshot(t *testing.T) {
 	e.save("u", "", "cc", 5) // ungrouped until backfill
 	path := "/api/sessions/" + sid() + "/stream"
 	s := e.openRaw(path)
+	s.skipSession = true // no row yet, so no session event; later ones are not under test
 	if ev := s.nextData(); ev.event != "hooks" || ev.data != "[]" {
 		t.Fatalf("connect snapshot = %+v, want an empty hooks event", ev)
 	}
@@ -823,4 +839,100 @@ func TestStream_CommitResendsEarlierExchangeWhoseStateChanged(t *testing.T) {
 	if sent["a"] != "new" || sent["b"] != "b1" {
 		t.Fatalf("sent = %v", sent)
 	}
+}
+
+// sessionSummaries decodes the data of session events.
+func sessionSummaries(t *testing.T, evs []sseEvent) []sessionSummary {
+	t.Helper()
+	var out []sessionSummary
+	for _, ev := range evs {
+		var sum sessionSummary
+		if err := json.Unmarshal([]byte(ev.data), &sum); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, sum)
+	}
+	return out
+}
+
+func TestStream_SessionSnapshotStartsWithSummary(t *testing.T) {
+	e := newStreamEnv(t, nil)
+	e.commitA()
+	s := e.openRaw(e.sessionPath())
+	first := s.nextData()
+	if first.event != "session" {
+		t.Fatalf("first = %q, want session", first.event)
+	}
+	if sum := sessionSummaries(t, []sseEvent{first})[0]; sum.ID != sid() || sum.ExchangeCount != 1 {
+		t.Fatalf("summary = %+v", sum)
+	}
+	if ev := s.nextData(); ev.event != "exchange" {
+		t.Fatalf("second = %q, want exchange", ev.event)
+	}
+}
+
+func TestStream_SessionSnapshotWithoutRowSendsNoSummary(t *testing.T) {
+	e := newStreamEnv(t, nil)
+	s := e.openRaw(e.sessionPath())
+	if ev := s.nextData(); ev.event != "hooks" || ev.data != "[]" {
+		t.Fatalf("first = %+v, want the empty hooks event", ev)
+	}
+}
+
+// saveToolExchange stores an exchange with a tool call and usage at base+at seconds.
+func (e *streamEnv) saveToolExchange(id string, at int) {
+	e.t.Helper()
+	e.save(id, "k", "cc", at)
+	mp, _ := json.Marshal(map[string]any{"role": "assistant", "blocks": []map[string]string{{"hash": sha("msg"), "type": "text"}}})
+	evs := []core.StoredEvent{
+		{Seq: 0, Kind: core.KindRequest, Payload: []byte(`{"model":"m1"}`)},
+		{Seq: 1, Kind: core.KindMessage, ContentHash: sha("m"), Payload: mp},
+		{Seq: 2, Kind: core.KindToolCall, ToolCallID: "call_" + id, ContentHash: sha("in"),
+			Payload: []byte(`{"name":"bash","id":"call_` + id + `"}`)},
+		{Seq: 3, Kind: core.KindUsage, Payload: []byte(`{"input_tokens":10,"output_tokens":5}`)},
+	}
+	contents := []core.Content{{Hash: sha("msg"), Bytes: []byte(`{"type":"text","text":"run"}`)},
+		{Hash: sha("m"), Bytes: []byte(sha("m"))}, {Hash: sha("in"), Bytes: []byte(`{}`)}}
+	if err := e.s.SaveParse(e.t.Context(), id, core.PrincipalLocal, core.ParseOK, evs, contents); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+func TestLive_SessionHeaderMatchesReloadAfterCommits(t *testing.T) {
+	e := newStreamEnv(t, nil)
+	e.commitA()
+	s := e.openRaw(e.sessionPath())
+	s.sessionFirst()
+	s.take(2) // exchange a, empty hooks
+	s.skipSession = false
+	e.saveToolExchange("b", 20)
+	e.saveToolExchange("c", 30)
+	e.publish("b", "c")
+	ev := s.nextData()
+	if ev.event != "session" {
+		t.Fatalf("first live event = %q, want session before entries", ev.event)
+	}
+	got := sessionSummaries(t, []sseEvent{ev})[0]
+	var want sessionSummary
+	if err := json.Unmarshal([]byte(e.reload()), &want); err != nil {
+		t.Fatal(err)
+	}
+	if got.ToolCalls == 0 || got.ExchangeCount != 3 || !reflect.DeepEqual(got, want) {
+		t.Fatalf("live header %+v != reload %+v", got, want)
+	}
+}
+
+// reload fetches the session summary over HTTP, as a page reload does.
+func (e *streamEnv) reload() string {
+	e.t.Helper()
+	resp, err := http.Get(e.ts.URL + "/api/sessions/" + sid())
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return string(b)
 }
