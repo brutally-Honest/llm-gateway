@@ -316,6 +316,38 @@ export function contextBars(entries) {
   };
 }
 
+export const PLOT_WIDTH = 800;
+export const PLOT_HEIGHT = 60;
+const PLOT_PAD_X = 20;
+const PLOT_TOP = 8;
+const PLOT_BOTTOM = 52;
+
+// contextPlot is the context line as a polyline with one dot per main-thread call
+// (AC12), in a PLOT_WIDTH x PLOT_HEIGHT box: calls are spread evenly left to right and
+// the height runs from the smallest context (bottom) to the largest (top). Side and
+// sub-agent calls are left out, as in contextSeries; E22's note stands when there is
+// no point to plot.
+export function contextPlot(entries) {
+  const { points, note } = contextSeries(entries);
+  if (!points.length) return { note, points: [], polyline: "", label: "" };
+  const values = points.map((p) => p.value);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const step = points.length > 1 ? (PLOT_WIDTH - 2 * PLOT_PAD_X) / (points.length - 1) : 0;
+  const plotted = points.map((p, i) => {
+    const x = points.length > 1 ? PLOT_PAD_X + i * step : PLOT_WIDTH / 2;
+    const y = hi === lo ? (PLOT_TOP + PLOT_BOTTOM) / 2 : PLOT_BOTTOM - ((p.value - lo) / (hi - lo)) * (PLOT_BOTTOM - PLOT_TOP);
+    return { ...p, x: Number(x.toFixed(1)), y: Number(y.toFixed(1)), title: `#${p.n} · context ${p.value}` };
+  });
+  const n = plotted.length;
+  return {
+    note: "",
+    points: plotted,
+    polyline: plotted.map((p) => `${p.x},${p.y}`).join(" "),
+    label: `Context per main-thread call, ${values[0]} to ${values[n - 1]} tokens over ${n} ${n === 1 ? "call" : "calls"}`,
+  };
+}
+
 export const MIN_BAR_WIDTH = 6;
 export const MAX_BAR_WIDTH = 48;
 // An error bar is wide enough to show its ✗ glyph (AC34: never colour alone).

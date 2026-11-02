@@ -37,7 +37,13 @@ export class StubElement {
 export function installDom() {
   globalThis.HTMLElement = StubElement;
   globalThis.customElements = { define() {} };
-  globalThis.document = { activeElement: null, createElement: (tag) => new StubElement(tag) };
+  globalThis.document = {
+    activeElement: null,
+    createElement: (tag) => new StubElement(tag),
+    // The page reads the SVG namespace from index.html's <svg id="svg-ns">.
+    createElementNS: (ns, tag) => Object.assign(new StubElement(tag), { namespaceURI: ns }),
+    getElementById: (id) => (id === "svg-ns" ? { namespaceURI: "svg-ns-stub" } : null),
+  };
 }
 
 // all returns every element under root, root included.

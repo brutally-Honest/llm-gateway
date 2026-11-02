@@ -97,7 +97,11 @@ footer#keybar kbd { font: inherit; color: var(--fg); border: 1px solid var(--lin
 .strip-bar.is-error { background: repeating-linear-gradient(45deg, var(--err) 0 3px, var(--surface) 3px 5px); color: var(--fg); text-align: center; font-size: .75rem; line-height: 1.6rem; overflow: hidden; }
 .strip-mark { font-weight: bold; background: var(--surface); padding: 0 1px; }
 .strip-bar.turn-start { margin-left: 6px; }
-.context-line { display: flex; gap: 2px; align-items: flex-end; height: 2.5rem; overflow-x: auto; padding: .3rem 0; }
+.context-line { padding: .3rem 0; }
+.ctx-svg { display: block; width: 100%; height: 60px; }
+.ctx-svg line { stroke: var(--line); }
+.ctx-svg polyline { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.ctx-svg circle { fill: var(--accent); }
 .context-bar { flex: none; width: 4px; background: var(--muted); }
 
 .drawer { position: fixed; top: 0; right: 0; bottom: 2.2rem; width: min(40rem, 100vw); overflow-y: auto; background: var(--surface); color: var(--fg); border-left: 1px solid var(--line); padding: .8rem 1rem; z-index: 5; }

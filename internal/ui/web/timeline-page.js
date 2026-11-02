@@ -2,7 +2,8 @@ import { countText, hookLabel, timeElement } from "./entries.js";
 import { filterTurns, toolNames } from "./filters.js";
 import { createDrawer } from "./drawer.js";
 import { turnTarget } from "./keys.js";
-import { agentLabel, buildStats, buildTurns, contextBars, formatDuration, hooksLabel, railItems, stripBars } from "./model.js";
+import { agentLabel, buildStats, buildTurns, contextPlot, formatDuration, hooksLabel, railItems, stripBars } from "./model.js";
+import { contextPlotNode } from "./plot.js";
 import { buildRoute } from "./route.js";
 import { countedChips, note } from "./sessions-page.js";
 import { chipNode, copyButton, toolRowNode, truncatedLink } from "./tool-card.js";
@@ -171,17 +172,12 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
   function drawContext() {
     ctxLine.replaceChildren();
     if (data.entries.length === 0) return;
-    const { bars, note: text } = contextBars(data.entries);
-    if (text) {
-      ctxLine.append(note("muted", text));
+    const plot = contextPlot(data.entries);
+    if (plot.note) {
+      ctxLine.append(note("muted", plot.note));
       return;
     }
-    for (const b of bars) {
-      const c = el("span", "context-bar");
-      c.title = b.title;
-      c.style.height = `${(b.pct / 50).toFixed(2)}rem`;
-      ctxLine.append(c);
-    }
+    ctxLine.append(contextPlotNode(plot));
   }
 
   function drawHeader() {
