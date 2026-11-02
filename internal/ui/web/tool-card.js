@@ -26,6 +26,8 @@ export function truncatedLink(entry) {
   return a;
 }
 
+// section renders a labelled, copyable block. entry is the exchange entry whose raw link
+// it shows when truncated; null shows no link (the hook input has no detail page).
 function section(label, text, entry, open, onToggle, cls) {
   const d = document.createElement("details");
   d.className = cls;
@@ -36,7 +38,7 @@ function section(label, text, entry, open, onToggle, cls) {
   const pre = document.createElement("pre");
   pre.textContent = text;
   d.append(s, copyButton(() => text), pre);
-  if (entry.truncated) d.append(truncatedLink(entry));
+  if (entry && entry.truncated) d.append(truncatedLink(entry));
   return d;
 }
 
@@ -80,12 +82,12 @@ export class ToolCard extends HTMLElement {
     }
     this.append(head);
     if (call.input_differs) {
-      const hook = section("hook input", call.hook_input || "", hookInputEntry(call), data.isOpen(`${call.id}:hook`), (o) => data.setOpen(`${call.id}:hook`, o), "tool-input");
-      const omitted = omittedNote(call.hook_omitted_bytes);
-      if (omitted) {
+      const hook = section("hook input", call.hook_input || "", null, data.isOpen(`${call.id}:hook`), (o) => data.setOpen(`${call.id}:hook`, o), "tool-input");
+      // the note follows the hook input's own truncation; it shows no raw link
+      if (hookInputEntry(call).truncated) {
         const note = document.createElement("div");
         note.className = "muted";
-        note.textContent = omitted;
+        note.textContent = omittedNote(call.hook_omitted_bytes);
         hook.append(note);
       }
       this.append(hook);
