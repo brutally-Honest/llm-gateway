@@ -1,12 +1,13 @@
 ---
 feature: 013-web-ui-redesign
-status: approved
-version: 1
-approved: 2026-11-02T12:48:18Z
-approved-by: human
-sha256: b193c4b70ba8bd847122032a95fe053ea7041ec77b6fa006cc2f7517c75400f3
-fingerprint: bc69f654d2bdc59ba7ac798290565482996c39df523455e3661b3d92b8c3d5ea
-plan-fingerprint: a156ca1161755466280cc470fd9e1b5ab3bc62d0c4414131f90eddb81fb638ec
+status: draft
+version: 2
+approved:
+approved-by:
+sha256:
+fingerprint:
+plan-fingerprint:
+previous: db06cef
 ---
 # Tasks — 013-web-ui-redesign
 
@@ -176,3 +177,4 @@ plan-fingerprint: a156ca1161755466280cc470fd9e1b5ab3bc62d0c4414131f90eddb81fb638
 
 ## Changelog
 - v1 (2026-11-02) — generated from the approved plan
+- v2 (2026-11-02) — reopened: CR-001: Plan: tool call chips are computed on the server
