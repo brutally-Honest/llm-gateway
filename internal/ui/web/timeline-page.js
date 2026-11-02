@@ -29,7 +29,7 @@ function contextText(c) {
 // createTimelinePage builds the session page once; render(data) redraws it from
 // data = { summary, entries, error, snapshotError }. The toolbar is built once so typing
 // keeps focus across live re-renders. All text goes in through textContent.
-export function createTimelinePage({ nav } = {}) {
+export function createTimelinePage({ nav, loadDetail } = {}) {
   const go = nav || { push() {}, replace() {}, back() {} };
   const root = el("section", "timeline-page");
   const header = el("section", "session-head");
@@ -55,7 +55,7 @@ export function createTimelinePage({ nav } = {}) {
   main.append(bar, status, list);
   const layout = el("div", "timeline-layout");
   layout.append(main, rail); // main first so the filter box leads the tab order; CSS puts the rail left
-  const drawer = createDrawer({ nav: go, turnHeading: () => headEls.get(turnCards()[current] && turnCards()[current].number) });
+  const drawer = createDrawer({ nav: go, loadDetail, turnHeading: () => headEls.get(turnCards()[current] && turnCards()[current].number) });
   root.append(header, stats, strip, ctxLine, layout, drawer.el);
 
   // Show options apply at once (AC16); context per call starts on.
