@@ -57,6 +57,7 @@ export function createDrawer({ nav, turnHeading, loadDetail = (id) => getJSON(`e
   let pendingOpener = null;
   let opener = null;
   let inApp = false; // opened here (link, bar, Enter), so Back returns to the session page
+  let stacked = false; // another call was opened while this one was open: Back would land on that call
   const open = () => !root.hidden;
 
   const step = (delta) => {
@@ -65,7 +66,7 @@ export function createDrawer({ nav, turnHeading, loadDetail = (id) => getJSON(`e
   };
   const closeNow = () => {
     if (!open()) return;
-    if (inApp) nav.back();
+    if (inApp && !stacked) nav.back();
     else nav.replace({ name: "session", id: sessionId, call: null });
   };
   prev.addEventListener("click", () => step(-1));
@@ -79,6 +80,7 @@ export function createDrawer({ nav, turnHeading, loadDetail = (id) => getJSON(`e
     opener = null;
     pendingOpener = null;
     inApp = false;
+    stacked = false;
     current = "";
     if (target && typeof target.focus === "function") target.focus();
   }
@@ -126,7 +128,8 @@ export function createDrawer({ nav, turnHeading, loadDetail = (id) => getJSON(`e
     // noteOpener remembers the element a click or key opened the drawer from.
     noteOpener(node) {
       pendingOpener = node;
-      inApp = true;
+      if (open()) stacked = true;
+      else inApp = true;
     },
     // openCall pushes the drawer URL for a call (Enter on a turn).
     openCall(callId, from) {

@@ -234,3 +234,71 @@ test("noUsageCallShowsDashesAndNoDelta", async () => {
   assert.doesNotMatch(t, /Context size: 0/);
   assert.match(t, /Output tokens: —/);
 });
+
+// ---- closing always lands on the session URL (fix-batch item 9) ----
+// A browser history stand-in: push, replace and back move through a stack of calls the
+// way the URL hash does, and every move re-renders the page with the new top.
+function withHistory(startCall, startStack = [null]) {
+  const stack = startCall === undefined ? startStack : [...startStack, startCall];
+  const hist = { stack };
+  const top = () => hist.stack.at(-1);
+  const nav = {
+    push: (r) => { hist.stack.push(r.call); sync(); },
+    replace: (r) => { hist.stack[hist.stack.length - 1] = r.call; sync(); },
+    back: () => { hist.stack.pop(); sync(); },
+  };
+  const p = createTimelinePage({ nav });
+  const data = { summary, entries: entries(), error: "", snapshotError: "", loaded: true };
+  const sync = () => p.render({ ...data, callId: top() });
+  sync();
+  const drawer = withClass(p.el, "drawer")[0];
+  // click a link or bar: the page notes the opener, then the browser follows the href.
+  const clickToCall = (node, id) => { node.fire("click"); hist.stack.push(id); sync(); };
+  return { p, hist, top, drawer, clickToCall, bars: () => withClass(p.el, "strip-bar") };
+}
+
+test("closeFromInAppOpenLandsOnSessionUrl", () => {
+  const s = withHistory(undefined);
+  s.clickToCall(s.bars()[0], "a");
+  assert.equal(s.drawer.hidden, false);
+  s.p.closeDrawer();
+  assert.equal(s.top(), null);
+  assert.equal(s.drawer.hidden, true);
+});
+
+test("closeAfterSteppingLandsOnSessionUrl", () => {
+  const s = withHistory(undefined);
+  s.clickToCall(s.bars()[0], "a");
+  s.p.stepCall(1);
+  s.p.stepCall(1);
+  s.p.stepCall(-1);
+  assert.equal(s.top(), "b");
+  s.p.closeDrawer();
+  assert.equal(s.top(), null);
+  assert.equal(s.drawer.hidden, true);
+});
+
+test("closeOfReloadRestoredDrawerStaysInTheApp", () => {
+  const s = withHistory("b", []); // a reload or pasted URL: the only history entry is the call
+  assert.equal(s.drawer.hidden, false);
+  s.p.closeDrawer();
+  assert.equal(s.top(), null);
+  assert.equal(s.hist.stack.length, 1, "closing must not leave the app");
+  assert.equal(s.drawer.hidden, true);
+  const stepped = withHistory("a", []);
+  stepped.p.stepCall(1);
+  stepped.p.closeDrawer();
+  assert.deepEqual(stepped.hist.stack, [null]);
+});
+
+test("closeAfterOpeningAnotherCallWhileOpenLandsOnSessionUrl", () => {
+  const opened = withHistory(undefined);
+  opened.clickToCall(opened.bars()[0], "a");
+  opened.clickToCall(opened.bars()[2], "c"); // a bar clicked with the drawer already open
+  opened.p.closeDrawer();
+  assert.equal(opened.top(), null);
+  const restored = withHistory("a", []);
+  restored.clickToCall(restored.bars()[2], "c");
+  restored.p.closeDrawer();
+  assert.equal(restored.top(), null);
+});
