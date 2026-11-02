@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/brutally-honest/llm-gateway/internal/core"
+	"github.com/brutally-honest/llm-gateway/internal/store"
+	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
 
 func fastHooks(h *Hub) { h.hookEvery = 40 * time.Millisecond }
@@ -381,5 +383,142 @@ func TestStream_HooksSnapshotEmptyIsSentAndRemovesGroup(t *testing.T) {
 	}
 	if last.data != "[]" {
 		t.Fatalf("matched hooks = %s, want []", last.data)
+	}
+}
+
+// saveResult stores a later exchange of session k whose only tool entry is the tool_result
+// of call_1: the call's state changes in the earlier exchange that asked for it.
+func (e *streamEnv) saveResult(id string, at int) {
+	e.t.Helper()
+	e.save(id, "k", "cc", at)
+	mp, _ := json.Marshal(map[string]any{"role": "user", "blocks": []map[string]string{{"hash": sha("umsg"), "type": "text"}}})
+	evs := []core.StoredEvent{
+		{Seq: 0, Kind: core.KindRequest, Payload: []byte(`{"model":"m1"}`)},
+		{Seq: 1, Kind: core.KindMessage, ContentHash: sha("m2"), Payload: mp},
+		{Seq: 2, Kind: core.KindToolResult, ToolCallID: "call_1", ContentHash: sha("out"),
+			Payload: []byte(`{"is_error":false}`)},
+	}
+	contents := []core.Content{{Hash: sha("umsg"), Bytes: []byte(`{"type":"text","text":"next"}`)},
+		{Hash: sha("m2"), Bytes: []byte(sha("m2"))}, {Hash: sha("out"), Bytes: []byte("file.txt")}}
+	if err := e.s.SaveParse(e.t.Context(), id, core.PrincipalLocal, core.ParseOK, evs, contents); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+// callStateIn returns the state of tool call id in the entries, failing when it has none.
+func callStateIn(t *testing.T, es []map[string]any, id string) string {
+	t.Helper()
+	for _, en := range es {
+		if en["kind"] == "tool_call" && en["tool_call_id"] == id {
+			st, _ := en["state"].(string)
+			return st
+		}
+	}
+	t.Fatalf("no tool_call %s in %v", id, es)
+	return ""
+}
+
+// canonicalEntries sorts entries by their JSON, so two views compare as sets.
+func canonicalEntries(t *testing.T, es []map[string]any) []string {
+	t.Helper()
+	out := make([]string, 0, len(es))
+	for _, en := range es {
+		b, err := json.Marshal(en)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, string(b))
+	}
+	slices.Sort(out)
+	return out
+}
+
+// A call asked in exchange a, run by hooks, and answered by a later commit b: the stream's
+// last state for the call is asked+ran+reported, the same as a reload. The answer changes a's
+// entries, so a is re-sent after b's entries; writeLive must send earlier exchanges too.
+func TestHooksLive_CallStateConvergesAcrossLaterCommit(t *testing.T) {
+	e := newStreamEnv(t, fastHooks)
+	e.toolSession(`{"a":1}`)
+	s := e.openRaw(e.sessionPath())
+	var view []map[string]any
+	apply := func(n int) {
+		t.Helper()
+		for range n {
+			ev := s.nextData()
+			view = applyEvent(view, ev.event, entriesOf(t, ev))
+		}
+	}
+	apply(2) // exchange a, then the empty hooks group
+
+	e.hookPre(2)
+	apply(1)
+	if st := callStateIn(t, view, "call_1"); st != timeline.StatePending {
+		t.Fatalf("after PreToolUse state = %q", st)
+	}
+
+	e.hook("k", core.HarnessEvent{Phase: core.PhasePostTool, ToolCallID: "call_1", ToolName: "bash"}, 3)
+	e.hub.PublishHook(core.PrincipalLocal, "cc", "k")
+	apply(1)
+	if st := callStateIn(t, view, "call_1"); st != timeline.StateRanNotReported {
+		t.Fatalf("after PostToolUse state = %q", st)
+	}
+
+	e.saveResult("b", 4)
+	e.publish("b")
+	apply(2) // b's entries, then exchange a again with the answered call
+	if st := callStateIn(t, view, "call_1"); st != timeline.StateAskedRanReported {
+		t.Fatalf("after the later commit state = %q", st)
+	}
+	fresh := e.freshTimeline()
+	if got, want := canonicalEntries(t, view), canonicalEntries(t, fresh); !slices.Equal(got, want) {
+		t.Fatalf("live != reload:\nlive   %v\nreload %v", got, want)
+	}
+}
+
+// A hooks-only session whose last hook arrived within the last second is active and not
+// marked inactive, on the live read and in the sessions list.
+func TestHooksOnly_HookWithinLastSecondNotInactive(t *testing.T) {
+	e := newStreamEnv(t, nil)
+	now := baseTime.Add(100 * time.Second) // the stream env's clock
+	hookSeq++
+	ev := core.HarnessEvent{Phase: core.PhaseNotice, SessionKey: "solo"}
+	rec := &store.HookRecord{PrincipalID: core.PrincipalLocal, Client: "cc", Seq: hookSeq,
+		ReceivedAt: now.Add(-500 * time.Millisecond), Payload: []byte(`{"n":1}`), Event: ev}
+	if err := e.s.SaveHook(t.Context(), rec); err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := e.hub.read(t.Context(), sessIdent{core.PrincipalLocal, "cc", "solo"}, nil, true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Summary == nil || !m.Summary.HooksOnly || !m.Summary.Active {
+		t.Fatalf("summary = %+v", m.Summary)
+	}
+	if m.Inactive {
+		t.Fatal("hooks-only session with a hook one second ago is marked inactive")
+	}
+	resp, err := http.Get(e.ts.URL + "/api/sessions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var list struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, it := range list.Items {
+		if it["session_key"] == "solo" {
+			found = true
+			if it["active"] != true {
+				t.Fatalf("listed hooks-only session = %v, want active", it)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("hooks-only session not listed")
 	}
 }
