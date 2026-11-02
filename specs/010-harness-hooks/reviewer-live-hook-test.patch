@@ -1,0 +1,112 @@
+diff --git a/internal/ui/hub_hook_test.go b/internal/ui/hub_hook_test.go
+index b5a4ad7..125138e 100644
+--- a/internal/ui/hub_hook_test.go
++++ b/internal/ui/hub_hook_test.go
+@@ -2,7 +2,9 @@ package ui
+ 
+ import (
+ 	"encoding/json"
++	"net/http"
+ 	"net/http/httptest"
++	"slices"
+ 	"strings"
+ 	"testing"
+ 	"time"
+@@ -211,3 +213,97 @@ func TestHub_HookRefreshAndCommitInSameWindowSendEachChangeOnce(t *testing.T) {
+ 		t.Fatalf("extra event: %+v", ev)
+ 	}
+ }
++
++// webReplaceExchange is the replaceExchange of web/entries.js, without its sort; the test
++// below pins that source, so the two cannot drift apart unnoticed.
++const webReplaceExchange = `export function replaceExchange(entries, list) {
++  if (!list || list.length === 0) return entries;
++  const ids = new Set(list.map((e) => e.exchange_id));
++  const out = entries.filter((e) => !ids.has(e.exchange_id));
++  out.push(...list);
++  out.sort(compareEntries);
++  return out;
++}`
++
++func applyReplace(entries, list []map[string]any) []map[string]any {
++	ids := map[any]bool{}
++	for _, e := range list {
++		ids[e["exchange_id"]] = true
++	}
++	var out []map[string]any
++	for _, e := range entries {
++		if !ids[e["exchange_id"]] {
++			out = append(out, e)
++		}
++	}
++	return append(out, list...)
++}
++
++func hookLineIDs(entries []map[string]any) []string {
++	var out []string
++	for _, e := range entries {
++		if e["kind"] == kindHookEvent {
++			out = append(out, e["id"].(string))
++		}
++	}
++	return out
++}
++
++// The web client replaces entries by their exchange_id. Hook lines travel with one and the
++// same exchange_id in the timeline page, the connect snapshot and a live refresh, so a live
++// hook update replaces the lines it already holds instead of adding a second set. The server's
++// own names for them ("~hook" for paging, "hooks" for the sent-record) never reach the wire.
++func TestStream_LiveHookUpdateReplacesFirstSnapshotHookLines(t *testing.T) {
++	if !strings.Contains(webFiles(t)["entries.js"], webReplaceExchange) {
++		t.Fatal("replaceExchange changed in web/entries.js: re-check that hook lines still replace, then update this test")
++	}
++	e := newStreamEnv(t, fastHooks)
++	e.toolSession(`{"a":1}`)
++	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-a"}, 2)
++
++	resp, err := http.Get(e.ts.URL + "/api/sessions/" + sid() + "/timeline")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer func() { _ = resp.Body.Close() }()
++	var page tlPage
++	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
++		t.Fatal(err)
++	}
++	client := page.Entries // what the page holds after loading the timeline
++	first := hookLineIDs(client)
++	if len(first) != 1 {
++		t.Fatalf("timeline hook lines = %v", first)
++	}
++
++	s := e.open(e.sessionPath())
++	var wire []map[string]any
++	for range 2 { // the connect snapshot: exchange a, then the hook lines
++		list := entriesOf(t, s.nextData())
++		wire = append(wire, list...)
++		client = applyReplace(client, list)
++	}
++	if got := hookLineIDs(client); !slices.Equal(got, first) {
++		t.Fatalf("after the snapshot hook lines = %v, want %v", got, first)
++	}
++
++	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-b"}, 3)
++	e.hub.PublishHook(core.PrincipalLocal, "cc", "k")
++	ev := s.nextData()
++	live := entriesOf(t, ev)
++	if ev.event != "exchange" || len(hookLineIDs(live)) != 2 {
++		t.Fatalf("live update = %+v", ev)
++	}
++	wire = append(wire, live...)
++	client = applyReplace(client, live)
++
++	got := hookLineIDs(client)
++	if len(got) != 2 || got[0] != first[0] || got[1] == first[0] {
++		t.Fatalf("after the live update hook lines = %v, want %s and one new line", got, first[0])
++	}
++	for _, en := range append(wire, page.Entries...) {
++		if en["kind"] == kindHookEvent && en["exchange_id"] != "" {
++			t.Errorf("hook line %v has exchange_id %q, want the empty one on every path", en["id"], en["exchange_id"])
++		}
++	}
++}
