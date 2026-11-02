@@ -20,8 +20,8 @@ Exchange detail is a separate page, so opening a call loses your place in the ti
 totals sit in one string, nothing shows how the context grows from call to call, and nothing
 shows which messages a call added. Theme follows the OS with no manual choice.
 
-Reference mockup: `gateway-ui-v4.html`, approved 2026-11-02 (held outside this repo, at
-`~/Downloads/gateway-ui-v4.html`). Where the mockup and this spec differ, this spec wins.
+Reference mockup: `specs/013-web-ui-redesign/gateway-ui-v4.html`, approved 2026-11-02. Where the
+mockup and this spec differ, this spec wins.
 
 This changes earlier features:
 - **009 AC37** (sessions table): new columns; live updates and "Load more" stay.

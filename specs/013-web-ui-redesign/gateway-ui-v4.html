@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gateway UI · v4 (v2 + v3 drawer)</title>
+<style>
+:root[data-theme=dark]{--bg:#0d1117;--panel:#161b22;--panel2:#1c2129;--border:#30363d;--line:#21262d;--text:#c9d1d9;--hi:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--accent-bg:#0c2d4b;
+  --ok:#3fb950;--ok-bg:#12261e;--ok-bd:#238636;--warn:#e3b341;--warn-bg:#2b2111;--warn-bd:#9e6a03;--bad:#ff7b72;--bad-bg:#2d1214;--bad-bd:#da3633;--off:#a8b1bb;--off-bg:#21262d;--off-bd:#484f58;
+  --c-read:#1f6feb;--c-write:#a371f7;--c-in:#e3b341;--scrim:#010409b3;--add-bg:#12261e}
+:root[data-theme=light]{--bg:#ffffff;--panel:#f6f8fa;--panel2:#eef1f4;--border:#d0d7de;--line:#e4e8ec;--text:#24292f;--hi:#1f2328;--muted:#59636e;--accent:#0969da;--accent-bg:#ddf4ff;
+  --ok:#1a7f37;--ok-bg:#dafbe1;--ok-bd:#4ac26b;--warn:#9a6700;--warn-bg:#fff8c5;--warn-bd:#d4a72c;--bad:#cf222e;--bad-bg:#ffebe9;--bad-bd:#ff8182;--off:#59636e;--off-bg:#eaeef2;--off-bd:#afb8c1;
+  --c-read:#0969da;--c-write:#8250df;--c-in:#bf8700;--scrim:#1f232866;--add-bg:#dafbe1}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+body{padding-bottom:40px}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* header */
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--panel);position:sticky;top:0;z-index:5}
+.brand{font-weight:700;color:var(--hi)}
+.crumb{font-size:13px;color:var(--muted);display:flex;gap:6px;align-items:center;min-width:0}
+.crumb a{color:var(--accent)}.crumb a[aria-current=page]{color:var(--hi);font-weight:500}
+.crumb b{color:var(--hi);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:360px}
+.live{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.live i{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.search{display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;color:var(--muted);min-width:240px}
+.search input{border:0;background:none;outline:none;width:100%;font-size:12px}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.seg button{background:none;border:0;padding:5px 10px;font-size:12px;cursor:pointer;display:inline-flex;gap:6px;align-items:center;color:var(--muted);min-height:30px}
+.seg button[aria-pressed=true]{background:var(--accent-bg);color:var(--accent)}
+.seg svg{width:14px;height:14px}
+.btn{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;min-height:30px}
+.btn:hover{border-color:var(--muted)}.btn:disabled{opacity:.5;cursor:default}
+.chip{font-size:12px;padding:1px 7px;border-radius:999px;border:1px solid;white-space:nowrap;display:inline-flex;gap:4px;align-items:center}
+.ok{background:var(--ok-bg);color:var(--ok);border-color:var(--ok-bd)}
+.notrun{background:var(--off-bg);color:var(--off);border-color:var(--off-bd)}
+.unm{background:var(--warn-bg);color:var(--warn);border-color:var(--warn-bd)}
+.bad{background:var(--bad-bg);color:var(--bad);border-color:var(--bad-bd)}
+kbd{font-family:ui-monospace,monospace;font-size:11px;border:1px solid var(--border);border-bottom-width:2px;border-radius:4px;padding:0 5px;color:var(--hi);background:var(--bg)}
+h1{margin:0;font-size:20px;color:var(--hi);font-weight:600}
+/* sessions */
+.page{padding:18px 24px 32px;display:flex;flex-direction:column;gap:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.kpis>div{padding:10px 14px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:2px}
+.kpis>div:last-child{border-right:0}
+.kpis .l{font-size:12px;color:var(--muted)}.kpis .v{font-size:18px;color:var(--hi);font-weight:600;font-variant-numeric:tabular-nums}
+.tablebox{overflow-x:auto;border:1px solid var(--border);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{text-align:left;color:var(--muted);font-weight:500;font-size:12px;padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;background:var(--panel)}
+th.num,td.num{text-align:right;font-variant-numeric:tabular-nums}
+th .grp{display:block;font-size:11px;color:var(--muted);font-weight:400}
+td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr{cursor:pointer}
+tbody tr:hover td,tbody tr[aria-selected=true] td{background:var(--panel)}
+tbody tr[aria-selected=true] td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+tfoot td{font-size:12px;color:var(--muted);border-bottom:0;background:var(--panel);cursor:default}
+.cap{display:flex;gap:10px;font-size:12px;white-space:nowrap}
+.cap i{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}
+.tokbar{display:flex;width:90px;height:6px;border-radius:3px;overflow:hidden;background:var(--line);margin-left:auto;margin-top:4px}
+/* timeline */
+.shell{display:flex;flex-wrap:wrap;align-items:flex-start}
+.rail{flex:1 1 260px;max-width:290px;padding:16px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:18px}
+.rail h2{margin:0 0 6px;font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+.oitem{display:flex;flex-direction:column;gap:4px;padding:8px 10px;border-radius:6px;border:1px solid transparent;color:var(--text)}
+.oitem:hover{background:var(--panel);text-decoration:none}
+.oitem[aria-current=true]{background:var(--panel);border-color:var(--border)}
+.oitem .t{color:var(--hi);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.oitem .m{font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.check{display:flex;gap:8px;align-items:center;font-size:13px;padding:3px 0}
+.content{flex:999 1 560px;min-width:0;padding:16px 24px 32px;display:flex;flex-direction:column;gap:16px}
+.chart{border:1px solid var(--border);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.chart .hd{display:flex;gap:16px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.strip{display:flex;gap:2px;height:20px}
+.strip button{border:0;padding:0;cursor:pointer;background:var(--ok-bd);border-radius:2px}
+.strip button:hover,.strip button[aria-pressed=true]{outline:2px solid var(--accent);outline-offset:1px}
+.turnmarks{display:flex;gap:2px;font-size:11px;color:var(--muted)}
+.turnmarks span{border-left:1px solid var(--border);padding-left:4px}
+.turn{border:1px solid var(--border);border-radius:8px;overflow:hidden;scroll-margin-top:70px}
+.turn[aria-current=true]{border-color:var(--accent)}
+.turn>.th{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:9px 14px;background:var(--panel);font-size:12px;color:var(--muted)}
+.turn>.th b{color:var(--hi);font-size:13px}
+.row{display:grid;grid-template-columns:96px minmax(0,1fr) auto;gap:12px;padding:9px 14px;border-top:1px solid var(--line);align-items:baseline}
+.row .k{font-size:12px;color:var(--muted)}
+.row .v{overflow-wrap:anywhere}
+.row .r{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);white-space:nowrap}
+.xbtn{background:none;border:0;padding:0;color:var(--accent);cursor:pointer;font-size:12px}
+.xbtn:hover{text-decoration:underline}
+.ctxmini{display:inline-flex;align-items:center;gap:6px;font-family:ui-monospace,monospace}
+.ctxmini .b{width:46px;height:6px;border-radius:3px;display:flex;overflow:hidden;background:var(--line)}
+.hooks{display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);background:var(--bg)}
+.hooks span{border:1px solid var(--line);border-radius:4px;padding:0 6px;font-family:ui-monospace,monospace}
+.pillbtn{background:none;border:1px solid var(--border);border-radius:999px;color:var(--muted);padding:1px 9px;font-size:12px;cursor:pointer;margin-left:auto}
+/* drawer (v3 structure, v2 colours) */
+.scrim{position:fixed;inset:0;background:var(--scrim);z-index:9}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(640px,100%);background:var(--panel);border-left:1px solid var(--border);box-shadow:-16px 0 40px #0000004d;overflow:auto;display:flex;flex-direction:column;z-index:10;padding-bottom:40px}
+.dh{padding:16px 20px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:1}
+.dh .n{font-family:ui-monospace,monospace;font-size:36px;color:var(--accent);line-height:1}
+.dsec{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:12px}
+.dsec h3{margin:0;font-size:11px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;font-weight:600}
+.circuit{display:flex;align-items:center}
+.node{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:84px;font-size:12px;color:var(--muted)}
+.node i{width:20px;height:20px;border-radius:50%;border:2px solid var(--off-bd)}
+.node.y i{background:var(--ok);border-color:var(--ok)}
+.node.n i{border-style:dashed;border-color:var(--off)}
+.node.r i{background:var(--bad);border-color:var(--bad)}
+.node.q i{border-color:var(--warn)}
+.wire{flex:1;height:2px;background:var(--border);margin-bottom:22px}
+.wire.y{background:var(--ok)}
+.strata{display:grid;grid-template-columns:110px minmax(0,1fr);gap:18px;align-items:end}
+.sbar{display:flex;flex-direction:column-reverse;height:170px;border-radius:6px;overflow:hidden;border:1px solid var(--border)}
+.sbar i{display:block}
+.slabels{display:flex;flex-direction:column;gap:8px;font-size:13px}
+.slabels b{font-family:ui-monospace,monospace;color:var(--hi);font-weight:500}
+.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px}
+.trend{font-size:12px;color:var(--muted)}
+.diff{font-family:ui-monospace,monospace;font-size:12px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg)}
+.diff div{padding:4px 10px;white-space:pre-wrap;overflow-wrap:anywhere}
+.diff .ctx{color:var(--muted)}
+.diff .add{color:var(--ok);background:var(--add-bg)}
+pre{margin:0;font-size:12px;color:var(--hi);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;margin:0;font-size:12px}
+dt{color:var(--muted)}dd{margin:0;color:var(--hi);overflow-wrap:anywhere}
+/* key bar */
+.keys{position:fixed;left:0;right:0;bottom:0;display:flex;gap:16px;align-items:center;padding:7px 20px;background:var(--panel2);border-top:1px solid var(--border);font-size:12px;color:var(--muted);flex-wrap:wrap;z-index:20}
+.keys .mode{color:#fff;background:var(--accent);padding:0 8px;border-radius:4px;font-weight:600;font-family:ui-monospace,monospace}
+.keys .where{font-family:ui-monospace,monospace}
+.toast{position:fixed;left:50%;bottom:52px;transform:translateX(-50%);background:var(--hi);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:13px;z-index:30}
+@media (max-width:760px){.row{grid-template-columns:1fr}.search{min-width:0;flex:1}.strata{grid-template-columns:80px 1fr}}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<header class="top">
+  <span class="brand">Gateway</span>
+  <nav class="crumb" aria-label="Breadcrumb">
+    <a href="#" data-go="sessions" id="crSessions" aria-current="page">Sessions</a>
+    <span id="crSep" hidden>/</span><b id="crTitle" hidden>Python 20-second foreground sleep</b>
+  </nav>
+  <span class="live"><i></i>live</span>
+  <div style="margin-left:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <label class="search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="text" id="filter" placeholder="Filter sessions" aria-label="Filter"><kbd>/</kbd></label>
+    <div class="seg" role="group" aria-label="Theme">
+      <button data-theme-btn="light" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>Light</button>
+      <button data-theme-btn="dark" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>Dark</button>
+    </div>
+  </div>
+</header>
+
+<!-- ================= SESSIONS ================= -->
+<main id="sessions" class="page">
+  <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+    <h1>Sessions</h1>
+    <div class="seg" role="group" aria-label="Show"><button aria-pressed="true">All</button><button aria-pressed="false">Has errors</button><button aria-pressed="false">Has gaps</button><button aria-pressed="false">Hooks only</button></div>
+  </div>
+  <div class="kpis" aria-label="Totals for today">
+    <div><span class="l">Sessions today</span><span class="v">3</span></div>
+    <div><span class="l">Model calls</span><span class="v">6</span></div>
+    <div><span class="l">Input tokens</span><span class="v mono" style="font-size:16px">1,198</span></div>
+    <div><span class="l">Output tokens</span><span class="v mono" style="font-size:16px">269</span></div>
+    <div><span class="l">Cache write</span><span class="v mono" style="font-size:16px">13,320</span></div>
+    <div><span class="l">Cache read</span><span class="v mono" style="font-size:16px">117,272</span></div>
+  </div>
+  <div class="tablebox">
+  <table>
+    <thead><tr>
+      <th>Started</th><th>Session</th><th>Capture</th><th class="num">Calls</th><th>Tools</th><th>Errors</th>
+      <th class="num">Input</th><th class="num">Output</th><th class="num">Cache write</th><th class="num">Cache read</th><th>Status</th>
+    </tr></thead>
+    <tbody id="srows">
+      <tr data-open="1" aria-selected="true">
+        <td class="mono">11:50 AM</td>
+        <td><a href="#" data-open="1" style="color:var(--hi)">Python 20-second foreground sleep</a><div class="mono" style="font-size:12px;color:var(--muted)">50bb7cb8 · /tmp/e2e2 · opus-5-5</div></td>
+        <td><span class="cap"><span><i style="background:var(--ok)"></i>API</span><span><i style="background:var(--ok)"></i>hooks</span></span></td>
+        <td class="num mono">4</td>
+        <td style="white-space:nowrap"><span class="chip ok" title="asked + ran + reported: succeeded">✓ 1</span> <span class="chip notrun" title="asked, not run">⊘ 1</span></td>
+        <td class="mono">0</td>
+        <td class="num mono">12</td><td class="num mono">248</td><td class="num mono">13,320</td>
+        <td class="num mono">117,272<div class="tokbar" title="share of all tokens: cache read 89%, cache write 10%, in+out <1%"><i style="flex:117272;background:var(--c-read)"></i><i style="flex:13320;background:var(--c-write)"></i><i style="flex:1300;background:var(--c-in)"></i></div></td>
+        <td><span style="color:var(--muted);font-size:12px">ended</span></td>
+      </tr>
+      <tr data-open="0">
+        <td class="mono">11:49 AM</td>
+        <td><span style="color:var(--hi)">quota</span><div style="font-size:12px;color:var(--muted)">first prompt · no title yet</div></td>
+        <td><span class="cap"><span><i style="background:var(--ok)"></i>API</span><span><i style="background:var(--ok)"></i>hooks</span></span></td>
+        <td class="num mono">2</td><td class="mono">0</td><td><span class="chip bad">1 · 429</span></td>
+        <td class="num mono">1,186</td><td class="num mono">21</td><td class="num mono">0</td><td class="num mono">0</td>
+        <td><span class="chip ok">active</span></td>
+      </tr>
+      <tr data-open="0">
+        <td class="mono">12:26 PM</td>
+        <td><span style="color:var(--hi)">Hooks only · Bash</span><div style="font-size:12px;color:var(--muted)">no model calls captured</div></td>
+        <td><span class="cap"><span><i style="border:1.5px solid var(--muted)"></i>API</span><span><i style="background:var(--ok)"></i>hooks</span></span></td>
+        <td class="num mono">0</td><td><span class="chip unm" title="ran, not asked (or not captured)">? 1</span></td><td class="mono">0</td>
+        <td class="num mono" style="color:var(--muted)" title="no usage captured">—</td><td class="num mono" style="color:var(--muted)">—</td><td class="num mono" style="color:var(--muted)">—</td><td class="num mono" style="color:var(--muted)">—</td>
+        <td><span class="chip notrun">hooks only</span></td>
+      </tr>
+    </tbody>
+    <tfoot><tr><td colspan="6">Today · 3 sessions</td><td class="num mono">1,198</td><td class="num mono">269</td><td class="num mono">13,320</td><td class="num mono">117,272</td><td></td></tr></tfoot>
+  </table>
+  </div>
+</main>
+
+<!-- ================= TIMELINE ================= -->
+<div id="timeline" class="shell" hidden>
+  <aside class="rail">
+    <div>
+      <h2>Turns</h2>
+      <nav style="display:flex;flex-direction:column;gap:2px">
+        <a href="#t1" class="oitem" data-turn="0" aria-current="true"><span class="t">1 · Run python3 -c "import time; time.sleep(20)"…</span><span class="m"><span class="chip ok">✓ Bash</span>2 calls · 13.6 s</span></a>
+        <a href="#t2" class="oitem" data-turn="1"><span class="t">2 · Create a file d.txt containing hello.</span><span class="m"><span class="chip notrun">⊘ Write</span>1 call · 5.3 s</span></a>
+        <a href="#t3" class="oitem" data-turn="2"><span class="t">3 · ok, skip it</span><span class="m">1 call · 1.8 s</span></a>
+      </nav>
+    </div>
+    <div>
+      <h2>Show</h2>
+      <label class="check"><input type="checkbox" id="optHooks"> Hooks inline</label>
+      <label class="check"><input type="checkbox"> System reminders</label>
+      <label class="check"><input type="checkbox" id="optCtx" checked> Context per call</label>
+      <label class="check"><input type="checkbox"> Only turns with errors</label>
+    </div>
+  </aside>
+
+  <main class="content">
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:baseline">
+      <h1>Python 20-second foreground sleep</h1>
+      <span class="mono" style="font-size:12px;color:var(--muted)">50bb7cb8 · /tmp/e2e2 · claude-opus-5-5</span>
+    </div>
+    <div class="kpis">
+      <div><span class="l">Model calls</span><span class="v">4</span></div>
+      <div><span class="l">Model time</span><span class="v">20.7 s</span></div>
+      <div><span class="l">Tools</span><span class="v" style="display:flex;gap:6px;align-items:center"><span class="chip ok">✓ 1</span><span class="chip notrun">⊘ 1</span></span></div>
+      <div><span class="l">Errors</span><span class="v">0</span></div>
+      <div><span class="l">Context (last call)</span><span class="v mono" style="font-size:16px">32,900</span></div>
+      <div><span class="l">Tokens in · out</span><span class="v mono" style="font-size:16px">12 · 248</span></div>
+    </div>
+
+    <div class="chart">
+      <div class="hd"><span>Calls by duration (click to open)</span><span style="margin-left:auto">context per call</span></div>
+      <div class="strip" aria-label="Model calls">
+        <button style="flex:11.3" data-x="1" title="#1 · 200 · 11.3 s · tool_use Bash" aria-label="Exchange 1"></button>
+        <button style="flex:2.3" data-x="2" title="#2 · 200 · 2.3 s" aria-label="Exchange 2"></button>
+        <button style="flex:5.3" data-x="3" title="#3 · 200 · 5.3 s · tool_use Write" aria-label="Exchange 3"></button>
+        <button style="flex:1.8" data-x="4" title="#4 · 200 · 1.8 s" aria-label="Exchange 4"></button>
+      </div>
+      <div class="turnmarks"><span style="flex:13.6">turn 1</span><span style="flex:5.3">turn 2</span><span style="flex:1.8">3</span></div>
+      <svg viewBox="0 0 800 60" preserveAspectRatio="none" style="width:100%;height:60px" role="img" aria-label="Context grows from 32,473 to 32,900 tokens over 4 calls">
+        <line x1="0" y1="59" x2="800" y2="59" stroke="var(--line)"/>
+        <polyline points="20,48 290,34 520,27 780,8" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke"/>
+        <g fill="var(--accent)"><circle cx="20" cy="48" r="3"/><circle cx="290" cy="34" r="3"/><circle cx="520" cy="27" r="3"/><circle cx="780" cy="8" r="3"/></g>
+      </svg>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted)" class="mono"><span>#1 32,473</span><span>#2 32,586</span><span>#3 32,645</span><span>#4 32,900</span></div>
+    </div>
+
+    <section id="t1" class="turn" aria-current="true">
+      <div class="th"><b>Turn 1</b><span>2 calls · 1 tool · 13.6 s · out 140</span><button class="pillbtn" data-hooks="t1" aria-expanded="false">4 hooks ▸</button></div>
+      <div class="row"><span class="k">prompt</span><span class="v mono" style="color:var(--hi)">Run python3 -c "import time; time.sleep(20)" in the foreground.</span><span class="r"><button class="xbtn">+2 reminders</button></span></div>
+      <div class="row"><span class="k">→ Bash</span><span class="v mono">python3 -c "import time; time.sleep(20)" <span style="color:var(--muted)">— no output</span></span><span class="r"><span class="chip ok" title="asked + ran + reported: succeeded">✓ ok</span><span class="ctxmini" title="context 32,473"><span class="b"><i style="flex:19576;background:var(--c-read)"></i><i style="flex:12895;background:var(--c-write)"></i></span>32.5k</span><button class="xbtn" data-x="1">#1 · 11.3 s</button></span></div>
+      <div class="row"><span class="k">assistant</span><span class="v">I ran <code>python3 -c "import time; time.sleep(20)"</code> in the foreground. It finished with no output and no errors.</span><span class="r"><span class="ctxmini" title="context 32,586"><span class="b"><i style="flex:32471;background:var(--c-read)"></i><i style="flex:113;background:var(--c-write)"></i></span>32.6k</span><button class="xbtn" data-x="2">#2 · 2.3 s</button></span></div>
+      <div class="hooks" id="h-t1" hidden><span>permission_requested Bash</span><span>notice</span><span>tool_batch_done</span><span>turn_end</span></div>
+    </section>
+    <section id="t2" class="turn">
+      <div class="th"><b>Turn 2</b><span>1 call · 1 tool · 5.3 s · out 84</span><button class="pillbtn" data-hooks="t2" aria-expanded="false">2 hooks ▸</button></div>
+      <div class="row"><span class="k">prompt</span><span class="v mono" style="color:var(--hi)">Create a file d.txt containing hello.</span><span class="r"></span></div>
+      <div class="row"><span class="k">→ Write</span><span class="v mono">/tmp/e2e2/d.txt <span style="color:var(--muted)">— user rejected</span></span><span class="r"><span class="chip notrun" title="asked, not run">⊘ not run</span><span class="ctxmini" title="context 32,645"><span class="b"><i style="flex:32584;background:var(--c-read)"></i><i style="flex:57;background:var(--c-write)"></i></span>32.6k</span><button class="xbtn" data-x="3">#3 · 5.3 s</button></span></div>
+      <div class="hooks" id="h-t2" hidden><span>prompt</span><span>permission_requested Write</span></div>
+    </section>
+    <section id="t3" class="turn">
+      <div class="th"><b>Turn 3</b><span>1 call · 1.8 s · out 24 · after interrupt</span><button class="pillbtn" data-hooks="t3" aria-expanded="false">3 hooks ▸</button></div>
+      <div class="row"><span class="k">prompt</span><span class="v mono" style="color:var(--hi)">ok, skip it</span><span class="r"></span></div>
+      <div class="row"><span class="k">assistant</span><span class="v">Okay, I skipped it. I didn't create <code>d.txt</code>.</span><span class="r"><span class="ctxmini" title="context 32,900"><span class="b"><i style="flex:32641;background:var(--c-read)"></i><i style="flex:255;background:var(--c-write)"></i></span>32.9k</span><button class="xbtn" data-x="4">#4 · 1.8 s</button></span></div>
+      <div class="hooks" id="h-t3" hidden><span>prompt</span><span>turn_end</span><span>session_end</span></div>
+    </section>
+  </main>
+</div>
+
+<!-- ================= DRAWER ================= -->
+<div id="drawerWrap" hidden>
+  <div class="scrim" data-close></div>
+  <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="dTitle"></aside>
+</div>
+
+<!-- ================= KEY BAR ================= -->
+<footer class="keys" id="keys" aria-label="Keyboard shortcuts"></footer>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+const X=[
+ {n:1,turn:0,ms:11294,title:'tool_use Bash',in:2,out:98,cw:12895,cr:19576,req:'req_011Cgdcm12X6MsUxxmj3XWKg',stop:'tool_use',
+  resp:'{\n  "command": "python3 -c \\"import time; time.sleep(20)\\"",\n  "description": "Sleep for 20 seconds via Python"\n}',
+  chain:['y','y','y'],chainLbl:['asked','ran','reported'],chainRows:[['asked','this response · toolu_01EpnfpdYf8duqBZJkjhQz79'],['ran','hooks: permission_requested · notice · tool_batch_done'],['reported','tool_result in #2']],
+  msgs:1,carried:[],added:['system-reminder: gitStatus','system-reminder: attribution','user: Run python3 -c "import time; time.sleep(20)" in the foreground.']},
+ {n:2,turn:0,ms:2250,title:'text reply',in:2,out:42,cw:113,cr:32471,
+  resp:'I ran `python3 -c "import time; time.sleep(20)"` in the foreground. It finished with no output and no errors.',
+  msgs:3,carried:['user: Run python3 -c … in the foreground.'],added:['assistant: tool_use Bash','user: tool_result Bash (no output)']},
+ {n:3,turn:1,ms:5326,title:'tool_use Write',in:4,out:84,cw:57,cr:32584,stop:'tool_use',
+  resp:'{\n  "file_path": "/tmp/e2e2/d.txt",\n  "content": "hello\\n"\n}',
+  chain:['y','n','r'],chainLbl:['asked','not run','rejected'],chainRows:[['asked','this response'],['ran','no run hooks · permission_requested only'],['reported','rejection sent back in #4']],
+  msgs:5,carried:['user: Run python3 …','assistant: tool_use Bash','user: tool_result Bash'],added:['assistant: I ran … no errors.','user: Create a file d.txt containing hello.']},
+ {n:4,turn:2,ms:1766,title:'text reply',in:4,out:24,cw:255,cr:32641,
+  resp:'Okay, I skipped it. I didn\'t create `d.txt`.',
+  msgs:7,carried:['… 5 earlier messages'],added:['assistant: tool_use Write','user: tool_result Write (rejected)','user: [Request interrupted by user for tool use]','user: ok, skip it']}
+];
+const f=n=>n.toLocaleString('en-US'),ctx=x=>x.in+x.cw+x.cr,esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const $=id=>document.getElementById(id);
+const root=document.documentElement;
+
+/* theme: manual, remembered */
+function setTheme(t){root.dataset.theme=t;try{localStorage.setItem('gw-theme',t)}catch(e){}
+  document.querySelectorAll('[data-theme-btn]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.themeBtn===t));}
+let saved;try{saved=localStorage.getItem('gw-theme')}catch(e){}setTheme(saved||'dark');
+
+/* views */
+let view='sessions',cur=null,ti=0,si=0;
+const KEYS={
+  sessions:[['↑','↓'],'select'],
+};
+function keybar(){
+  let html='',where='';
+  if(cur){where=`call #${cur}/4 · turn ${X[cur-1].turn+1}`;
+    html=`<span><kbd>↑</kbd><kbd>↓</kbd> prev / next call</span><span><kbd>Esc</kbd> close</span><span><kbd>t</kbd> back to turn</span>`;}
+  else if(view==='timeline'){where=`turn ${ti+1}/3`;
+    html=`<span><kbd>j</kbd><kbd>k</kbd> next / prev turn</span><span><kbd>e</kbd> next error</span><span><kbd>t</kbd> next tool</span><span><kbd>Enter</kbd> open first call of turn</span><span><kbd>h</kbd> hooks</span><span><kbd>/</kbd> filter</span><span><kbd>Backspace</kbd> sessions</span>`;}
+  else{where=`session ${si+1}/3`;
+    html=`<span><kbd>↑</kbd><kbd>↓</kbd> select</span><span><kbd>Enter</kbd> open</span><span><kbd>/</kbd> filter</span>`;}
+  $('keys').innerHTML=`<span class="mode">${cur?'CALL':view==='timeline'?'TURNS':'SESSIONS'}</span><span class="where">${where}</span>${html}<span style="margin-left:auto">theme saved in this browser</span>`;
+}
+function go(v){view=v;$('sessions').hidden=v!=='sessions';$('timeline').hidden=v!=='timeline';
+  $('crSep').hidden=$('crTitle').hidden=v!=='timeline';
+  $('crSessions').setAttribute('aria-current',v==='sessions'?'page':'false');
+  $('filter').placeholder=v==='sessions'?'Filter sessions':'Filter text, tool, request id';
+  closeX(true);window.scrollTo(0,0);keybar();}
+function toast(t){const el=$('toast');el.textContent=t;el.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(()=>el.hidden=true,2200);}
+function openSession(ok){ok?go('timeline'):toast('This mockup only has the timeline for "Python 20-second foreground sleep".');}
+function selectRow(i){si=Math.max(0,Math.min(2,i));[...$('srows').rows].forEach((r,k)=>r.setAttribute('aria-selected',k===si));keybar();}
+
+/* turns */
+function setTurn(i,scroll=true){ti=Math.max(0,Math.min(2,i));
+  ['t1','t2','t3'].forEach((id,k)=>$(id).setAttribute('aria-current',k===ti));
+  document.querySelectorAll('.oitem').forEach((a,k)=>a.setAttribute('aria-current',k===ti));
+  if(scroll)$(['t1','t2','t3'][ti]).scrollIntoView({behavior:'smooth',block:'start'});keybar();}
+
+/* drawer */
+function drawer(x){
+  const p=X[x.n-2],c=ctx(x),H=170,ph=v=>Math.max(3,H*v/c);
+  return `<div class="dh"><div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap"><span class="n">#${x.n}</span>
+      <div style="min-width:0"><b id="dTitle" style="color:var(--hi);font-size:17px">${x.title}</b> <span class="chip ok">200</span>
+      <div class="mono" style="font-size:12px;color:var(--muted)">${f(x.ms)} ms · claude-opus-5-5 · turn ${x.turn+1}${x.req?' · '+x.req:''}</div></div>
+      <button class="btn" data-close style="margin-left:auto" aria-label="Close">Esc ✕</button></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn" data-step="-1" ${x.n===1?'disabled':''}>↑ prev call</button><button class="btn" data-step="1" ${x.n===X.length?'disabled':''}>↓ next call</button><button class="btn" style="margin-left:auto">Open full page</button></div></div>
+  ${x.chain?`<div class="dsec"><h3>Tool chain</h3><div class="circuit">${x.chain.map((s,i)=>`<div class="node ${s}"><i></i>${x.chainLbl[i]}</div>${i<2?`<div class="wire ${s==='y'&&x.chain[i+1]==='y'?'y':''}"></div>`:''}`).join('')}</div>
+     <dl class="mono">${x.chainRows.map(r=>`<dt>${r[0]}</dt><dd>${r[1]}</dd>`).join('')}</dl></div>`:''}
+  <div class="dsec"><h3>Context</h3><div class="strata">
+     <div class="sbar" role="img" aria-label="${f(x.cr)} cache read, ${f(x.cw)} cache write, ${f(x.in)} uncached"><i style="height:${ph(x.cr)}px;background:var(--c-read)"></i><i style="height:${ph(x.cw)}px;background:var(--c-write)"></i><i style="height:${ph(x.in)}px;background:var(--c-in)"></i></div>
+     <div class="slabels"><div><span class="mono" style="font-size:28px;color:var(--hi)">${f(c)}</span><br><span style="font-size:12px;color:var(--muted)">tokens in this request${p?' · +'+f(c-ctx(p))+' since #'+p.n:' · first call'}</span></div>
+       <div><span class="sw" style="background:var(--c-in)"></span>uncached <b>${f(x.in)}</b></div>
+       <div><span class="sw" style="background:var(--c-write)"></span>cache write <b>${f(x.cw)}</b></div>
+       <div><span class="sw" style="background:var(--c-read)"></span>cache read <b>${f(x.cr)}</b></div></div></div>
+     <div class="trend">Session: ${X.map(y=>`<span class="mono" style="${y.n===x.n?'color:var(--hi);font-weight:600':''}">#${y.n} ${f(ctx(y))}</span>`).join(' → ')}</div></div>
+  <div class="dsec"><h3>What the model saw · ${x.msgs} message${x.msgs>1?'s':''}${p?' · '+(x.msgs-p.msgs)+' new':''}</h3><div class="diff">
+     <div class="ctx">  system: Environment block</div><div class="ctx">  tools: tool definitions</div>
+     ${x.carried.map(m=>`<div class="ctx">  ${esc(m)}</div>`).join('')}
+     ${x.added.map(m=>`<div class="add">+ ${esc(m)}</div>`).join('')}</div></div>
+  <div class="dsec"><h3>Response · out ${f(x.out)}${x.stop?' · '+x.stop:''}</h3><pre>${esc(x.resp)}</pre></div>
+  <div class="dsec"><h3>Health</h3><dl><dt>Gateway</dt><dd>no disconnect · no abort · no error</dd><dt>Rate limit</dt><dd>5h 0.23 · 7d 0.56 · overage rejected</dd><dt>Session</dt><dd class="mono">50bb7cb8-23b8-4b1b-8418-a5b34276bd83</dd></dl>
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn">Request JSON</button><button class="btn">SSE stream</button><button class="btn">All headers</button><button class="btn">Copy as curl</button></div></div>`;
+}
+let lastFocus=null;
+function openX(n){if(n<1||n>X.length)return;if(!cur)lastFocus=document.activeElement;cur=n;$('drawer').innerHTML=drawer(X[n-1]);$('drawerWrap').hidden=false;
+  document.querySelectorAll('.strip button').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.x===n));
+  setTurn(X[n-1].turn,false);$('drawer').querySelector('.btn[data-close]').focus();keybar();}
+function closeX(silent){if(!cur&&silent)return;cur=null;$('drawerWrap').hidden=true;
+  document.querySelectorAll('.strip button').forEach(b=>b.setAttribute('aria-pressed',false));
+  if(lastFocus&&!silent)lastFocus.focus();keybar();}
+
+/* events */
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-theme-btn],[data-go],[data-open],[data-x],[data-close],[data-step],[data-hooks],[data-turn]');if(!t)return;
+  if(t.dataset.themeBtn)setTheme(t.dataset.themeBtn);
+  else if(t.dataset.go){e.preventDefault();go(t.dataset.go);}
+  else if(t.dataset.open!==undefined){e.preventDefault();const r=t.closest('tr');if(r)selectRow(r.sectionRowIndex);openSession(t.dataset.open==='1');}
+  else if(t.dataset.x)openX(+t.dataset.x);
+  else if(t.dataset.close!==undefined)closeX();
+  else if(t.dataset.step)openX(cur+ +t.dataset.step);
+  else if(t.dataset.turn!==undefined){e.preventDefault();setTurn(+t.dataset.turn);}
+  else if(t.dataset.hooks){const h=$('h-'+t.dataset.hooks);h.hidden=!h.hidden;t.setAttribute('aria-expanded',!h.hidden);t.textContent=t.textContent.replace(/[▸▾]/,h.hidden?'▸':'▾');}
+});
+$('optHooks').onchange=e=>['t1','t2','t3'].forEach(id=>{$('h-'+id).hidden=!e.target.checked;});
+$('optCtx').onchange=e=>document.querySelectorAll('.ctxmini').forEach(m=>m.hidden=!e.target.checked);
+document.addEventListener('keydown',e=>{
+  if(e.target.matches('input')){if(e.key==='Escape')e.target.blur();return;}
+  if(e.key==='/'){e.preventDefault();$('filter').focus();return;}
+  if(cur){
+    if(e.key==='Escape')closeX();
+    else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();openX(cur+(e.key==='ArrowDown'?1:-1));}
+    else if(e.key==='t'){const t=X[cur-1].turn;closeX();setTurn(t);}
+    return;}
+  if(view==='sessions'){
+    if(e.key==='ArrowDown'||e.key==='j'){e.preventDefault();selectRow(si+1);}
+    else if(e.key==='ArrowUp'||e.key==='k'){e.preventDefault();selectRow(si-1);}
+    else if(e.key==='Enter'){e.preventDefault();openSession($('srows').rows[si].dataset.open==='1');}
+    return;}
+  if(e.key==='j'||e.key==='k')setTurn(ti+(e.key==='j'?1:-1));
+  else if(e.key==='Enter'){e.preventDefault();openX(X.find(x=>x.turn===ti).n);}
+  else if(e.key==='t'){const nx=[0,1].find(i=>i>ti);setTurn(nx===undefined?0:nx);}
+  else if(e.key==='e')toast('No errors in this session.');
+  else if(e.key==='h')$('optHooks').click();
+  else if(e.key==='Backspace'){e.preventDefault();go('sessions');}
+});
+keybar();
+</script>
+</body>
+</html>

@@ -34,3 +34,4 @@ feature: 013-web-ui-redesign
 - 2026-11-02 — Ungrouped holds only HEAD /api/hello (22 exchanges).
 - 2026-11-02 — Mockup contrast, computed from its CSS: the key bar's level label (white on dark-theme accent #58a6ff) is 2.53:1 and fails AC34's 4.5:1. The chip and muted pairs checked pass; several light-theme pairs only just pass (warn 4.52, ok and accent 4.56).
 - 2026-11-02 — The mockup lives outside the repo at ~/Downloads/gateway-ui-v4.html.
+- 2026-11-02 — Correction to the line above: the user copied the mockup to specs/013-web-ui-redesign/gateway-ui-v4.html, and the spec now points there.
