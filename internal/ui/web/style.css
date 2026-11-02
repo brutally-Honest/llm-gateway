@@ -58,7 +58,6 @@ button {
 .live { color: var(--ok); }
 .badge.err { background: var(--err); }
 .badge.harness { background: var(--muted); color: var(--badge-fg); }
-.badge.pending { background: var(--muted); color: var(--badge-fg); }
 .copy { padding: 0 .5rem; font-size: .85em; }
 .truncated { display: block; font-size: .85em; }
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: .2rem 1rem; margin: .3rem 0; }
