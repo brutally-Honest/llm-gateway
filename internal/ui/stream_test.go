@@ -936,3 +936,40 @@ func (e *streamEnv) reload() string {
 	}
 	return string(b)
 }
+
+// Only a missing row means "no summary"; any other read error is a failed read.
+func TestReadLive_NotFoundIsNoSummaryOtherErrorsFail(t *testing.T) {
+	e := newStreamEnv(t, nil)
+	r, err := store.OpenReader(e.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = r.Close() }()
+	d := Deps{Reader: r, Now: time.Now}
+	who := sessIdent{core.PrincipalLocal, "cc", "k"}
+	m, err := readLive(t.Context(), d, who, nil, true, false)
+	if err != nil || m.Summary != nil {
+		t.Fatalf("no row: summary = %+v, err = %v, want no summary and no error", m.Summary, err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := readLive(ctx, d, who, nil, true, false); err == nil {
+		t.Fatal("a failed read returned no error")
+	}
+}
+
+// A failed read ends the stream, so the page resyncs by snapshot.
+func TestHub_ReadErrorDropsSessionStream(t *testing.T) {
+	e := newStreamEnv(t, func(h *Hub) {
+		h.read = func(context.Context, sessIdent, []string, bool, bool) (liveMsg, error) {
+			return liveMsg{}, context.DeadlineExceeded
+		}
+	})
+	s := e.openRaw(e.sessionPath())
+	s.nextData() // the empty hooks event
+	e.commitA()
+	timer := time.AfterFunc(5*time.Second, func() { t.Error("the stream stayed open"); _ = s.resp.Body.Close() })
+	defer timer.Stop()
+	for s.sc.Scan() {
+	}
+}
