@@ -95,12 +95,6 @@ export function replaceExchange(entries, list) {
   return out;
 }
 
-// pendingBadgeShown says whether a tool call shows the "pending" badge: only while it has
-// no result and no harness state (a hook-derived state says more than "pending").
-export function pendingBadgeShown(call, result) {
-  return !result && !(call && call.state);
-}
-
 // replaceHooks replaces the whole hook group: every hook_event entry is dropped, then the
 // list is inserted. An empty list removes the group.
 export function replaceHooks(entries, list) {

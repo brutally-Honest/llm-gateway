@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compareEntries, replaceHooks, pendingBadgeShown, liveEffect, omittedNote, hookLabel, hookInputEntry } from "../web/entries.js";
+import { compareEntries, replaceHooks, liveEffect, omittedNote, hookLabel, hookInputEntry } from "../web/entries.js";
 
 test("module loads and compareEntries orders by time", () => {
   const a = { start: "2026-01-01T00:00:05.12Z", exchange_id: "x", index: 0 };
@@ -26,14 +26,6 @@ test("exchange sorts before hook lines on an exact time tie", () => {
   assert.equal(compareEntries(call, hook), -1);
   assert.equal(compareEntries(hook, call), 1);
   assert.deepEqual(replaceHooks([call], [hook]).map((e) => e.id), ["a:0", "hook:1"]);
-});
-
-test("pending badge hidden when a harness state exists", () => {
-  assert.equal(pendingBadgeShown({ state: "pending" }, null), false);
-  assert.equal(pendingBadgeShown({ state: "ran-not-reported" }, null), false);
-  assert.equal(pendingBadgeShown({}, null), true);
-  assert.equal(pendingBadgeShown({ state: "pending" }, { text: "x" }), false);
-  assert.equal(pendingBadgeShown({}, { text: "x" }), false);
 });
 
 const exA = { id: "a:0", kind: "tool_call", exchange_id: "a", index: 0, start: "2026-01-01T00:00:01Z" };
