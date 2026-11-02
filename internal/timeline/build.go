@@ -98,11 +98,13 @@ type Entry struct {
 	// first appearance. PrevID is the request id of the earlier call it continues,
 	// empty when it starts a new thread. Messages is the request's message count and
 	// Carried how many of them it shares with that earlier call, so the new ones are
-	// Messages - Carried.
-	Thread   int
-	PrevID   string
-	Messages int
-	Carried  int
+	// Messages - Carried. RequestMessages is how many of Messages the request itself
+	// holds, without the reply; NewMessages gives the new ones.
+	Thread          int
+	PrevID          string
+	Messages        int
+	RequestMessages int
+	Carried         int
 
 	// Harness fields. On a tool call: State, Reason, Outcome, InputDiffers, HookInput
 	// and the agent labels. On a KindHarness entry: Phase, State, Name, ToolCallID,
@@ -199,6 +201,7 @@ func BuildWithUsage(src Source, session store.SessionRow, opts Options) ([]Entry
 		}
 		entries[0].Thread, entries[0].PrevID = tid, prev
 		entries[0].Messages, entries[0].Carried = len(hashes), lcp
+		entries[0].RequestMessages = requestMessageCount(evs)
 		entries[0].Call = callOf(ex, evs)
 		if entries[0].Call != nil {
 			calls = append(calls, *entries[0].Call)
@@ -250,6 +253,24 @@ func messageHashes(evs []store.EventRow) []string {
 		out = append(out, h)
 	}
 	return out
+}
+
+// requestMessageCount is how many message events the request holds, the reply left out.
+func requestMessageCount(evs []store.EventRow) int {
+	n := 0
+	for _, e := range evs {
+		if e.Kind == "message" && e.Source != sourceResponse {
+			n++
+		}
+	}
+	return n
+}
+
+// NewMessages is how many of a request's own messages are not in the earlier call of
+// its thread. Carried may be larger than requestMessages (it also covers the earlier
+// reply); the reply is never counted as new. Every view uses this one rule.
+func NewMessages(requestMessages, carried int) int {
+	return max(requestMessages-max(carried, 0), 0)
 }
 
 func folded(ex store.ExchangeRow) Entry {

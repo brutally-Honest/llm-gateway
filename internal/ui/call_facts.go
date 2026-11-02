@@ -80,7 +80,7 @@ func callFacts(src timeline.Source, built []timeline.Entry, rules ClientRules, e
 			}
 			reqThread[e.RequestID] = e.Thread
 			facts[e.RequestID] = &callFactsJSON{N: len(calls) + 1, Thread: e.Thread, PrevID: e.PrevID,
-				SideCall: c.side, Carried: e.Carried, New: max(e.Messages-e.Carried, 0)}
+				SideCall: c.side, Carried: e.Carried, New: timeline.NewMessages(e.RequestMessages, e.Carried)}
 			calls = append(calls, c)
 		case timeline.KindToolCall:
 			th, ok := reqThread[e.RequestID]

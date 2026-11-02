@@ -173,3 +173,22 @@ func TestExchange_BodyNotStoredStillAnswers(t *testing.T) {
 		t.Fatalf("f = %v", f["response"])
 	}
 }
+
+// A call's new count (timeline call.new) and the exchange API's new_count are one
+// number: the request's messages missing from the thread's previous call, the reply
+// never counted.
+func TestExchange_NewCountAgreesWithTimelineCallNew(t *testing.T) {
+	e := withRules(t)
+	e.callReply("a", 1, `{"input_tokens":5}`, &reply{text: "two", stop: "end_turn"}, "user:one")
+	e.callReply("b", 2, `{"input_tokens":5}`, &reply{text: "four", stop: "end_turn"}, "user:one", "assistant:two", "user:three")
+	e.callReply("c", 3, `{"input_tokens":5}`, &reply{text: "six", stop: "end_turn"}, "user:one", "assistant:two", "user:three", "assistant:four", "user:five")
+	f := e.facts()
+	for id, want := range map[string]float64{"a": 1, "b": 1, "c": 1} {
+		if got := f[id]["new"]; got != want {
+			t.Errorf("%s call.new = %v, want %v", id, got, want)
+		}
+		if got := e.exchange(id)["new_count"]; got != f[id]["new"] {
+			t.Errorf("%s new_count = %v, call.new = %v", id, got, f[id]["new"])
+		}
+	}
+}

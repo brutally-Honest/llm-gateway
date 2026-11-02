@@ -177,7 +177,7 @@ func (d Deps) fillDrawer(c *store.CtxReader, ex store.ExchangeRow, out *exchange
 		// the request's own messages are listed.
 		out.Carried = min(f.Carried, len(det.Messages))
 	}
-	out.NewCount = len(det.Messages) - out.Carried
+	out.NewCount = timeline.NewMessages(len(det.Messages), out.Carried)
 	for i, m := range det.Messages {
 		out.Messages = append(out.Messages, exchangeMessageJSON{Role: m.Role, Text: m.Text, Truncated: m.Truncated, New: i >= out.Carried})
 	}
