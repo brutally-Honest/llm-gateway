@@ -1,3 +1,5 @@
+import { hookInputEntry, omittedNote, pendingBadgeShown } from "./entries.js";
+
 // copyButton copies getText() to the clipboard.
 export function copyButton(getText) {
   const b = document.createElement("button");
@@ -24,6 +26,8 @@ export function truncatedLink(entry) {
   return a;
 }
 
+// section renders a labelled, copyable block. entry is the exchange entry whose raw link
+// it shows when truncated; null shows no link (the hook input has no detail page).
 function section(label, text, entry, open, onToggle, cls) {
   const d = document.createElement("details");
   d.className = cls;
@@ -34,8 +38,18 @@ function section(label, text, entry, open, onToggle, cls) {
   const pre = document.createElement("pre");
   pre.textContent = text;
   d.append(s, copyButton(() => text), pre);
-  if (entry.truncated) d.append(truncatedLink(entry));
+  if (entry && entry.truncated) d.append(truncatedLink(entry));
   return d;
+}
+
+// harnessLabels are the hook-derived badges of a tool call: its state with reason and
+// outcome, the input-differs flag and the agent labels, in the CLI viewer's words.
+export function harnessLabels(e) {
+  const out = [];
+  if (e.state) out.push([e.state, e.reason, e.outcome].filter(Boolean).join(": "));
+  if (e.input_differs) out.push("input differs");
+  if (e.agent_id || e.agent_type) out.push(`agent ${e.agent_id || ""}/${e.agent_type || ""}`);
+  return out;
 }
 
 // ToolCard renders data = { call, result, prettyInput, isOpen(key), setOpen(key, open) }.
@@ -51,16 +65,33 @@ export class ToolCard extends HTMLElement {
     name.textContent = call.name || "tool";
     head.append(name);
     const state = document.createElement("span");
-    if (!result) {
+    if (pendingBadgeShown(call, result)) {
       state.className = "badge pending";
       state.textContent = "pending";
-    } else if (result.is_error === true) {
+    } else if (result && result.is_error === true) {
       state.className = "badge err";
       state.textContent = "error";
       this.classList.add("is-error");
     }
     if (state.textContent) head.append(state);
+    for (const text of harnessLabels(call)) {
+      const b = document.createElement("span");
+      b.className = "badge harness";
+      b.textContent = text;
+      head.append(b);
+    }
     this.append(head);
+    if (call.input_differs) {
+      const hook = section("hook input", call.hook_input || "", null, data.isOpen(`${call.id}:hook`), (o) => data.setOpen(`${call.id}:hook`, o), "tool-input");
+      // the note follows the hook input's own truncation; it shows no raw link
+      if (hookInputEntry(call).truncated) {
+        const note = document.createElement("div");
+        note.className = "muted";
+        note.textContent = omittedNote(call.hook_omitted_bytes);
+        hook.append(note);
+      }
+      this.append(hook);
+    }
     this.append(section("input", data.prettyInput, call, data.isOpen(`${call.id}:in`), (o) => data.setOpen(`${call.id}:in`, o), "tool-input"));
     if (result) {
       this.append(section("result", result.text || "", result, data.isOpen(`${result.id}:out`), (o) => data.setOpen(`${result.id}:out`, o), "tool-result"));

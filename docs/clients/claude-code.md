@@ -119,3 +119,9 @@ including open streams, finish. This can take **up to 10 minutes** (the default
 - **`docker compose stop`** (and `docker compose down`) waits the same way, up to
   10 minutes: the compose file's `stop_grace_period` matches the shutdown timeout.
   `docker compose kill` stops the container at once.
+
+## 5. Harness hooks
+
+Optional: Claude Code can also report its tool calls and permission checks to the gateway,
+so the timeline shows which asked-for tools ran. Install, coexistence with project hooks,
+removal and the match states are in [claude-code-hooks.md](claude-code-hooks.md).

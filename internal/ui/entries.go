@@ -26,6 +26,7 @@ const (
 	kindExchange      = "exchange"
 	kindMarker        = "marker"
 	kindMessage       = "message" // a role other than user or assistant
+	kindHookEvent     = "hook_event"
 )
 
 // callUsageJSON is the usage of a model call. A call without a usage event has
@@ -68,7 +69,28 @@ type entryJSON struct {
 	DurationMS *int64 `json:"duration_ms,omitempty"`
 
 	Usage *callUsageJSON `json:"usage,omitempty"`
+
+	// Harness fields (AC22, AC24): the state of a tool call, or a hook-event line.
+	State        string `json:"state,omitempty"`
+	Reason       string `json:"reason,omitempty"`
+	Outcome      string `json:"outcome,omitempty"`
+	InputDiffers bool   `json:"input_differs,omitempty"`
+	HookInput    string `json:"hook_input,omitempty"`
+	HookOmitted  int    `json:"hook_omitted_bytes,omitempty"`
+	Phase        string `json:"phase,omitempty"`
+	AgentID      string `json:"agent_id,omitempty"`
+	AgentType    string `json:"agent_type,omitempty"`
+
+	// startNS is Start in unix nanoseconds, for paging. hookSeq and hookRow are a
+	// hook line's sequence number and stored row id, the rest of its paging key.
+	startNS int64
+	hookSeq int64
+	hookRow int64
 }
+
+// hookRequest is the exchange id a hook-event line sorts under: after every real
+// request id, so a hook event received at an exchange's start follows it.
+const hookRequest = "~hook"
 
 func ptr[T any](v T) *T { return &v }
 
@@ -78,11 +100,12 @@ func ptr[T any](v T) *T { return &v }
 func mapEntries(entries []timeline.Entry, exs map[string]store.ExchangeRow) []entryJSON {
 	out := make([]entryJSON, 0, len(entries))
 	next := map[string]int{}
+	hooks := 0
 	add := func(e timeline.Entry, en entryJSON) {
 		i := next[e.RequestID]
 		next[e.RequestID] = i + 1
 		en.ID = e.RequestID + ":" + strconv.Itoa(i)
-		en.ExchangeID, en.Index, en.Start = e.RequestID, i, nsTime(e.Start)
+		en.ExchangeID, en.Index, en.Start, en.startNS = e.RequestID, i, nsTime(e.Start), e.Start
 		out = append(out, en)
 	}
 	for _, e := range entries {
@@ -114,10 +137,21 @@ func mapEntries(entries []timeline.Entry, exs map[string]store.ExchangeRow) []en
 			add(e, entryJSON{Kind: kind, Role: e.Role, Text: e.Text, Truncated: e.Omitted > 0, Partial: e.Partial})
 		case timeline.KindToolCall:
 			add(e, entryJSON{Kind: kindToolCall, Name: e.Name, ToolCallID: e.ToolCallID, Text: e.Text,
-				Truncated: e.Omitted > 0, Partial: e.Partial})
+				Truncated: e.Omitted > 0, Partial: e.Partial,
+				State: e.State, Reason: e.Reason, Outcome: e.Outcome, InputDiffers: e.InputDiffers,
+				HookInput: e.HookInput, HookOmitted: e.HookOmitted, AgentID: e.AgentID, AgentType: e.AgentType})
 		case timeline.KindToolResult:
 			add(e, entryJSON{Kind: kindToolResult, ToolCallID: e.ToolCallID, IsError: ptr(e.IsError),
 				Text: e.Text, Truncated: e.Omitted > 0, Partial: e.Partial})
+		case timeline.KindHarness:
+			// A hook event belongs to no exchange: it has no exchange id. Its id is the
+			// stored row id, so a later-arriving earlier event does not shift it.
+			i := hooks
+			hooks++
+			out = append(out, entryJSON{ID: "hook:" + strconv.FormatInt(e.HookID, 10), Index: i, Start: nsTime(e.Start),
+				startNS: e.Start, hookSeq: e.HookSeq, hookRow: e.HookID,
+				Kind: kindHookEvent, Name: e.Name, ToolCallID: e.ToolCallID, Text: e.Text, Phase: e.Phase,
+				State: e.State, AgentID: e.AgentID, AgentType: e.AgentType})
 		case timeline.KindError:
 			add(e, entryJSON{Kind: kindError, Name: e.Name, Status: ptr(e.Status), Text: e.Text,
 				Truncated: e.Omitted > 0, Partial: e.Partial})

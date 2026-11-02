@@ -84,3 +84,49 @@ func TestWeb_NoHTMLInjectionSinks(t *testing.T) {
 		}
 	}
 }
+
+// TestWeb_ServesHarnessBadgeRendering: the tool card shows the state, the input-differs
+// flag and the agent labels, hook lines have a renderer, and the sessions list shows
+// the hooks-only label. All text goes through textContent (no HTML sinks, tested above).
+func TestWeb_ServesHarnessBadgeRendering(t *testing.T) {
+	files := webFiles(t)
+	want := map[string][]string{
+		"tool-card.js":    {"e.state", "input_differs", "agent_id", "agent_type", "hook_input", "pendingBadgeShown(call, result)", "hook_omitted_bytes"},
+		"entries.js":      {"export function pendingBadgeShown"},
+		"session-view.js": {`case "hook_event"`},
+		"session-list.js": {"hooks_only", "hooks only"},
+	}
+	for name, subs := range want {
+		for _, sub := range subs {
+			if !strings.Contains(files[name], sub) {
+				t.Errorf("%s does not contain %q", name, sub)
+			}
+		}
+	}
+}
+
+// TestWeb_ComponentsCallTheTestedHelpers: the dispatch of stream events, the omitted-bytes
+// note, the hook label and the hook input's truncation live in entries.js, where the Node
+// tests run them; the components must call those functions, not repeat the logic.
+func TestWeb_ComponentsCallTheTestedHelpers(t *testing.T) {
+	files := webFiles(t)
+	want := map[string][]string{
+		"api.js":          {"export const STREAM_EVENTS", "for (const name of STREAM_EVENTS)"},
+		"app.js":          {"liveEffect(name, data, st.entries)", "import { addUnique, liveEffect, upsertSession }"},
+		"tool-card.js":    {"hookInputEntry(call)", "omittedNote(call.hook_omitted_bytes)"},
+		"session-view.js": {"hookLabel(e)"},
+		"entries.js":      {"export function liveEffect", "export function omittedNote", "export function hookInputEntry", "export function hookLabel"},
+	}
+	for name, subs := range want {
+		for _, sub := range subs {
+			if !strings.Contains(files[name], sub) {
+				t.Errorf("%s does not contain %q", name, sub)
+			}
+		}
+	}
+	for _, name := range []string{"app.js", "tool-card.js", "session-view.js"} {
+		if strings.Contains(files[name], "replaceHooks(") || strings.Contains(files[name], "replaceExchange(") {
+			t.Errorf("%s calls a replace function directly; app.js must route through liveEffect", name)
+		}
+	}
+}

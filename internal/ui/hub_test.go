@@ -15,8 +15,9 @@ import (
 type fakeRead struct {
 	mu    sync.Mutex
 	calls []fakeCall
-	block chan struct{} // when set, a read waits for it to close
-	enter chan struct{} // when set, a read signals here before waiting
+	block chan struct{}  // when set, a read waits for it to close
+	enter chan struct{}  // when set, a read signals here before waiting
+	all   []liveExchange // answered as every exchange when entries are read
 }
 
 type fakeCall struct {
@@ -42,6 +43,9 @@ func (f *fakeRead) fn(ctx context.Context, who sessIdent, ids []string, summary,
 		}
 	}
 	var m liveMsg
+	f.mu.Lock()
+	m.All = f.all
+	f.mu.Unlock()
 	if summary {
 		m.Summary = &sessionSummary{ID: who.id(), ExchangeCount: len(ids)}
 	}
@@ -52,6 +56,12 @@ func (f *fakeRead) fn(ctx context.Context, who sessIdent, ids []string, summary,
 		}
 	}
 	return m, nil
+}
+
+func (f *fakeRead) set(all []liveExchange) {
+	f.mu.Lock()
+	f.all = all
+	f.mu.Unlock()
 }
 
 func (f *fakeRead) count() int {

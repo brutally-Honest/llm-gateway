@@ -1,7 +1,7 @@
-import { countText, groupTurns, isRealPrompt, matchIds, pairTools, prettyJSON, timeElement, usageText } from "./entries.js";
+import { countText, groupTurns, hookLabel, isRealPrompt, matchIds, pairTools, prettyJSON, timeElement, usageText } from "./entries.js";
 import "./model-chip.js";
 import { note } from "./session-list.js";
-import { copyButton, truncatedLink } from "./tool-card.js";
+import { copyButton, harnessLabels, truncatedLink } from "./tool-card.js";
 import "./tool-card.js";
 
 function el(tag, cls, text) {
@@ -176,6 +176,11 @@ export class SessionView extends HTMLElement {
       case "error": {
         const d = textBlock(e, `Error${e.name ? ` ${e.name}` : ""}${e.status ? ` (${e.status})` : ""}`, "error-entry");
         return d;
+      }
+      case "hook_event": {
+        const div = el("div", "entry hook-event muted", hookLabel(e));
+        for (const text of harnessLabels(e)) div.append(" ", el("span", "badge harness", text));
+        return div;
       }
       case "marker":
         return el("div", "entry marker muted", e.text || "");

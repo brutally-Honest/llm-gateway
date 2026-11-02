@@ -45,6 +45,7 @@ button {
 .tool-card.is-error { border-color: #cf222e; }
 .tool-head { display: flex; gap: .6rem; align-items: center; }
 .badge.err { background: #cf222e; }
+.badge.harness { background: var(--muted); }
 .badge.pending { background: var(--muted); }
 .model-chip { display: block; color: var(--muted); font-size: .85em; }
 .model-chip.is-error { color: #cf222e; }

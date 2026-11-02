@@ -134,11 +134,20 @@ func (h *Hub) sendSnapshot(w http.ResponseWriter, r *http.Request, rc *http.Resp
 		if err != nil {
 			return nil, false
 		}
-		if _, err := fmt.Fprintf(w, "event: exchange\ndata: %s\n\n", b); err != nil {
+		if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", exchangeEvent(x), b); err != nil {
 			return nil, false
 		}
 	}
 	return sent, rc.Flush() == nil
+}
+
+// exchangeEvent is the SSE event that carries x's whole entry list: "hooks" for the hooks
+// item, whose group the client replaces as a whole, else "exchange".
+func exchangeEvent(x liveExchange) string {
+	if x.RequestID == hooksExchange {
+		return "hooks"
+	}
+	return "exchange"
 }
 
 // writeLive writes one live message: a session event, or one batch for the committed
@@ -157,6 +166,9 @@ func writeLive(w http.ResponseWriter, m liveMsg, sent map[string]string) error {
 			return err
 		}
 	}
+	if m.Refresh {
+		return writeRefresh(w, m, sent)
+	}
 	if len(m.Exchanges) == 0 {
 		return nil
 	}
@@ -169,27 +181,19 @@ func writeLive(w http.ResponseWriter, m liveMsg, sent map[string]string) error {
 	}
 	var batch []ev
 	var maxRow int64
-	first := -1
 	committed := make(map[string]bool, len(m.Exchanges))
 	for _, x := range m.Exchanges {
 		batch = append(batch, ev{"entries", x})
 		sent[x.RequestID] = x.Hash
 		committed[x.RequestID] = true
 		maxRow = max(maxRow, x.RowID)
-		for i, a := range m.All {
-			if a.RequestID == x.RequestID && (first < 0 || i < first) {
-				first = i
-			}
-		}
 	}
-	if first >= 0 {
-		for _, a := range m.All[first+1:] {
-			if committed[a.RequestID] || sent[a.RequestID] == a.Hash {
-				continue
-			}
-			batch = append(batch, ev{"exchange", a})
-			sent[a.RequestID] = a.Hash
+	for _, a := range m.All {
+		if committed[a.RequestID] || sent[a.RequestID] == a.Hash {
+			continue
 		}
+		batch = append(batch, ev{exchangeEvent(a), a})
+		sent[a.RequestID] = a.Hash
 	}
 	if m.Inactive {
 		clear(sent)
@@ -206,6 +210,29 @@ func writeLive(w http.ResponseWriter, m liveMsg, sent map[string]string) error {
 		if _, err := fmt.Fprintf(w, "event: %s\n%sdata: %s\n\n", e.name, id, b); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// writeRefresh writes a hook refresh: an exchange event with the whole list for every
+// exchange in All, the hooks pseudo-exchange included, that differs from what this stream
+// last sent. There is no id: row ids belong to exchanges only.
+func writeRefresh(w http.ResponseWriter, m liveMsg, sent map[string]string) error {
+	for _, a := range m.All {
+		if h, ok := sent[a.RequestID]; ok && h == a.Hash {
+			continue
+		}
+		b, err := json.Marshal(a.Entries)
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", exchangeEvent(a), b); err != nil {
+			return err
+		}
+		sent[a.RequestID] = a.Hash
+	}
+	if m.Inactive {
+		clear(sent)
 	}
 	return nil
 }

@@ -7,7 +7,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -334,7 +337,8 @@ func TestAPI_ToolEntriesCarryToolCallID(t *testing.T) {
 		}
 		// The entry's fields are exactly the API's tool fields: no other id name rides along.
 		allowed := map[string]bool{"id": true, "exchange_id": true, "index": true, "start": true, "kind": true,
-			"name": true, "tool_call_id": true, "text": true, "is_error": true, "truncated": true, "partial": true}
+			"name": true, "tool_call_id": true, "text": true, "is_error": true, "truncated": true, "partial": true,
+			"state": true}
 		for k := range en {
 			if !allowed[k] {
 				t.Fatalf("%s carries unexpected field %q: %v", kind, k, en)
@@ -381,5 +385,271 @@ func TestUI_BodyEndpointSendsStricterCSP(t *testing.T) {
 		if rec.Header().Get("X-Content-Type-Options") != "nosniff" || rec.Header().Get("Referrer-Policy") != "no-referrer" {
 			t.Errorf("%s: lost nosniff/referrer headers", c.name)
 		}
+	}
+}
+
+// toolSession stores one exchange holding a captured tool call "call_1" (input in).
+func (e *apiEnv) toolSession(input string) {
+	e.t.Helper()
+	e.save("a", "k", "cc", 1)
+	mp, _ := json.Marshal(map[string]any{"role": "assistant", "blocks": []map[string]string{{"hash": sha("msg"), "type": "text"}}})
+	evs := []core.StoredEvent{
+		{Seq: 0, Kind: core.KindRequest, Payload: []byte(`{"model":"m1"}`)},
+		{Seq: 1, Kind: core.KindMessage, ContentHash: sha("m"), Payload: mp},
+		{Seq: 2, Kind: core.KindToolCall, ToolCallID: "call_1", ContentHash: sha("in"),
+			Payload: []byte(`{"name":"bash","id":"call_1"}`)},
+	}
+	contents := []core.Content{{Hash: sha("msg"), Bytes: []byte(`{"type":"text","text":"run"}`)},
+		{Hash: sha("m"), Bytes: []byte(sha("m"))}, {Hash: sha("in"), Bytes: []byte(input)}}
+	if err := e.s.SaveParse(e.t.Context(), "a", core.PrincipalLocal, core.ParseOK, evs, contents); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+var hookSeq int64
+
+// hook stores a hook event of session "k" received at base+at seconds.
+func (e *apiEnv) hook(key string, ev core.HarnessEvent, at int) {
+	e.t.Helper()
+	hookSeq++
+	ev.SessionKey = key
+	rec := &store.HookRecord{PrincipalID: core.PrincipalLocal, Client: "cc", Seq: hookSeq,
+		ReceivedAt: baseTime.Add(time.Duration(at) * time.Second),
+		Payload:    []byte(fmt.Sprintf(`{"n":%d}`, hookSeq)), Event: ev}
+	if err := e.s.SaveHook(e.t.Context(), rec); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+func TestAPITimeline_StatesFlagsAndHookLines(t *testing.T) {
+	e := newAPIEnv(t)
+	e.toolSession(`{"a":1}`)
+	e.hook("k", core.HarnessEvent{Phase: core.PhasePreTool, ToolCallID: "call_1", ToolName: "bash", ToolInput: []byte(`{"a":2}`)}, 2)
+	e.hook("k", core.HarnessEvent{Phase: core.PhasePostTool, ToolCallID: "call_1", ToolName: "bash"}, 3)
+	e.hook("k", core.HarnessEvent{Phase: core.PhasePostTool, ToolCallID: "ghost", ToolName: "ls", SourceName: "evt-post"}, 4)
+	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-notice"}, 5)
+	p := e.timeline("/api/sessions/" + sid() + "/timeline")
+	var call map[string]any
+	var hooks []map[string]any
+	for _, en := range p.Entries {
+		switch en["kind"] {
+		case "tool_call":
+			call = en
+		case "hook_event":
+			hooks = append(hooks, en)
+		}
+	}
+	if call == nil || call["state"] != "ran-not-reported" || call["input_differs"] != true || call["hook_input"] != `{"a":2}` {
+		t.Fatalf("tool call = %v", call)
+	}
+	if len(hooks) != 2 {
+		t.Fatalf("hook lines = %v", hooks)
+	}
+	if hooks[0]["tool_call_id"] != "ghost" || hooks[0]["state"] != "ran-not-asked-or-not-captured" || hooks[0]["phase"] != "post_tool" || hooks[0]["name"] != "ls" {
+		t.Errorf("unmatched hook line = %v", hooks[0])
+	}
+	if hooks[1]["phase"] != "notice" || hooks[1]["id"] == hooks[0]["id"] {
+		t.Errorf("notice hook line = %v", hooks[1])
+	}
+	// Paging by next_after walks past hook lines without repeating or skipping.
+	var ids []string
+	path := "/api/sessions/" + sid() + "/timeline?limit=1"
+	for range 20 {
+		pg := e.timeline(path)
+		for _, en := range pg.Entries {
+			ids = append(ids, en["id"].(string))
+		}
+		if pg.NextAfter == nil {
+			break
+		}
+		path = "/api/sessions/" + sid() + "/timeline?limit=1&after=" + *pg.NextAfter
+	}
+	if len(ids) != len(p.Entries) {
+		t.Fatalf("paged ids %v, full %d entries", ids, len(p.Entries))
+	}
+	for i, en := range p.Entries {
+		if ids[i] != en["id"] {
+			t.Fatalf("paged %v differs from full at %d", ids, i)
+		}
+	}
+}
+
+func TestAPITimeline_TruncatedHookInputCarriesOmittedCount(t *testing.T) {
+	e := newAPIEnv(t)
+	e.toolSession(`{"a":1}`)
+	big := `{"a":"` + strings.Repeat("x", entryCut+100) + `"}`
+	e.hook("k", core.HarnessEvent{Phase: core.PhasePreTool, ToolCallID: "call_1", ToolName: "bash", ToolInput: []byte(big)}, 2)
+	p := e.timeline("/api/sessions/" + sid() + "/timeline")
+	for _, en := range p.Entries {
+		if en["kind"] == "tool_call" {
+			n, _ := en["hook_omitted_bytes"].(float64)
+			if en["input_differs"] != true || n < 100 || len(en["hook_input"].(string))+int(n) != len(big) {
+				t.Fatalf("tool call = hook_omitted_bytes %v, hook_input len %d", en["hook_omitted_bytes"], len(en["hook_input"].(string)))
+			}
+			return
+		}
+	}
+	t.Fatal("no tool call")
+}
+
+func TestAPITimeline_AgentLabels(t *testing.T) {
+	e := newAPIEnv(t)
+	e.toolSession(`{"a":1}`)
+	e.hook("k", core.HarnessEvent{Phase: core.PhasePreTool, ToolCallID: "call_1", AgentID: "ag1", AgentType: "explore"}, 2)
+	e.hook("k", core.HarnessEvent{Phase: core.PhaseAgentStart, AgentID: "ag2", AgentType: "plan", SourceName: "evt-agent-start"}, 3)
+	p := e.timeline("/api/sessions/" + sid() + "/timeline")
+	seen := map[string]bool{}
+	for _, en := range p.Entries {
+		switch en["kind"] {
+		case "tool_call":
+			seen["call"] = en["agent_id"] == "ag1" && en["agent_type"] == "explore"
+		case "hook_event":
+			seen["hook"] = en["agent_id"] == "ag2" && en["agent_type"] == "plan"
+		}
+	}
+	if !seen["call"] || !seen["hook"] {
+		t.Fatalf("agent labels missing: %v", p.Entries)
+	}
+}
+
+// A late-arriving earlier hook event must not move the ids of the hook lines that
+// already exist: an id is the stored row id, not the line's place on the page.
+func TestAPITimeline_HookLineIdsSurviveEarlierArrival(t *testing.T) {
+	e := newAPIEnv(t)
+	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-a"}, 2)
+	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-b"}, 3)
+	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-c"}, 4)
+	before := map[string]string{} // hook source name -> id
+	for _, en := range e.timeline("/api/sessions/" + sid() + "/timeline").Entries {
+		if en["kind"] == "hook_event" {
+			before[en["text"].(string)] = en["id"].(string)
+		}
+	}
+	if len(before) != 3 {
+		t.Fatalf("hook lines before = %v", before)
+	}
+	// Received before all three, with a sequence number from before a restart.
+	early := &store.HookRecord{PrincipalID: core.PrincipalLocal, Client: "cc", Seq: 1,
+		ReceivedAt: baseTime.Add(time.Second), Payload: []byte(`{"early":true}`),
+		Event: core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-early", SessionKey: "k"}}
+	if err := e.s.SaveHook(e.t.Context(), early); err != nil {
+		t.Fatal(err)
+	}
+	after := map[string]string{}
+	for _, en := range e.timeline("/api/sessions/" + sid() + "/timeline").Entries {
+		if en["kind"] == "hook_event" {
+			after[en["text"].(string)] = en["id"].(string)
+		}
+	}
+	if len(after) != 4 {
+		t.Fatalf("hook lines after = %v", after)
+	}
+	for name, id := range before {
+		if after[name] != id {
+			t.Errorf("hook line %s: id %q became %q", name, id, after[name])
+		}
+	}
+}
+
+// A late-arriving earlier hook event must not repeat or skip hook lines on the next
+// page: the after token is keyed on the line's receive time, seq and row id, not on
+// its place among the hook lines.
+func TestAPITimeline_HookPagingSurvivesEarlierArrival(t *testing.T) {
+	e := newAPIEnv(t)
+	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-a"}, 2)
+	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-b"}, 3)
+	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-c"}, 4)
+	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-d"}, 5)
+	url := "/api/sessions/" + sid() + "/timeline"
+	var want []string // ids of the lines that exist before page 1 is loaded
+	for _, en := range e.timeline(url).Entries {
+		want = append(want, en["id"].(string))
+	}
+	if len(want) != 4 {
+		t.Fatalf("hook lines = %v", want)
+	}
+	page1 := e.timeline(url + "?limit=2")
+	if page1.NextAfter == nil {
+		t.Fatalf("page 1 has no next_after: %v", page1.Entries)
+	}
+	// Received before the page boundary, so it sorts ahead of every line on page 1.
+	early := &store.HookRecord{PrincipalID: core.PrincipalLocal, Client: "cc", Seq: 1,
+		ReceivedAt: baseTime.Add(time.Second), Payload: []byte(`{"early":true}`),
+		Event: core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-early", SessionKey: "k"}}
+	if err := e.s.SaveHook(e.t.Context(), early); err != nil {
+		t.Fatal(err)
+	}
+	page2 := e.timeline(url + "?limit=2&after=" + *page1.NextAfter)
+	var got []string
+	for _, en := range page2.Entries {
+		got = append(got, en["id"].(string))
+	}
+	if len(got) != 2 || got[0] != want[2] || got[1] != want[3] {
+		t.Errorf("page 2 ids = %v, want the lines after page 1: %v", got, want[2:])
+	}
+}
+
+// Hook lines sort by receive time, seq and stored row id on every path. Seq restarts
+// with the gateway, so rows tie on receive time and seq; the store read, the one-page
+// timeline and the concatenation of all pages must still agree on the order.
+func TestAPITimeline_HookOrderTiesOnTimeAndSeq(t *testing.T) {
+	e := newAPIEnv(t)
+	rng := rand.New(rand.NewSource(19))
+	phases := []core.HarnessPhase{core.PhaseNotice, core.PhasePreTool, core.PhasePostTool}
+	for n := range 40 {
+		rec := &store.HookRecord{PrincipalID: core.PrincipalLocal, Client: "cc",
+			Seq:        int64(1 + rng.Intn(3)),
+			ReceivedAt: baseTime.Add(time.Duration(2+rng.Intn(3)) * time.Second),
+			Payload:    []byte(fmt.Sprintf(`{"n":%d,"r":%d}`, n, rng.Int())),
+			Event: core.HarnessEvent{Phase: phases[rng.Intn(len(phases))],
+				SourceName: fmt.Sprintf("evt-%d", n), SessionKey: "k"}}
+		if err := e.s.SaveHook(e.t.Context(), rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r, err := store.OpenReader(e.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	stored, err := r.HookEvents(core.PrincipalLocal, "cc", "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want []string
+	for _, h := range stored {
+		want = append(want, "hook:"+strconv.FormatInt(h.ID, 10))
+	}
+	if len(want) != 40 {
+		t.Fatalf("stored hook rows = %d, want 40", len(want))
+	}
+
+	url := "/api/sessions/" + sid() + "/timeline"
+	ids := func(p tlPage) []string {
+		var out []string
+		for _, en := range p.Entries {
+			out = append(out, en["id"].(string))
+		}
+		return out
+	}
+	if got := ids(e.timeline(url)); !slices.Equal(got, want) {
+		t.Fatalf("one page = %v, want the store order %v", got, want)
+	}
+	var paged []string
+	after := ""
+	for {
+		u := url + "?limit=3"
+		if after != "" {
+			u += "&after=" + after
+		}
+		p := e.timeline(u)
+		paged = append(paged, ids(p)...)
+		if p.NextAfter == nil {
+			break
+		}
+		after = *p.NextAfter
+	}
+	if !slices.Equal(paged, want) {
+		t.Errorf("concatenated pages = %v, want the store order %v", paged, want)
 	}
 }

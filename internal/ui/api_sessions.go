@@ -65,6 +65,8 @@ type sessionSummary struct {
 	Errors        int       `json:"errors"`
 	Usage         usageJSON `json:"usage"`
 	Active        bool      `json:"active"`
+	// HooksOnly marks a session known only from hook events (AC25).
+	HooksOnly bool `json:"hooks_only"`
 }
 
 type listPage struct {
@@ -95,7 +97,7 @@ func buildSummary(id string, row store.SessionRow, st timeline.Stats, now time.T
 		ID: id, SessionKey: row.SessionKey, Client: row.Client, Models: models,
 		FirstAt: nsTime(row.First), LastAt: nsTime(row.Last),
 		ExchangeCount: row.Count, ModelCalls: st.ModelCalls, ToolCalls: st.ToolCalls, Errors: st.Errors,
-		Usage: usageToJSON(st.Usage), Active: now.Sub(last) < ActiveWindow,
+		Usage: usageToJSON(st.Usage), Active: now.Sub(last) < ActiveWindow, HooksOnly: row.HooksOnly,
 	}
 }
 
@@ -127,6 +129,9 @@ type afterToken struct {
 	RequestID string `json:"r,omitempty"`
 	// Index is the entry's position within its exchange (timeline lists only).
 	Index int `json:"i,omitempty"`
+	// Seq and Row are a hook line's sequence number and stored row id (timeline only).
+	Seq int64 `json:"q,omitempty"`
+	Row int64 `json:"h,omitempty"`
 }
 
 func encodeAfter(t afterToken) string {

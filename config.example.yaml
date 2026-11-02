@@ -69,6 +69,24 @@ capture:
   # Env: GATEWAY_CAPTURE_MEMORY_LIMIT
   memory_limit: 268435456
 
+# Harness hooks: the events a client's lifecycle hooks send to the gateway's ingest route.
+# They have their own queue and memory budget, apart from capture's, so a hook burst
+# does not drop LLM captures. Sizes and counts must be > 0.
+hooks:
+  # How many hook events may wait to be stored. When it is full, an event is dropped,
+  # counted and logged, and the hook still gets a 200.
+  # Env: GATEWAY_HOOKS_QUEUE_SIZE
+  queue_size: 256
+
+  # How many goroutines store queued hook events.
+  # Env: GATEWAY_HOOKS_WORKERS
+  workers: 1
+
+  # The memory the queued hook bodies may hold (32 MiB). An event that would cross it is
+  # dropped and counted; the hook still gets a 200.
+  # Env: GATEWAY_HOOKS_MEMORY_LIMIT
+  memory_limit: 33554432
+
 # The web UI: a read-only page on its own listener. Loopback only, with no auth: the
 # address must be 127.0.0.0/8, ::1 or localhost, and differ from listen_addr.
 ui:

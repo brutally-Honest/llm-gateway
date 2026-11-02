@@ -58,6 +58,35 @@ func TestCore_NoProviderOrClientIdentifiers(t *testing.T) {
 	for _, d := range dirs {
 		checkDir(t, d.dir, d.forbidden)
 	}
+	checkNoHarnessEvents(t, "../hooks")
+}
+
+// checkNoHarnessEvents fails for every non-test .go file directly in dir that names a
+// hook event from harnessEventRE, and when dir holds no such file. Test files are
+// skipped: hook payload fixtures legitimately carry event names.
+func checkNoHarnessEvents(t *testing.T, dir string) {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, path := range files {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		checked++
+		for _, m := range harnessEventRE.FindAll(b, -1) {
+			t.Errorf("%s names the hook event %q; only %s may", path, m, harnessProfileDir)
+		}
+	}
+	if checked == 0 {
+		t.Fatalf("no files checked under %s; the walk is not looking at it", dir)
+	}
 }
 
 // checkDir fails the test for every file under dir that contains a forbidden word, and
@@ -148,5 +177,65 @@ func TestPurity_CursorExemptionIsNarrow(t *testing.T) {
 	// The exemption covers the client name only: other words on that line still fail.
 	if got := forbiddenIn("../ui/web/style.css", []byte("  cursor: claude;\n"), names); len(got) != 1 || got[0] != "claude" {
 		t.Errorf("other names on the property line: %v, want [claude]", got)
+	}
+}
+
+// harnessEventNames are the Claude Code hook events of specs/010, spelled as the client
+// sends them. Only the claudecode profile may spell them. A whole word is matched, so
+// the Go identifier PhaseSessionStart passes while a string "SessionStart" fails.
+var harnessEventNames = []string{
+	"PreToolUse", "PostToolUse", "PostToolUseFailure", "PostToolBatch",
+	"UserPromptSubmit", "SessionStart", "SessionEnd", "StopFailure",
+	"SubagentStart", "SubagentStop", "PermissionRequest", "PermissionDenied",
+	"PreCompact", "PostCompact",
+}
+
+// harnessQuotedNames are the short hook event names. "Stop" is also a method name (the
+// ticker's tick.Stop), so these are matched only as a quoted value, the form a hook body
+// and a Go string literal take.
+var harnessQuotedNames = []string{"Stop", "Notification"}
+
+// harnessEventRE matches any hook event name in harnessEventNames or harnessQuotedNames.
+var harnessEventRE = regexp.MustCompile(
+	`\b(` + strings.Join(harnessEventNames, "|") + `)\b|"(` + strings.Join(harnessQuotedNames, "|") + `)"`)
+
+// harnessProfileDir is the one directory allowed to name a hook event.
+const harnessProfileDir = "clients/claudecode"
+
+// TestPurity_NoHarnessEventNamesOutsideProfile walks every file under internal/ and
+// cmd/, except the claudecode profile and this file, and fails any that names a Claude
+// Code hook event. The core's own event types stay harness-neutral (ADR 0012).
+func TestPurity_NoHarnessEventNamesOutsideProfile(t *testing.T) {
+	checked := 0
+	for _, root := range []string{"..", "../../cmd"} {
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				if strings.HasSuffix(filepath.ToSlash(filepath.Clean(path)), harnessProfileDir) {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if filepath.Clean(path) == filepath.Join("..", "core", purityFile) {
+				return nil
+			}
+			b, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			checked++
+			for _, m := range harnessEventRE.FindAll(b, -1) {
+				t.Errorf("%s names the hook event %q; only %s may", path, m, harnessProfileDir)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walking %s: %v", root, err)
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no files checked; the walk is not looking at the tree")
 	}
 }

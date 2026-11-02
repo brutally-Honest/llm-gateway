@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/brutally-honest/llm-gateway/internal/core"
 	"github.com/brutally-honest/llm-gateway/internal/store"
 )
 
@@ -43,10 +44,14 @@ func escape(s string, keepLayout bool) string {
 func RenderSessionsText(w io.Writer, rows []SessionListing, loc *time.Location) error {
 	var buf bytes.Buffer
 	for _, r := range rows {
-		fmt.Fprintf(&buf, "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
+		label := ""
+		if r.HooksOnly {
+			label = "\thooks only"
+		}
+		fmt.Fprintf(&buf, "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s%s\n",
 			escape(r.SessionKey, false), escape(r.Client, false), escape(r.PrincipalID, false),
 			stamp(r.First, loc), stamp(r.Last, loc), r.Count, escape(r.Preview, false),
-			groupText(r.Usage.Total, r.Usage.Calls))
+			groupText(r.Usage.Total, r.Usage.Calls), label)
 		if len(r.Usage.Models) > 1 {
 			for _, m := range r.Usage.Models {
 				fmt.Fprintf(&buf, "   %s: %s\n", escape(m.Model, false), groupText(m.Group, m.Calls))
@@ -66,6 +71,7 @@ type sessionJSON struct {
 	Last      string `json:"last"`
 	Count     int    `json:"count"`
 	Preview   string `json:"preview"`
+	HooksOnly bool   `json:"hooks_only,omitempty"`
 	summaryJSON
 }
 
@@ -77,7 +83,7 @@ func RenderSessionsJSON(w io.Writer, rows []SessionListing, loc *time.Location) 
 	for _, r := range rows {
 		if err := enc.Encode(sessionJSON{Type: "session", Key: r.SessionKey, Client: r.Client,
 			Principal: r.PrincipalID, First: stamp(r.First, loc), Last: stamp(r.Last, loc),
-			Count: r.Count, Preview: r.Preview, summaryJSON: summaryObject("", r.Usage)}); err != nil {
+			Count: r.Count, Preview: r.Preview, HooksOnly: r.HooksOnly, summaryJSON: summaryObject("", r.Usage)}); err != nil {
 			return err
 		}
 	}
@@ -116,6 +122,29 @@ func callSuffix(c *CallUsage) string {
 	return s
 }
 
+// harnessSuffix is the state, `input differs` and agent labels of a tool call or hook
+// line; empty when there is nothing to show.
+func harnessSuffix(e Entry) string {
+	var s string
+	if e.State != "" {
+		d := e.State
+		if e.Reason != "" {
+			d += ": " + e.Reason
+		}
+		if e.Outcome != "" {
+			d += ": " + e.Outcome
+		}
+		s += " [" + escape(d, false) + "]"
+	}
+	if e.InputDiffers {
+		s += " [input differs]"
+	}
+	if e.AgentID != "" || e.AgentType != "" {
+		s += " agent=" + escape(e.AgentID, false) + "/" + escape(e.AgentType, false)
+	}
+	return s
+}
+
 // RenderText prints entries as text with times in loc as RFC 3339. Message and tool
 // bodies keep newlines and tabs; every other control character is escaped.
 func RenderText(w io.Writer, entries []Entry, loc *time.Location) error {
@@ -135,13 +164,30 @@ func RenderText(w io.Writer, entries []Entry, loc *time.Location) error {
 		case KindMessage:
 			fmt.Fprintf(&b, "  %s%s: %s\n", escape(e.Role, false), mark, escape(e.Text, true))
 		case KindToolCall:
-			fmt.Fprintf(&b, "  tool_call %s (%s)%s: %s\n", escape(e.Name, false), escape(e.ToolCallID, false), mark, escape(e.Text, true))
+			fmt.Fprintf(&b, "  tool_call %s (%s)%s%s: %s\n", escape(e.Name, false), escape(e.ToolCallID, false), mark, harnessSuffix(e), escape(e.Text, true))
+			if e.InputDiffers {
+				fmt.Fprintf(&b, "  hook input: %s\n", escape(e.HookInput, true))
+				if e.HookOmitted > 0 {
+					fmt.Fprintf(&b, "  … %d bytes omitted\n", e.HookOmitted)
+				}
+			}
 		case KindToolResult:
 			errMark := ""
 			if e.IsError {
 				errMark = " error"
 			}
 			fmt.Fprintf(&b, "  tool_result (%s)%s%s: %s\n", escape(e.ToolCallID, false), errMark, mark, escape(e.Text, true))
+		case KindHarness:
+			id := ""
+			if e.ToolCallID != "" {
+				id = " (" + escape(e.ToolCallID, false) + ")"
+			}
+			if e.Phase == string(core.PhaseUnknown) {
+				// The phase says nothing; the name the client sent is what identifies the event.
+				fmt.Fprintf(&b, "   hook %s unknown: %s%s%s\n", stamp(e.Start, loc), escape(e.Text, false), id, harnessSuffix(e))
+				break
+			}
+			fmt.Fprintf(&b, "   hook %s %s %s%s%s\n", stamp(e.Start, loc), escape(e.Phase, false), escape(e.Name, false), id, harnessSuffix(e))
 		case KindError:
 			fmt.Fprintf(&b, "  error %d %s%s: %s\n", e.Status, escape(e.Name, false), mark, escape(e.Text, true))
 		}
@@ -168,6 +214,16 @@ type entryJSON struct {
 	Text       string `json:"text,omitempty"`
 	Omitted    int    `json:"omitted_bytes,omitempty"`
 	Partial    bool   `json:"partial,omitempty"`
+
+	State        string `json:"state,omitempty"`
+	Reason       string `json:"reason,omitempty"`
+	Outcome      string `json:"outcome,omitempty"`
+	InputDiffers bool   `json:"input_differs,omitempty"`
+	HookInput    string `json:"hook_input,omitempty"`
+	HookOmitted  int    `json:"hook_omitted_bytes,omitempty"`
+	Phase        string `json:"phase,omitempty"`
+	AgentID      string `json:"agent_id,omitempty"`
+	AgentType    string `json:"agent_type,omitempty"`
 	// Usage is the counters object, or null with NoUsage; omitted for a non-call.
 	Usage   json.RawMessage `json:"usage,omitempty"`
 	NoUsage string          `json:"no_usage,omitempty"`
@@ -204,7 +260,9 @@ func RenderJSON(w io.Writer, entries []Entry, loc *time.Location) error {
 		}
 		if err := enc.Encode(entryJSON{Usage: usage, NoUsage: noUsage, Type: string(e.Kind), RequestID: e.RequestID, Time: stamp(e.Start, loc),
 			Method: e.Method, Path: e.Path, Status: e.Status, Parse: e.Parse, Role: e.Role, Name: e.Name,
-			ToolCallID: e.ToolCallID, IsError: e.IsError, Text: e.Text, Omitted: e.Omitted, Partial: e.Partial}); err != nil {
+			ToolCallID: e.ToolCallID, IsError: e.IsError, Text: e.Text, Omitted: e.Omitted, Partial: e.Partial,
+			State: e.State, Reason: e.Reason, Outcome: e.Outcome, InputDiffers: e.InputDiffers, HookInput: e.HookInput, HookOmitted: e.HookOmitted,
+			Phase: e.Phase, AgentID: e.AgentID, AgentType: e.AgentType}); err != nil {
 			return err
 		}
 	}
@@ -218,24 +276,39 @@ type UngroupedSummary struct {
 	Count       int
 	First, Last int64
 	Usage       Summary
+	// HookCount is how many hook events carry no session key.
+	HookCount int
 }
 
 // RenderUngroupedRowText prints the ungrouped row in the sessions columns.
 func RenderUngroupedRowText(w io.Writer, u UngroupedSummary, loc *time.Location) error {
-	_, err := fmt.Fprintf(w, "ungrouped\t\t\t%s\t%s\t%d\t\t%s\n", stamp(u.First, loc), stamp(u.Last, loc), u.Count,
-		groupText(u.Usage.Total, u.Usage.Calls))
+	first, last := stamp(u.First, loc), stamp(u.Last, loc)
+	if u.Count == 0 {
+		first, last = "", ""
+	}
+	hooks := ""
+	if u.HookCount > 0 {
+		hooks = fmt.Sprintf("\t%d hook events", u.HookCount)
+	}
+	_, err := fmt.Fprintf(w, "ungrouped\t\t\t%s\t%s\t%d\t\t%s%s\n", first, last, u.Count,
+		groupText(u.Usage.Total, u.Usage.Calls), hooks)
 	return err
 }
 
 // RenderUngroupedRowJSON prints the ungrouped row as one JSON object.
 func RenderUngroupedRowJSON(w io.Writer, u UngroupedSummary, loc *time.Location) error {
+	first, last := stamp(u.First, loc), stamp(u.Last, loc)
+	if u.Count == 0 {
+		first, last = "", ""
+	}
 	return json.NewEncoder(w).Encode(struct {
-		Type  string `json:"type"`
-		First string `json:"first"`
-		Last  string `json:"last"`
-		Count int    `json:"count"`
+		Type      string `json:"type"`
+		First     string `json:"first"`
+		Last      string `json:"last"`
+		Count     int    `json:"count"`
+		HookCount int    `json:"hook_events,omitempty"`
 		summaryJSON
-	}{"ungrouped", stamp(u.First, loc), stamp(u.Last, loc), u.Count, summaryObject("", u.Usage)})
+	}{"ungrouped", first, last, u.Count, u.HookCount, summaryObject("", u.Usage)})
 }
 
 // UngroupedExchange is one exchange with no session key; Call is set when it is a

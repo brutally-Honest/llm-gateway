@@ -38,22 +38,29 @@ func mountExchanges(api chi.Router, d Deps) {
 	api.Get("/exchanges/{id}/body", d.getBody)
 }
 
-// position is an entry's sort tuple: exchange start, exchange id, index.
+// position is an entry's sort tuple: start, request id, index within the exchange,
+// then for a hook line its sequence number and stored row id. A hook line's start is
+// its receive time; its index is 0.
 type position struct {
 	start int64
 	req   string
 	idx   int
+	seq   int64
+	row   int64
 }
 
-// after reports whether p sorts strictly after the token's position.
+// after reports whether p sorts strictly after the token's position. Two hook lines
+// that share a receive time compare by their hook key, the order the store reads in.
 func (p position) after(t afterToken) bool {
 	switch {
 	case p.start != t.At:
 		return p.start > t.At
 	case p.req != t.RequestID:
 		return p.req > t.RequestID
+	case p.idx != t.Index:
+		return p.idx > t.Index
 	}
-	return p.idx > t.Index
+	return store.HookKey{ReceivedAt: t.At, Seq: t.Seq, ID: t.Row}.Less(store.HookKey{ReceivedAt: p.start, Seq: p.seq, ID: p.row})
 }
 
 func (d Deps) getTimeline(w http.ResponseWriter, r *http.Request) {
@@ -91,8 +98,16 @@ func (d Deps) getTimeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(rows) == 0 {
-		writeErr(w, http.StatusNotFound, "not_found", "no such session")
-		return
+		// A session known only from hook events has a timeline of hook lines (AC25).
+		hooks, err := c.HookEvents(principal, client, key)
+		if err != nil {
+			writeStoreErr(w, err)
+			return
+		}
+		if len(hooks) == 0 {
+			writeErr(w, http.StatusNotFound, "not_found", "no such session")
+			return
+		}
 	}
 	exs := make([]store.ExchangeRow, len(rows))
 	byID := make(map[string]store.ExchangeRow, len(rows))
@@ -111,7 +126,10 @@ func (d Deps) getTimeline(w http.ResponseWriter, r *http.Request) {
 	all := mapEntries(entries, byID)
 	pos := make([]position, len(all))
 	for i, e := range all {
-		pos[i] = position{start: byID[e.ExchangeID].StartedAt, req: e.ExchangeID, idx: e.Index}
+		pos[i] = position{start: e.startNS, req: e.ExchangeID, idx: e.Index}
+		if e.Kind == kindHookEvent {
+			pos[i] = position{start: e.startNS, req: hookRequest, seq: e.hookSeq, row: e.hookRow}
+		}
 	}
 	from := 0
 	if after != nil {
@@ -126,7 +144,8 @@ func (d Deps) getTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 	if end < len(all) {
 		last := pos[end-1]
-		n := encodeAfter(afterToken{List: listTimeline, At: last.start, RequestID: last.req, Index: last.idx})
+		n := encodeAfter(afterToken{List: listTimeline, At: last.start, RequestID: last.req, Index: last.idx,
+			Seq: last.seq, Row: last.row})
 		page.NextAfter = &n
 	}
 	writeJSON(w, page)

@@ -279,3 +279,25 @@ func TestAPI_PagingWhileSessionMovesNoDuplicates(t *testing.T) {
 		t.Fatalf("s1 missing: %v", seen)
 	}
 }
+
+func TestAPISessions_HooksOnlyLabel(t *testing.T) {
+	e := newAPIEnv(t)
+	e.save("a", "withex", "cc", 1)
+	e.hook("withex", core.HarnessEvent{Phase: core.PhaseNotice}, 2)
+	e.hook("hookonly", core.HarnessEvent{Phase: core.PhaseNotice}, 3)
+	byKey := map[string]map[string]any{}
+	for _, it := range e.page("/api/sessions").Items {
+		byKey[it["session_key"].(string)] = it
+	}
+	if byKey["hookonly"] == nil || byKey["hookonly"]["hooks_only"] != true {
+		t.Fatalf("hooks-only session = %v", byKey["hookonly"])
+	}
+	if byKey["withex"] == nil || byKey["withex"]["hooks_only"] != false {
+		t.Fatalf("session with exchange = %v", byKey["withex"])
+	}
+	id := sessionID(store.SessionRow{PrincipalID: core.PrincipalLocal, Client: "cc", SessionKey: "hookonly"})
+	p := e.timeline("/api/sessions/" + id + "/timeline")
+	if len(p.Entries) != 1 || p.Entries[0]["kind"] != "hook_event" {
+		t.Fatalf("hooks-only timeline = %v", p.Entries)
+	}
+}
