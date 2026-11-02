@@ -453,14 +453,14 @@ func TestHooksLive_CallStateConvergesAcrossLaterCommit(t *testing.T) {
 	e.hookPre(2)
 	apply(1)
 	if st := callStateIn(t, view, "call_1"); st != timeline.StatePending {
-		t.Fatalf("after PreToolUse state = %q", st)
+		t.Fatalf("after the pre-tool hook state = %q", st)
 	}
 
 	e.hook("k", core.HarnessEvent{Phase: core.PhasePostTool, ToolCallID: "call_1", ToolName: "bash"}, 3)
 	e.hub.PublishHook(core.PrincipalLocal, "cc", "k")
 	apply(1)
 	if st := callStateIn(t, view, "call_1"); st != timeline.StateRanNotReported {
-		t.Fatalf("after PostToolUse state = %q", st)
+		t.Fatalf("after the post-tool hook state = %q", st)
 	}
 
 	e.saveResult("b", 4)
