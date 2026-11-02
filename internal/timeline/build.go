@@ -93,6 +93,17 @@ type Entry struct {
 	// nil for any other entry.
 	Call *CallUsage
 
+	// Thread, PrevID, Messages and Carried are set on the exchange entry only.
+	// Thread numbers the conversation thread the call belongs to, from 0 in order of
+	// first appearance. PrevID is the request id of the earlier call it continues,
+	// empty when it starts a new thread. Messages is the request's message count and
+	// Carried how many of them it shares with that earlier call, so the new ones are
+	// Messages - Carried.
+	Thread   int
+	PrevID   string
+	Messages int
+	Carried  int
+
 	// Harness fields. On a tool call: State, Reason, Outcome, InputDiffers, HookInput
 	// and the agent labels. On a KindHarness entry: Phase, State, Name, ToolCallID,
 	// the agent labels and Text (the event's name as the client sent it).
@@ -115,6 +126,8 @@ type Entry struct {
 
 type thread struct {
 	hashes []string
+	id     int    // the conversation thread this call belongs to
+	reqID  string // the call's request id
 }
 
 // Build lists a session's entries: exchanges by start time then request id, each
@@ -137,6 +150,7 @@ func BuildWithUsage(src Source, session store.SessionRow, opts Options) ([]Entry
 		earlier []thread
 		calls   []CallUsage
 		seen    [][]store.EventRow
+		threads int // conversation threads started so far
 	)
 	for _, ex := range exchanges {
 		evs, err := loadEvents(src, ex)
@@ -163,7 +177,13 @@ func BuildWithUsage(src Source, session store.SessionRow, opts Options) ([]Entry
 			continue
 		}
 		lcp, best := bestMatch(earlier, hashes)
-		earlier = append(earlier, thread{hashes: hashes})
+		tid, prev := threads, ""
+		if best != nil {
+			tid, prev = best.id, best.reqID
+		} else {
+			threads++
+		}
+		earlier = append(earlier, thread{hashes: hashes, id: tid, reqID: ex.RequestID})
 		entries, err := exchangeEntries(src, ex, evs, lcp, best, opts)
 		if err != nil {
 			return nil, Summary{}, err
@@ -171,6 +191,8 @@ func BuildWithUsage(src Source, session store.SessionRow, opts Options) ([]Entry
 		for i := range entries {
 			entries[i].Index = i
 		}
+		entries[0].Thread, entries[0].PrevID = tid, prev
+		entries[0].Messages, entries[0].Carried = len(hashes), lcp
 		entries[0].Call = callOf(ex, evs)
 		if entries[0].Call != nil {
 			calls = append(calls, *entries[0].Call)

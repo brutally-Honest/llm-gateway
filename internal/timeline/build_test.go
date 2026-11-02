@@ -333,3 +333,64 @@ func TestBuild_ToolResultStringContentIsDecodedText(t *testing.T) {
 		t.Errorf("array content = %q, want %q", got["c2"], want)
 	}
 }
+
+func exchangeOf(t *testing.T, entries []timeline.Entry, id string) timeline.Entry {
+	t.Helper()
+	for _, e := range entries {
+		if e.RequestID == id && e.Kind == timeline.KindExchange {
+			return e
+		}
+	}
+	t.Fatalf("no exchange entry for %s", id)
+	return timeline.Entry{}
+}
+
+func TestBuild_CallCarriesThreadAndPrevious(t *testing.T) {
+	f := newFake()
+	f.thread("r1", 1, "u:a")
+	f.thread("r2", 2, "u:a", "a:b", "u:c")
+	out := build(t, f, timeline.Options{})
+	r1, r2 := exchangeOf(t, out, "r1"), exchangeOf(t, out, "r2")
+	if r2.PrevID != "r1" || r2.Thread != r1.Thread {
+		t.Fatalf("r2 = thread %d prev %q, r1 thread %d", r2.Thread, r2.PrevID, r1.Thread)
+	}
+}
+
+func TestBuild_NewThreadHasNoPrevious(t *testing.T) {
+	f := newFake()
+	f.thread("r1", 1, "u:a", "a:b")
+	f.thread("r2", 2, "u:x", "a:y")
+	out := build(t, f, timeline.Options{})
+	r1, r2 := exchangeOf(t, out, "r1"), exchangeOf(t, out, "r2")
+	if r1.PrevID != "" || r1.Carried != 0 || r1.Messages != 2 {
+		t.Fatalf("r1 = %+v", r1)
+	}
+	if r2.PrevID != "" || r2.Thread == r1.Thread || r2.Carried != 0 {
+		t.Fatalf("r2 = %+v", r2)
+	}
+}
+
+func TestBuild_CarriedAndNewCounts(t *testing.T) {
+	f := newFake()
+	f.thread("r1", 1, "u:a", "a:b")
+	f.thread("r2", 2, "u:a", "a:b", "u:c", "a:d", "u:e")
+	r2 := exchangeOf(t, build(t, f, timeline.Options{}), "r2")
+	if r2.Messages != 5 || r2.Carried != 2 {
+		t.Fatalf("messages %d carried %d", r2.Messages, r2.Carried)
+	}
+}
+
+func TestBuild_SubAgentCallBetweenMainCallsKeepsMainPrevious(t *testing.T) {
+	f := newFake()
+	f.thread("main1", 1, "u:a", "a:b", "u:c")
+	f.thread("sub", 2, "u:zzz")
+	f.thread("main2", 3, "u:a", "a:b", "u:c", "a:d", "u:e")
+	out := build(t, f, timeline.Options{})
+	m2 := exchangeOf(t, out, "main2")
+	if m2.PrevID != "main1" || m2.Thread != exchangeOf(t, out, "main1").Thread {
+		t.Fatalf("main2 = %+v", m2)
+	}
+	if exchangeOf(t, out, "sub").PrevID != "" {
+		t.Fatal("sub-agent call should start its own thread")
+	}
+}
