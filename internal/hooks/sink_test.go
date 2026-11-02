@@ -103,15 +103,15 @@ func TestSink_QueueFullDropsCountsAndLogsOnce(t *testing.T) {
 	log, buf, mu := logger()
 	s := hooks.NewSink(cfg(1, 1, 1<<20, findMapper("c", toolMapper)), st, log)
 	defer closeSink(t, s)
-	if !s.Submit("c", 0, []byte(`{}`)) {
+	if !s.Submit("c", 0, time.Time{}, []byte(`{}`)) {
 		t.Fatal("first submit refused")
 	}
 	<-st.started // the worker holds the first; the queue is empty
-	if !s.Submit("c", 0, []byte(`{}`)) {
+	if !s.Submit("c", 0, time.Time{}, []byte(`{}`)) {
 		t.Fatal("second submit refused")
 	}
 	done := make(chan bool)
-	go func() { done <- s.Submit("c", 0, []byte(`{}`)) }()
+	go func() { done <- s.Submit("c", 0, time.Time{}, []byte(`{}`)) }()
 	select {
 	case ok := <-done:
 		if ok {
@@ -137,10 +137,10 @@ func TestSink_MemoryLimitDrops(t *testing.T) {
 	log, _, _ := logger()
 	s := hooks.NewSink(cfg(8, 1, 10, findMapper("c", toolMapper)), st, log)
 	defer closeSink(t, s)
-	if !s.Submit("c", 0, []byte(`{"a":123}`)) { // 9 bytes
+	if !s.Submit("c", 0, time.Time{}, []byte(`{"a":123}`)) { // 9 bytes
 		t.Fatal("first submit refused")
 	}
-	if s.Submit("c", 0, []byte(`{"a":1}`)) { // 7 more crosses 10
+	if s.Submit("c", 0, time.Time{}, []byte(`{"a":1}`)) { // 7 more crosses 10
 		t.Fatal("submit over the memory limit accepted")
 	}
 	if got := s.Counts().Oversize; got != 1 {
@@ -154,7 +154,7 @@ func TestSink_UnknownClientStoredAsUnknown(t *testing.T) {
 	log, _, _ := logger()
 	s := hooks.NewSink(cfg(4, 1, 1<<20, findMapper("c", toolMapper)), st, log)
 	body := []byte(`{"x":1}`)
-	s.Submit("nobody", 0, body)
+	s.Submit("nobody", 0, time.Time{}, body)
 	closeSink(t, s)
 	recs := st.records()
 	if len(recs) != 1 {
@@ -173,7 +173,7 @@ func TestSink_NotJSONStoredAndCounted(t *testing.T) {
 	st := &fakeStore{}
 	log, _, _ := logger()
 	s := hooks.NewSink(cfg(4, 1, 1<<20, nil), st, log)
-	s.Submit("c", 0, []byte(`not json`))
+	s.Submit("c", 0, time.Time{}, []byte(`not json`))
 	closeSink(t, s)
 	if len(st.records()) != 1 || s.Counts().NotJSON != 1 {
 		t.Fatalf("stored=%d notjson=%d", len(st.records()), s.Counts().NotJSON)
@@ -187,7 +187,7 @@ func TestSink_StoreFailureCounted(t *testing.T) {
 	c := cfg(4, 1, 1<<20, findMapper("c", toolMapper))
 	c.OnStored = func(hooks.HookStored) { stored.Add(1) }
 	s := hooks.NewSink(c, st, log)
-	s.Submit("c", 0, []byte(`{}`))
+	s.Submit("c", 0, time.Time{}, []byte(`{}`))
 	closeSink(t, s)
 	if s.Counts().StoreFailed != 1 || stored.Load() != 0 {
 		t.Fatalf("failed=%d onStored=%d", s.Counts().StoreFailed, stored.Load())
@@ -205,8 +205,8 @@ func TestSink_MapperPanicDoesNotKillWorker(t *testing.T) {
 		return core.HarnessEvent{Phase: core.PhasePreTool}
 	})
 	s := hooks.NewSink(cfg(4, 1, 1<<20, findMapper("c", m)), st, log)
-	s.Submit("c", 0, []byte(`{}`))
-	s.Submit("c", 0, []byte(`{}`))
+	s.Submit("c", 0, time.Time{}, []byte(`{}`))
+	s.Submit("c", 0, time.Time{}, []byte(`{}`))
 	closeSink(t, s)
 	recs := st.records()
 	if len(recs) != 2 {
@@ -222,7 +222,7 @@ func TestSink_CloseDrainsQueue(t *testing.T) {
 	log, _, _ := logger()
 	s := hooks.NewSink(cfg(16, 2, 1<<20, findMapper("c", toolMapper)), st, log)
 	for range 10 {
-		s.Submit("c", 0, []byte(`{}`))
+		s.Submit("c", 0, time.Time{}, []byte(`{}`))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -232,7 +232,7 @@ func TestSink_CloseDrainsQueue(t *testing.T) {
 	if got := len(st.records()); got != 10 {
 		t.Fatalf("stored %d, want 10", got)
 	}
-	if s.Submit("c", 0, []byte(`{}`)) {
+	if s.Submit("c", 0, time.Time{}, []byte(`{}`)) {
 		t.Fatal("submit after close accepted")
 	}
 }
@@ -248,7 +248,7 @@ func TestSink_OnStoredCalledAfterSave(t *testing.T) {
 		sawRecord = len(st.records()) == 1
 	}
 	s := hooks.NewSink(c, st, log)
-	s.Submit("c", 0, []byte(`{}`))
+	s.Submit("c", 0, time.Time{}, []byte(`{}`))
 	closeSink(t, s)
 	want := hooks.HookStored{Principal: core.PrincipalLocal, Client: "c", SessionKey: "s1"}
 	if got != want || !sawRecord {
@@ -266,7 +266,7 @@ func TestSink_ConcurrentSubmitAndClose(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for range 200 {
-				s.Submit("c", 0, []byte(`{}`))
+				s.Submit("c", 0, time.Time{}, []byte(`{}`))
 			}
 		}()
 	}

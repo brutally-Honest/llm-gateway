@@ -5,7 +5,8 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"sync/atomic"
+	"sync"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
@@ -21,14 +22,36 @@ type Handler struct {
 	log            *zap.Logger
 	maxBody        int64
 	captureEnabled bool
-	// seq numbers the deliveries this process receives, in arrival order.
-	seq atomic.Int64
+	clock          func() time.Time
+
+	// mu makes seq and the receive time one step: a delivery that takes a higher seq
+	// never gets an earlier time.
+	mu   sync.Mutex
+	seq  int64
+	last time.Time
 }
 
 // NewHandler makes the handler. maxBody is capture.max_body_bytes; with captureEnabled
 // false it answers and counts but stores nothing.
 func NewHandler(sink *Sink, log *zap.Logger, maxBody int64, captureEnabled bool) *Handler {
-	return &Handler{sink: sink, log: log, maxBody: maxBody, captureEnabled: captureEnabled}
+	return &Handler{sink: sink, log: log, maxBody: maxBody, captureEnabled: captureEnabled, clock: time.Now}
+}
+
+// SetClock replaces the time source, for tests. Call it before serving.
+func (h *Handler) SetClock(clock func() time.Time) { h.clock = clock }
+
+// stamp takes the next seq and the receive time together: the clock reading, or the
+// last time handed out if the clock went backwards.
+func (h *Handler) stamp() (int64, time.Time) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.seq++
+	now := h.clock()
+	if now.Before(h.last) {
+		now = h.last
+	}
+	h.last = now
+	return h.seq, now
 }
 
 // Mount registers the ingest route on r.
@@ -58,7 +81,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case int64(len(body)) > h.maxBody:
 		h.sink.RecordOversize(client, h.maxBody)
 	default:
-		h.sink.Submit(client, h.seq.Add(1), body)
+		seq, at := h.stamp()
+		h.sink.Submit(client, seq, at, body)
 	}
 	w.WriteHeader(http.StatusOK)
 }

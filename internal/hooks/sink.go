@@ -111,10 +111,11 @@ func NewSink(cfg Config, st Store, log *zap.Logger) *Sink {
 }
 
 // Submit queues one delivery without waiting; the sink owns body from here. seq is the
-// delivery's sequence number, assigned by the caller when it received the delivery. It
+// delivery's sequence number and at its receive time, both assigned by the caller when
+// it received the delivery; Submit stamps nothing. It
 // returns false, counting and logging one line, when the sink is closed, the queue is
 // full or body would cross the memory limit.
-func (s *Sink) Submit(client string, seq int64, body []byte) bool {
+func (s *Sink) Submit(client string, seq int64, at time.Time, body []byte) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	n := int64(len(body))
@@ -125,7 +126,7 @@ func (s *Sink) Submit(client string, seq int64, body []byte) bool {
 			return false
 		}
 		select {
-		case s.queue <- item{client: client, seq: seq, body: body, receivedAt: time.Now()}:
+		case s.queue <- item{client: client, seq: seq, body: body, receivedAt: at}:
 			return true
 		default:
 		}

@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -286,4 +288,88 @@ func TestHandler_SeqFollowsPostingOrderWhenWritesFinishOutOfOrder(t *testing.T) 
 			t.Fatalf("timeline entry %d = %s %q, want harness src-%d", i, e.Kind, e.Text, i)
 		}
 	}
+}
+
+func stampHandler(t *testing.T, workers int, clock func() time.Time) (http.Handler, *fakeStore) {
+	t.Helper()
+	st := &fakeStore{}
+	log, _, _ := logger()
+	s := hooks.NewSink(hooks.Config{QueueSize: 64, Workers: workers, MemoryLimit: 1 << 20, Mappers: findMapper("c", toolMapper)}, st, log)
+	t.Cleanup(func() { closeSink(t, s) })
+	h := hooks.NewHandler(s, log, 1024, true)
+	h.SetClock(clock)
+	r := chi.NewRouter()
+	h.Mount(r)
+	return r, st
+}
+
+func assertAligned(t *testing.T, recs []*store.HookRecord) {
+	t.Helper()
+	slices.SortFunc(recs, func(a, b *store.HookRecord) int { return cmp.Compare(a.Seq, b.Seq) })
+	for i := 1; i < len(recs); i++ {
+		if recs[i].ReceivedAt.Before(recs[i-1].ReceivedAt) {
+			t.Fatalf("seq %d has time %v before seq %d time %v", recs[i].Seq, recs[i].ReceivedAt, recs[i-1].Seq, recs[i-1].ReceivedAt)
+		}
+	}
+}
+
+func TestHandler_BackwardsClockKeepsReceiveTimeNonDecreasing(t *testing.T) {
+	base := time.Unix(1000, 0)
+	times := []time.Time{base.Add(5 * time.Second), base, base.Add(2 * time.Second), base.Add(9 * time.Second)}
+	var i int
+	h, st := stampHandler(t, 1, func() time.Time { i++; return times[i-1] })
+	for range times {
+		if w := post(h, "127.0.0.1", `{}`, nil); w.Code != 200 {
+			t.Fatal(w.Code)
+		}
+	}
+	waitRecs(t, st, len(times))
+	recs := st.records()
+	assertAligned(t, recs)
+	if !recs[1].ReceivedAt.Equal(times[0]) {
+		t.Fatalf("stepped-back time stored as %v, want %v", recs[1].ReceivedAt, times[0])
+	}
+}
+
+func TestHandler_BlockedClockKeepsSeqAndTimeOrderAligned(t *testing.T) {
+	base := time.Unix(1000, 0)
+	entered, release := make(chan struct{}), make(chan struct{})
+	var calls atomic.Int32
+	h, st := stampHandler(t, 2, func() time.Time {
+		if calls.Add(1) == 1 {
+			close(entered)
+			<-release
+			return base.Add(10 * time.Second) // later than request 2's reading
+		}
+		return base
+	})
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); post(h, "127.0.0.1", `{"n":1}`, nil) }()
+	<-entered
+	go func() { defer wg.Done(); post(h, "127.0.0.1", `{"n":2}`, nil) }()
+	time.Sleep(200 * time.Millisecond) // request 2 has started and reaches its stamp
+	close(release)
+	wg.Wait()
+	waitRecs(t, st, 2)
+	assertAligned(t, st.records())
+}
+
+func TestHandler_ConcurrentPostsOutOfOrderWritesKeepSeqAndTimeAligned(t *testing.T) {
+	var n atomic.Int64
+	base := time.Unix(1000, 0)
+	h, st := stampHandler(t, 4, func() time.Time {
+		if v := n.Add(1); v%3 == 0 {
+			return base.Add(time.Duration(-v) * time.Millisecond) // steps back now and then
+		}
+		return base.Add(time.Duration(n.Load()) * time.Millisecond)
+	})
+	var wg sync.WaitGroup
+	for range 40 {
+		wg.Add(1)
+		go func() { defer wg.Done(); post(h, "127.0.0.1", `{}`, nil) }()
+	}
+	wg.Wait()
+	waitRecs(t, st, 40)
+	assertAligned(t, st.records())
 }
