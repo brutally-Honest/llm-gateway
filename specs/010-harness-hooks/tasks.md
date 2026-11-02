@@ -166,6 +166,15 @@ previous: 92aae62
 - Size: S
 - Risk: low
 
+### T026 — fix: add end-to-end live tests for two untested behaviours. (1) On a real hub and store with an open session stream: commit an exchange whose tool call has PreToolUse and PostToolUse hook events, then commit a later exchange carrying its tool_result; assert the stream's last state for that call is asked+ran+reported and equals a fresh snapshot (reload). It must fail when writeLive goes back to re-sending only exchanges after the committed one. (2) A hooks-only session that received a hook event within the last second is not marked inactive. Test-only change.
+- Do: reproduce and fix: add end-to-end live tests for two untested behaviours. (1) On a real hub and store with an open session stream: commit an exchange whose tool call has PreToolUse and PostToolUse hook events, then commit a later exchange carrying its tool_result; assert the stream's last state for that call is asked+ran+reported and equals a fresh snapshot (reload). It must fail when writeLive goes back to re-sending only exchanges after the committed one. (2) A hooks-only session that received a hook event within the last second is not marked inactive. Test-only change.
+- Tests: a regression test that fails before the fix and passes after it (add end-to-end live tests for two untested behaviours. (1) On a real hub and store with an open session stream: commit an exchange whose tool call has PreToolUse and PostToolUse hook events, then commit a later exchange carrying its tool_result; assert the stream's last state for that call is asked+ran+reported and equals a fresh snapshot (reload). It must fail when writeLive goes back to re-sending only exchanges after the committed one. (2) A hooks-only session that received a hook event within the last second is not marked inactive. Test-only change.)
+- AC: none — bug fix: add end-to-end live tests for two untested behaviours. (1) On a real hub and store with an open session stream: commit an exchange whose tool call has PreToolUse and PostToolUse hook events, then commit a later exchange carrying its tool_result; assert the stream's last state for that call is asked+ran+reported and equals a fresh snapshot (reload). It must fail when writeLive goes back to re-sending only exchanges after the committed one. (2) A hooks-only session that received a hook event within the last second is not marked inactive. Test-only change.
+- Commit: fix(harness-hooks): add end-to-end live tests for two untested
+- Depends: —
+- Size: S
+- Risk: low
+
 ### T012 — Show states and hook events in the web UI
 - Do: `internal/ui/entries.go`, `api_timeline.go`, `api_sessions.go`, `web/`: same fields, flags, agent labels and hook lines from the timeline package; `hooks only` label in the sessions list.
 - Tests: TestAPITimeline_StatesFlagsAndHookLines (AC24); TestAPITimeline_AgentLabels (AC22); TestAPISessions_HooksOnlyLabel (AC25); TestWeb_ServesHarnessBadgeRendering (AC24)
