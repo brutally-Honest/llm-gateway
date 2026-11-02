@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -34,6 +35,7 @@ func TestHub_HookEventPushesSessionTimeline(t *testing.T) {
 	e := newStreamEnv(t, fastHooks)
 	e.toolSession(`{"a":1}`)
 	s := e.openRaw(e.sessionPath())
+	s.sessionFirst()
 	s.take(2) // exchange a, then the empty hooks snapshot
 	e.hookPre(2)
 	ev := s.nextData()
@@ -71,6 +73,7 @@ func TestHub_HookOnlySessionAppears(t *testing.T) {
 	e := newStreamEnv(t, fastHooks)
 	global := e.open("/api/stream")
 	sess := e.openRaw(e.sessionPath())
+	sess.skipSession = true // the hook creates the row; its summary is not under test here
 	if ev := sess.nextData(); ev.event != "hooks" || ev.data != "[]" {
 		t.Fatalf("snapshot = %+v", ev)
 	}
@@ -196,6 +199,7 @@ func TestHub_HookRefreshAndCommitInSameWindowSendEachChangeOnce(t *testing.T) {
 	e := newStreamEnv(t, func(h *Hub) { h.hookEvery = 150 * time.Millisecond })
 	e.toolSession(`{"a":1}`)
 	s := e.openRaw(e.sessionPath())
+	s.sessionFirst()
 	s.take(2)
 	e.save("c", "k", "cc", 10)
 	e.parseMsgs("c", "ok", []any{"user", text("later")})
@@ -304,6 +308,7 @@ func TestStream_LiveHookUpdateReplacesFirstSnapshotHookLines(t *testing.T) {
 	}
 
 	s := e.openRaw(e.sessionPath())
+	s.sessionFirst()
 	var wire []map[string]any
 	for i, want := range []string{"exchange", "hooks"} { // the connect snapshot: exchange a, then the hook lines
 		ev := s.nextData()
@@ -345,6 +350,7 @@ func TestStream_HooksSnapshotEmptyIsSentAndRemovesGroup(t *testing.T) {
 	e := newStreamEnv(t, fastHooks)
 	e.toolSession(`{"a":1}`)
 	s := e.openRaw(e.sessionPath())
+	s.sessionFirst()
 	if ev := s.nextData(); ev.event != "exchange" {
 		t.Fatalf("first = %+v", ev)
 	}
@@ -440,6 +446,7 @@ func TestHooksLive_CallStateConvergesAcrossLaterCommit(t *testing.T) {
 	e := newStreamEnv(t, fastHooks)
 	e.toolSession(`{"a":1}`)
 	s := e.openRaw(e.sessionPath())
+	s.sessionFirst()
 	var view []map[string]any
 	apply := func(n int) {
 		t.Helper()
@@ -520,5 +527,79 @@ func TestHooksOnly_HookWithinLastSecondNotInactive(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("hooks-only session not listed")
+	}
+}
+
+func TestHub_HookRefreshSendsSessionSummary(t *testing.T) {
+	e := newStreamEnv(t, fastHooks)
+	e.toolSession(`{"a":1}`)
+	s := e.openRaw(e.sessionPath())
+	s.sessionFirst()
+	s.take(2) // exchange a, empty hooks
+	s.skipSession = false
+	e.hookPre(2)
+	ev := s.nextData()
+	if ev.event != "session" {
+		t.Fatalf("first event after the hook = %q, want session", ev.event)
+	}
+	var got, want sessionSummary
+	if err := json.Unmarshal([]byte(ev.data), &got); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(e.reload()), &want); err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != sid() || got.ToolCalls != 1 || !reflect.DeepEqual(got, want) {
+		t.Fatalf("summary %+v != reload %+v", got, want)
+	}
+}
+
+// A stream on a session with no stored row stays open and sends no session event when a
+// refresh finds the row still missing; the event comes once the row exists.
+func TestHub_NoRowStreamStaysOpenOnRefresh(t *testing.T) {
+	e := newStreamEnv(t, func(h *Hub) {
+		fastHooks(h)
+		h.heartbeat = 10 * time.Millisecond
+	})
+	s := e.openRaw(e.sessionPath())
+	if ev := s.nextData(); ev.event != "hooks" || ev.data != "[]" {
+		t.Fatalf("first = %+v, want the empty hooks event", ev)
+	}
+	e.hub.PublishHook(core.PrincipalLocal, "cc", "k")
+	// Read past the refresh window: next fails the test if the stream ends.
+	for end := time.Now().Add(120 * time.Millisecond); time.Now().Before(end); {
+		if ev := s.next(); ev.event != "" {
+			t.Fatalf("event %+v on a session with no row, want only pings", ev)
+		}
+	}
+	e.hookPre(2)
+	if ev := s.nextData(); ev.event != "session" {
+		t.Fatalf("first event once the row exists = %+v, want session", ev)
+	}
+}
+
+// A hooks-only session's stream gets its summary in the snapshot and on refresh, and stays open.
+func TestHub_HooksOnlySessionStreamGetsSummary(t *testing.T) {
+	e := newStreamEnv(t, fastHooks)
+	e.hook("k", core.HarnessEvent{Phase: core.PhasePreTool, ToolCallID: "call_1", ToolName: "bash", ToolInput: []byte(`{"a":2}`)}, 2)
+	s := e.openRaw(e.sessionPath())
+	assertSummary := func(ev sseEvent, wantLast time.Time) {
+		t.Helper()
+		var got sessionSummary
+		if ev.event != "session" || json.Unmarshal([]byte(ev.data), &got) != nil {
+			t.Fatalf("event = %+v, want session", ev)
+		}
+		if !got.HooksOnly || got.ExchangeCount != 0 || got.LastAt != nsTime(wantLast.UnixNano()) {
+			t.Fatalf("summary = %+v, want hooks only with last %v", got, wantLast)
+		}
+	}
+	assertSummary(s.nextData(), baseTime.Add(2*time.Second))
+	if ev := s.nextData(); ev.event != "hooks" || ev.data == "[]" {
+		t.Fatalf("snapshot = %+v, want the hook lines", ev)
+	}
+	e.hookPre(3)
+	assertSummary(s.nextData(), baseTime.Add(3*time.Second))
+	if ev := s.nextData(); ev.event != "hooks" {
+		t.Fatalf("after the summary = %+v, want hooks", ev)
 	}
 }
