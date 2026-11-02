@@ -39,6 +39,7 @@ Approved spec/plan changes go through /al-change, not direct edits. Specs 000–
 (`status: done`) are history. Branches: feat/NNN-slug, fix/NNN-slug, chore/NNN-slug.
 Every `Commit:` line in tasks.md follows PLAN §11: `<type>(<scope from the §11 list>): <summary>`,
 lowercase, no trailing period, ≤72 characters.
+Manual checks for UI tasks live in docs/manual-checks/; a planner's Manual: field names the file.
 
 Every doubt, roadblock or limit you hit goes in the same folder's `research.md`, under
 `## Open questions`, as `- **Qn** (open) Tnnn — <question> — options: A) … B) …`, and you
