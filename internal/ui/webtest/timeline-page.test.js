@@ -62,7 +62,7 @@ test("hooksStayHiddenUntilToggled", () => {
 
 test("remindersFoldBehindControl", () => {
   const r = "<system-reminder>secret</system-reminder>";
-  const p = page([call("a", 1), prompt("a", `fix ${r}`)]);
+  const p = page([call("a", 1), item("a", "user_prompt", { role: "user", text: `fix ${r}`, body: "fix", reminders: [r] })]);
   assert.doesNotMatch(textOf(p.el).replace(/\+1 reminder/, ""), /secret/);
   byTag(p.el, "button").find((b) => b.textContent === "+1 reminder").fire("click");
   assert.match(textOf(p.el), /secret/);

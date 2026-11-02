@@ -55,3 +55,19 @@ func TestRules_AgentToolName(t *testing.T) {
 		t.Fatal("agent tool name wrong")
 	}
 }
+
+func TestRules_SplitReminders(t *testing.T) {
+	const a, b = "<system-reminder>a</system-reminder>", "<system-reminder>b</system-reminder>"
+	body, rs := (Profile{}).SplitReminders(a + "hello " + b + "world")
+	if body != "hello world" || len(rs) != 2 || rs[0] != a || rs[1] != b {
+		t.Fatalf("got %q %q", body, rs)
+	}
+	body, rs = (Profile{}).SplitReminders("plain")
+	if body != "plain" || len(rs) != 0 {
+		t.Fatalf("plain: %q %q", body, rs)
+	}
+	body, rs = (Profile{}).SplitReminders("hi <system-reminder>cut")
+	if body != "hi" || len(rs) != 1 || rs[0] != "<system-reminder>cut" {
+		t.Fatalf("unclosed: %q %q", body, rs)
+	}
+}

@@ -198,3 +198,45 @@ func TestStream_ExchangeEventCarriesCallFacts(t *testing.T) {
 		t.Fatalf("entries = %v", entries)
 	}
 }
+
+// promptEntry returns the first user prompt of the session's timeline.
+func (e *digestEnv) promptEntry() map[string]any {
+	e.t.Helper()
+	for _, en := range e.timeline("/api/sessions/" + sid() + "/timeline").Entries {
+		if en["kind"] == "user_prompt" {
+			return en
+		}
+	}
+	e.t.Fatal("no user prompt")
+	return nil
+}
+
+func TestTimeline_PromptSplitIntoBodyAndReminders(t *testing.T) {
+	e := withRules(t)
+	e.call("a", 1, 0, 0, "user:<r>one</r>fix it <r>two</r>")
+	p := e.promptEntry()
+	if p["body"] != "fix it" || p["text"] != "<r>one</r>fix it <r>two</r>" {
+		t.Fatalf("prompt = %v", p)
+	}
+	if r, _ := p["reminders"].([]any); len(r) != 2 || r[0] != "<r>one</r>" || r[1] != "<r>two</r>" {
+		t.Fatalf("reminders = %v", p["reminders"])
+	}
+}
+
+func TestTimeline_NoRulesReturnsWholePromptAsBody(t *testing.T) {
+	e := newDigestEnv(t, nil)
+	e.call("a", 1, 0, 0, "user:<r>one</r>fix it")
+	p := e.promptEntry()
+	if p["body"] != "<r>one</r>fix it" || p["reminders"] != nil {
+		t.Fatalf("prompt = %v", p)
+	}
+}
+
+func TestTimeline_ReminderOnlyPromptHasEmptyBody(t *testing.T) {
+	e := withRules(t)
+	e.call("a", 1, 0, 0, "user:<r>only</r>")
+	p := e.promptEntry()
+	if b, ok := p["body"]; !ok || b != "" {
+		t.Fatalf("body = %v present=%v", b, ok)
+	}
+}

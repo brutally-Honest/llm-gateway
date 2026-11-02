@@ -494,7 +494,7 @@ func sessionExchanges(c *store.CtxReader, who sessIdent, rules ClientRules) ([]l
 	}
 	var out []liveExchange
 	at := map[string]int{}
-	for _, e := range mapEntries(built, byID, facts) {
+	for _, e := range mapEntries(built, byID, facts, rules) {
 		key := e.ExchangeID
 		if e.Kind == kindHookEvent {
 			key = hooksExchange // hook lines belong to no exchange: they travel as one pseudo-exchange

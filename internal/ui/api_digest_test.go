@@ -40,6 +40,19 @@ func (testRules) StripReminders(s string) string {
 	}
 }
 
+func (testRules) SplitReminders(s string) (string, []string) {
+	var out []string
+	for {
+		i := strings.Index(s, "<r>")
+		j := strings.Index(s, "</r>")
+		if i < 0 || j < i {
+			return strings.TrimSpace(s), out
+		}
+		out = append(out, s[i:j+4])
+		s = s[:i] + s[j+4:]
+	}
+}
+
 func (testRules) TitleOf(s string) (string, bool) {
 	var v struct {
 		Title string `json:"title"`

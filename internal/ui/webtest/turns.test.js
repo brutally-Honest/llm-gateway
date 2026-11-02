@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildTurns, hooksLabel, splitReminders } from "../web/model.js";
+import { buildTurns, hooksLabel } from "../web/model.js";
 import { all, byTag, installDom, textOf, withClass } from "./dom-stub.js";
 import { call, item } from "./fixtures.js";
 
@@ -153,13 +153,24 @@ test("hooksHiddenBehindToggle", () => {
 });
 
 test("remindersFoldedByDefault", () => {
+  // The server does the split: the browser reads body and reminders as sent.
   const r = "<system-reminder>be good</system-reminder>";
-  assert.deepEqual(splitReminders(`${r}\nfix it\n${r}`), { body: "fix it", reminders: [r, r] });
-  assert.deepEqual(splitReminders("plain"), { body: "plain", reminders: [] });
-  const { turns } = buildTurns([call("a", 1), prompt("a", `fix\n${r}`)]);
+  const sent = item("a", "user_prompt", { role: "user", text: `fix\n${r}`, body: "fix", reminders: [r] });
+  const { turns } = buildTurns([call("a", 1), sent]);
   assert.equal(turns[0].prompt.text, `fix\n${r}`);
   assert.equal(turns[0].prompt.body, "fix");
-  assert.equal(turns[0].prompt.reminders.length, 1);
+  assert.deepEqual(turns[0].prompt.reminders, [r]);
+});
+
+test("promptWithoutServerSplitIsAllBody", () => {
+  // E20: a client with no rules gets the whole prompt as body, even reminder-like text.
+  const text = "<system-reminder>kept</system-reminder> plain";
+  const { turns } = buildTurns([call("a", 1), item("a", "user_prompt", { role: "user", text, body: text })]);
+  assert.equal(turns[0].prompt.body, text);
+  assert.deepEqual(turns[0].prompt.reminders, []);
+  const bare = buildTurns([call("b", 1), prompt("b", text)]).turns[0].prompt;
+  assert.equal(bare.body, text);
+  assert.deepEqual(bare.reminders, []);
 });
 
 test("truncatedLinkAndCopyOffered", async () => {
@@ -221,7 +232,7 @@ test("railSelectionMarksCurrent", async () => {
 test("showOptionsApplyAtOnce", async () => {
   const r = "<system-reminder>secret</system-reminder>";
   const hook = { id: "hook:1", kind: "hook_event", phase: "pre_tool", name: "Bash", tool_call_id: "t1", start: "2026-01-01T00:00:01Z" };
-  const p = await railPage([...threeTurns().slice(0, 1), prompt("a", `fix ${r}`), item("a", "tool_call", { name: "Bash", tool_call_id: "t1" }), ...threeTurns().slice(3), hook]);
+  const p = await railPage([...threeTurns().slice(0, 1), item("a", "user_prompt", { role: "user", text: `fix ${r}`, body: "fix", reminders: [r] }), item("a", "tool_call", { name: "Bash", tool_call_id: "t1" }), ...threeTurns().slice(3), hook]);
   const opt = (label) => byTag(p.el, "label").find((l) => textOf(l).includes(label)).children[0];
   const flip = (label) => { const b = opt(label); b.checked = !b.checked; b.fire("change"); };
   assert.equal(withClass(p.el, "hook-event").length, 0);

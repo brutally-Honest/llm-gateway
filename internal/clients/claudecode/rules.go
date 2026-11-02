@@ -27,8 +27,17 @@ func (Profile) IsSideCall(userTexts []string) bool {
 
 // StripReminders removes every <system-reminder>…</system-reminder> block. An unclosed
 // block is removed to the end of the text.
-func (Profile) StripReminders(text string) string {
+func (p Profile) StripReminders(text string) string {
+	body, _ := p.SplitReminders(text)
+	return body
+}
+
+// SplitReminders separates a prompt into the text the user wrote and its
+// <system-reminder>…</system-reminder> blocks, each kept whole in order. An unclosed
+// block runs to the end of the text and is the last reminder.
+func (Profile) SplitReminders(text string) (string, []string) {
 	var b strings.Builder
+	var reminders []string
 	for {
 		i := strings.Index(text, reminderOpen)
 		if i < 0 {
@@ -39,11 +48,14 @@ func (Profile) StripReminders(text string) string {
 		rest := text[i+len(reminderOpen):]
 		j := strings.Index(rest, reminderClose)
 		if j < 0 {
+			reminders = append(reminders, text[i:])
 			break
 		}
-		text = rest[j+len(reminderClose):]
+		end := i + len(reminderOpen) + j + len(reminderClose)
+		reminders = append(reminders, text[i:end])
+		text = text[end:]
 	}
-	return strings.TrimSpace(b.String())
+	return strings.TrimSpace(b.String()), reminders
 }
 
 // TitleOf extracts the title from a title-generation reply of the form {"title":"…"}.

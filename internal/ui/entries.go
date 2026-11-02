@@ -54,19 +54,24 @@ type entryJSON struct {
 	Start      string `json:"start"`
 	Kind       string `json:"kind"`
 
-	Role       string `json:"role,omitempty"`
-	Text       string `json:"text,omitempty"`
-	Truncated  bool   `json:"truncated,omitempty"`
-	Name       string `json:"name,omitempty"`
-	ToolCallID string `json:"tool_call_id,omitempty"`
-	IsError    *bool  `json:"is_error,omitempty"`
-	Method     string `json:"method,omitempty"`
-	Path       string `json:"path,omitempty"`
-	Status     *int   `json:"status,omitempty"`
-	Parse      string `json:"parse,omitempty"`
-	Partial    bool   `json:"partial,omitempty"`
-	Model      string `json:"model,omitempty"`
-	DurationMS *int64 `json:"duration_ms,omitempty"`
+	Role      string `json:"role,omitempty"`
+	Text      string `json:"text,omitempty"`
+	Truncated bool   `json:"truncated,omitempty"`
+	// Body and Reminders are set on a user prompt: Text split by the client's rules
+	// into what the user wrote and the injected reminder blocks. A client with no rules
+	// gets the whole Text as Body and no reminders.
+	Body       *string  `json:"body,omitempty"`
+	Reminders  []string `json:"reminders,omitempty"`
+	Name       string   `json:"name,omitempty"`
+	ToolCallID string   `json:"tool_call_id,omitempty"`
+	IsError    *bool    `json:"is_error,omitempty"`
+	Method     string   `json:"method,omitempty"`
+	Path       string   `json:"path,omitempty"`
+	Status     *int     `json:"status,omitempty"`
+	Parse      string   `json:"parse,omitempty"`
+	Partial    bool     `json:"partial,omitempty"`
+	Model      string   `json:"model,omitempty"`
+	DurationMS *int64   `json:"duration_ms,omitempty"`
 
 	Usage *callUsageJSON `json:"usage,omitempty"`
 	// Call is set on a model call: where it sits among the session's threads (AC40).
@@ -100,7 +105,7 @@ func ptr[T any](v T) *T { return &v }
 // mapEntries turns timeline entries into API entries. A message that holds readable
 // thinking gets a thinking entry before it. Indexes are recounted per exchange over
 // the API entries, so `<exchange_id>:<index>` is unique and stable (AC18).
-func mapEntries(entries []timeline.Entry, exs map[string]store.ExchangeRow, facts map[string]*callFactsJSON) []entryJSON {
+func mapEntries(entries []timeline.Entry, exs map[string]store.ExchangeRow, facts map[string]*callFactsJSON, rules ClientRules) []entryJSON {
 	out := make([]entryJSON, 0, len(entries))
 	next := map[string]int{}
 	hooks := 0
@@ -138,7 +143,15 @@ func mapEntries(entries []timeline.Entry, exs map[string]store.ExchangeRow, fact
 			case "assistant":
 				kind = kindAssistantText
 			}
-			add(e, entryJSON{Kind: kind, Role: e.Role, Text: e.Text, Truncated: e.Omitted > 0, Partial: e.Partial})
+			en := entryJSON{Kind: kind, Role: e.Role, Text: e.Text, Truncated: e.Omitted > 0, Partial: e.Partial}
+			if kind == kindUserPrompt {
+				body := e.Text
+				if rules != nil {
+					body, en.Reminders = rules.SplitReminders(e.Text)
+				}
+				en.Body = &body
+			}
+			add(e, en)
 		case timeline.KindToolCall:
 			add(e, entryJSON{Kind: kindToolCall, Name: e.Name, ToolCallID: e.ToolCallID, Text: e.Text,
 				Truncated: e.Omitted > 0, Partial: e.Partial,

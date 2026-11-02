@@ -44,6 +44,9 @@ type ClientRules interface {
 	IsSideCall(userTexts []string) bool
 	// StripReminders removes injected reminder blocks from a prompt.
 	StripReminders(text string) string
+	// SplitReminders returns a prompt as the text the user wrote and its reminder
+	// blocks, each whole and in order.
+	SplitReminders(text string) (body string, reminders []string)
 	// TitleOf extracts a generated title from a response; false when unusable.
 	TitleOf(responseText string) (string, bool)
 	// IsAgentTool reports whether a tool name spawns a sub-agent.

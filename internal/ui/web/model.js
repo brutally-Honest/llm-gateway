@@ -50,18 +50,11 @@ function newCard(kind, number, prompt) {
   };
 }
 
-const REMINDER_RE = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
-
-// splitReminders separates a prompt's <system-reminder> blocks from the text the user
-// wrote, so the page can fold them (AC16). The server names the title from the same
-// blocks; only the folding is done here, on a copy.
-export function splitReminders(text) {
-  const t = text || "";
-  return { body: t.replace(REMINDER_RE, "").trim(), reminders: t.match(REMINDER_RE) || [] };
-}
-
+// withReminders reads the prompt's split from the server: `body` is what the user wrote
+// and `reminders` the injected blocks (AC16). An entry without them, a client with no
+// rules or a hook prompt, is shown whole as its body (E20).
 function withReminders(prompt) {
-  return prompt ? { ...prompt, ...splitReminders(prompt.text) } : prompt;
+  return prompt ? { ...prompt, body: prompt.body ?? prompt.text ?? "", reminders: prompt.reminders ?? [] } : prompt;
 }
 
 // hooksLabel is the toggle's text: "1 hook" or "N hooks".
