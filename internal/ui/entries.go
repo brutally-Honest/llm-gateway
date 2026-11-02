@@ -69,6 +69,8 @@ type entryJSON struct {
 	DurationMS *int64 `json:"duration_ms,omitempty"`
 
 	Usage *callUsageJSON `json:"usage,omitempty"`
+	// Call is set on a model call: where it sits among the session's threads (AC40).
+	Call *callFactsJSON `json:"call,omitempty"`
 
 	// Harness fields (AC22, AC24): the state of a tool call, or a hook-event line.
 	State        string `json:"state,omitempty"`
@@ -97,7 +99,7 @@ func ptr[T any](v T) *T { return &v }
 // mapEntries turns timeline entries into API entries. A message that holds readable
 // thinking gets a thinking entry before it. Indexes are recounted per exchange over
 // the API entries, so `<exchange_id>:<index>` is unique and stable (AC18).
-func mapEntries(entries []timeline.Entry, exs map[string]store.ExchangeRow) []entryJSON {
+func mapEntries(entries []timeline.Entry, exs map[string]store.ExchangeRow, facts map[string]*callFactsJSON) []entryJSON {
 	out := make([]entryJSON, 0, len(entries))
 	next := map[string]int{}
 	hooks := 0
@@ -115,6 +117,7 @@ func mapEntries(entries []timeline.Entry, exs map[string]store.ExchangeRow) []en
 				Parse: e.Parse, Partial: e.Partial}
 			if e.Call != nil {
 				en.Kind, en.Model, en.Usage = kindModelCall, e.Call.Model, callToJSON(e.Call)
+				en.Call = facts[e.RequestID]
 				if ex, ok := exs[e.RequestID]; ok {
 					en.DurationMS = ptr((ex.EndedAt - ex.StartedAt) / 1e6)
 				}

@@ -166,3 +166,26 @@ func generatedTitle(src Source, rules DigestRules, last *store.EventRow, failed 
 	title, ok := rules.TitleOf(text)
 	return strings.TrimSpace(title), ok && strings.TrimSpace(title) != "", nil
 }
+
+// UserTexts lists the text of every user message of a request, in order, whole (not
+// cut). A request with no stored events, or a folded one, has none.
+func UserTexts(src Source, ex store.ExchangeRow) ([]string, error) {
+	evs, err := loadEvents(src, ex)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, e := range evs {
+		if e.Kind != "message" {
+			continue
+		}
+		t, ok, err := userText(src, e)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}

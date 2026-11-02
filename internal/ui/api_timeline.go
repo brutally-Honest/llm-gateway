@@ -123,7 +123,12 @@ func (d Deps) getTimeline(w http.ResponseWriter, r *http.Request) {
 		writeStoreErr(w, err)
 		return
 	}
-	all := mapEntries(entries, byID)
+	facts, err := callFacts(snapshotSource{c, exs}, entries, d.Rules[client], byID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	all := mapEntries(entries, byID, facts)
 	pos := make([]position, len(all))
 	for i, e := range all {
 		pos[i] = position{start: e.startNS, req: e.ExchangeID, idx: e.Index}

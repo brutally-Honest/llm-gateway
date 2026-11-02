@@ -33,6 +33,12 @@ type streamEnv struct {
 // newStreamEnv serves the real handler, store and hub on a real listener.
 func newStreamEnv(t *testing.T, tune func(*Hub)) *streamEnv {
 	t.Helper()
+	return newStreamEnvRules(t, tune, nil)
+}
+
+// newStreamEnvRules is newStreamEnv with client rules.
+func newStreamEnvRules(t *testing.T, tune func(*Hub), rules map[string]ClientRules) *streamEnv {
+	t.Helper()
 	dir := t.TempDir()
 	s, err := store.Open(dir, zap.NewNop())
 	if err != nil {
@@ -45,7 +51,7 @@ func newStreamEnv(t *testing.T, tune func(*Hub)) *streamEnv {
 	}
 	t.Cleanup(func() { _ = r.Close() })
 	ts := httptest.NewUnstartedServer(nil)
-	d := Deps{Addr: ts.Listener.Addr().String(), Reader: r, Now: func() time.Time { return baseTime.Add(100 * time.Second) }}
+	d := Deps{Addr: ts.Listener.Addr().String(), Reader: r, Rules: rules, Now: func() time.Time { return baseTime.Add(100 * time.Second) }}
 	h := newHub(d, hubQueueSize)
 	if tune != nil {
 		tune(h)
@@ -374,11 +380,16 @@ func TestStream_CommitOutOfRowIDOrderStillReachesPage(t *testing.T) {
 	e.parseMsgs("a", "ok", []any{"user", text("first")})
 	pub("a")
 	ev := s.nextData()
-	if ev.event != "entries" || ev.id != "1" {
+	if ev.event != "entries" {
 		t.Fatalf("late commit with lower row id = %+v", ev)
 	}
 	if es := decodeEntries(t, ev.data); es[0]["exchange_id"] != "a" {
 		t.Fatalf("entries = %v", es)
+	}
+	// b follows a, so its call number moved: it is resent, and the batch's last event
+	// carries the highest row id in it.
+	if ev := s.nextData(); ev.event != "exchange" || ev.id != "1" {
+		t.Fatalf("resent b = %+v", ev)
 	}
 }
 
@@ -703,7 +714,7 @@ func TestLive_OutOfOrderInsertsAtSortedPosition(t *testing.T) {
 	evs = append(evs, s.take(1)...)
 	e.parseMsgs("A", "ok", []any{"user", text("a")}) // started first, committed last
 	e.publish("A")
-	evs = append(evs, s.take(1)...)
+	evs = append(evs, s.take(2)...) // A, then C resent: its call number moved
 	got := applyEvents(evs)
 	var order []string
 	for _, en := range got {
@@ -729,7 +740,7 @@ func TestLive_ConvergesWithReloadAndCLI(t *testing.T) {
 	e.publish("C")
 	evs = append(evs, s.take(1)...)
 	e.commitAParse()
-	evs = append(evs, s.take(2)...)
+	evs = append(evs, s.take(3)...) // A, then B and C resent: their call numbers moved
 	live := applyEvents(evs)
 	if !reflect.DeepEqual(live, e.freshTimeline()) {
 		t.Fatalf("live != reload:\n%v\n%v", live, e.freshTimeline())

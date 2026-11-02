@@ -435,7 +435,7 @@ func readLive(ctx context.Context, d Deps, who sessIdent, ids []string, summary,
 		}
 	}
 	if entries {
-		all, err := sessionExchanges(c, who)
+		all, err := sessionExchanges(c, who, d.Rules[who.client])
 		if err != nil {
 			return liveMsg{}, err
 		}
@@ -467,7 +467,7 @@ func readLive(ctx context.Context, d Deps, who sessIdent, ids []string, summary,
 // each stored exchange with its entries, in timeline order, then the hooks item (its
 // Entries are [] when the session has no hook line, never null). Exchanges with no entry
 // are left out.
-func sessionExchanges(c *store.CtxReader, who sessIdent) ([]liveExchange, error) {
+func sessionExchanges(c *store.CtxReader, who sessIdent, rules ClientRules) ([]liveExchange, error) {
 	rows, _, err := c.SessionSnapshot(who.principal, who.client, who.name)
 	if err != nil {
 		return nil, err
@@ -485,9 +485,13 @@ func sessionExchanges(c *store.CtxReader, who sessIdent) ([]liveExchange, error)
 	if err != nil {
 		return nil, err
 	}
+	facts, err := callFacts(snapshotSource{c, exs}, built, rules, byID)
+	if err != nil {
+		return nil, err
+	}
 	var out []liveExchange
 	at := map[string]int{}
-	for _, e := range mapEntries(built, byID) {
+	for _, e := range mapEntries(built, byID, facts) {
 		key := e.ExchangeID
 		if e.Kind == kindHookEvent {
 			key = hooksExchange // hook lines belong to no exchange: they travel as one pseudo-exchange
@@ -545,7 +549,7 @@ func readSnapshot(ctx context.Context, d Deps, session string) (snapshot, error)
 		case !errors.Is(err, store.ErrNotFound):
 			return snapshot{}, err
 		}
-		x, err := sessionExchanges(c, who)
+		x, err := sessionExchanges(c, who, d.Rules[who.client])
 		out.Exchanges = x
 		return out, err
 	}
