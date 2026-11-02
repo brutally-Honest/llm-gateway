@@ -31,6 +31,21 @@ type Deps struct {
 	Hub *Hub
 	// Now is the clock for the active flag; nil is time.Now.
 	Now func() time.Time
+	// Rules maps a client name to its rules; nil means no side calls and whole prompts.
+	Rules map[string]ClientRules
+}
+
+// ClientRules is the client-specific knowledge the UI needs, implemented by a client
+// profile so this package stays client-agnostic.
+type ClientRules interface {
+	// IsSideCall reports whether a request's user message texts mark a side call.
+	IsSideCall(userTexts []string) bool
+	// StripReminders removes injected reminder blocks from a prompt.
+	StripReminders(text string) string
+	// TitleOf extracts a generated title from a response; false when unusable.
+	TitleOf(responseText string) (string, bool)
+	// IsAgentTool reports whether a tool name spawns a sub-agent.
+	IsAgentTool(name string) bool
 }
 
 // Handler returns the UI router.

@@ -250,6 +250,7 @@ func run(ctx context.Context, d deps) int {
 		uiSrv = &http.Server{
 			Handler: ui.Handler(ui.Deps{
 				Addr: uiLn.Addr().String(), Log: log, Reader: capt.reader, Hub: capt.hub,
+				Rules: uiRules(),
 			}),
 			ReadHeaderTimeout: 10 * time.Second,
 		}
@@ -422,7 +423,7 @@ func startCapture(c config.Capture, h config.Hooks, withUI bool, profiles []core
 				zap.String("reason", storeOpenReason(err)))
 			return nil, exitRuntime
 		}
-		hub = ui.NewHub(ui.Deps{Log: log, Reader: reader})
+		hub = ui.NewHub(ui.Deps{Log: log, Reader: reader, Rules: uiRules()})
 		cfg.OnCommit = hub.Publish
 	}
 	sink := capture.NewSink(cfg, st, log)
@@ -519,4 +520,9 @@ func (c *captureRun) stop(ctx context.Context, log *zap.Logger) {
 		zap.Int64("parse_failed", counts.ParseFailed),
 		zap.Int64("memory_peak_bytes", c.budget.Peak()),
 	)
+}
+
+// uiRules maps each client with UI rules to them.
+func uiRules() map[string]ui.ClientRules {
+	return map[string]ui.ClientRules{claudecode.Name: claudecode.Profile{}}
 }
