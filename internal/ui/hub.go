@@ -116,6 +116,9 @@ func NewHub(d Deps) *Hub {
 }
 
 func newHub(d Deps, queue int) *Hub {
+	if d.Digests == nil {
+		d.Digests = NewDigestCache()
+	}
 	log := d.Log
 	if log == nil {
 		log = zap.NewNop()
@@ -557,14 +560,13 @@ func readSnapshot(ctx context.Context, d Deps, session string) (snapshot, error)
 	if err != nil {
 		return snapshot{}, err
 	}
-	now := d.now()
-	var out snapshot
-	for _, row := range rows {
-		s, err := d.summarize(c, sessionID(row), row, now)
-		if err != nil {
-			return snapshot{}, err
-		}
-		out.Sessions = append(out.Sessions, s)
+	ids := make([]string, len(rows))
+	for i, row := range rows {
+		ids[i] = sessionID(row)
 	}
-	return out, nil
+	sums, err := d.summarizeRows(c, ids, rows, d.now())
+	if err != nil {
+		return snapshot{}, err
+	}
+	return snapshot{Sessions: sums}, nil
 }

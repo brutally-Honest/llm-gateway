@@ -202,9 +202,59 @@ func (s singleSource) SessionExchanges(string, string, string) ([]store.Exchange
 	return []store.ExchangeRow{s.ex}, nil
 }
 
-// summarize reads a session's stats and digest and builds its summary.
+// summarize reads one session's version, stats and digest and builds its summary.
 func (d Deps) summarize(c *store.CtxReader, id string, row store.SessionRow, now time.Time) (sessionSummary, error) {
-	return summarizeFrom(c, d.Rules[row.Client], id, row, now)
+	out, err := d.summarizeRows(c, []string{id}, []store.SessionRow{row}, now)
+	if err != nil {
+		return sessionSummary{}, err
+	}
+	return out[0], nil
+}
+
+func sessionIdent(row store.SessionRow) store.SessionIdent {
+	return store.SessionIdent{Principal: row.PrincipalID, Client: row.Client, Key: row.SessionKey}
+}
+
+// summarizeRows builds the summaries of rows (ids[i] is rows[i]'s id). The versions
+// of the whole page come from one read; digests are memoised on them, while stats and
+// the clock-dependent values are always fresh.
+func (d Deps) summarizeRows(c *store.CtxReader, ids []string, rows []store.SessionRow, now time.Time) ([]sessionSummary, error) {
+	idents := make([]store.SessionIdent, len(rows))
+	for i, r := range rows {
+		idents[i] = sessionIdent(r)
+	}
+	vers, err := c.SessionVersions(idents)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]sessionSummary, 0, len(rows))
+	for i, row := range rows {
+		rules := d.Rules[row.Client]
+		st, err := timeline.SessionStats(c, row)
+		if err != nil {
+			return nil, err
+		}
+		compute := func() (timeline.Digest, error) { return sessionDigest(c, rules, row) }
+		var dg timeline.Digest
+		if d.Digests != nil {
+			dg, err = d.Digests.get(digestKey{idents[i], vers[idents[i]]}, compute)
+		} else {
+			dg, err = compute()
+		}
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, buildSummary(ids[i], row, st, dg, now))
+	}
+	return out, nil
+}
+
+func sessionDigest(src timeline.Source, rules ClientRules, row store.SessionRow) (timeline.Digest, error) {
+	var dr timeline.DigestRules
+	if rules != nil {
+		dr = rules
+	}
+	return timeline.SessionDigest(src, row, dr)
 }
 
 func summarizeFrom(src timeline.Source, rules ClientRules, id string, row store.SessionRow, now time.Time) (sessionSummary, error) {
@@ -212,11 +262,7 @@ func summarizeFrom(src timeline.Source, rules ClientRules, id string, row store.
 	if err != nil {
 		return sessionSummary{}, err
 	}
-	var dr timeline.DigestRules
-	if rules != nil {
-		dr = rules
-	}
-	dg, err := timeline.SessionDigest(src, row, dr)
+	dg, err := sessionDigest(src, rules, row)
 	if err != nil {
 		return sessionSummary{}, err
 	}
@@ -266,16 +312,16 @@ func (d Deps) listSessions(w http.ResponseWriter, r *http.Request) {
 	if more {
 		rows = rows[:limit]
 	}
-	now := d.now()
-	page := listPage{Items: []sessionSummary{}}
-	for _, row := range rows {
-		sum, err := d.summarize(c, sessionID(row), row, now)
-		if err != nil {
-			writeStoreErr(w, err)
-			return
-		}
-		page.Items = append(page.Items, sum)
+	ids := make([]string, len(rows))
+	for i, row := range rows {
+		ids[i] = sessionID(row)
 	}
+	items, err := d.summarizeRows(c, ids, rows, d.now())
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	page := listPage{Items: items}
 	if more {
 		last := rows[len(rows)-1]
 		n := encodeAfter(afterToken{List: listSessions, At: last.Last, Principal: last.PrincipalID, Client: last.Client, Key: last.SessionKey})

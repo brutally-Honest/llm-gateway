@@ -33,6 +33,8 @@ type Deps struct {
 	Now func() time.Time
 	// Rules maps a client name to its rules; nil means no side calls and whole prompts.
 	Rules map[string]ClientRules
+	// Digests memoises session digests; nil gets a fresh cache from Handler and NewHub.
+	Digests *DigestCache
 }
 
 // ClientRules is the client-specific knowledge the UI needs, implemented by a client
@@ -70,6 +72,9 @@ func allowedHosts(addr string) map[string]bool {
 
 // newRouter builds the router; extra mounts are for tests and later routes.
 func newRouter(d Deps, extra ...func(chi.Router)) chi.Router {
+	if d.Digests == nil {
+		d.Digests = NewDigestCache()
+	}
 	log := d.Log
 	if log == nil {
 		log = zap.NewNop()
