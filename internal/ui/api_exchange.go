@@ -45,6 +45,49 @@ type exchangeJSON struct {
 
 	RequestHeaders  http.Header `json:"request_headers"`
 	ResponseHeaders http.Header `json:"response_headers"`
+
+	// Drawer facts (AC22-AC24, AC29, AC40). SideCall is the client rules' verdict.
+	// PrevID is the call this one continues; ThreadNew is true when it starts a thread.
+	SideCall  bool   `json:"side_call"`
+	PrevID    string `json:"prev_id"`
+	ThreadNew bool   `json:"thread_new"`
+	// Messages are the request's messages, each marked new or carried from PrevID.
+	// MessagesUnavailable says why there are none; it is empty when they are listed.
+	Messages            []exchangeMessageJSON `json:"messages"`
+	MessagesUnavailable string                `json:"messages_unavailable,omitempty"`
+	Carried             int                   `json:"carried"`
+	NewCount            int                   `json:"new_count"`
+	Response            responseJSON          `json:"response"`
+	// ResponseToolCallIDs lets the browser join tool states from the loaded timeline.
+	ResponseToolCallIDs []string `json:"response_tool_call_ids"`
+}
+
+type exchangeMessageJSON struct {
+	Role      string `json:"role"`
+	Text      string `json:"text"`
+	Truncated bool   `json:"truncated,omitempty"`
+	New       bool   `json:"new"`
+}
+
+// responseJSON is the reply assembled from the stored events. Unavailable is a reason
+// when it could not be built; Text and StopReason are then empty.
+type responseJSON struct {
+	Text        string `json:"text"`
+	StopReason  string `json:"stop_reason"`
+	Unavailable string `json:"unavailable,omitempty"`
+}
+
+// unavailableReason says why an exchange's events hold nothing to show.
+func unavailableReason(ex store.ExchangeRow, body string, bodyStored, truncated bool) string {
+	switch {
+	case ex.Parse == "failed" || ex.Parse == "skipped" || ex.Parse == "unsupported_encoding":
+		return "parse_" + ex.Parse
+	case !bodyStored:
+		return body + "_body_not_stored"
+	case truncated:
+		return "capture_truncated"
+	}
+	return "nothing_parsed"
 }
 
 func ms(ns int64) float64 { return float64(ns) / 1e6 }
@@ -86,7 +129,65 @@ func (d Deps) getExchange(w http.ResponseWriter, r *http.Request) {
 	if ex.SessionKey != "" {
 		out.SessionID = sessionID(store.SessionRow{PrincipalID: ex.PrincipalID, Client: ex.Client, SessionKey: ex.SessionKey})
 	}
+	if err := d.fillDrawer(c, ex, &out); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
 	writeJSON(w, out)
+}
+
+// fillDrawer adds the thread, message and reply facts. It reads the whole session to
+// place the call among its threads; a section it cannot build gets a reason instead.
+func (d Deps) fillDrawer(c *store.CtxReader, ex store.ExchangeRow, out *exchangeJSON) error {
+	out.Messages, out.ResponseToolCallIDs = []exchangeMessageJSON{}, []string{}
+	exs := []store.ExchangeRow{ex}
+	if ex.SessionKey != "" {
+		var err error
+		if exs, err = c.SessionExchanges(ex.PrincipalID, ex.Client, ex.SessionKey); err != nil {
+			return err
+		}
+	}
+	byID := make(map[string]store.ExchangeRow, len(exs))
+	for _, x := range exs {
+		byID[x.RequestID] = x
+	}
+	src := snapshotSource{c, exs}
+	session := store.SessionRow{PrincipalID: ex.PrincipalID, Client: ex.Client, SessionKey: ex.SessionKey}
+	built, err := timeline.Build(src, session, timeline.Options{Cut: 1})
+	if err != nil {
+		return err
+	}
+	facts, err := callFacts(src, built, d.Rules[ex.Client], byID)
+	if err != nil {
+		return err
+	}
+	f := facts[ex.RequestID]
+	if f != nil {
+		out.SideCall, out.PrevID, out.ThreadNew = f.SideCall, f.PrevID, f.Thread >= 0 && f.PrevID == ""
+	}
+	det, err := timeline.ExchangeDetail(c, ex, entryCut)
+	if err != nil {
+		return err
+	}
+	if len(det.Messages) == 0 {
+		out.MessagesUnavailable = unavailableReason(ex, "request", out.RequestBodyStored, ex.RequestTruncated)
+	}
+	if f != nil {
+		// The carried count covers the reply too, which the next request resends; only
+		// the request's own messages are listed.
+		out.Carried = min(f.Carried, len(det.Messages))
+	}
+	out.NewCount = len(det.Messages) - out.Carried
+	for i, m := range det.Messages {
+		out.Messages = append(out.Messages, exchangeMessageJSON{Role: m.Role, Text: m.Text, Truncated: m.Truncated, New: i >= out.Carried})
+	}
+	if det.HasResponse {
+		out.Response = responseJSON{Text: det.ResponseText, StopReason: det.StopReason}
+		out.ResponseToolCallIDs = append(out.ResponseToolCallIDs, det.ResponseToolCallIDs...)
+	} else {
+		out.Response = responseJSON{Unavailable: unavailableReason(ex, "response", out.ResponseBodyStored, ex.ResponseTruncated)}
+	}
+	return nil
 }
 
 func nonNil(h http.Header) http.Header {
