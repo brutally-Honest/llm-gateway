@@ -425,11 +425,10 @@ func readLive(ctx context.Context, d Deps, who sessIdent, ids []string, summary,
 		row, err := c.SessionByKey(who.principal, who.client, who.name)
 		switch {
 		case err == nil:
-			st, err := timeline.SessionStats(c, row)
+			s, err := d.summarize(c, who.id(), row, d.now())
 			if err != nil {
 				return liveMsg{}, err
 			}
-			s := buildSummary(who.id(), row, st, d.now())
 			m.Summary = &s
 		case !errors.Is(err, store.ErrNotFound):
 			return liveMsg{}, err
@@ -538,11 +537,11 @@ func readSnapshot(ctx context.Context, d Deps, session string) (snapshot, error)
 		row, err := c.SessionByKey(principal, client, key)
 		switch {
 		case err == nil:
-			st, err := timeline.SessionStats(c, row)
+			s, err := d.summarize(c, session, row, d.now())
 			if err != nil {
 				return snapshot{}, err
 			}
-			out.Sessions = append(out.Sessions, buildSummary(session, row, st, d.now()))
+			out.Sessions = append(out.Sessions, s)
 		case !errors.Is(err, store.ErrNotFound):
 			return snapshot{}, err
 		}
@@ -557,11 +556,11 @@ func readSnapshot(ctx context.Context, d Deps, session string) (snapshot, error)
 	now := d.now()
 	var out snapshot
 	for _, row := range rows {
-		st, err := timeline.SessionStats(c, row)
+		s, err := d.summarize(c, sessionID(row), row, now)
 		if err != nil {
 			return snapshot{}, err
 		}
-		out.Sessions = append(out.Sessions, buildSummary(sessionID(row), row, st, now))
+		out.Sessions = append(out.Sessions, s)
 	}
 	return out, nil
 }

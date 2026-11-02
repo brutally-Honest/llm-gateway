@@ -53,18 +53,26 @@ type usageJSON struct {
 
 // sessionSummary is the summary shape of a session and of one ungrouped exchange.
 type sessionSummary struct {
-	ID            string    `json:"id"`
-	SessionKey    string    `json:"session_key"`
-	Client        string    `json:"client"`
-	Models        []string  `json:"models"`
-	FirstAt       string    `json:"first_at"`
-	LastAt        string    `json:"last_at"`
-	ExchangeCount int       `json:"exchange_count"`
-	ModelCalls    int       `json:"model_calls"`
-	ToolCalls     int       `json:"tool_calls"`
-	Errors        int       `json:"errors"`
-	Usage         usageJSON `json:"usage"`
-	Active        bool      `json:"active"`
+	ID            string   `json:"id"`
+	SessionKey    string   `json:"session_key"`
+	Client        string   `json:"client"`
+	Models        []string `json:"models"`
+	FirstAt       string   `json:"first_at"`
+	LastAt        string   `json:"last_at"`
+	ExchangeCount int      `json:"exchange_count"`
+	ModelCalls    int      `json:"model_calls"`
+	ToolCalls     int      `json:"tool_calls"`
+	// Errors counts every error: MainErrors + SideErrors.
+	Errors     int `json:"errors"`
+	MainErrors int `json:"main_errors"`
+	SideErrors int `json:"side_errors"`
+	// Title is the generated title or the first prompt outside side calls; "" when none.
+	Title      string         `json:"title"`
+	ToolStates map[string]int `json:"tool_states"`
+	HasCalls   bool           `json:"has_calls"`
+	HasHooks   bool           `json:"has_hooks"`
+	Usage      usageJSON      `json:"usage"`
+	Active     bool           `json:"active"`
 	// HooksOnly marks a session known only from hook events (AC25).
 	HooksOnly bool `json:"hooks_only"`
 }
@@ -87,7 +95,7 @@ func usageToJSON(s timeline.Summary) usageJSON {
 
 func nsTime(ns int64) string { return time.Unix(0, ns).UTC().Format(time.RFC3339Nano) }
 
-func buildSummary(id string, row store.SessionRow, st timeline.Stats, now time.Time) sessionSummary {
+func buildSummary(id string, row store.SessionRow, st timeline.Stats, dg timeline.Digest, now time.Time) sessionSummary {
 	models := make([]string, 0, len(st.Usage.Models))
 	for _, m := range st.Usage.Models {
 		models = append(models, m.Model)
@@ -97,6 +105,8 @@ func buildSummary(id string, row store.SessionRow, st timeline.Stats, now time.T
 		ID: id, SessionKey: row.SessionKey, Client: row.Client, Models: models,
 		FirstAt: nsTime(row.First), LastAt: nsTime(row.Last),
 		ExchangeCount: row.Count, ModelCalls: st.ModelCalls, ToolCalls: st.ToolCalls, Errors: st.Errors,
+		MainErrors: dg.MainErrors, SideErrors: dg.SideErrors, Title: dg.Title, ToolStates: dg.ToolStates,
+		HasCalls: dg.HasCalls, HasHooks: dg.HasHooks,
 		Usage: usageToJSON(st.Usage), Active: now.Sub(last) < ActiveWindow, HooksOnly: row.HooksOnly,
 	}
 }
@@ -192,13 +202,33 @@ func (s singleSource) SessionExchanges(string, string, string) ([]store.Exchange
 	return []store.ExchangeRow{s.ex}, nil
 }
 
-func ungroupedSummary(c *store.CtxReader, ex store.ExchangeRow, now time.Time) (sessionSummary, error) {
-	row := store.SessionRow{PrincipalID: ex.PrincipalID, Client: ex.Client, First: ex.StartedAt, Last: ex.StartedAt, Count: 1}
-	st, err := timeline.SessionStats(singleSource{c, ex}, row)
+// summarize reads a session's stats and digest and builds its summary.
+func (d Deps) summarize(c *store.CtxReader, id string, row store.SessionRow, now time.Time) (sessionSummary, error) {
+	return summarizeFrom(c, d.Rules[row.Client], id, row, now)
+}
+
+func summarizeFrom(src timeline.Source, rules ClientRules, id string, row store.SessionRow, now time.Time) (sessionSummary, error) {
+	st, err := timeline.SessionStats(src, row)
 	if err != nil {
 		return sessionSummary{}, err
 	}
-	s := buildSummary(ex.RequestID, row, st, now)
+	var dr timeline.DigestRules
+	if rules != nil {
+		dr = rules
+	}
+	dg, err := timeline.SessionDigest(src, row, dr)
+	if err != nil {
+		return sessionSummary{}, err
+	}
+	return buildSummary(id, row, st, dg, now), nil
+}
+
+func (d Deps) ungroupedSummary(c *store.CtxReader, ex store.ExchangeRow, now time.Time) (sessionSummary, error) {
+	row := store.SessionRow{PrincipalID: ex.PrincipalID, Client: ex.Client, First: ex.StartedAt, Last: ex.StartedAt, Count: 1}
+	s, err := summarizeFrom(singleSource{c, ex}, d.Rules[ex.Client], ex.RequestID, row, now)
+	if err != nil {
+		return sessionSummary{}, err
+	}
 	s.SessionKey = ""
 	return s, nil
 }
@@ -239,12 +269,12 @@ func (d Deps) listSessions(w http.ResponseWriter, r *http.Request) {
 	now := d.now()
 	page := listPage{Items: []sessionSummary{}}
 	for _, row := range rows {
-		st, err := timeline.SessionStats(c, row)
+		sum, err := d.summarize(c, sessionID(row), row, now)
 		if err != nil {
 			writeStoreErr(w, err)
 			return
 		}
-		page.Items = append(page.Items, buildSummary(sessionID(row), row, st, now))
+		page.Items = append(page.Items, sum)
 	}
 	if more {
 		last := rows[len(rows)-1]
@@ -284,7 +314,7 @@ func (d Deps) listUngrouped(w http.ResponseWriter, r *http.Request) {
 	now := d.now()
 	page := listPage{Items: []sessionSummary{}}
 	for _, ex := range rows {
-		s, err := ungroupedSummary(c, ex, now)
+		s, err := d.ungroupedSummary(c, ex, now)
 		if err != nil {
 			writeStoreErr(w, err)
 			return
@@ -318,10 +348,10 @@ func (d Deps) getSession(w http.ResponseWriter, r *http.Request) {
 		writeStoreErr(w, err)
 		return
 	}
-	st, err := timeline.SessionStats(c, row)
+	sum, err := d.summarize(c, sessionID(row), row, d.now())
 	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
-	writeJSON(w, buildSummary(sessionID(row), row, st, d.now()))
+	writeJSON(w, sum)
 }
