@@ -1,15 +1,16 @@
 ---
 feature: 010-harness-hooks
 kind: feat
-status: approved
-version: 1
+status: draft
+version: 2
 created: 2026-11-01
 supersedes:
 branch: feat/010-harness-hooks
-approved: 2026-11-01T06:15:38Z
-approved-by: human
-sha256: 35d774b244aac4e72b3c28e3ff2c2ec2f3c836d022105f95b420dbeddfa03e59
-fingerprint: f36c6f56a3514dd080ce28e79e59a4c1293c8dae9194645dfcc116efa2bd72cd
+approved:
+approved-by:
+sha256:
+fingerprint:
+previous: 75fcea7
 ---
 # Harness hooks
 
@@ -223,3 +224,4 @@ None.
 ## Changelog
 - v1 (2026-11-01) — first draft; revised before approval (AC1–AC4, AC16, AC20, E13,
   ordering and principal constraints)
+- v2 (2026-11-02) — reopened: CR-001: Live-stream correctness fixes from the branch review, viewer gaps, web client tests
