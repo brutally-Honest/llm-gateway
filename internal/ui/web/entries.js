@@ -77,6 +77,9 @@ export function compareEntries(a, b) {
   const x = startKey(a.start);
   const y = startKey(b.start);
   if (x !== y) return x < y ? -1 : 1;
+  // on an exact tie the exchange sorts before hook lines, as on the server
+  const ha = a.kind === "hook_event";
+  if (ha !== (b.kind === "hook_event")) return ha ? 1 : -1;
   if (a.exchange_id !== b.exchange_id) return a.exchange_id < b.exchange_id ? -1 : 1;
   return a.index - b.index;
 }
@@ -88,6 +91,15 @@ export function replaceExchange(entries, list) {
   const ids = new Set(list.map((e) => e.exchange_id));
   const out = entries.filter((e) => !ids.has(e.exchange_id));
   out.push(...list);
+  out.sort(compareEntries);
+  return out;
+}
+
+// replaceHooks replaces the whole hook group: every hook_event entry is dropped, then the
+// list is inserted. An empty list removes the group.
+export function replaceHooks(entries, list) {
+  const out = entries.filter((e) => e.kind !== "hook_event");
+  out.push(...(list || []));
   out.sort(compareEntries);
   return out;
 }

@@ -134,11 +134,20 @@ func (h *Hub) sendSnapshot(w http.ResponseWriter, r *http.Request, rc *http.Resp
 		if err != nil {
 			return nil, false
 		}
-		if _, err := fmt.Fprintf(w, "event: exchange\ndata: %s\n\n", b); err != nil {
+		if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", exchangeEvent(x), b); err != nil {
 			return nil, false
 		}
 	}
 	return sent, rc.Flush() == nil
+}
+
+// exchangeEvent is the SSE event that carries x's whole entry list: "hooks" for the hooks
+// item, whose group the client replaces as a whole, else "exchange".
+func exchangeEvent(x liveExchange) string {
+	if x.RequestID == hooksExchange {
+		return "hooks"
+	}
+	return "exchange"
 }
 
 // writeLive writes one live message: a session event, or one batch for the committed
@@ -183,7 +192,7 @@ func writeLive(w http.ResponseWriter, m liveMsg, sent map[string]string) error {
 		if committed[a.RequestID] || sent[a.RequestID] == a.Hash {
 			continue
 		}
-		batch = append(batch, ev{"exchange", a})
+		batch = append(batch, ev{exchangeEvent(a), a})
 		sent[a.RequestID] = a.Hash
 	}
 	if m.Inactive {
@@ -217,7 +226,7 @@ func writeRefresh(w http.ResponseWriter, m liveMsg, sent map[string]string) erro
 		if err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(w, "event: exchange\ndata: %s\n\n", b); err != nil {
+		if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", exchangeEvent(a), b); err != nil {
 			return err
 		}
 		sent[a.RequestID] = a.Hash

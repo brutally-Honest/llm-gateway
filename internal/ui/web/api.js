@@ -81,7 +81,7 @@ export function openStream(onEvent, onState, path = "stream") {
         reopenLater();
       }
     };
-    for (const name of ["session", "exchange", "entries", "snapshot_error"]) {
+    for (const name of ["session", "exchange", "hooks", "entries", "snapshot_error"]) {
       cur.addEventListener(name, (e) => {
         if (closed || es !== cur) return;
         if (name === "snapshot_error") {

@@ -2,7 +2,9 @@ package ui
 
 import (
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -29,8 +31,8 @@ func entriesOf(t *testing.T, ev sseEvent) []map[string]any {
 func TestHub_HookEventPushesSessionTimeline(t *testing.T) {
 	e := newStreamEnv(t, fastHooks)
 	e.toolSession(`{"a":1}`)
-	s := e.open(e.sessionPath())
-	s.take(1)
+	s := e.openRaw(e.sessionPath())
+	s.take(2) // exchange a, then the empty hooks snapshot
 	e.hookPre(2)
 	ev := s.nextData()
 	if ev.event != "exchange" || ev.id != "" {
@@ -66,7 +68,10 @@ func TestHub_HookEventPushesSessionsList(t *testing.T) {
 func TestHub_HookOnlySessionAppears(t *testing.T) {
 	e := newStreamEnv(t, fastHooks)
 	global := e.open("/api/stream")
-	sess := e.open(e.sessionPath())
+	sess := e.openRaw(e.sessionPath())
+	if ev := sess.nextData(); ev.event != "hooks" || ev.data != "[]" {
+		t.Fatalf("snapshot = %+v", ev)
+	}
 	e.hookPre(2)
 	ev := global.nextData()
 	var sum sessionSummary
@@ -75,7 +80,7 @@ func TestHub_HookOnlySessionAppears(t *testing.T) {
 	}
 	ev = sess.nextData()
 	es := entriesOf(t, ev)
-	if ev.event != "exchange" || len(es) != 1 || es[0]["kind"] != "hook_event" {
+	if ev.event != "hooks" || len(es) != 1 || es[0]["kind"] != "hook_event" {
 		t.Fatalf("session = %+v", ev)
 	}
 }
@@ -147,7 +152,7 @@ func TestHub_HookRefreshSendsOnlyChangedExchanges(t *testing.T) {
 	if strings.Contains(body, "a:0") || !strings.Contains(body, "hook:0") || !strings.Contains(body, "b:0") {
 		t.Fatalf("body = %q", body)
 	}
-	if strings.Contains(body, "id:") || strings.Count(body, "event: exchange") != 2 {
+	if strings.Contains(body, "id:") || strings.Count(body, "event: exchange") != 1 || strings.Count(body, "event: hooks") != 1 {
 		t.Fatalf("body = %q", body)
 	}
 	w = httptest.NewRecorder()
@@ -188,8 +193,8 @@ func TestHub_HookRefreshCancelledWhenLastStreamCloses(t *testing.T) {
 func TestHub_HookRefreshAndCommitInSameWindowSendEachChangeOnce(t *testing.T) {
 	e := newStreamEnv(t, func(h *Hub) { h.hookEvery = 150 * time.Millisecond })
 	e.toolSession(`{"a":1}`)
-	s := e.open(e.sessionPath())
-	s.take(1)
+	s := e.openRaw(e.sessionPath())
+	s.take(2)
 	e.save("c", "k", "cc", 10)
 	e.parseMsgs("c", "ok", []any{"user", text("later")})
 	e.hook("k", core.HarnessEvent{Phase: core.PhasePreTool, ToolCallID: "call_1", ToolName: "bash"}, 2)
@@ -209,5 +214,172 @@ func TestHub_HookRefreshAndCommitInSameWindowSendEachChangeOnce(t *testing.T) {
 	e.publish("d")
 	if ev := s.nextData(); ev.event != "entries" || entriesOf(t, ev)[0]["exchange_id"] != "d" {
 		t.Fatalf("extra event: %+v", ev)
+	}
+}
+
+// webReplaceExchange and webReplaceHooks are the replace functions of web/entries.js, without
+// their sort; the test below pins that source, so the two cannot drift apart unnoticed.
+const webReplaceExchange = `export function replaceExchange(entries, list) {
+  if (!list || list.length === 0) return entries;
+  const ids = new Set(list.map((e) => e.exchange_id));
+  const out = entries.filter((e) => !ids.has(e.exchange_id));
+  out.push(...list);
+  out.sort(compareEntries);
+  return out;
+}`
+
+const webReplaceHooks = `export function replaceHooks(entries, list) {
+  const out = entries.filter((e) => e.kind !== "hook_event");
+  out.push(...(list || []));
+  out.sort(compareEntries);
+  return out;
+}`
+
+// applyEvent applies one stream event to the client's entries as app.js does.
+func applyEvent(entries []map[string]any, event string, list []map[string]any) []map[string]any {
+	if event == "hooks" {
+		var out []map[string]any
+		for _, e := range entries {
+			if e["kind"] != kindHookEvent {
+				out = append(out, e)
+			}
+		}
+		return append(out, list...)
+	}
+	return applyReplace(entries, list)
+}
+
+func applyReplace(entries, list []map[string]any) []map[string]any {
+	ids := map[any]bool{}
+	for _, e := range list {
+		ids[e["exchange_id"]] = true
+	}
+	var out []map[string]any
+	for _, e := range entries {
+		if !ids[e["exchange_id"]] {
+			out = append(out, e)
+		}
+	}
+	return append(out, list...)
+}
+
+func hookLineIDs(entries []map[string]any) []string {
+	var out []string
+	for _, e := range entries {
+		if e["kind"] == kindHookEvent {
+			out = append(out, e["id"].(string))
+		}
+	}
+	return out
+}
+
+// The web client replaces entries by their exchange_id. Hook lines travel with one and the
+// same exchange_id in the timeline page, the connect snapshot and a live refresh, so a live
+// hook update replaces the lines it already holds instead of adding a second set. The server's
+// own names for them ("~hook" for paging, "hooks" for the sent-record) never reach the wire.
+func TestStream_LiveHookUpdateReplacesFirstSnapshotHookLines(t *testing.T) {
+	js := webFiles(t)["entries.js"]
+	if !strings.Contains(js, webReplaceExchange) || !strings.Contains(js, webReplaceHooks) {
+		t.Fatal("a replace function changed in web/entries.js: re-check that hook lines still replace, then update this test")
+	}
+	e := newStreamEnv(t, fastHooks)
+	e.toolSession(`{"a":1}`)
+	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-a"}, 2)
+
+	resp, err := http.Get(e.ts.URL + "/api/sessions/" + sid() + "/timeline")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var page tlPage
+	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+		t.Fatal(err)
+	}
+	client := page.Entries // what the page holds after loading the timeline
+	first := hookLineIDs(client)
+	if len(first) != 1 {
+		t.Fatalf("timeline hook lines = %v", first)
+	}
+
+	s := e.openRaw(e.sessionPath())
+	var wire []map[string]any
+	for i, want := range []string{"exchange", "hooks"} { // the connect snapshot: exchange a, then the hook lines
+		ev := s.nextData()
+		if ev.event != want {
+			t.Fatalf("snapshot event %d = %q, want %q", i, ev.event, want)
+		}
+		list := entriesOf(t, ev)
+		wire = append(wire, list...)
+		client = applyEvent(client, ev.event, list)
+	}
+	if got := hookLineIDs(client); !slices.Equal(got, first) {
+		t.Fatalf("after the snapshot hook lines = %v, want %v", got, first)
+	}
+
+	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-b"}, 3)
+	e.hub.PublishHook(core.PrincipalLocal, "cc", "k")
+	ev := s.nextData()
+	live := entriesOf(t, ev)
+	if ev.event != "hooks" || len(hookLineIDs(live)) != 2 {
+		t.Fatalf("live update = %+v", ev)
+	}
+	wire = append(wire, live...)
+	client = applyEvent(client, ev.event, live)
+
+	got := hookLineIDs(client)
+	if len(got) != 2 || got[0] != first[0] || got[1] == first[0] {
+		t.Fatalf("after the live update hook lines = %v, want %s and one new line", got, first[0])
+	}
+	for _, en := range append(wire, page.Entries...) {
+		if en["kind"] == kindHookEvent && en["exchange_id"] != "" {
+			t.Errorf("hook line %v has exchange_id %q, want the empty one on every path", en["id"], en["exchange_id"])
+		}
+	}
+}
+
+// A session with no hook line still gets a hooks event on connect, so the client has a
+// group to replace; when its only hook line becomes matched, the group is sent empty.
+func TestStream_HooksSnapshotEmptyIsSentAndRemovesGroup(t *testing.T) {
+	e := newStreamEnv(t, fastHooks)
+	e.toolSession(`{"a":1}`)
+	s := e.openRaw(e.sessionPath())
+	if ev := s.nextData(); ev.event != "exchange" {
+		t.Fatalf("first = %+v", ev)
+	}
+	if ev := s.nextData(); ev.event != "hooks" || ev.data != "[]" {
+		t.Fatalf("connect snapshot hooks = %+v, want []", ev)
+	}
+	// An unmatched hook line (an unknown tool call id) is a hook line of its own.
+	e.hook("k", core.HarnessEvent{Phase: core.PhasePreTool, ToolCallID: "nope", ToolName: "bash"}, 2)
+	e.hub.PublishHook(core.PrincipalLocal, "cc", "k")
+	// The hook gives the earlier call a state, so exchange a is re-sent before the hooks.
+	ev := s.nextData()
+	if ev.event == "exchange" {
+		ev = s.nextData()
+	}
+	if ev.event != "hooks" || len(hookLineIDs(entriesOf(t, ev))) != 1 {
+		t.Fatalf("after the hook = %+v", ev)
+	}
+	// Its tool call arrives: the line is matched, the group is empty.
+	e.save("n", "k", "cc", 10)
+	evs := []core.StoredEvent{
+		{Seq: 0, Kind: core.KindRequest, Payload: []byte(`{"model":"m1"}`)},
+		{Seq: 1, Kind: core.KindToolCall, ToolCallID: "nope", ContentHash: sha("nin"),
+			Payload: []byte(`{"name":"bash","id":"nope"}`)},
+	}
+	if err := e.s.SaveParse(t.Context(), "n", core.PrincipalLocal, core.ParseOK, evs,
+		[]core.Content{{Hash: sha("nin"), Bytes: []byte(`{}`)}}); err != nil {
+		t.Fatal(err)
+	}
+	e.publish("n")
+	var last sseEvent
+	for ev := s.nextData(); ; ev = s.nextData() {
+		last = ev
+		if ev.event == "hooks" {
+			break
+		}
+	}
+	if last.data != "[]" {
+		t.Fatalf("matched hooks = %s, want []", last.data)
 	}
 }

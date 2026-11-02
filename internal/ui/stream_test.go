@@ -58,7 +58,16 @@ func newStreamEnv(t *testing.T, tune func(*Hub)) *streamEnv {
 	return &streamEnv{apiEnv: &apiEnv{t: t, s: s, dir: dir, h: ts.Config.Handler}, hub: h, ts: ts}
 }
 
+// open starts a stream whose nextData skips an empty hooks event, so tests that predate the
+// hooks event keep counting exchange events; openRaw shows every event.
 func (e *streamEnv) open(path string) *sse {
+	e.t.Helper()
+	s := e.openRaw(path)
+	s.skipEmptyHooks = true
+	return s
+}
+
+func (e *streamEnv) openRaw(path string) *sse {
 	e.t.Helper()
 	resp, err := http.Get(e.ts.URL + path)
 	if err != nil {
@@ -72,6 +81,8 @@ type sse struct {
 	t    *testing.T
 	resp *http.Response
 	sc   *bufio.Scanner
+	// skipEmptyHooks makes nextData pass over a hooks event with an empty list.
+	skipEmptyHooks bool
 }
 
 type sseEvent struct{ event, id, data, comment string }
@@ -105,7 +116,7 @@ func (s *sse) next() sseEvent {
 func (s *sse) nextData() sseEvent {
 	s.t.Helper()
 	for {
-		if ev := s.next(); ev.event != "" {
+		if ev := s.next(); ev.event != "" && !(s.skipEmptyHooks && ev.event == "hooks" && ev.data == "[]") {
 			return ev
 		}
 	}
@@ -379,7 +390,10 @@ func TestStream_BackfilledExchangesAppearOnReconnectSnapshot(t *testing.T) {
 	e := newStreamEnv(t, func(h *Hub) { h.heartbeat = 20 * time.Millisecond })
 	e.save("u", "", "cc", 5) // ungrouped until backfill
 	path := "/api/sessions/" + sid() + "/stream"
-	s := e.open(path)
+	s := e.openRaw(path)
+	if ev := s.nextData(); ev.event != "hooks" || ev.data != "[]" {
+		t.Fatalf("connect snapshot = %+v, want an empty hooks event", ev)
+	}
 	e.save("u2", "k", "cc", 6) // backfill assigns it to the session; nothing is published
 	e.parseMsgs("u2", "ok", []any{"user", text("old")})
 	for i := 0; i < 3; i++ {

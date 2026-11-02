@@ -1,5 +1,5 @@
 import { getJSON, openStream } from "./api.js";
-import { addUnique, replaceExchange, upsertSession } from "./entries.js";
+import { addUnique, replaceExchange, replaceHooks, upsertSession } from "./entries.js";
 import { createStore } from "./store.js";
 import { note } from "./session-list.js";
 import "./exchange-detail.js";
@@ -100,6 +100,7 @@ async function showSession(id) {
     (name, data) => {
       if (name === "snapshot_error") set({ snapshotError: data.error ? data.error.message : "unknown" });
       else if (name === "session") live({ summary: data });
+      else if (name === "hooks") live({ entries: replaceHooks(st.entries, data), snapshotError: "" });
       else live({ entries: replaceExchange(st.entries, data), snapshotError: "" });
     },
     (state) => {

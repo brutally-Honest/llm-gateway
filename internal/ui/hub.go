@@ -448,13 +448,13 @@ func readLive(ctx context.Context, d Deps, who sessIdent, ids []string, summary,
 		}
 		sort.Slice(m.Exchanges, func(i, j int) bool { return m.Exchanges[i].RowID < m.Exchanges[j].RowID })
 		m.All = all
-		if n := len(all); n > 0 {
-			last := all[0].StartedAt
-			for _, x := range all {
-				if x.RequestID != hooksExchange {
-					last = max(last, x.StartedAt)
-				}
+		last, real := int64(0), false
+		for _, x := range all {
+			if x.RequestID != hooksExchange { // the hooks item is not an exchange
+				last, real = max(last, x.StartedAt), true
 			}
+		}
+		if real {
 			m.Inactive = d.now().Sub(time.Unix(0, last)) >= ActiveWindow
 		}
 	}
@@ -462,8 +462,9 @@ func readLive(ctx context.Context, d Deps, who sessIdent, ids []string, summary,
 }
 
 // sessionExchanges builds a session's whole timeline from one snapshot read and returns
-// each stored exchange with its entries, in timeline order. Exchanges with no entry are
-// left out.
+// each stored exchange with its entries, in timeline order, then the hooks item (its
+// Entries are [] when the session has no hook line, never null). Exchanges with no entry
+// are left out.
 func sessionExchanges(c *store.CtxReader, who sessIdent) ([]liveExchange, error) {
 	rows, _, err := c.SessionSnapshot(who.principal, who.client, who.name)
 	if err != nil {
@@ -496,6 +497,10 @@ func sessionExchanges(c *store.CtxReader, who sessIdent) ([]liveExchange, error)
 			out = append(out, liveExchange{RowID: rowID[key], RequestID: key, StartedAt: byID[key].StartedAt})
 		}
 		out[i].Entries = append(out[i].Entries, e)
+	}
+	if _, ok := at[hooksExchange]; !ok {
+		// The hooks item is always present, empty included, so a stream can replace its group.
+		out = append(out, liveExchange{RequestID: hooksExchange, Entries: []entryJSON{}})
 	}
 	for i := range out {
 		b, err := json.Marshal(out[i].Entries)
