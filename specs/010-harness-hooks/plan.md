@@ -1,12 +1,12 @@
 ---
 feature: 010-harness-hooks
-status: draft
+status: approved
 version: 2
-approved:
-approved-by:
-sha256:
-fingerprint:
-spec-fingerprint:
+approved: 2026-11-02T04:23:58Z
+approved-by: human
+sha256: d53e57a26f47d0aeb53bff430f00f27619e157fa6c290811d7a4771dfbca684b
+fingerprint: 8772085cd107373575362de576fd92b14cee5a29c8132c9fddf6fc3a60646e4b
+spec-fingerprint: 1f87da0ab9a23c7c5238203fb86ac54d53a67d7b109324b55451a55b7edd6182
 previous: 92aae62
 ---
 # Plan — 010-harness-hooks
@@ -78,7 +78,10 @@ reserved prefix is never forwarded. Order: method (non-POST: 405 + `Allow: POST`
 guard (Host host part in `localhost`, `127.0.0.0/8`, `::1`; any `Origin` or `Sec-Fetch-Site`
 header: 403; nothing stored). Then read at most `capture.max_body_bytes+1` bytes; over limit:
 count oversize, log one line, 200. `capture.enabled=false`: count, 200. Else assign a
-per-process monotonic seq and receive time, `Submit` without blocking; full queue or
+per-process monotonic seq and receive time together under one lock (the time is kept
+non-decreasing, `max(now, last)`; the handler's clock is injectable, default `time.Now`),
+pass both through the queue (`Submit` stamps nothing; the sink and `SaveHook` store both as
+given), `Submit` without blocking; full queue or
 budget refused: count and one log line, 200. The answer is always `200` with empty body.
 Bodies and headers are never logged (credential rule); only the client segment, size, reason.
 Handler is mounted regardless of capture, so AC8 can answer.
@@ -115,7 +118,11 @@ Hook rows naming an id with no captured call, or with no id, become hook-event e
 
 **Presentation (AC23-AC26).** `Entry` gains `State, Reason, Outcome, InputDiffers,
 HookInput, AgentID, AgentType` and `KindHarness`; render and `--json` are built from them.
-`ui` entries/mapEntries pass the same fields; web JS renders badges.
+`ui` entries/mapEntries pass the same fields; web JS renders badges. CR-001 item 5: truncated
+hook input shows `N bytes omitted` (CLI, `--json` and the UI entry carry the count); an
+unknown event shows its stored name (`hook unknown: <name>`); the pending badge is hidden when
+a harness state exists (AC22-AC24). AC25/E4: hook events with no session id are only a count
+in `gateway sessions`; the web ungrouped list has no hook entries (known v1 gap).
 
 **Hub and streams (AC26), traced in `hub.go` / `stream.go`.** A stream's "last sent" record
 is `sent map[request_id]hash`, filled by the connect snapshot and by `writeLive`; the hash is
@@ -124,16 +131,25 @@ and `readLive` rebuilds the whole session timeline (`sessionExchanges`) and retu
 (every exchange, timeline order) plus `Exchanges` (only the committed ids). `writeLive` does
 nothing unless `Exchanges` is non-empty; it then sends an `entries` event per committed
 exchange and an `exchange` event (whole list) for each later exchange in `All` whose hash
-differs from `sent`, never for earlier ones. A hook event has no committed exchange and can
+differs from `sent`. CR-001 item 1: on a commit every exchange in `All` is compared with
+`sent` and re-sent when its hash changed (a later `tool_result` changes an earlier call's
+state; AC16, AC26). A hook event has no committed exchange and can
 change the state of an earlier exchange, so it does not fit: today it would read with
 `ids=[""]`, match nothing and send nothing. → decided: a new trigger. `Hub.PublishHook` queues
 a hook commit (session identity only); dispatch coalesces hook commits per session to at most
 one re-read per 250 ms (trailing edge, so the last event always lands) and sends a `liveMsg`
 with `All` and a `Refresh` flag. For a `Refresh` message `writeLive` compares every exchange
 in `All` (no "after the first committed" cut-off) with `sent` and emits `exchange` events for
-the ones that differ, with no `id:` line (row ids are exchange-only). Hook lines that match no
-call travel as one pseudo-exchange (`request_id` `hooks`) in `All`, hashed the same way. The
-global stream gets a refreshed summary, so a hooks-only session appears. A re-read failure
+the ones that differ, with no `id:` line (row ids are exchange-only). CR-001 item 2: a
+session's hook lines (those matching no call) are always sent as a full snapshot in their own
+`hooks` SSE event, empty (`[]`) included, on the connect snapshot, the commit path and the
+hook refresh; `sessionExchanges` always includes the hooks item (hashed like an exchange,
+`Entries` marshalled as `[]`, never `null`) and `hub.go`'s "has anything" check counts real
+exchanges only. The client replaces the whole hook group on receipt (every `hook_event` entry
+is dropped, then the list is inserted); an empty snapshot removes it (E6, AC21, AC24). `api.js`
+listens for `hooks` and `app.js` dispatches it to that replace function. The global stream
+sends no `hooks` event. On equal time the client sorts the exchange before hook lines, as the
+server does (AC24). The global stream gets a refreshed summary, so a hooks-only session appears. A re-read failure
 drops the streams (they resync by snapshot), as for exchanges.
 
 **Install (AC27, AC28).** `claudecode.HookSnippet(addr)` builds the settings JSON (the only
@@ -141,7 +157,13 @@ place with event names); `gateway hooks print` loads config for `listen_addr`, w
 stdout, no file, exit 0. Hook type, async and failure behaviour come from the T001 spike.
 Docs in `docs/clients/`.
 
-**Dependencies:** none new.
+**Dependencies:** none new in Go. Node is a test-only runtime (`node --test
+"internal/ui/webtest/*.test.js"`, quoted glob, no npm, no node_modules) run by `make verify`;
+`make setup` reports whether it is installed; recorded in ADR 0013 with a minimum Node version,
+like shellcheck in ADR 0011. Tests live in `internal/ui/webtest/`, outside the `go:embed web`
+directory, and import the real `../web/entries.js` for the hook-snapshot, tie and pending-badge
+behaviours (AC21, AC24). The pending-badge decision is a pure function exported from
+`entries.js` that `tool-card.js` calls (it extends HTMLElement, so it cannot load in Node).
 
 ## AC coverage
 | AC | Where | Verified by |
@@ -161,17 +183,17 @@ Docs in `docs/clients/`.
 | AC13 | `hooks/sink.go` | TestSink_UnknownClientStoredAsUnknown |
 | AC14 | `store/hooks.go`, `timeline/harness.go` | TestSaveHook_SessionIDVerbatim, TestStates_SessionJoinIsExactString |
 | AC15 | `timeline/harness.go` | TestStates_ToolJoinIsExactID |
-| AC16 | `timeline/harness.go` | TestStates_AskedRanReported, TestStates_RanNotReported, TestStates_DeniedWithID, TestStates_NotRunByLaterResult, TestStates_Pending, TestStates_FailureOutcome |
+| AC16 | `timeline/harness.go`, `ui/stream.go` | TestStates_AskedRanReported, TestStates_RanNotReported, TestStates_DeniedWithID, TestStates_NotRunByLaterResult, TestStates_Pending, TestStates_FailureOutcome, TestStream_CommitResendsEarlierExchangeWhoseStateChanged |
 | AC17 | `timeline/harness.go` | TestStates_NoHookEventsMeansNoHarnessData |
 | AC18 | `timeline/harness.go` | TestStates_InputDiffersFlagged, TestStates_InputKeyOrderIsNotADifference |
 | AC19 | `timeline/harness.go` | TestStates_UnmatchedHookShown |
 | AC20 | `store/hooks.go`, `timeline/harness.go` | TestSaveHook_IdenticalPayloadsBothStored, TestStates_DuplicateShownOnce, TestStates_DuplicatesFarApartWithoutIDShownTwice |
-| AC21 | `timeline/harness.go` | TestStates_ArrivalOrderDoesNotChangeStates, TestStates_SeededPermutationsGiveIdenticalStates |
+| AC21 | `timeline/harness.go`, `ui/hub.go`, `web/entries.js` | TestStates_ArrivalOrderDoesNotChangeStates, TestStates_SeededPermutationsGiveIdenticalStates, TestStream_HooksSnapshotEmptyIsSentAndRemovesGroup, webtest/entries.test.js `empty hooks snapshot removes the hook group (E6)` |
 | AC22 | `timeline/harness.go`, `ui/entries.go` | TestStates_AgentLabelsOnEventAndCall, TestRender_ShowsAgentLabels, TestAPITimeline_AgentLabels |
-| AC23 | `timeline/render.go`, `cmd/gateway/viewer.go` | TestRender_ShowsStateAndInputDiffers, TestRender_UnmatchedHookLinesInTimeOrder, TestTimelineJSON_IncludesStatesAndHookEvents |
-| AC24 | `ui/api_timeline.go`, `ui/entries.go`, `web/` | TestAPITimeline_StatesFlagsAndHookLines, TestWeb_ServesHarnessBadgeRendering |
-| AC25 | `store/reader_sessions.go`, `timeline/sessions.go`, `ui/api_sessions.go` | TestSessionRows_HooksOnlySessionListed, TestSessions_HooksOnlyLabelled, TestAPISessions_HooksOnlyLabel |
-| AC26 | `ui/hub.go`, `ui/stream.go`, `run.go` | TestHub_HookEventPushesSessionTimeline, TestHub_HookEventPushesSessionsList, TestHub_HookRefreshesCoalescePerSession, TestHub_HookRefreshCancelledWhenLastStreamCloses, TestHub_HookRefreshAndCommitInSameWindowSendEachChangeOnce |
+| AC23 | `timeline/render.go`, `cmd/gateway/viewer.go` | TestRender_ShowsStateAndInputDiffers, TestRender_UnmatchedHookLinesInTimeOrder, TestTimelineJSON_IncludesStatesAndHookEvents, TestRender_TruncatedHookInputShowsBytesOmitted, TestRender_UnknownHookShowsStoredName |
+| AC24 | `ui/api_timeline.go`, `ui/entries.go`, `web/` | TestAPITimeline_StatesFlagsAndHookLines, TestWeb_ServesHarnessBadgeRendering, TestStream_LiveHookUpdateReplacesFirstSnapshotHookLines, webtest/entries.test.js `exchange sorts before hook lines on an exact time tie`, webtest/entries.test.js `pending badge hidden when a harness state exists`, TestAPITimeline_TruncatedHookInputCarriesOmittedCount |
+| AC25 | `store/reader_sessions.go`, `timeline/sessions.go`, `ui/api_sessions.go`, `docs/clients/claude-code-hooks.md` (E4 gap) | TestSessionRows_HooksOnlySessionListed, TestSessions_HooksOnlyLabelled, TestAPISessions_HooksOnlyLabel, TestSessions_UngroupedShowsHookCount |
+| AC26 | `ui/hub.go`, `ui/stream.go`, `run.go` | TestHub_HookEventPushesSessionTimeline, TestHub_HookEventPushesSessionsList, TestHub_HookRefreshesCoalescePerSession, TestHub_HookRefreshCancelledWhenLastStreamCloses, TestHub_HookRefreshAndCommitInSameWindowSendEachChangeOnce, TestStream_CommitResendsEarlierExchangeWhoseStateChanged, TestStream_LiveHookUpdateReplacesFirstSnapshotHookLines, TestStream_HooksSnapshotEmptyIsSentAndRemovesGroup |
 | AC27 | `claudecode/snippet.go`, `cmd/gateway/hooks.go` | TestHooksPrint_SnippetCoversEveryEvent, TestHooksPrint_WritesNoFileExitsZero, TestHooksPrint_UsesListenAddr |
 | AC28 | `docs/clients/` | none — docs; reviewed by reading (T015) |
 
@@ -184,8 +206,13 @@ TestStates_SeededPermutationsGiveIdenticalStates (AC21, 100 shuffles, fixed seed
 TestStates_InputDiffersFlagged; E8 TestStates_DeniedWithoutIDIsNotRun; E9
 TestSink_UnknownClientStoredAsUnknown; E10 TestHandler_NonLoopbackHost403; E11
 TestStates_Pending; E12 TestMapHarness_ConcurrentSubagentsKeepOwnIDs; E13
-TestRun_HookBurstDoesNotDropLLMCapture. Purity of the new package: TestPurity_HooksPackageImportsNoClientAndNamesNoHarnessEvent
-(internal/hooks imports no `internal/clients/*` and names no Claude Code event). Hub
+TestRun_HookBurstDoesNotDropLLMCapture. Purity of the new package: TestPurity_HooksPackageImportsNoClient
+(internal/hooks imports no `internal/clients/*`); `internal/core/purity_test.go` carries
+TestPurity_NoHarnessEventNamesOutsideProfile (no Claude Code event named outside the
+profile). Receive time (CR-001 item 4): TestHandler_BackwardsClockKeepsReceiveTimeNonDecreasing
+and TestHandler_BlockedClockKeepsSeqAndTimeOrderAligned are the regression tests (injected
+clock); TestHandler_ConcurrentPostsOutOfOrderWritesKeepSeqAndTimeAligned is a smoke test only.
+Web JS: Node tests in `internal/ui/webtest/` of the real `entries.js` plus string pins (tool-card.js calls the pending-badge function); T012 keeps its manual look. Hub
 coalescing: TestHub_HookRefreshesCoalescePerSession, TestHub_HookRefreshSendsOnlyChangedExchanges, TestHub_HookRefreshCancelledWhenLastStreamCloses, TestHub_HookRefreshAndCommitInSameWindowSendEachChangeOnce.
 Race: sink/Close concurrency under `-race`;
 latency test is `//go:build !race`. Migration: TestMigrate_V2StoreUpgradesKeepsData.
@@ -195,7 +222,7 @@ latency test is `//go:build !race`. Migration: TestMigrate_V2StoreUpgradesKeepsD
 - Core session-key validation may differ from hook `session_id` shape: hook shows hooks-only; no fuzzy join. Limits damage to a label.
 - Shared SQLite writer: a hook burst delays LLM writes (E13 known limit); mitigated by small hook queue/workers=1.
 - Hub re-reads the whole session per hook event: coalesced to one re-read per session per 250 ms; hub queue/overflow logic drops streams, never blocks ingest.
-- Web JS rendering is checked by string tests only; T012 carries a manual look.
+- Web JS rendering is checked by Node tests of the real `entries.js` and string pins for the rest; T012 carries a manual look. Node absent makes `make verify` fail (as shellcheck does, ADR 0011).
 - DNS rebinding / browser POST to the loopback port: Host + Origin/Sec-Fetch-Site checks, nothing stored on refusal.
 
 ## Open questions
@@ -204,3 +231,4 @@ None.
 ## Changelog
 - v1 (2026-11-01) — first draft; revised before approval (hub trace, coalescing, T001 deps, permutation and purity tests)
 - v2 (2026-11-02) — reopened: spec v2 changed its contract sections
+- v2 (2026-11-02) — CR-001: commit path compares every exchange; `hooks` SSE snapshot event; exchange-first ties; receive time and seq under one lock with an injectable clock; viewer text; Node test runner (ADR 0013); purity test renamed; E4 gap

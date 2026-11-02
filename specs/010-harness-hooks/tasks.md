@@ -1,12 +1,12 @@
 ---
 feature: 010-harness-hooks
-status: draft
+status: approved
 version: 2
-approved:
-approved-by:
-sha256:
-fingerprint:
-plan-fingerprint:
+approved: 2026-11-02T04:23:59Z
+approved-by: human
+sha256: 212627c6dcf90ef71c59591e301c9d380f45e547de72033c08679082a2bbdc9d
+fingerprint: 75d9899bd96c4980953c1a84fd32711306f409b13a0b149b24f5e47350efd712
+plan-fingerprint: 8772085cd107373575362de576fd92b14cee5a29c8132c9fddf6fc3a60646e4b
 previous: 92aae62
 ---
 # Tasks — 010-harness-hooks
@@ -203,6 +203,61 @@ previous: 92aae62
 - Size: S
 - Risk: low
 
+### T020 — fix: take hook seq and receive time together under one lock
+- Do: `internal/hooks/handler.go`: replace the `seq atomic.Int64` with one mutex over seq and the last time; the time is `max(clock(), last)`; injectable clock (default `time.Now`); pass seq and time through the queue. `internal/hooks/sink.go`: `Submit` stamps nothing and takes the receive time from the handler; update the T007/T008 tests that relied on sink-stamped time. `internal/store/hooks.go`: store `received_at` and `seq` as given (adjust only if it still derives either).
+- Tests: TestHandler_BackwardsClockKeepsReceiveTimeNonDecreasing (clock steps back; stored times never decrease as seq increases); TestHandler_BlockedClockKeepsSeqAndTimeOrderAligned (clock blocks request 1 inside the call until request 2 has started and returns it a later time than request 2; seq order and time order agree); TestHandler_ConcurrentPostsOutOfOrderWritesKeepSeqAndTimeAligned (smoke test only, workers=4, writes finish out of order). Mutation checks: taking seq before and outside the lock must fail the blocked-clock test; removing max(now, last) must fail the backwards-clock test
+- AC: none — constraint fix (seq and receive time, spec Constraints); no AC text changes
+- Commit: fix(harness-hooks): take hook seq and receive time under one lock
+- Depends: —
+- Size: M
+- Risk: high
+
+### T021 — Add the Node test runner for the web client (ADR 0013)
+- Do: `docs/decisions/0013-node-test-runner.md` (test-only runtime, like shellcheck in ADR 0011; no npm, no node_modules); `Makefile` `verify` runs `node --test "internal/ui/webtest/*.test.js"` (quoted glob; the directory form exits 1 on node v25); node absent fails verify, as shellcheck does; ADR 0013 states a minimum Node version (module detection of a plain `export` file without package.json depends on it); `make setup`/`scripts` report whether node is installed. Test files live in `internal/ui/webtest/`, not `internal/ui/web/` (that directory is `go:embed`ed and walked by `web_test.go`); one minimal passing `internal/ui/webtest/entries.test.js` imports the real `../web/entries.js` so the runner is proven end to end.
+- Tests: `webtest/entries.test.js` `module loads and compareEntries orders by time` (runs the real file); make verify runs it
+- AC: none — tooling and ADR; the AC behaviours are proven in T023
+- Commit: chore(verify): run node tests for the web client
+- Depends: —
+- Size: M
+- Risk: high
+
+### T022 — fix: commit path re-sends every exchange whose hash changed
+- Do: `internal/ui/stream.go` `writeLive`: on a commit compare every exchange in `All` with `sent` and re-send each whose hash differs, as the hook refresh does; remove the after-first-committed cut-off.
+- Tests: TestStream_CommitResendsEarlierExchangeWhoseStateChanged (AC16, AC26: the reviewer's probe, a later exchange's tool_result turns an earlier call from ran-not-reported to asked+ran+reported on an open stream; the stream's final entries equal a reload); existing hub/stream tests unchanged
+- AC: AC16 (rework), AC26 (rework)
+- Commit: fix(ui): resend earlier exchanges changed by a commit
+- Depends: —
+- Size: M
+- Risk: high
+
+### T023 — fix: send the hook snapshot as a hooks event; exchange sorts before hook lines on ties
+- Do: apply `specs/010-harness-hooks/reviewer-live-hook-test.patch` (committed in c013d51); adapt `TestStream_LiveHookUpdateReplacesFirstSnapshotHookLines` to the `hooks` event and the new replace function, or move its client half to the Node test; commit it with fix 2; delete the patch file in the same commit. Also: `ui/hub.go` `sessionExchanges` always includes the hooks item (`Entries` as `[]`, never `null`) and the "has anything" check counts real exchanges only; `ui/stream.go` writes it as `event: hooks` on the connect snapshot, `writeLive` and `writeRefresh` (not on the global stream); update the committed tests that expect `exchange` for hook lines (`hub_hook_test.go`, `stream_test.go`); `web/api.js` listens for `hooks`; `web/app.js` dispatches it to a new hook-group replace function in `web/entries.js` (drop every `hook_event` entry, insert the list, empty removes the group); `compareEntries` sorts the exchange before hook lines on equal time.
+- Tests: TestStream_LiveHookUpdateReplacesFirstSnapshotHookLines (AC24, AC26, from the patch); TestStream_HooksSnapshotEmptyIsSentAndRemovesGroup (AC21, AC26: the connect snapshot of a session with no hook lines carries an empty `hooks` event; the only unmatched hook line becoming matched sends `[]`); `internal/ui/webtest/entries.test.js` `empty hooks snapshot removes the hook group (E6)` (AC21) and `exchange sorts before hook lines on an exact time tie` (AC24), both on the real `web/entries.js`; TestHub_HookEventPushesSessionTimeline and the other T013 tests updated for `hooks`
+- AC: AC21 (rework), AC24 (rework), AC26 (rework)
+- Commit: fix(ui): send the hook snapshot as its own stream event
+- Depends: T021, T022
+- Size: L
+- Risk: high
+
+### T024 — fix: viewer text for omitted bytes, unknown events and the pending badge
+- Do: `internal/timeline/harness.go` (carry the omitted-byte count), `render.go` (show `… N bytes omitted`; `hook unknown: <name>` from the stored name), CLI `--json` carries the count; `internal/ui/entries.go` `entryJSON` carries it; `web/session-view.js` shows omitted bytes and the stored name; the pending-badge decision becomes a pure exported function in `web/entries.js` (hidden when a harness state exists) that `web/tool-card.js` calls (tool-card.js extends HTMLElement and cannot load in Node); update `TestWeb_ServesHarnessBadgeRendering` pins.
+- Tests: TestRender_TruncatedHookInputShowsBytesOmitted (AC23); TestRender_UnknownHookShowsStoredName (AC23); TestTimelineJSON_CarriesOmittedCount (AC23); TestAPITimeline_TruncatedHookInputCarriesOmittedCount (AC24); `webtest/entries.test.js` `pending badge hidden when a harness state exists` (AC24, the pure function in entries.js); TestWeb_ServesHarnessBadgeRendering updated with a string pin that tool-card.js calls that function
+- AC: AC23 (rework), AC24 (rework)
+- Commit: fix(ui): show omitted bytes and unknown hook names
+- Depends: T021, T023
+- Size: M
+- Risk: low
+
+### T025 — Record the E4 gap in the hooks docs
+- Do: `docs/clients/claude-code-hooks.md`: hook events with no session id appear only as a count in `gateway sessions`, not in the web ungrouped list (known v1 gap); describe the new viewer text (`N bytes omitted`, `hook unknown: <name>`). Note in the docs task record that T007's frozen block keeps the stale name TestPurity_HooksPackageImportsNoClientAndNamesNoHarnessEvent; the real test is `TestPurity_HooksPackageImportsNoClient` (`internal/hooks/purity_test.go`) and the no-Claude-Code-event-name check is TestPurity_NoHarnessEventNamesOutsideProfile (`internal/core/purity_test.go`, T002). No code changes.
+- Tests: none — documentation only; make verify proves nothing else changed
+- AC: AC25 (rework)
+- Commit: docs(claude-code): note the hook events without session gap
+- Depends: T024
+- Size: S
+- Risk: low
+
 ## Changelog
 - v1 (2026-11-01) — generated from the approved plan
 - v2 (2026-11-02) — reopened: spec v2 changed its contract sections
+- v2 (2026-11-02) — CR-001: add T020 to T025 (seq and time under one lock, Node runner, commit-path resend, hooks snapshot event with the reviewer's test patch, viewer text, E4 docs)
