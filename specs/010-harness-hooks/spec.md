@@ -1,15 +1,15 @@
 ---
 feature: 010-harness-hooks
 kind: feat
-status: draft
+status: approved
 version: 2
 created: 2026-11-01
 supersedes:
 branch: feat/010-harness-hooks
-approved:
-approved-by:
-sha256:
-fingerprint:
+approved: 2026-11-02T04:16:49Z
+approved-by: human
+sha256: be1020329c537fdbd96b3116d11fb33775099d861fba054fbf8986252a6f7fe8
+fingerprint: 1f87da0ab9a23c7c5238203fb86ac54d53a67d7b109324b55451a55b7edd6182
 previous: 75fcea7
 ---
 # Harness hooks
@@ -142,7 +142,8 @@ web UI, cannot tell "model asked" from "harness did" (PLAN §7 Phase 6).
   package.
 - **AC25** — When a session id is known only from hook events (no exchange carries it), the
   system shall list the session in `gateway sessions` and the web UI sessions list,
-  labelled `hooks only`.
+  labelled `hooks only`; hook events with no session id are stored and shown only as a
+  count in `gateway sessions`, not as entries in the web UI ungrouped list (known v1 gap).
 - **AC26** — When a hook event is stored, the system shall push it to open web UI streams
   (the sessions list and that session's timeline, spec 009) the way a committed exchange is
   pushed.
@@ -165,8 +166,8 @@ web UI, cannot tell "model asked" from "harness did" (PLAN §7 Phase 6).
   `unknown` (AC12).
 - **E3** — Body over `capture.max_body_bytes` (e.g. a PostToolUse with a huge Read result) →
   200, not stored, counted (AC7).
-- **E4** — Hook event with no or empty `session_id` → stored, shown in the ungrouped list
-  (AC10, AC14).
+- **E4** — Hook event with no or empty `session_id` → stored; shown only as a count in
+  `gateway sessions` (AC10, AC14, AC25).
 - **E5** — Snippet installed at two scopes, or a retry → stored twice; shown once when the
   payload has a tool-use id or the copies arrived within 1 s, else shown twice (AC20).
 - **E6** — Hook event arrives before the exchange with its tool call is captured, or the

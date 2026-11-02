@@ -1,12 +1,13 @@
 ---
 feature: 010-harness-hooks
-status: approved
-version: 1
-approved: 2026-11-01T06:25:07Z
-approved-by: human
-sha256: 07ac03ac4cc9db3ed61feb670486a2bfeeecba6333e2a0ceb9380e241ea2d757
-fingerprint: 86f6047061c5c7913adc0b29ada922c9d9a9dfd42946a59452e91097655ca2d7
-spec-fingerprint: f36c6f56a3514dd080ce28e79e59a4c1293c8dae9194645dfcc116efa2bd72cd
+status: draft
+version: 2
+approved:
+approved-by:
+sha256:
+fingerprint:
+spec-fingerprint:
+previous: 92aae62
 ---
 # Plan — 010-harness-hooks
 
@@ -202,3 +203,4 @@ None.
 
 ## Changelog
 - v1 (2026-11-01) — first draft; revised before approval (hub trace, coalescing, T001 deps, permutation and purity tests)
+- v2 (2026-11-02) — reopened: spec v2 changed its contract sections
