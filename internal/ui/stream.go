@@ -172,27 +172,19 @@ func writeLive(w http.ResponseWriter, m liveMsg, sent map[string]string) error {
 	}
 	var batch []ev
 	var maxRow int64
-	first := -1
 	committed := make(map[string]bool, len(m.Exchanges))
 	for _, x := range m.Exchanges {
 		batch = append(batch, ev{"entries", x})
 		sent[x.RequestID] = x.Hash
 		committed[x.RequestID] = true
 		maxRow = max(maxRow, x.RowID)
-		for i, a := range m.All {
-			if a.RequestID == x.RequestID && (first < 0 || i < first) {
-				first = i
-			}
-		}
 	}
-	if first >= 0 {
-		for _, a := range m.All[first+1:] {
-			if committed[a.RequestID] || sent[a.RequestID] == a.Hash {
-				continue
-			}
-			batch = append(batch, ev{"exchange", a})
-			sent[a.RequestID] = a.Hash
+	for _, a := range m.All {
+		if committed[a.RequestID] || sent[a.RequestID] == a.Hash {
+			continue
 		}
+		batch = append(batch, ev{"exchange", a})
+		sent[a.RequestID] = a.Hash
 	}
 	if m.Inactive {
 		clear(sent)

@@ -791,3 +791,22 @@ func TestStream_ResponsesSendStandardCSP(t *testing.T) {
 	f.seedThree()
 	check(t, "failed snapshot", f.open("/api/sessions/"+sid()+"/stream"))
 }
+
+func TestStream_CommitResendsEarlierExchangeWhoseStateChanged(t *testing.T) {
+	// A later exchange's commit changes an earlier exchange's entries (a call's state).
+	early := liveExchange{RequestID: "a", Hash: "new", Entries: []entryJSON{{ID: "a:1"}}}
+	late := liveExchange{RequestID: "b", RowID: 7, Hash: "b1", Entries: []entryJSON{{ID: "b:0"}}}
+	sent := map[string]string{"a": "old"}
+	w := httptest.NewRecorder()
+	m := liveMsg{All: []liveExchange{early, late}, Exchanges: []liveExchange{late}}
+	if err := writeLive(w, m, sent); err != nil {
+		t.Fatal(err)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "a:1") || !strings.Contains(body, "b:0") || strings.Count(body, "event: exchange") != 1 {
+		t.Fatalf("body = %q", body)
+	}
+	if sent["a"] != "new" || sent["b"] != "b1" {
+		t.Fatalf("sent = %v", sent)
+	}
+}
