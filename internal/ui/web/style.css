@@ -94,7 +94,8 @@ footer#keybar kbd { font: inherit; color: var(--fg); border: 1px solid var(--lin
 .strip { display: flex; gap: 2px; align-items: flex-end; height: 2rem; overflow-x: auto; padding: .3rem 0; }
 .strip-bar { flex: none; height: 1.6rem; background: var(--accent); border-radius: 2px; }
 .strip-bar.is-muted { opacity: .35; }
-.strip-bar.is-error { background: var(--err); }
+.strip-bar.is-error { background: repeating-linear-gradient(45deg, var(--err) 0 3px, var(--surface) 3px 5px); color: var(--fg); text-align: center; font-size: .75rem; line-height: 1.6rem; overflow: hidden; }
+.strip-mark { font-weight: bold; background: var(--surface); padding: 0 1px; }
 .strip-bar.turn-start { margin-left: 6px; }
 .context-line { display: flex; gap: 2px; align-items: flex-end; height: 2.5rem; overflow-x: auto; padding: .3rem 0; }
 .context-bar { flex: none; width: 4px; background: var(--muted); }

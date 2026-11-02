@@ -318,6 +318,8 @@ export function contextBars(entries) {
 
 export const MIN_BAR_WIDTH = 6;
 export const MAX_BAR_WIDTH = 48;
+// An error bar is wide enough to show its ✗ glyph (AC34: never colour alone).
+export const ERROR_BAR_WIDTH = 14;
 
 // stripBars is one bar per call in start order: width by duration (never under
 // MIN_BAR_WIDTH, so the strip scrolls rather than hides calls), marked by turn, side
@@ -338,12 +340,13 @@ export function stripBars(entries) {
     const side = Boolean(f.side_call);
     const names = tools.get(e.exchange_id) || [];
     const status = e.status || 0;
-    const title = [`#${f.n}`, t.number ? `turn ${t.number}` : "", side ? "side call" : "", status ? `status ${status}` : "",
+    const errored = status >= 400;
+    const title = [`#${f.n}`, t.number ? `turn ${t.number}` : "", side ? "side call" : "", errored ? "error" : "", status ? `status ${status}` : "",
       formatDuration(e.duration_ms ?? null), names.length ? `tool ${names.join(", ")}` : ""].filter(Boolean).join(" · ");
     return {
       n: f.n, exchangeId: e.exchange_id, turn: t.number, turnStart: t.first, side, muted: side,
-      errored: status >= 400, status, durationMs: e.duration_ms ?? null,
-      width: Math.max(MIN_BAR_WIDTH, Math.round(((e.duration_ms || 0) / maxMs) * MAX_BAR_WIDTH)),
+      errored, status, durationMs: e.duration_ms ?? null,
+      width: Math.max(MIN_BAR_WIDTH, errored ? ERROR_BAR_WIDTH : 0, Math.round(((e.duration_ms || 0) / maxMs) * MAX_BAR_WIDTH)),
       tools: names, title,
     };
   });

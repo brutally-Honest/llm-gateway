@@ -45,3 +45,16 @@ test("activatingBarOpensDrawerRoute", async () => {
   assert.match(bars[1].title, /side call/);
   assert.ok(Number.parseInt(bars[0].style.width, 10) >= MIN_BAR_WIDTH);
 });
+
+test("errorBarsCarryAGlyphAndAWord", async () => {
+  installDom();
+  const { createTimelinePage } = await import("../web/timeline-page.js");
+  const p = createTimelinePage();
+  const summary = { id: "s", client: "c", models: [], first_at: "", last_at: "", exchange_count: 2, model_calls: 2, main_errors: 1, active: false, usage: {}, tool_states: {} };
+  p.render({ summary, entries: [call("a", 1), prompt("a", "go"), call("b", 2, { prev: "a", status: 500, ms: 1 })], error: "", snapshotError: "" });
+  const [ok, bad] = withClass(p.el, "strip-bar");
+  assert.equal(ok.children.length, 0);
+  assert.equal(bad.children[0].textContent, "✗");
+  assert.match(bad.attrs["aria-label"], /error/);
+  assert.ok(Number.parseInt(bad.style.width, 10) >= 14);
+});

@@ -163,6 +163,7 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
       a.addEventListener("click", () => drawer.noteOpener(a));
       a.setAttribute("aria-label", b.title);
       a.style.width = `${b.width}px`;
+      if (b.errored) a.append(el("span", "strip-mark", "✗"));
       strip.append(a);
     }
   }
