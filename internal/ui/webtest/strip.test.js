@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { stripBars, MIN_BAR_WIDTH } from "../web/model.js";
 import { call, item } from "./fixtures.js";
+import { installDom, withClass } from "./dom-stub.js";
 
 const prompt = (id, text) => item(id, "user_prompt", { role: "user", text });
 
@@ -30,4 +31,17 @@ test("barsKeepMinWidth", () => {
   assert.equal(bars.length, 3);
   assert.ok(bars.every((b) => b.width >= MIN_BAR_WIDTH));
   assert.ok(bars[0].width > bars[1].width);
+});
+
+test("activatingBarOpensDrawerRoute", async () => {
+  installDom();
+  const { createTimelinePage } = await import("../web/timeline-page.js");
+  const p = createTimelinePage();
+  const summary = { id: "s 1", client: "c", models: [], first_at: "", last_at: "", exchange_count: 2, model_calls: 2, main_errors: 0, active: false, usage: {}, tool_states: {} };
+  p.render({ summary, entries: [call("a", 1), prompt("a", "go"), call("q", 2, { main: false, side: true })], error: "", snapshotError: "" });
+  const bars = withClass(p.el, "strip-bar");
+  assert.deepEqual(bars.map((b) => b.href), ["#/sessions/s%201/call/a", "#/sessions/s%201/call/q"]);
+  assert.ok(bars[1].className.includes("is-muted"));
+  assert.match(bars[1].title, /side call/);
+  assert.ok(Number.parseInt(bars[0].style.width, 10) >= MIN_BAR_WIDTH);
 });

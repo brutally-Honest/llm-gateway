@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildTurns, hooksLabel, splitReminders } from "../web/model.js";
-import { all, installDom, withClass } from "./dom-stub.js";
+import { all, byTag, installDom, textOf, withClass } from "./dom-stub.js";
 import { call, item } from "./fixtures.js";
 
 const prompt = (id, text) => item(id, "user_prompt", { role: "user", text });
@@ -179,4 +179,63 @@ test("truncatedLinkAndCopyOffered", async () => {
     assert.equal(withClass(s, "copy").length, 1);
   }
   assert.match(all(sections[0]).find((e) => e.tagName === "pre").textContent, /"cmd": "ls"/);
+});
+
+const summary = { id: "s1", client: "c", models: ["m"], first_at: "2026-01-01T00:00:00Z", last_at: "2026-01-01T00:01:00Z", exchange_count: 3, model_calls: 3, main_errors: 0, active: false, usage: {}, tool_states: {} };
+async function railPage(entries) {
+  installDom();
+  const { createTimelinePage } = await import("../web/timeline-page.js");
+  const p = createTimelinePage();
+  p.render({ summary, entries, error: "", snapshotError: "" });
+  return p;
+}
+const threeTurns = () => [
+  call("a", 1), prompt("a", "alpha"), item("a", "tool_call", { name: "Bash", tool_call_id: "t1", chip: "ok" }),
+  call("b", 2, { prev: "a", status: 500 }), prompt("b", "beta"), item("b", "error", { text: "x" }),
+  call("c", 3, { prev: "b" }), prompt("c", "gamma"),
+];
+
+test("railListsEveryTurn", async () => {
+  const p = await railPage(threeTurns());
+  const items = withClass(p.el, "rail-item");
+  assert.equal(items.length, 3);
+  assert.match(textOf(items[0]), /alpha/);
+  assert.match(textOf(items[0]), /ok/);
+  assert.match(textOf(items[0]), /1 call/);
+  assert.match(textOf(items[0]), /1\.0s/);
+  assert.ok(items[1].className.includes("is-error"));
+});
+
+test("railSelectionMarksCurrent", async () => {
+  const p = await railPage(threeTurns());
+  const scrolled = [];
+  for (const c of withClass(p.el, "turn")) c.scrollIntoView = () => scrolled.push(c);
+  const items = withClass(p.el, "rail-item");
+  items[2].fire("click");
+  const now = withClass(p.el, "rail-item");
+  assert.deepEqual(now.map((i) => i.attrs["aria-current"]), ["false", "false", "true"]);
+  assert.equal(withClass(p.el, "is-current").length, 1);
+  assert.deepEqual(p.position(), { index: 3, total: 3 });
+});
+
+test("showOptionsApplyAtOnce", async () => {
+  const r = "<system-reminder>secret</system-reminder>";
+  const hook = { id: "hook:1", kind: "hook_event", phase: "pre_tool", name: "Bash", tool_call_id: "t1", start: "2026-01-01T00:00:01Z" };
+  const p = await railPage([...threeTurns().slice(0, 1), prompt("a", `fix ${r}`), item("a", "tool_call", { name: "Bash", tool_call_id: "t1" }), ...threeTurns().slice(3), hook]);
+  const opt = (label) => byTag(p.el, "label").find((l) => textOf(l).includes(label)).children[0];
+  const flip = (label) => { const b = opt(label); b.checked = !b.checked; b.fire("change"); };
+  assert.equal(withClass(p.el, "hook-event").length, 0);
+  flip("Hooks inline");
+  assert.equal(withClass(p.el, "hook-event").length, 1);
+  assert.doesNotMatch(textOf(withClass(p.el, "timeline")[0]), /secret/);
+  flip("System reminders");
+  assert.match(textOf(withClass(p.el, "timeline")[0]), /secret/);
+  assert.equal(withClass(p.el, "call-context").length, 3);
+  flip("Context per call");
+  assert.equal(withClass(p.el, "call-context").length, 0);
+  assert.equal(withClass(p.el, "turn").length, 3);
+  flip("Only turns with errors");
+  assert.equal(withClass(p.el, "turn").length, 1);
+  assert.match(textOf(withClass(p.el, "turn")[0]), /Turn 2/);
+  assert.equal(withClass(p.el, "rail-item").length, 3);
 });

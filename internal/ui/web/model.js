@@ -183,7 +183,7 @@ export function buildTurns(entries) {
       n: facts.n, exchangeId: mc.exchange_id, durationMs: mc.duration_ms ?? null,
       label: `#${facts.n} · ${formatDuration(mc.duration_ms ?? null)}`,
       model: mc.model || "", errored, errorWord: errored ? "error" : "", side: Boolean(facts.side_call),
-      agent: label, link: `#${facts.n}`,
+      agent: label, link: `#${facts.n}`, context: contextOf(mc),
     });
     card.tools.push(...tools);
     for (const e of g) if (e.kind === "assistant_text" && e.text) card.texts.push(e.text);
@@ -296,6 +296,33 @@ export function deltaFor(call, byId) {
   return { kind: "none", value: null };
 }
 
+// railItems is one rail entry per numbered turn: prompt first line, tool chip counts, call
+// count and duration. Every turn is listed, whatever the Show options hide (AC9).
+export function railItems(cards) {
+  return cards.filter((c) => c.kind === "turn").map((c) => {
+    const p = c.prompt ? (c.prompt.body ?? c.prompt.text ?? "") : "";
+    const line = p.split("\n").find((l) => l.trim()) || "";
+    const counts = new Map();
+    for (const t of c.tools) if (t.chip) counts.set(t.chip.key, (counts.get(t.chip.key) || 0) + 1);
+    const chips = CHIP_KEYS.filter((k) => counts.has(k)).map((k) => ({ ...chipOf({ chip: k }), count: counts.get(k) }));
+    return {
+      number: c.number, prompt: line.length > 80 ? `${line.slice(0, 80)}…` : line || "(no prompt text)",
+      chips, calls: c.counts.calls, durationMs: c.durationMs, duration: formatDuration(c.durationMs), errored: c.errored,
+    };
+  });
+}
+
+// contextBars is the context line: one column per main-thread call, height by its share
+// of the largest context, with the value on hover (AC12).
+export function contextBars(entries) {
+  const { points, note } = contextSeries(entries);
+  const max = Math.max(1, ...points.map((p) => p.value));
+  return {
+    note,
+    bars: points.map((p) => ({ ...p, pct: Math.max(2, Math.round((p.value / max) * 100)), title: `#${p.n} · context ${p.value}` })),
+  };
+}
+
 export const MIN_BAR_WIDTH = 6;
 export const MAX_BAR_WIDTH = 48;
 
@@ -318,7 +345,7 @@ export function stripBars(entries) {
     const side = Boolean(f.side_call);
     const names = tools.get(e.exchange_id) || [];
     const status = e.status || 0;
-    const title = [`#${f.n}`, side ? "side call" : "", status ? `status ${status}` : "",
+    const title = [`#${f.n}`, t.number ? `turn ${t.number}` : "", side ? "side call" : "", status ? `status ${status}` : "",
       formatDuration(e.duration_ms ?? null), names.length ? `tool ${names.join(", ")}` : ""].filter(Boolean).join(" · ");
     return {
       n: f.n, exchangeId: e.exchange_id, turn: t.number, turnStart: t.first, side, muted: side,

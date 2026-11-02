@@ -1,6 +1,7 @@
 import { countText, hookLabel, timeElement } from "./entries.js";
 import { filterTurns, toolNames } from "./filters.js";
-import { agentLabel, buildStats, buildTurns, formatDuration, hooksLabel } from "./model.js";
+import { turnTarget } from "./keys.js";
+import { agentLabel, buildStats, buildTurns, contextBars, formatDuration, hooksLabel, railItems, stripBars } from "./model.js";
 import { buildRoute } from "./route.js";
 import { countedChips, note } from "./sessions-page.js";
 import { chipNode, copyButton, toolRowNode, truncatedLink } from "./tool-card.js";
@@ -41,7 +42,39 @@ export function createTimelinePage() {
   bar.append(input, picker);
   const status = el("div");
   const list = el("div", "timeline");
-  root.append(header, stats, bar, status, list);
+  const strip = el("div", "strip");
+  const ctxLine = el("div", "context-line");
+  const rail = el("nav", "rail");
+  rail.setAttribute("aria-label", "Turns");
+  const optionsBox = el("div", "show-options");
+  const railList = el("div", "rail-list");
+  rail.append(optionsBox, railList);
+  const main = el("div", "timeline-main");
+  main.append(bar, status, list);
+  const layout = el("div", "timeline-layout");
+  layout.append(main, rail); // main first so the filter box leads the tab order; CSS puts the rail left
+  root.append(header, stats, strip, ctxLine, layout);
+
+  // Show options apply at once (AC16); context per call starts on.
+  const opts = { hooks: false, reminders: false, context: true, errorsOnly: false };
+  const OPTION_LABELS = [
+    ["hooks", "Hooks inline"], ["reminders", "System reminders"],
+    ["context", "Context per call"], ["errorsOnly", "Only turns with errors"],
+  ];
+  const optionBoxes = new Map();
+  for (const [name, label] of OPTION_LABELS) {
+    const row = el("label", "option");
+    const box = el("input");
+    box.type = "checkbox";
+    box.checked = opts[name];
+    box.addEventListener("change", () => setOption(name, Boolean(box.checked)));
+    optionBoxes.set(name, box);
+    row.append(box, el("span", "", label));
+    optionsBox.append(row);
+  }
+  let current = 0; // index among the numbered turns
+  const cardEls = new Map(); // turn number -> its card element
+  const railEls = new Map();
 
   const open = new Set(); // section keys and hook toggles that stay open across redraws
   let data = { summary: null, entries: [], error: "", snapshotError: "" };
@@ -64,6 +97,84 @@ export function createTimelinePage() {
       builtFor = data.entries;
     }
     return built;
+  }
+
+  function setOption(name, on) {
+    opts[name] = on;
+    optionBoxes.get(name).checked = on;
+    drawList();
+  }
+
+  function turnCards() {
+    return turns().cards.filter((c) => c.kind === "turn");
+  }
+
+  // markCurrent marks the current turn in the rail and the list, and scrolls to it.
+  function markCurrent(scroll) {
+    for (const [n, e] of railEls) e.setAttribute("aria-current", String(n === current + 1));
+    const tc = turnCards();
+    const card = tc[current];
+    for (const [n, e] of cardEls) {
+      if (card && n === card.number) e.classList.add("is-current");
+      else e.classList.remove("is-current");
+    }
+    const target = card && cardEls.get(card.number);
+    if (scroll && target && typeof target.scrollIntoView === "function") target.scrollIntoView({ block: "start" });
+  }
+
+  function select(index) {
+    const n = turnCards().length;
+    if (n === 0) return;
+    current = Math.max(0, Math.min(n - 1, index));
+    markCurrent(true);
+  }
+
+  function drawRail() {
+    railList.replaceChildren();
+    railEls.clear();
+    const items = railItems(turns().cards);
+    if (current >= items.length) current = Math.max(0, items.length - 1);
+    for (const it of items) {
+      const b = el("button", `rail-item${it.errored ? " is-error" : ""}`);
+      b.type = "button";
+      b.append(el("strong", "", `${it.number}`), el("span", "rail-prompt", ` ${it.prompt}`));
+      const meta = el("span", "rail-meta muted");
+      for (const c of it.chips) meta.append(chipNode({ ...c, title: `${c.count} ${c.text}` }), el("span", "", String(c.count)));
+      meta.append(el("span", "", countText(it.calls, "call", "calls")), el("span", "", it.duration));
+      b.append(meta);
+      b.addEventListener("click", () => select(it.number - 1));
+      railEls.set(it.number, b);
+      railList.append(b);
+    }
+  }
+
+  function drawStrip() {
+    strip.replaceChildren();
+    const sessionId = data.summary ? data.summary.id : "";
+    for (const b of stripBars(data.entries)) {
+      const a = el("a", `strip-bar${b.muted ? " is-muted" : ""}${b.errored ? " is-error" : ""}${b.turnStart ? " turn-start" : ""}`);
+      a.href = buildRoute({ name: "session", id: sessionId, call: b.exchangeId });
+      a.title = b.title;
+      a.setAttribute("aria-label", b.title);
+      a.style.width = `${b.width}px`;
+      strip.append(a);
+    }
+  }
+
+  function drawContext() {
+    ctxLine.replaceChildren();
+    if (data.entries.length === 0) return;
+    const { bars, note: text } = contextBars(data.entries);
+    if (text) {
+      ctxLine.append(note("muted", text));
+      return;
+    }
+    for (const b of bars) {
+      const c = el("span", "context-bar");
+      c.title = b.title;
+      c.style.height = `${(b.pct / 50).toFixed(2)}rem`;
+      ctxLine.append(c);
+    }
   }
 
   function drawHeader() {
@@ -116,7 +227,9 @@ export function createTimelinePage() {
       const box = el("div", "reminders");
       const draw = () => {
         box.replaceChildren();
-        if (open.has(key)) {
+        if (opts.reminders) {
+          for (const r of p.reminders) box.append(el("pre", "muted", r));
+        } else if (open.has(key)) {
           box.append(button("hide reminders", () => { toggle(key, false); draw(); }));
           for (const r of p.reminders) box.append(el("pre", "muted", r));
         } else {
@@ -135,6 +248,7 @@ export function createTimelinePage() {
     a.href = buildRoute({ name: "session", id: sessionId, call: c.exchangeId });
     const box = el("span", "call");
     box.append(a);
+    if (opts.context) box.append(el("span", "muted call-context", `context ${contextText(c.context)}`));
     if (c.agent) box.append(el("span", "badge harness", c.agent));
     if (c.errored) box.append(el("span", "badge err", `✗ ${c.errorWord}`));
     return box;
@@ -145,10 +259,11 @@ export function createTimelinePage() {
     const key = `${card.kind}:${card.number}:${card.start}:hooks`;
     const draw = () => {
       box.replaceChildren();
+      const shown = opts.hooks || open.has(key);
       const b = button(hooksLabel(card.hooks.length), () => { toggle(key, !open.has(key)); draw(); });
-      b.setAttribute("aria-expanded", String(open.has(key)));
-      box.append(b);
-      if (!open.has(key)) return;
+      b.setAttribute("aria-expanded", String(shown));
+      if (!opts.hooks) box.append(b);
+      if (!shown) return;
       for (const h of card.hooks) {
         const line = el("div", "entry hook-event muted", hookLabel(h));
         const agent = agentLabel(h);
@@ -189,9 +304,16 @@ export function createTimelinePage() {
       return;
     }
     const { cards, note: hooksNote } = turns();
-    const shown = filterTurns(cards, { text: input.value, tool });
+    let shown = filterTurns(cards, { text: input.value, tool });
+    if (opts.errorsOnly) shown = shown.filter((c) => c.errored);
     const sessionId = data.summary ? data.summary.id : "";
-    for (const card of shown) list.append(cardNode(card, sessionId, hooksNote));
+    cardEls.clear();
+    for (const card of shown) {
+      const node = cardNode(card, sessionId, hooksNote);
+      if (card.kind === "turn") cardEls.set(card.number, node);
+      list.append(node);
+    }
+    markCurrent(false);
     if (shown.length === 0) list.append(note("empty", "No entries match the filter."));
   }
 
@@ -204,7 +326,34 @@ export function createTimelinePage() {
       if (data.snapshotError) status.append(note("error", `Live snapshot failed: ${data.snapshotError}`));
       drawHeader();
       drawPicker(turns().cards);
+      drawRail();
+      drawStrip();
+      drawContext();
       drawList();
+    },
+    // position is the key bar position: the current turn among the numbered turns.
+    position() {
+      const total = turnCards().length;
+      return { index: total ? current + 1 : 0, total };
+    },
+    moveTurn(delta) {
+      select(current + delta);
+    },
+    nextError() {
+      const i = turnTarget(turnCards(), current, "error");
+      if (i >= 0) select(i);
+    },
+    nextTool() {
+      const i = turnTarget(turnCards(), current, "tool");
+      if (i >= 0) select(i);
+    },
+    // firstCallId is the exchange id of the current turn's first call, or "".
+    firstCallId() {
+      const card = turnCards()[current];
+      return card && card.calls.length ? card.calls[0].exchangeId : "";
+    },
+    toggleHooks() {
+      setOption("hooks", !opts.hooks);
     },
   };
 }

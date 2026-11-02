@@ -4,7 +4,7 @@ import { createStore } from "./store.js";
 import { createTimelinePage } from "./timeline-page.js";
 import { createSessionsPage, localMidnight, note } from "./sessions-page.js";
 import { initTheme } from "./theme.js";
-import { parseRoute } from "./route.js";
+import { buildRoute, parseRoute } from "./route.js";
 import { handleKey, isTextInput } from "./keys.js";
 import { mountShell } from "./shell.js";
 import "./exchange-detail.js";
@@ -29,6 +29,7 @@ const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "",
 let closeStream = null;
 let view = null;
 let page = null; // the Sessions page while it is shown
+let tpage = null; // the timeline page while a session is shown
 let todayTimer = null;
 
 async function load(kind, after) {
@@ -109,7 +110,11 @@ async function showSession(id) {
   const tl = createTimelinePage();
   app.replaceChildren(tl.el);
   const st = { summary: null, entries: [], error: "", snapshotError: "" };
-  const draw = () => tl.render(st);
+  tpage = tl;
+  const draw = () => {
+    tl.render(st);
+    shell.setKeyBar(parseRoute(location.hash), tl.position());
+  };
   draw();
   const set = (patch) => {
     if (mine !== seq) return;
@@ -215,6 +220,7 @@ function route() {
   if (view) view();
   view = null;
   page = null;
+  tpage = null;
   if (todayTimer) clearTimeout(todayTimer);
   todayTimer = null;
   stopStream();
@@ -255,6 +261,17 @@ window.addEventListener("keydown", (e) => {
     shell.setKeyBar(parseRoute(location.hash), page.select(act.delta));
   } else if (act.type === "open" && page) {
     if (page.selectedId()) location.hash = `#/sessions/${encodeURIComponent(page.selectedId())}`;
+  } else if (tpage && ["turn", "nextError", "nextTool", "hooks"].includes(act.type)) {
+    e.preventDefault();
+    if (act.type === "turn") tpage.moveTurn(act.delta);
+    else if (act.type === "nextError") tpage.nextError();
+    else if (act.type === "nextTool") tpage.nextTool();
+    else tpage.toggleHooks();
+    shell.setKeyBar(parseRoute(location.hash), tpage.position());
+  } else if (act.type === "openFirstCall" && tpage) {
+    const r = parseRoute(location.hash);
+    const id = tpage.firstCallId();
+    if (id) location.hash = buildRoute({ name: "session", id: r.id, call: id });
   } else if (act.type === "filter") {
     const f = app.querySelector("input");
     if (f) {

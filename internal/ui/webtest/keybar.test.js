@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handleKey, isTextInput, keyBar } from "../web/keys.js";
+import { handleKey, isTextInput, keyBar, turnTarget } from "../web/keys.js";
 
 const keys = (bar) => bar.shortcuts.map((s) => `${s.key} ${s.label}`);
 const sessions = { name: "sessions" };
@@ -46,4 +46,19 @@ test("ungroupedAndExchangeShowSessionsLevel", () => {
     assert.deepEqual(handleKey(route, { key: "Backspace" }), { type: "toSessions" });
     assert.equal(handleKey(route, { key: "j" }), null);
   }
+});
+
+test("turnKeysMoveAndFindErrors", () => {
+  for (const [key, type] of [["k", "turn"], ["e", "nextError"], ["t", "nextTool"], ["Enter", "openFirstCall"], ["h", "hooks"], ["/", "filter"], ["Backspace", "toSessions"]]) {
+    assert.equal(handleKey(turns, { key }).type, type);
+  }
+  assert.deepEqual(handleKey(turns, { key: "k" }), { type: "turn", delta: -1 });
+  const cards = [{ errored: false, tools: [] }, { errored: true, tools: [{}] }, { errored: false, tools: [{}] }, { errored: true, tools: [] }];
+  assert.equal(turnTarget(cards, 0, "error"), 1);
+  assert.equal(turnTarget(cards, 1, "error"), 3);
+  assert.equal(turnTarget(cards, 3, "error"), 1);
+  assert.equal(turnTarget(cards, 0, "tool"), 1);
+  assert.equal(turnTarget(cards, 2, "tool"), 1);
+  assert.equal(turnTarget([{ errored: false, tools: [] }], 0, "error"), -1);
+  assert.equal(turnTarget([], 0, "tool"), -1);
 });

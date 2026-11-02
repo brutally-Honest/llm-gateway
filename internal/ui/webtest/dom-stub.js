@@ -9,9 +9,10 @@ export class StubElement {
     this.attrs = {};
     this.listeners = {};
     this.open = false;
+    this.style = {};
     this.value = "";
     this.classes = new Set();
-    this.classList = { add: (c) => this.classes.add(c), contains: (c) => this.classes.has(c) };
+    this.classList = { add: (c) => this.classes.add(c), contains: (c) => this.classes.has(c), remove: (c) => this.classes.delete(c) };
   }
   append(...nodes) {
     this.children.push(...nodes);
