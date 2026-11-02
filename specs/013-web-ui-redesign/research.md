@@ -24,6 +24,7 @@ feature: 013-web-ui-redesign
 - D12 (2026-11-02) — The context line plots main-thread calls only; side calls stay in the duration strip, drawn muted. E18 accepted as is.
 - D13 (2026-11-02) — Side-call classification is computed server-side in the Claude Code profile and exposed in the API, never re-derived in the browser — the CLI can then adopt the same rule without duplicating it.
 - D14 (2026-11-02) — Confirmed: the stats row's errors exclude side calls and its context is the last main-thread call's; the drawer's trend plots main-thread calls only.
+- D15 (2026-11-02) — The server computes one chip per tool call from state and outcome and exposes it on each tool call; the digest's tool_states counts those chips; list and timeline read that field and neither derives it — T003 counted raw states, so a failed tool showed as ok in the list. This supersedes the plan's browser-side chip derivation; implemented out of task order, before T011, on the user's instruction.
 <!-- - D1 (date) — <decision> — why -->
 
 ## Notes
@@ -36,3 +37,4 @@ feature: 013-web-ui-redesign
 - 2026-11-02 — The mockup lives outside the repo at ~/Downloads/gateway-ui-v4.html.
 - 2026-11-02 — Correction to the line above: the user copied the mockup to specs/013-web-ui-redesign/gateway-ui-v4.html, and the spec now points there.
 - 2026-11-02 — Temporary deviation from .claude/skills/al-implement/LOOP.md, approved by the user: the implementer prompts for T010–T016 add "Run go test ./internal/core -run TestCore_NoProviderOrClientIdentifiers before committing." LOOP.md says to pass only its listed prompts. T005 and T009 each went red on this purity test after committing, because implementers ran narrower tests. The deviation holds until the kit runs the purity test per task.
+- 2026-11-02 — Correction to the line above: for T011-T016 the prompt line is now "Run .claude/scripts/loop.sh verify before committing.", replacing the purity test line, also a temporary deviation from LOOP.md approved by the user. T010 went red on lint, which the purity line does not run.
