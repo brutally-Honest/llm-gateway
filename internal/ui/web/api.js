@@ -16,6 +16,18 @@ export async function getJSON(path, params = {}) {
   return res.json();
 }
 
+// loadAllPages fetches every page of a paged list: fetchPage(after) resolves to a page with
+// next_after, and onPage(page) is called for each in order until next_after is empty
+// (AC36). onPage returns false to stop early, as when the view has moved on.
+export async function loadAllPages(fetchPage, onPage) {
+  let after;
+  do {
+    const page = await fetchPage(after);
+    if (onPage(page) === false) return;
+    after = page.next_after;
+  } while (after);
+}
+
 // getBody fetches one stored body of an exchange as text. It resolves to { text, truncated }
 // and rejects with an Error whose code is the API's error code, such as body_not_stored.
 export async function getBody(id, part) {

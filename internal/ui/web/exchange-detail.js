@@ -1,6 +1,6 @@
 import { getBody } from "./api.js";
 import { counterText, timeElement } from "./entries.js";
-import { note, tableWithHead } from "./session-list.js";
+import { note, tableWithHead } from "./sessions-page.js";
 import { copyButton } from "./tool-card.js";
 
 function el(tag, cls, text) {

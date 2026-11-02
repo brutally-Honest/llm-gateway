@@ -1,6 +1,6 @@
 import { countText, groupTurns, hookLabel, isRealPrompt, matchIds, pairTools, prettyJSON, timeElement, usageText } from "./entries.js";
 import "./model-chip.js";
-import { note } from "./session-list.js";
+import { note } from "./sessions-page.js";
 import { copyButton, harnessLabels, truncatedLink } from "./tool-card.js";
 import "./tool-card.js";
 

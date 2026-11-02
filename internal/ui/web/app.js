@@ -1,7 +1,7 @@
-import { getJSON, openStream } from "./api.js";
+import { getJSON, loadAllPages, openStream } from "./api.js";
 import { addUnique, liveEffect, upsertSession } from "./entries.js";
 import { createStore } from "./store.js";
-import { note } from "./session-list.js";
+import { createSessionsPage, localMidnight, note } from "./sessions-page.js";
 import { initTheme } from "./theme.js";
 import { parseRoute } from "./route.js";
 import { handleKey, isTextInput } from "./keys.js";
@@ -25,9 +25,11 @@ const shell = mountShell({
   root,
   theme: initTheme(storage, root),
 });
-const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "", ungrouped: [], ungroupedNext: null, ungroupedError: "" });
+const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "", ungrouped: [], ungroupedNext: null, ungroupedError: "", ungroupedHead: { items: [], next_after: null }, today: null });
 let closeStream = null;
 let view = null;
+let page = null; // the Sessions page while it is shown
+let todayTimer = null;
 
 async function load(kind, after) {
   const path = kind === "sessions" ? "sessions" : "ungrouped";
@@ -41,6 +43,32 @@ async function load(kind, after) {
     });
   } catch (e) {
     store.set({ [`${kind}Error`]: e.message });
+  }
+}
+
+async function loadToday() {
+  try {
+    store.set({ today: await getJSON("today", { since: localMidnight() }) });
+  } catch {
+    // totals stay as they were; the list itself still works
+  }
+}
+
+// scheduleToday refetches the totals after a burst of session events settles.
+function scheduleToday() {
+  if (todayTimer) clearTimeout(todayTimer);
+  todayTimer = setTimeout(() => {
+    todayTimer = null;
+    loadToday();
+  }, 500);
+}
+
+async function loadUngroupedHead() {
+  try {
+    const p = await getJSON("ungrouped", { limit: 200 });
+    store.set({ ungroupedHead: { items: p.items, next_after: p.next_after } });
+  } catch {
+    // the link is quiet: without the count it is not shown
   }
 }
 
@@ -61,7 +89,10 @@ function startStream() {
   stopStream();
   closeStream = openStream(
     (name, data) => {
-      if (name === "session") store.set({ sessions: upsertSession(store.get().sessions, data) });
+      if (name === "session") {
+        store.set({ sessions: upsertSession(store.get().sessions, data) });
+        scheduleToday();
+      }
     },
     (st) => {
       shell.setLive(liveText(st));
@@ -90,13 +121,15 @@ async function showSession(id) {
     if (mine !== seq) return;
     set({ summary });
     if (mine === seq) shell.setRoute(parseRoute(location.hash), summary.title || id);
-    let after;
-    do {
-      const page = await getJSON(`sessions/${encodeURIComponent(id)}/timeline`, { after, limit: 2000 });
-      if (mine !== seq) return;
-      set({ entries: st.entries.concat(page.entries) });
-      after = page.next_after;
-    } while (after);
+    await loadAllPages(
+      (after) => getJSON(`sessions/${encodeURIComponent(id)}/timeline`, { after, limit: 2000 }),
+      (p) => {
+        if (mine !== seq) return false;
+        set({ entries: st.entries.concat(p.entries) });
+        return true;
+      },
+    );
+    if (mine !== seq) return;
     if (!summary.active) return;
   } catch (e) {
     set({ error: e.message });
@@ -157,16 +190,40 @@ function show(kind, tag) {
   load(kind);
 }
 
+function showSessions() {
+  page = createSessionsPage({ onMore: () => load("sessions", store.get().sessionsNext) });
+  app.replaceChildren(page.el);
+  const r = parseRoute(location.hash);
+  const draw = (s) => {
+    page.update({
+      items: s.sessions,
+      next_after: s.sessionsNext,
+      error: s.sessionsError,
+      today: s.today,
+      ungrouped: s.ungroupedHead,
+    });
+    shell.setKeyBar(r, page.position());
+  };
+  view = store.subscribe(draw);
+  draw(store.get());
+  load("sessions");
+  loadUngroupedHead();
+  loadToday();
+}
+
 function route() {
   if (view) view();
   view = null;
+  page = null;
+  if (todayTimer) clearTimeout(todayTimer);
+  todayTimer = null;
   stopStream();
   seq++;
   const r = parseRoute(location.hash);
   shell.setRoute(r, "");
   shell.setKeyBar(r, null);
   if (r.name === "sessions") {
-    show("sessions", "session-list");
+    showSessions();
     startStream();
   } else if (r.name === "ungrouped") {
     show("ungrouped", "ungrouped-list");
@@ -193,6 +250,11 @@ window.addEventListener("keydown", (e) => {
     document.activeElement.blur();
   } else if (act.type === "toSessions") {
     location.hash = "#/";
+  } else if (act.type === "select" && page) {
+    e.preventDefault();
+    shell.setKeyBar(parseRoute(location.hash), page.select(act.delta));
+  } else if (act.type === "open" && page) {
+    if (page.selectedId()) location.hash = `#/sessions/${encodeURIComponent(page.selectedId())}`;
   } else if (act.type === "filter") {
     const f = app.querySelector("input");
     if (f) {

@@ -94,7 +94,7 @@ func TestWeb_ServesHarnessBadgeRendering(t *testing.T) {
 		"tool-card.js":    {"e.state", "input_differs", "agent_id", "agent_type", "hook_input", "pendingBadgeShown(call, result)", "hook_omitted_bytes"},
 		"entries.js":      {"export function pendingBadgeShown"},
 		"session-view.js": {`case "hook_event"`},
-		"session-list.js": {"hooks_only", "hooks only"},
+		"sessions-page.js": {"hooks_only", "hooks only"},
 	}
 	for name, subs := range want {
 		for _, sub := range subs {
@@ -165,7 +165,7 @@ func TestWeb_ActionsAreButtonsOrLinks(t *testing.T) {
 			}
 		}
 	}
-	for _, name := range []string{"shell.js", "tool-card.js", "session-list.js"} {
+	for _, name := range []string{"shell.js", "tool-card.js", "sessions-page.js"} {
 		if !strings.Contains(files[name], `addEventListener("click"`) {
 			t.Errorf("%s: expected a click handler on a button", name)
 		}
