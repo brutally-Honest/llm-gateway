@@ -338,7 +338,7 @@ func TestAPI_ToolEntriesCarryToolCallID(t *testing.T) {
 		// The entry's fields are exactly the API's tool fields: no other id name rides along.
 		allowed := map[string]bool{"id": true, "exchange_id": true, "index": true, "start": true, "kind": true,
 			"name": true, "tool_call_id": true, "text": true, "is_error": true, "truncated": true, "partial": true,
-			"state": true}
+			"state": true, "chip": true}
 		for k := range en {
 			if !allowed[k] {
 				t.Fatalf("%s carries unexpected field %q: %v", kind, k, en)

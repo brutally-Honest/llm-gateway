@@ -20,17 +20,13 @@ type DigestRules interface {
 	TitleOf(responseText string) (string, bool)
 }
 
-// ToolStates lists the six tool-call match states, in display order.
-var ToolStates = []string{StateAskedRanReported, StateRanNotReported, StateAskedNotRun,
-	StatePending, StateNoHarnessData, StateUnmatched}
-
 // Digest is what a session list row shows beyond SessionStats.
 type Digest struct {
 	// Title is the latest generated title, else the first prompt outside side calls
 	// with reminders removed, cut to PreviewRunes; "" when there is neither.
 	Title string
-	// ToolStates counts tool calls (and unmatched hook calls) per state; every state
-	// in ToolStates is present.
+	// ToolStates counts tool calls (and hook-seen calls) per chip; every chip in Chips
+	// is present.
 	ToolStates map[string]int
 	// MainErrors counts error events outside side calls, SideErrors those inside them.
 	// Together they equal SessionStats' Errors.
@@ -48,7 +44,7 @@ func SessionDigest(src Source, session store.SessionRow, rules DigestRules) (Dig
 		return Digest{}, fmt.Errorf("timeline: session exchanges: %w", err)
 	}
 	d := Digest{ToolStates: map[string]int{}, HasCalls: len(exchanges) > 0}
-	for _, s := range ToolStates {
+	for _, s := range Chips {
 		d.ToolStates[s] = 0
 	}
 	var generated, firstPrompt string
@@ -110,12 +106,14 @@ func SessionDigest(src Source, session store.SessionRow, rules DigestRules) (Dig
 	if err != nil {
 		return Digest{}, err
 	}
+	hookCalls := map[string]bool{}
 	for _, e := range entries {
 		switch {
-		case e.Kind == KindToolCall && e.State != "":
-			d.ToolStates[e.State]++
-		case e.Kind == KindHarness && e.State == StateUnmatched:
-			d.ToolStates[e.State]++
+		case e.Kind == KindToolCall && e.Chip != "":
+			d.ToolStates[e.Chip]++
+		case e.Kind == KindHarness && e.Chip != "" && !hookCalls[e.ToolCallID]:
+			hookCalls[e.ToolCallID] = true // one chip per tool call, not per hook event
+			d.ToolStates[e.Chip]++
 		}
 	}
 	if session.SessionKey != "" {

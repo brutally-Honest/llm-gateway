@@ -10,31 +10,17 @@ const CHIPS = {
   "no-hooks": { key: "no-hooks", glyph: "–", text: "no hooks" },
 };
 
-// chipOf maps a tool call's { state, reason, outcome } to its chip: key, glyph, text and
-// the full state, reason and outcome as the hover title. A ran-not-reported call stays
-// pending even in an ended session (E14).
+// CHIP_KEYS lists the chips in display order.
+export const CHIP_KEYS = Object.keys(CHIPS);
+
+// chipOf is display only: it looks up the glyph and text of the chip the server set on
+// a tool call (call.chip) and builds the hover title from the call's full state, reason
+// and outcome. It never derives a chip; a missing or unknown chip reads as no hooks.
 export function chipOf(call) {
   const c = call || {};
-  let key;
-  switch (c.state) {
-    case "asked+ran+reported":
-      key = c.outcome === "failed" ? "failed" : "ok";
-      break;
-    case "asked-not-run":
-      key = "not-run";
-      break;
-    case "ran-not-asked-or-not-captured":
-      key = "unmatched";
-      break;
-    case "pending":
-    case "ran-not-reported":
-      key = "pending";
-      break;
-    default:
-      key = "no-hooks";
-  }
-  const title = [c.state || "no harness data", c.reason, c.outcome].filter(Boolean).join(": ");
-  return { ...CHIPS[key], title };
+  const base = CHIPS[c.chip] || CHIPS["no-hooks"];
+  const title = [c.state, c.reason, c.outcome].filter(Boolean).join(": ") || base.text;
+  return { ...base, title };
 }
 
 // formatDuration renders milliseconds as 850ms, 1.2s or 2m05s; "—" when unknown.
@@ -179,25 +165,15 @@ function hookTurns(entries) {
     }
     let row = rows.get(e.tool_call_id);
     if (!row) {
-      row = { id: e.tool_call_id, name: e.name, phases: new Set(), agent: "", callN: null };
+      row = { id: e.tool_call_id, name: e.name, agent: "", callN: null };
       rows.set(e.tool_call_id, row);
       card.tools.push(row);
       card.counts.tools++;
     }
-    row.phases.add(e.phase);
     row.agent = row.agent || agentLabel(e);
-    row.chip = hookChip(row.phases);
+    row.chip = chipOf({ chip: e.chip });
   }
   return { cards, turns: cards.filter((c) => c.kind === "turn"), note: "no model calls were captured" };
-}
-
-function hookChip(phases) {
-  let call;
-  if (phases.has("post_tool_failed")) call = { state: "asked+ran+reported", outcome: "failed" };
-  else if (phases.has("post_tool")) call = { state: "asked+ran+reported", outcome: "succeeded" };
-  else if (phases.has("permission_denied")) call = { state: "asked-not-run", reason: "denied" };
-  else call = { state: "pending" };
-  return chipOf(call);
 }
 
 const reported = (v) => v !== null && v !== undefined;

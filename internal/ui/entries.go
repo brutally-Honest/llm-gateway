@@ -76,6 +76,7 @@ type entryJSON struct {
 	State        string `json:"state,omitempty"`
 	Reason       string `json:"reason,omitempty"`
 	Outcome      string `json:"outcome,omitempty"`
+	Chip         string `json:"chip,omitempty"`
 	InputDiffers bool   `json:"input_differs,omitempty"`
 	HookInput    string `json:"hook_input,omitempty"`
 	HookOmitted  int    `json:"hook_omitted_bytes,omitempty"`
@@ -141,7 +142,7 @@ func mapEntries(entries []timeline.Entry, exs map[string]store.ExchangeRow, fact
 		case timeline.KindToolCall:
 			add(e, entryJSON{Kind: kindToolCall, Name: e.Name, ToolCallID: e.ToolCallID, Text: e.Text,
 				Truncated: e.Omitted > 0, Partial: e.Partial,
-				State: e.State, Reason: e.Reason, Outcome: e.Outcome, InputDiffers: e.InputDiffers,
+				State: e.State, Reason: e.Reason, Outcome: e.Outcome, Chip: e.Chip, InputDiffers: e.InputDiffers,
 				HookInput: e.HookInput, HookOmitted: e.HookOmitted, AgentID: e.AgentID, AgentType: e.AgentType})
 		case timeline.KindToolResult:
 			add(e, entryJSON{Kind: kindToolResult, ToolCallID: e.ToolCallID, IsError: ptr(e.IsError),
@@ -154,7 +155,7 @@ func mapEntries(entries []timeline.Entry, exs map[string]store.ExchangeRow, fact
 			out = append(out, entryJSON{ID: "hook:" + strconv.FormatInt(e.HookID, 10), Index: i, Start: nsTime(e.Start),
 				startNS: e.Start, hookSeq: e.HookSeq, hookRow: e.HookID,
 				Kind: kindHookEvent, Name: e.Name, ToolCallID: e.ToolCallID, Text: e.Text, Phase: e.Phase,
-				State: e.State, AgentID: e.AgentID, AgentType: e.AgentType})
+				State: e.State, Chip: e.Chip, AgentID: e.AgentID, AgentType: e.AgentType})
 		case timeline.KindError:
 			add(e, entryJSON{Kind: kindError, Name: e.Name, Status: ptr(e.Status), Text: e.Text,
 				Truncated: e.Omitted > 0, Partial: e.Partial})

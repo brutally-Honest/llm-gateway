@@ -107,9 +107,12 @@ type Entry struct {
 	// Harness fields. On a tool call: State, Reason, Outcome, InputDiffers, HookInput
 	// and the agent labels. On a KindHarness entry: Phase, State, Name, ToolCallID,
 	// the agent labels and Text (the event's name as the client sent it).
-	State        string
-	Reason       string
-	Outcome      string
+	State   string
+	Reason  string
+	Outcome string
+	// Chip is the tool call's chip (ChipOf); set on a tool call and on a KindHarness
+	// entry that carries a tool call id.
+	Chip         string
 	InputDiffers bool
 	HookInput    string
 	// HookOmitted is how many bytes of HookInput were cut off.

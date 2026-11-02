@@ -20,6 +20,38 @@ const (
 	StateUnmatched        = "ran-not-asked-or-not-captured"
 )
 
+// The chips: one per tool call, the only classification list and timeline show.
+const (
+	ChipOK        = "ok"
+	ChipFailed    = "failed"
+	ChipNotRun    = "not-run"
+	ChipUnmatched = "unmatched"
+	ChipPending   = "pending"
+	ChipNoHooks   = "no-hooks"
+)
+
+// Chips lists the six chips in display order.
+var Chips = []string{ChipOK, ChipFailed, ChipNotRun, ChipUnmatched, ChipPending, ChipNoHooks}
+
+// ChipOf maps a tool call's state and outcome to its chip. A ran-not-reported call
+// stays pending, ended session or not.
+func ChipOf(state, outcome string) string {
+	switch state {
+	case StateAskedRanReported:
+		if outcome == OutcomeFailed {
+			return ChipFailed
+		}
+		return ChipOK
+	case StateAskedNotRun:
+		return ChipNotRun
+	case StateUnmatched:
+		return ChipUnmatched
+	case StatePending, StateRanNotReported:
+		return ChipPending
+	}
+	return ChipNoHooks
+}
+
 // The reasons of StateAskedNotRun.
 const (
 	ReasonDenied = "denied"
@@ -142,10 +174,24 @@ func applyHarness(src Source, session store.SessionRow, exchangeEvents [][]store
 			continue
 		}
 		out[i].State, out[i].Reason, out[i].Outcome = v.State, v.Reason, v.Outcome
+		out[i].Chip = ChipOf(v.State, v.Outcome)
 		out[i].InputDiffers, out[i].HookInput, out[i].HookOmitted = v.InputDiffers, v.HookInput, v.HookOmitted
 		out[i].AgentID, out[i].AgentType = v.AgentID, v.AgentType
 	}
 
+	// Without any captured exchange, hook-seen tool calls are all there is: each gets
+	// the chip its own phases give. Otherwise a hook call matching no captured call is
+	// unmatched.
+	hookOnly := len(out) == 0
+	hookRank := map[string]int{}
+	for _, h := range hooks {
+		if h.ToolUseID == "" {
+			continue
+		}
+		if r, ok := hookRank[h.ToolUseID]; !ok || phaseRank(h.Phase) > r {
+			hookRank[h.ToolUseID] = phaseRank(h.Phase)
+		}
+	}
 	var loose []Entry // in (received_at, seq) order
 	for _, h := range hooks {
 		if _, matched := calls[h.ToolUseID]; matched && h.ToolUseID != "" {
@@ -155,6 +201,10 @@ func applyHarness(src Source, session store.SessionRow, exchangeEvents [][]store
 			Phase: h.Phase, Text: h.SourceName, AgentID: h.AgentID, AgentType: h.AgentType, HookID: h.ID, HookSeq: h.Seq}
 		if h.ToolUseID != "" {
 			en.State = StateUnmatched
+			en.Chip = ChipUnmatched
+			if hookOnly {
+				en.Chip = hookChip(hookRank[h.ToolUseID])
+			}
 		}
 		loose = append(loose, en)
 	}
@@ -171,6 +221,20 @@ func applyHarness(src Source, session store.SessionRow, exchangeEvents [][]store
 		merged = append(merged, e)
 	}
 	return append(merged, loose...), nil
+}
+
+// hookChip is the chip of a tool call seen only through hooks, from the highest phase
+// rank it reached.
+func hookChip(rank int) string {
+	switch {
+	case rank >= phaseRank(string(core.PhasePostToolFailed)):
+		return ChipFailed
+	case rank >= phaseRank(string(core.PhasePostTool)):
+		return ChipOK
+	case rank == phaseRank(string(core.PhasePermissionDenied)):
+		return ChipNotRun
+	}
+	return ChipPending
 }
 
 // verdict derives one tool call's state from the session's hook rows (ordered, deduped).

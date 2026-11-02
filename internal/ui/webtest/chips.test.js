@@ -2,28 +2,32 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { chipOf } from "../web/model.js";
 
-test("sixStatesMapToGlyphAndText", () => {
+// The browser only displays the chip the server set; it never derives one.
+test("sixChipsMapToGlyphAndText", () => {
   const cases = [
-    [{ state: "asked+ran+reported", outcome: "succeeded" }, "✓", "ok"],
-    [{ state: "asked+ran+reported", outcome: "failed" }, "✗", "failed"],
-    [{ state: "asked-not-run", reason: "denied" }, "⊘", "not run"],
-    [{ state: "ran-not-asked-or-not-captured" }, "?", "unmatched"],
-    [{ state: "pending" }, "…", "pending"],
-    [{ state: "ran-not-reported", outcome: "succeeded" }, "…", "pending"],
-    [{ state: "no harness data" }, "–", "no hooks"],
-    [{}, "–", "no hooks"],
+    ["ok", "✓", "ok"],
+    ["failed", "✗", "failed"],
+    ["not-run", "⊘", "not run"],
+    ["unmatched", "?", "unmatched"],
+    ["pending", "…", "pending"],
+    ["no-hooks", "–", "no hooks"],
+    [undefined, "–", "no hooks"],
   ];
-  for (const [call, glyph, text] of cases) {
-    const c = chipOf(call);
+  for (const [chip, glyph, text] of cases) {
+    const c = chipOf({ chip });
     assert.equal(c.glyph, glyph);
     assert.equal(c.text, text);
   }
-  assert.equal(chipOf({ state: "asked-not-run", reason: "denied" }).title, "asked-not-run: denied");
-  assert.equal(chipOf({ state: "asked+ran+reported", outcome: "failed" }).title, "asked+ran+reported: failed");
 });
 
-test("ranNotReportedStaysPendingInEndedSession", () => {
-  const c = chipOf({ state: "ran-not-reported", outcome: "succeeded" }, { ended: true });
+test("hoverTitleKeepsFullStateReasonAndOutcome", () => {
+  assert.equal(chipOf({ chip: "not-run", state: "asked-not-run", reason: "denied" }).title, "asked-not-run: denied");
+  assert.equal(chipOf({ chip: "failed", state: "asked+ran+reported", outcome: "failed" }).title, "asked+ran+reported: failed");
+});
+
+test("chipIsNotDerivedFromState", () => {
+  const c = chipOf({ chip: "pending", state: "ran-not-reported", outcome: "succeeded" });
   assert.equal(c.key, "pending");
   assert.match(c.title, /ran-not-reported/);
+  assert.equal(chipOf({ state: "asked+ran+reported", outcome: "failed" }).key, "no-hooks");
 });

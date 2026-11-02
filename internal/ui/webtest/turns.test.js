@@ -75,9 +75,9 @@ test("hooksOnlySessionStartsTurnsAtPrompt", () => {
   const h = (id, phase, extra = {}) => ({ id: `hook:${id}`, kind: "hook_event", phase, ...extra });
   const r = buildTurns([
     h(1, "prompt", { text: "first" }),
-    h(2, "pre_tool", { tool_call_id: "t1", name: "Bash" }), h(3, "post_tool", { tool_call_id: "t1", name: "Bash" }),
+    h(2, "pre_tool", { tool_call_id: "t1", name: "Bash", chip: "ok" }), h(3, "post_tool", { tool_call_id: "t1", name: "Bash", chip: "ok" }),
     h(4, "prompt", { text: "second" }),
-    h(5, "pre_tool", { tool_call_id: "t2", name: "Read" }), h(6, "post_tool_failed", { tool_call_id: "t2", name: "Read" }),
+    h(5, "pre_tool", { tool_call_id: "t2", name: "Read", chip: "failed" }), h(6, "post_tool_failed", { tool_call_id: "t2", name: "Read", chip: "failed" }),
   ]);
   assert.equal(r.turns.length, 2);
   assert.match(r.note, /no model calls/);
@@ -103,7 +103,7 @@ test("erroredSideCallStillRed", () => {
 test("agentLabelAndErrorMarkKept", () => {
   const { turns } = buildTurns([
     call("a", 1), prompt("a", "go"),
-    item("a", "tool_call", { name: "Agent", tool_call_id: "t1", state: "asked+ran+reported", outcome: "succeeded" }),
+    item("a", "tool_call", { name: "Agent", tool_call_id: "t1", chip: "ok", state: "asked+ran+reported", outcome: "succeeded" }),
     call("s", 2, { main: false, thread: 1 }),
     item("s", "tool_call", { name: "Read", tool_call_id: "t2", agent_id: "ag1", agent_type: "explore", state: "pending" }),
     item("s", "tool_result", { tool_call_id: "t2", is_error: true }),

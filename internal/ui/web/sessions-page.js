@@ -1,6 +1,6 @@
 import { timeElement } from "./entries.js";
 import { filterSessions, FILTERS } from "./filters.js";
-import { chipOf } from "./model.js";
+import { CHIP_KEYS, chipOf } from "./model.js";
 
 export const NO_TITLE = "no prompt captured";
 const DASH = "—";
@@ -48,32 +48,18 @@ function counter(c) {
   return c && typeof c.value === "number" ? String(c.value) : DASH;
 }
 
-// CHIP_STATES maps the six harness states onto the chips; the failed chip needs a per-call
-// outcome a session summary does not carry, so a reported call counts as ok here.
-const CHIP_STATES = [
-  ["asked+ran+reported", "ok"],
-  ["asked-not-run", "not-run"],
-  ["ran-not-asked-or-not-captured", "unmatched"],
-  ["pending", "pending"],
-  ["ran-not-reported", "pending"],
-  ["no harness data", "no-hooks"],
-];
-
-// chipCounts turns tool_states into the chips with a count above zero, in display order.
-export function chipCounts(toolStates) {
-  const n = new Map();
-  const first = new Map();
-  for (const [state, key] of CHIP_STATES) {
-    const c = (toolStates || {})[state];
-    if (typeof c === "number" && c > 0) {
-      n.set(key, (n.get(key) || 0) + c);
-      if (!first.has(key)) first.set(key, state);
+// countedChips turns tool_states, the server's per-chip counts, into the chips with a
+// count above zero, in display order. It only reads the counts.
+export function countedChips(toolStates) {
+  const out = [];
+  for (const key of CHIP_KEYS) {
+    const count = (toolStates || {})[key];
+    if (typeof count === "number" && count > 0) {
+      const chip = chipOf({ chip: key });
+      out.push({ key, glyph: chip.glyph, text: chip.text, title: chip.title, count });
     }
   }
-  return [...n].map(([key, count]) => {
-    const chip = chipOf({ state: first.get(key) });
-    return { key, glyph: chip.glyph, text: chip.text, title: chip.title, count };
-  });
+  return out;
 }
 
 // statusOf names a session's status with a glyph, so colour is never the only signal.
@@ -95,7 +81,7 @@ export function rowCells(s) {
     title: s.title || NO_TITLE,
     sources: sources.join(" + "),
     calls: s.model_calls ?? 0,
-    chips: chipCounts(s.tool_states),
+    chips: countedChips(s.tool_states),
     errors: s.main_errors ?? 0,
     status: statusOf(s),
     input: counter(u.input),

@@ -247,7 +247,7 @@ func TestSummary_ToolStateCounts(t *testing.T) {
 		e.addTool("a", id)
 	}
 	st := e.summary()["tool_states"].(map[string]any)
-	if st["no harness data"] != float64(2) || len(st) != 6 {
+	if st["no-hooks"] != float64(2) || len(st) != 6 {
 		t.Fatalf("tool_states = %v", st)
 	}
 	hookSeq++
@@ -257,7 +257,7 @@ func TestSummary_ToolStateCounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	st = e.summary()["tool_states"].(map[string]any)
-	if st["ran-not-reported"] != float64(1) || st["pending"] != float64(1) || st["no harness data"] != float64(0) {
+	if st["pending"] != float64(2) || st["no-hooks"] != float64(0) {
 		t.Fatalf("tool_states = %v", st)
 	}
 }

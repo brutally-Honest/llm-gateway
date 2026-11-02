@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chipCounts, localMidnight, moveSelection, rowCells, todayCells, ungroupedText } from "../web/sessions-page.js";
+import { countedChips, localMidnight, moveSelection, rowCells, todayCells, ungroupedText } from "../web/sessions-page.js";
 import { upsertSession } from "../web/entries.js";
 import { filterSessions } from "../web/filters.js";
 import { handleKey, keyBar } from "../web/keys.js";
@@ -9,7 +9,7 @@ const counter = (v) => ({ value: v, unreported: 0 });
 const session = (o = {}) => ({
   id: "s1", first_at: "2026-01-01T00:00:00Z", last_at: "2026-01-01T00:05:00Z", title: "Fix it",
   has_calls: true, has_hooks: true, model_calls: 3, errors: 5, main_errors: 2, active: false, hooks_only: false,
-  tool_states: { "asked+ran+reported": 4, "ran-not-asked-or-not-captured": 1, pending: 1, "ran-not-reported": 2 },
+  tool_states: { ok: 4, failed: 0, "not-run": 0, unmatched: 1, pending: 3, "no-hooks": 0 },
   usage: { input: counter(10), output: counter(null), cache_write: counter(0), cache_read: counter(7) },
   ...o,
 });
@@ -31,7 +31,8 @@ test("rowCellsShowDashForNoUsage", () => {
   const h = rowCells(session({ hooks_only: true, has_calls: false }));
   assert.equal(h.status.text, "hooks only");
   assert.equal(h.sources, "hooks");
-  assert.deepEqual(chipCounts({}), []);
+  assert.deepEqual(countedChips({}), []);
+  assert.deepEqual(countedChips({ ok: 1, failed: 2 }).map((x) => [x.key, x.glyph, x.count]), [["ok", "✓", 1], ["failed", "✗", 2]]);
 });
 
 test("errorsColumnReadsMainErrors", () => {

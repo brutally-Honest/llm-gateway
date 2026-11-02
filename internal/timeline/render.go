@@ -218,6 +218,7 @@ type entryJSON struct {
 	State        string `json:"state,omitempty"`
 	Reason       string `json:"reason,omitempty"`
 	Outcome      string `json:"outcome,omitempty"`
+	Chip         string `json:"chip,omitempty"`
 	InputDiffers bool   `json:"input_differs,omitempty"`
 	HookInput    string `json:"hook_input,omitempty"`
 	HookOmitted  int    `json:"hook_omitted_bytes,omitempty"`
@@ -261,7 +262,7 @@ func RenderJSON(w io.Writer, entries []Entry, loc *time.Location) error {
 		if err := enc.Encode(entryJSON{Usage: usage, NoUsage: noUsage, Type: string(e.Kind), RequestID: e.RequestID, Time: stamp(e.Start, loc),
 			Method: e.Method, Path: e.Path, Status: e.Status, Parse: e.Parse, Role: e.Role, Name: e.Name,
 			ToolCallID: e.ToolCallID, IsError: e.IsError, Text: e.Text, Omitted: e.Omitted, Partial: e.Partial,
-			State: e.State, Reason: e.Reason, Outcome: e.Outcome, InputDiffers: e.InputDiffers, HookInput: e.HookInput, HookOmitted: e.HookOmitted,
+			State: e.State, Reason: e.Reason, Outcome: e.Outcome, Chip: e.Chip, InputDiffers: e.InputDiffers, HookInput: e.HookInput, HookOmitted: e.HookOmitted,
 			Phase: e.Phase, AgentID: e.AgentID, AgentType: e.AgentType}); err != nil {
 			return err
 		}
