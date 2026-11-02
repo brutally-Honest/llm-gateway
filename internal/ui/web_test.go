@@ -130,3 +130,44 @@ func TestWeb_ComponentsCallTheTestedHelpers(t *testing.T) {
 		}
 	}
 }
+
+// TestWeb_NoCostOrContextPercent: no view shows money or a share of a context window (AC35).
+func TestWeb_NoCostOrContextPercent(t *testing.T) {
+	bad := regexp.MustCompile(`(?i)cost|price|percent|\d%|\}\s*%|"%|%"|[$€£]\s*\d|\$\{[^}]*\}\s*usd`)
+	comment := regexp.MustCompile(`(?m)//.*$`)
+	for name, src := range webFiles(t) {
+		if !strings.HasSuffix(name, ".js") && name != "index.html" {
+			continue
+		}
+		src = comment.ReplaceAllString(src, "")
+		if m := bad.FindString(src); m != "" {
+			t.Errorf("%s shows cost or a percentage: %q", name, m)
+		}
+	}
+}
+
+// TestWeb_ActionsAreButtonsOrLinks: a click handler sits only on a real <button> or <a>,
+// never on a generic element dressed up with a role or an inline handler (AC33).
+func TestWeb_ActionsAreButtonsOrLinks(t *testing.T) {
+	files := webFiles(t)
+	click := regexp.MustCompile(`(\w+)\.addEventListener\("click"`)
+	for name, src := range files {
+		if !strings.HasSuffix(name, ".js") {
+			continue
+		}
+		if strings.Contains(src, `"role", "button"`) || strings.Contains(src, "onclick") {
+			t.Errorf("%s fakes a button", name)
+		}
+		for _, m := range click.FindAllStringSubmatch(src, -1) {
+			decl := regexp.MustCompile(`(?:const|let)\s+` + m[1] + `\s*=\s*(?:document\.createElement\("(?:button|a)"\)|el\("(?:button|a)")`)
+			if !decl.MatchString(src) {
+				t.Errorf("%s: click handler on %s, which is not a button or link", name, m[1])
+			}
+		}
+	}
+	for _, name := range []string{"shell.js", "tool-card.js", "session-list.js"} {
+		if !strings.Contains(files[name], `addEventListener("click"`) {
+			t.Errorf("%s: expected a click handler on a button", name)
+		}
+	}
+}

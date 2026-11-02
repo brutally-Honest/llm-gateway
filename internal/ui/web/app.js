@@ -2,12 +2,29 @@ import { getJSON, openStream } from "./api.js";
 import { addUnique, liveEffect, upsertSession } from "./entries.js";
 import { createStore } from "./store.js";
 import { note } from "./session-list.js";
+import { initTheme } from "./theme.js";
+import { parseRoute } from "./route.js";
+import { handleKey, isTextInput } from "./keys.js";
+import { mountShell } from "./shell.js";
 import "./exchange-detail.js";
 import "./session-view.js";
 import "./ungrouped-list.js";
 
 const app = document.getElementById("app");
-const liveEl = document.getElementById("live");
+const root = document.documentElement;
+let storage = null;
+try {
+  storage = window.localStorage;
+} catch {
+  // storage blocked: the theme falls back to dark
+}
+const shell = mountShell({
+  head: document.getElementById("shell-head"),
+  bar: document.getElementById("keybar"),
+  storage,
+  root,
+  theme: initTheme(storage, root),
+});
 const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "", ungrouped: [], ungroupedNext: null, ungroupedError: "" });
 let closeStream = null;
 let view = null;
@@ -37,7 +54,7 @@ function liveText(state) {
 function stopStream() {
   if (closeStream) closeStream();
   closeStream = null;
-  liveEl.textContent = "";
+  shell.setLive("");
 }
 
 function startStream() {
@@ -47,7 +64,7 @@ function startStream() {
       if (name === "session") store.set({ sessions: upsertSession(store.get().sessions, data) });
     },
     (st) => {
-      liveEl.textContent = liveText(st);
+      shell.setLive(liveText(st));
     },
   );
 }
@@ -72,6 +89,7 @@ async function showSession(id) {
     const summary = await getJSON(`sessions/${encodeURIComponent(id)}`);
     if (mine !== seq) return;
     set({ summary });
+    if (mine === seq) shell.setRoute(parseRoute(location.hash), summary.title || id);
     let after;
     do {
       const page = await getJSON(`sessions/${encodeURIComponent(id)}/timeline`, { after, limit: 2000 });
@@ -104,7 +122,7 @@ async function showSession(id) {
       else live(patch);
     },
     (state) => {
-      liveEl.textContent = liveText(state);
+      shell.setLive(liveText(state));
     },
     `sessions/${encodeURIComponent(id)}/stream`,
   );
@@ -144,20 +162,45 @@ function route() {
   view = null;
   stopStream();
   seq++;
-  const h = location.hash || "#/";
-  if (h === "#/") {
+  const r = parseRoute(location.hash);
+  shell.setRoute(r, "");
+  shell.setKeyBar(r, null);
+  if (r.name === "sessions") {
     show("sessions", "session-list");
     startStream();
-  } else if (h === "#/ungrouped") {
+  } else if (r.name === "ungrouped") {
     show("ungrouped", "ungrouped-list");
-  } else if (h.startsWith("#/sessions/")) {
-    showSession(decodeURIComponent(h.slice("#/sessions/".length)));
-  } else if (h.startsWith("#/exchanges/")) {
-    showExchange(decodeURIComponent(h.slice("#/exchanges/".length)));
+  } else if (r.name === "session") {
+    showSession(r.id);
+  } else if (r.name === "exchange") {
+    showExchange(r.id);
   } else {
     app.replaceChildren(note("empty", "Nothing here."));
   }
 }
+
+// Shortcuts act per level (keys.js); the input guard and Esc-to-leave live in handleKey.
+window.addEventListener("keydown", (e) => {
+  const act = handleKey(parseRoute(location.hash), {
+    key: e.key,
+    ctrlKey: e.ctrlKey,
+    metaKey: e.metaKey,
+    altKey: e.altKey,
+    inInput: isTextInput(document.activeElement),
+  });
+  if (!act) return;
+  if (act.type === "leaveInput") {
+    document.activeElement.blur();
+  } else if (act.type === "toSessions") {
+    location.hash = "#/";
+  } else if (act.type === "filter") {
+    const f = app.querySelector("input");
+    if (f) {
+      e.preventDefault();
+      f.focus();
+    }
+  }
+});
 
 window.addEventListener("hashchange", route);
 route();
