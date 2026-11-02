@@ -3,6 +3,8 @@ package timeline_test
 import (
 	"bytes"
 	"encoding/json"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -453,5 +455,30 @@ func TestSessions_UngroupedShowsHookCount(t *testing.T) {
 	b.Reset()
 	if err := timeline.RenderUngroupedRowJSON(&b, u, time.UTC); err != nil || !strings.Contains(b.String(), `"hook_events":3`) {
 		t.Fatalf("json %q %v", b.String(), err)
+	}
+}
+
+// TestTimelineJSON_KeySetIsPinned pins the CLI's JSON shape: the web chip is a
+// server-side display field and must not appear in `gateway timeline -json`.
+func TestTimelineJSON_KeySetIsPinned(t *testing.T) {
+	var b bytes.Buffer
+	es := []timeline.Entry{{Kind: timeline.KindToolCall, ToolCallID: "t1", Name: "Bash", State: timeline.StateAskedNotRun,
+		Reason: "denied", Outcome: "failed", Chip: "failed", InputDiffers: true, HookInput: "{}", HookOmitted: 3, AgentID: "a", AgentType: "Plan"}}
+	if err := timeline.RenderJSON(&b, es, time.UTC); err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b.Bytes(), &m); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"agent_id", "agent_type", "hook_input", "hook_omitted_bytes", "input_differs", "name",
+		"outcome", "reason", "request_id", "state", "time", "tool_call_id", "type"}
+	var got []string
+	for k := range m {
+		got = append(got, k)
+	}
+	sort.Strings(got)
+	if !slices.Equal(got, want) {
+		t.Errorf("keys = %v, want %v", got, want)
 	}
 }

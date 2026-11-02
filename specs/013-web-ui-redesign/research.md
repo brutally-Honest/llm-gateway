@@ -40,6 +40,7 @@ feature: 013-web-ui-redesign
 - 2026-11-02 — Correction to the line above: for T011-T016 the prompt line is now "Run .claude/scripts/loop.sh verify before committing.", replacing the purity test line, also a temporary deviation from LOOP.md approved by the user. T010 went red on lint, which the purity line does not run.
 - 2026-11-02 — T015: dead-code scan of web/: every JS module has an importer, and nothing else is orphaned. Removed the one stylesheet rule nothing produces, `.badge.pending` (the pending badge became a chip). The contrast test still covers its colour pair through `.badge.harness`. docs/manual-checks/010-hooks-ui.md and docs/clients/claude-code-hooks.md now give the short chip text; the hover text keeps the full state.
 - 2026-11-02 — T016: BenchmarkSessionList_WarmCache (50-row page, every digest cached) measured 5,643,341 ns/op (about 5.6 ms) on an AMD Ryzen 5 5600G, 12 threads, linux/amd64, go test -bench with the default one-second budget. Most of that is the per-row SessionStats pass, which the plan keeps outside the memo (only the digest is cached); caching the stats too is a possible follow-up.
+- 2026-11-02 — Follow-up, out of scope for 013: the CLI's `timeline` output does not yet use the server's tool call chip (D15); `chip` was removed from `gateway timeline -json` (fix-batch item 1) and TestTimelineJSON_KeySetIsPinned pins the shape. Aligning the CLI with the chips is a later change.
 
 ## Build policy for T011-T016 and the branch review
 Set by the user on 2026-11-02.
