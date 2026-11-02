@@ -8,6 +8,7 @@ feature: 010-harness-hooks
      Answer by changing "(open)" to "(answered)" and writing the answer underneath:
 - **Q1** (open) T003 — <question> — options: A) … B) …
 -->
+- **Q2** (open) T025 — make verify is red on the finished branch: TestPurity_NoHarnessEventNamesOutsideProfile fails because internal/ui/hub_hook_test.go (added in e09ef0e) names the Claude Code events "PreToolUse" and "PostToolUse"; the fix touches a test file outside T025's commit, so T025 cannot change it — options: A) T025 fix round edits internal/ui/hub_hook_test.go to build the event names from the claudecode profile constants, B) add a new chore task before T025 that does the same edit and reruns verify, C) add a narrow exemption for _test.go files in internal/ui to purity_test.go (weakens the rule for tests, needs a human decision)
 
 ## Decisions
 <!-- - D1 (date) — <decision> — why -->
