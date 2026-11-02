@@ -1,4 +1,4 @@
-import { hookInputEntry, omittedNote, pendingBadgeShown } from "./entries.js";
+import { hookInputEntry, omittedNote, prettyJSON } from "./entries.js";
 
 // copyButton copies getText() to the clipboard.
 export function copyButton(getText) {
@@ -42,61 +42,49 @@ function section(label, text, entry, open, onToggle, cls) {
   return d;
 }
 
-// harnessLabels are the hook-derived badges of a tool call: its state with reason and
-// outcome, the input-differs flag and the agent labels, in the CLI viewer's words.
-export function harnessLabels(e) {
-  const out = [];
-  if (e.state) out.push([e.state, e.reason, e.outcome].filter(Boolean).join(": "));
-  if (e.input_differs) out.push("input differs");
-  if (e.agent_id || e.agent_type) out.push(`agent ${e.agent_id || ""}/${e.agent_type || ""}`);
-  return out;
+function span(cls, text, title) {
+  const s = document.createElement("span");
+  s.className = cls;
+  s.textContent = text;
+  if (title) s.title = title;
+  return s;
 }
 
-// ToolCard renders data = { call, result, prettyInput, isOpen(key), setOpen(key, open) }.
-// result is null while none has arrived.
-export class ToolCard extends HTMLElement {
-  render(data) {
-    const { call, result } = data;
-    this.className = "tool-card";
-    this.replaceChildren();
-    const head = document.createElement("div");
-    head.className = "tool-head";
-    const name = document.createElement("strong");
-    name.textContent = call.name || "tool";
-    head.append(name);
-    const state = document.createElement("span");
-    if (pendingBadgeShown(call, result)) {
-      state.className = "badge pending";
-      state.textContent = "pending";
-    } else if (result && result.is_error === true) {
-      state.className = "badge err";
-      state.textContent = "error";
-      this.classList.add("is-error");
-    }
-    if (state.textContent) head.append(state);
-    for (const text of harnessLabels(call)) {
-      const b = document.createElement("span");
-      b.className = "badge harness";
-      b.textContent = text;
-      head.append(b);
-    }
-    this.append(head);
-    if (call.input_differs) {
-      const hook = section("hook input", call.hook_input || "", null, data.isOpen(`${call.id}:hook`), (o) => data.setOpen(`${call.id}:hook`, o), "tool-input");
-      // the note follows the hook input's own truncation; it shows no raw link
-      if (hookInputEntry(call).truncated) {
-        const note = document.createElement("div");
-        note.className = "muted";
-        note.textContent = omittedNote(call.hook_omitted_bytes);
-        hook.append(note);
-      }
-      this.append(hook);
-    }
-    this.append(section("input", data.prettyInput, call, data.isOpen(`${call.id}:in`), (o) => data.setOpen(`${call.id}:in`, o), "tool-input"));
-    if (result) {
-      this.append(section("result", result.text || "", result, data.isOpen(`${result.id}:out`), (o) => data.setOpen(`${result.id}:out`, o), "tool-result"));
-    }
+// chipNode is a chip as glyph plus text; the hover title carries the full state, reason
+// and outcome, and the label keeps it readable without hover.
+export function chipNode(chip) {
+  const s = span(`chip chip-${chip.key}`, `${chip.glyph} ${chip.text}`, chip.title);
+  s.setAttribute("aria-label", `${chip.text}: ${chip.title}`);
+  return s;
+}
+
+// toolRowNode renders one tool row: chip, name, agent label, error mark, and the pretty
+// input and result on expansion, each copyable. ctx = { isOpen(key), setOpen(key, open) }.
+// A hook-seen tool has no call, so it has no input or result to open.
+export function toolRowNode(row, ctx) {
+  const box = document.createElement("div");
+  box.className = "tool-row";
+  const head = document.createElement("div");
+  head.className = "tool-head";
+  head.append(chipNode(row.chip), span("", row.name || "tool"));
+  if (row.agent) head.append(span("badge harness", row.agent));
+  if (row.resultError) {
+    box.classList.add("is-error");
+    head.append(span("badge err", "✗ error"));
   }
+  box.append(head);
+  const call = row.call;
+  if (!call) return box;
+  if (call.input_differs) {
+    const hook = section("hook input", call.hook_input || "", null, ctx.isOpen(`${call.id}:hook`), (o) => ctx.setOpen(`${call.id}:hook`, o), "tool-input");
+    // the note follows the hook input's own truncation; it shows no raw link
+    if (hookInputEntry(call).truncated) hook.append(span("muted", omittedNote(call.hook_omitted_bytes)));
+    box.append(hook);
+  }
+  box.append(section("input", prettyJSON(call.text || ""), call, ctx.isOpen(`${call.id}:in`), (o) => ctx.setOpen(`${call.id}:in`, o), "tool-input"));
+  if (row.result) {
+    const r = row.result;
+    box.append(section("result", r.text || "", r, ctx.isOpen(`${r.id}:out`), (o) => ctx.setOpen(`${r.id}:out`, o), "tool-result"));
+  }
+  return box;
 }
-
-customElements.define("tool-card", ToolCard);

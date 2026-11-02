@@ -85,15 +85,15 @@ func TestWeb_NoHTMLInjectionSinks(t *testing.T) {
 	}
 }
 
-// TestWeb_ServesHarnessBadgeRendering: the tool card shows the state, the input-differs
-// flag and the agent labels, hook lines have a renderer, and the sessions list shows
-// the hooks-only label. All text goes through textContent (no HTML sinks, tested above).
+// TestWeb_ServesHarnessBadgeRendering: the tool row shows its chip and agent label and the
+// hook input, the timeline renders hook lines, and the sessions list shows the hooks-only
+// label. All text goes through textContent (no HTML sinks, tested above).
 func TestWeb_ServesHarnessBadgeRendering(t *testing.T) {
 	files := webFiles(t)
 	want := map[string][]string{
-		"tool-card.js":     {"e.state", "input_differs", "agent_id", "agent_type", "hook_input", "pendingBadgeShown(call, result)", "hook_omitted_bytes"},
-		"entries.js":       {"export function pendingBadgeShown"},
-		"session-view.js":  {`case "hook_event"`},
+		"tool-card.js":     {"chipNode(row.chip)", "row.agent", "input_differs", "hook_input", "hook_omitted_bytes"},
+		"model.js":         {"agentLabel(e)", "export function chipOf"},
+		"timeline-page.js": {"hookLabel(h)", "agentLabel(h)"},
 		"sessions-page.js": {"hooks_only", "hooks only"},
 	}
 	for name, subs := range want {
@@ -111,11 +111,11 @@ func TestWeb_ServesHarnessBadgeRendering(t *testing.T) {
 func TestWeb_ComponentsCallTheTestedHelpers(t *testing.T) {
 	files := webFiles(t)
 	want := map[string][]string{
-		"api.js":          {"export const STREAM_EVENTS", "for (const name of STREAM_EVENTS)"},
-		"app.js":          {"liveEffect(name, data, st.entries)", "import { addUnique, liveEffect, upsertSession }"},
-		"tool-card.js":    {"hookInputEntry(call)", "omittedNote(call.hook_omitted_bytes)"},
-		"session-view.js": {"hookLabel(e)"},
-		"entries.js":      {"export function liveEffect", "export function omittedNote", "export function hookInputEntry", "export function hookLabel"},
+		"api.js":           {"export const STREAM_EVENTS", "for (const name of STREAM_EVENTS)"},
+		"app.js":           {"liveEffect(name, data, st.entries)", "import { addUnique, liveEffect, upsertSession }"},
+		"tool-card.js":     {"hookInputEntry(call)", "omittedNote(call.hook_omitted_bytes)"},
+		"timeline-page.js": {"hookLabel(h)"},
+		"entries.js":       {"export function liveEffect", "export function omittedNote", "export function hookInputEntry", "export function hookLabel"},
 	}
 	for name, subs := range want {
 		for _, sub := range subs {
@@ -124,7 +124,7 @@ func TestWeb_ComponentsCallTheTestedHelpers(t *testing.T) {
 			}
 		}
 	}
-	for _, name := range []string{"app.js", "tool-card.js", "session-view.js"} {
+	for _, name := range []string{"app.js", "tool-card.js", "timeline-page.js"} {
 		if strings.Contains(files[name], "replaceHooks(") || strings.Contains(files[name], "replaceExchange(") {
 			t.Errorf("%s calls a replace function directly; app.js must route through liveEffect", name)
 		}

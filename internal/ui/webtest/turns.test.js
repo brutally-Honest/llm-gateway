@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildTurns } from "../web/model.js";
+import { buildTurns, hooksLabel, splitReminders } from "../web/model.js";
+import { all, installDom, withClass } from "./dom-stub.js";
 import { call, item } from "./fixtures.js";
 
 const prompt = (id, text) => item(id, "user_prompt", { role: "user", text });
@@ -117,4 +118,65 @@ test("agentLabelAndErrorMarkKept", () => {
   assert.equal(t.tools[1].resultError, true);
   assert.equal(t.tools[0].agent, "");
   assert.equal(t.tools[0].chip.text, "ok");
+});
+
+test("turnHeadingCountsAndDuration", () => {
+  const { cards } = buildTurns([
+    call("a", 1), prompt("a", "go"), item("a", "tool_call", { name: "Bash", tool_call_id: "t1" }), item("a", "tool_call", { name: "Read", tool_call_id: "t2" }),
+    call("b", 2, { prev: "a", ms: 1250 }),
+    call("q", 3, { main: false, side: true }),
+    call("c", 4, { prev: "b" }), prompt("c", "two"),
+  ]);
+  assert.equal(cards[0].heading, "Turn 1 · 2 calls · 2 tools · 2.3s");
+  assert.equal(cards[1].heading, "Side calls · 1 call · 0 tools · 1.0s");
+  assert.equal(cards[2].heading, "Turn 2 · 1 call · 0 tools · 1.0s");
+});
+
+test("callLinksLabelled", () => {
+  const { turns } = buildTurns([call("a", 1, { ms: 850 }), prompt("a", "go"), call("b", 2, { prev: "a", ms: 125000 })]);
+  assert.deepEqual(turns[0].calls.map((c) => c.label), ["#1 · 850ms", "#2 · 2m05s"]);
+  assert.deepEqual(turns[0].calls.map((c) => c.exchangeId), ["a", "b"]);
+});
+
+test("hooksHiddenBehindToggle", () => {
+  const h = (id, tool, start, extra = {}) => ({ id: `hook:${id}`, kind: "hook_event", phase: "pre_tool", name: "Bash", tool_call_id: tool, start, ...extra });
+  const { turns } = buildTurns([
+    call("a", 1), prompt("a", "go"), item("a", "tool_call", { name: "Bash", tool_call_id: "t1" }),
+    call("b", 2, { prev: "a" }), prompt("b", "two"),
+    h(1, "t1", "2026-01-01T00:00:01Z", { agent_id: "ag", agent_type: "explore" }),
+    h(2, "", "2026-01-01T00:00:02Z", { phase: "stop" }),
+  ]);
+  assert.deepEqual(turns[0].hooks.map((x) => x.id), ["hook:1"]);
+  assert.deepEqual(turns[1].hooks.map((x) => x.id), ["hook:2"]);
+  assert.equal(hooksLabel(1), "1 hook");
+  assert.equal(hooksLabel(2), "2 hooks");
+});
+
+test("remindersFoldedByDefault", () => {
+  const r = "<system-reminder>be good</system-reminder>";
+  assert.deepEqual(splitReminders(`${r}\nfix it\n${r}`), { body: "fix it", reminders: [r, r] });
+  assert.deepEqual(splitReminders("plain"), { body: "plain", reminders: [] });
+  const { turns } = buildTurns([call("a", 1), prompt("a", `fix\n${r}`)]);
+  assert.equal(turns[0].prompt.text, `fix\n${r}`);
+  assert.equal(turns[0].prompt.body, "fix");
+  assert.equal(turns[0].prompt.reminders.length, 1);
+});
+
+test("truncatedLinkAndCopyOffered", async () => {
+  installDom();
+  const { toolRowNode } = await import("../web/tool-card.js");
+  const { turns } = buildTurns([
+    call("a", 1), prompt("a", "go"),
+    item("a", "tool_call", { name: "Bash", tool_call_id: "t1", text: '{"cmd":"ls"}', truncated: true }),
+    item("a", "tool_result", { tool_call_id: "t1", text: "out", truncated: true }),
+  ]);
+  const node = toolRowNode(turns[0].tools[0], { isOpen: () => false, setOpen() {} });
+  const sections = all(node).filter((e) => e.tagName === "details");
+  assert.equal(sections.length, 2);
+  for (const s of sections) {
+    assert.equal(withClass(s, "truncated").length, 1);
+    assert.equal(withClass(s, "truncated")[0].textContent, "truncated — open raw");
+    assert.equal(withClass(s, "copy").length, 1);
+  }
+  assert.match(all(sections[0]).find((e) => e.tagName === "pre").textContent, /"cmd": "ls"/);
 });

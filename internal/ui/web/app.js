@@ -1,13 +1,13 @@
 import { getJSON, loadAllPages, openStream } from "./api.js";
 import { addUnique, liveEffect, upsertSession } from "./entries.js";
 import { createStore } from "./store.js";
+import { createTimelinePage } from "./timeline-page.js";
 import { createSessionsPage, localMidnight, note } from "./sessions-page.js";
 import { initTheme } from "./theme.js";
 import { parseRoute } from "./route.js";
 import { handleKey, isTextInput } from "./keys.js";
 import { mountShell } from "./shell.js";
 import "./exchange-detail.js";
-import "./session-view.js";
 import "./ungrouped-list.js";
 
 const app = document.getElementById("app");
@@ -106,10 +106,10 @@ let seq = 0;
 // opens its stream. A stale load (the route changed meanwhile) is dropped.
 async function showSession(id) {
   const mine = ++seq;
-  const el = document.createElement("session-view");
-  app.replaceChildren(el);
+  const tl = createTimelinePage();
+  app.replaceChildren(tl.el);
   const st = { summary: null, entries: [], error: "", snapshotError: "" };
-  const draw = () => el.render(st);
+  const draw = () => tl.render(st);
   draw();
   const set = (patch) => {
     if (mine !== seq) return;

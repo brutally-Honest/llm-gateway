@@ -37,13 +37,64 @@ export function formatDuration(ms) {
   return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
 }
 
-function agentLabel(e) {
+// agentLabel is the agent label of a call, tool or hook line, or "" for the main agent.
+export function agentLabel(e) {
   if (!e.agent_id && !e.agent_type) return "";
   return `agent ${[e.agent_type, e.agent_id].filter(Boolean).join(" ")}`;
 }
 
 function newCard(kind, number, prompt) {
-  return { kind, number, prompt, texts: [], tools: [], calls: [], counts: { calls: 0, tools: 0 }, durationMs: 0, errored: false, hooksOnly: false };
+  return {
+    kind, number, prompt: withReminders(prompt), texts: [], tools: [], calls: [], hooks: [],
+    counts: { calls: 0, tools: 0 }, durationMs: 0, errored: false, hooksOnly: false, start: "", heading: "",
+  };
+}
+
+const REMINDER_RE = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
+
+// splitReminders separates a prompt's <system-reminder> blocks from the text the user
+// wrote, so the page can fold them (AC16). The server names the title from the same
+// blocks; only the folding is done here, on a copy.
+export function splitReminders(text) {
+  const t = text || "";
+  return { body: t.replace(REMINDER_RE, "").trim(), reminders: t.match(REMINDER_RE) || [] };
+}
+
+function withReminders(prompt) {
+  return prompt ? { ...prompt, ...splitReminders(prompt.text) } : prompt;
+}
+
+// hooksLabel is the toggle's text: "1 hook" or "N hooks".
+export function hooksLabel(n) {
+  return `${n} ${n === 1 ? "hook" : "hooks"}`;
+}
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+// headingOf is a card's heading: its name, counts and total duration.
+function headingOf(card) {
+  const name = card.kind === "turn" ? `Turn ${card.number}` : card.kind === "before" ? "Before first prompt" : "Side calls";
+  const parts = [name];
+  if (card.counts.calls > 0) parts.push(plural(card.counts.calls, "call", "calls"));
+  parts.push(plural(card.counts.tools, "tool", "tools"));
+  if (card.counts.calls > 0) parts.push(formatDuration(card.durationMs));
+  return parts.join(" · ");
+}
+
+// placeHooks gives each hook line to the card holding its tool, else to the last card that
+// started before it, else to the first card.
+function placeHooks(cards, hooks) {
+  if (!cards.length) return;
+  const byTool = new Map();
+  for (const c of cards) for (const t of c.tools) if (t.id) byTool.set(t.id, c);
+  for (const h of hooks) {
+    let card = h.tool_call_id ? byTool.get(h.tool_call_id) : null;
+    if (!card) {
+      card = cards[0];
+      for (const c of cards) if (c.start && c.start <= (h.start || "") && (!card.start || c.start >= card.start)) card = c;
+    }
+    card.hooks.push(h);
+  }
 }
 
 function isErrored(modelCall, group) {
@@ -54,7 +105,7 @@ function toolRow(e, results, callN) {
   const r = results.get(e.tool_call_id);
   return {
     id: e.tool_call_id, name: e.name, chip: chipOf(e), agent: agentLabel(e),
-    resultError: Boolean(r && r.is_error), callN,
+    resultError: Boolean(r && r.is_error), callN, call: e, result: r || null,
   };
 }
 
@@ -127,6 +178,7 @@ export function buildTurns(entries) {
     const errored = isErrored(mc, g);
     const tools = g.filter((e) => e.kind === "tool_call").map((e) => toolRow(e, results, facts.n));
     const label = g.map(agentLabel).find(Boolean) || "";
+    if (!card.start || (mc.start || "") < card.start) card.start = mc.start || "";
     card.calls.push({
       n: facts.n, exchangeId: mc.exchange_id, durationMs: mc.duration_ms ?? null,
       label: `#${facts.n} · ${formatDuration(mc.duration_ms ?? null)}`,
@@ -140,6 +192,8 @@ export function buildTurns(entries) {
     card.durationMs += mc.duration_ms || 0;
     if (errored) card.errored = true;
   }
+  for (const c of cards) c.heading = headingOf(c);
+  placeHooks(cards, entries.filter((e) => e.kind === "hook_event"));
   return { cards, turns: cards.filter((c) => c.kind === "turn") };
 }
 
@@ -158,7 +212,6 @@ function hookTurns(entries) {
       cards.push(open);
       continue;
     }
-    if (!e.tool_call_id) continue;
     let card = open;
     if (!card) {
       if (!before) {
@@ -168,6 +221,8 @@ function hookTurns(entries) {
       }
       card = before;
     }
+    card.hooks.push(e);
+    if (!e.tool_call_id) continue;
     let row = rows.get(e.tool_call_id);
     if (!row) {
       row = { id: e.tool_call_id, name: e.name, agent: "", callN: null };
@@ -178,6 +233,7 @@ function hookTurns(entries) {
     row.agent = row.agent || agentLabel(e);
     row.chip = chipOf(e);
   }
+  for (const c of cards) c.heading = headingOf(c);
   return { cards, turns: cards.filter((c) => c.kind === "turn"), note: "no model calls were captured" };
 }
 
