@@ -110,6 +110,45 @@ export function replaceHooks(entries, list) {
   return out;
 }
 
+// liveEffect says what a stream event does to the session view: the patch to apply to
+// its state, or null when the event is dropped. A hooks event replaces the hook group only;
+// exchange and entries events replace their exchanges only. Every entries-changing event
+// except snapshot_error clears the snapshot error, since it proves the stream is fresh.
+export function liveEffect(name, data, entries) {
+  switch (name) {
+    case "snapshot_error":
+      return { snapshotError: data.error ? data.error.message : "unknown" };
+    case "session":
+      return { summary: data };
+    case "hooks":
+      return { entries: replaceHooks(entries, data), snapshotError: "" };
+    case "exchange":
+    case "entries":
+      return { entries: replaceExchange(entries, data), snapshotError: "" };
+    default:
+      return null;
+  }
+}
+
+// omittedNote is the note under a hook input that was cut short, or "" when nothing was.
+export function omittedNote(n) {
+  return n > 0 ? `… ${n} bytes omitted` : "";
+}
+
+// hookInputEntry is the entry a call's hook input is shown with: its truncation is the hook
+// input's own (bytes omitted), not the call input's, so the link follows the right text.
+export function hookInputEntry(call) {
+  return { ...call, truncated: call.hook_omitted_bytes > 0 };
+}
+
+// hookLabel is a hook-event line's text: the phase and name, or for an unknown event its
+// stored name, then the tool call id when it has one.
+export function hookLabel(e) {
+  const id = e.tool_call_id ? ` (${e.tool_call_id})` : "";
+  const head = e.phase === "unknown" ? `hook unknown: ${e.text || ""}` : `hook ${e.phase || ""} ${e.name || ""}`;
+  return `${head}${id}`.replace(/\s+/g, " ").trim();
+}
+
 // pairTools maps each tool_call_id to its tool_result entry.
 export function pairTools(entries) {
   const results = new Map();

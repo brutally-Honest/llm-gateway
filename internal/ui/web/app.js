@@ -1,5 +1,5 @@
 import { getJSON, openStream } from "./api.js";
-import { addUnique, replaceExchange, replaceHooks, upsertSession } from "./entries.js";
+import { addUnique, liveEffect, upsertSession } from "./entries.js";
 import { createStore } from "./store.js";
 import { note } from "./session-list.js";
 import "./exchange-detail.js";
@@ -95,13 +95,13 @@ async function showSession(id) {
     if (follow && mine === seq) window.scrollTo(0, document.documentElement.scrollHeight);
   };
   // The snapshot-error state survives the native error event and the reconnect; only the
-  // first exchange event of a later connection (its snapshot) clears it.
+  // first hooks, exchange or entries event of a later connection (its snapshot) clears it.
   closeStream = openStream(
     (name, data) => {
-      if (name === "snapshot_error") set({ snapshotError: data.error ? data.error.message : "unknown" });
-      else if (name === "session") live({ summary: data });
-      else if (name === "hooks") live({ entries: replaceHooks(st.entries, data), snapshotError: "" });
-      else live({ entries: replaceExchange(st.entries, data), snapshotError: "" });
+      const patch = liveEffect(name, data, st.entries);
+      if (!patch) return;
+      if (name === "snapshot_error") set(patch);
+      else live(patch);
     },
     (state) => {
       liveEl.textContent = liveText(state);

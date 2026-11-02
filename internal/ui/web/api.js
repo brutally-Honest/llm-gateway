@@ -37,6 +37,10 @@ export async function getBody(id, part) {
   return { text: await res.text(), truncated: res.headers.get("X-Body-Truncated") === "true" };
 }
 
+// STREAM_EVENTS are the named events the server sends on /api/.../stream. openStream listens
+// for each of them; app.js routes them with liveEffect.
+export const STREAM_EVENTS = ["session", "exchange", "hooks", "entries", "snapshot_error"];
+
 // Reopen delays for a stream the browser has given up on (AC50, E12).
 const firstDelay = 1000;
 const maxDelay = 30000;
@@ -81,7 +85,7 @@ export function openStream(onEvent, onState, path = "stream") {
         reopenLater();
       }
     };
-    for (const name of ["session", "exchange", "hooks", "entries", "snapshot_error"]) {
+    for (const name of STREAM_EVENTS) {
       cur.addEventListener(name, (e) => {
         if (closed || es !== cur) return;
         if (name === "snapshot_error") {

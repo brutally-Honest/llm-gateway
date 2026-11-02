@@ -1,4 +1,4 @@
-import { pendingBadgeShown } from "./entries.js";
+import { hookInputEntry, omittedNote, pendingBadgeShown } from "./entries.js";
 
 // copyButton copies getText() to the clipboard.
 export function copyButton(getText) {
@@ -80,11 +80,12 @@ export class ToolCard extends HTMLElement {
     }
     this.append(head);
     if (call.input_differs) {
-      const hook = section("hook input", call.hook_input || "", call, data.isOpen(`${call.id}:hook`), (o) => data.setOpen(`${call.id}:hook`, o), "tool-input");
-      if (call.hook_omitted_bytes > 0) {
+      const hook = section("hook input", call.hook_input || "", hookInputEntry(call), data.isOpen(`${call.id}:hook`), (o) => data.setOpen(`${call.id}:hook`, o), "tool-input");
+      const omitted = omittedNote(call.hook_omitted_bytes);
+      if (omitted) {
         const note = document.createElement("div");
         note.className = "muted";
-        note.textContent = `… ${call.hook_omitted_bytes} bytes omitted`;
+        note.textContent = omitted;
         hook.append(note);
       }
       this.append(hook);
