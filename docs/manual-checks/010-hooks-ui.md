@@ -42,7 +42,7 @@ shows as `asked+ran+reported: succeeded`.
 |---|----|----------|
 | 1 | Prompt: `Run ls.` | The call shows succeeded. |
 | 2 | Prompt: `Run the command false.` | The call shows failed. |
-| 3 | Prompt: `Run sleep 20 in the foreground.` Watch while it runs. | Live, with no reload: pending (~20 s), then ran-not-reported, then asked+ran+reported: succeeded. |
+| 3 | Prompt: `Run sleep 20 in the foreground.` Watch while it runs. | Live, with no reload: pending (~20 s), then asked+ran+reported: succeeded. ran-not-reported may flash briefly or be skipped when the next request follows within the refresh window. |
 | 4 | Prompt: `Create a file d.txt containing hello.` | In `-p` mode the denial reaches the model in the same turn: pending briefly, then asked-not-run: not run within the same turn. `d.txt` is not created. |
 | 5 | Prompt: `Use a sub-agent to list the files here.` | The sub-agent's calls carry its agent id and type. The Agent call briefly shows ran-not-reported before asked+ran+reported. |
 | 6 | Reload the page. | Tool cards, hook lines and entry counts are identical to the live view. |
