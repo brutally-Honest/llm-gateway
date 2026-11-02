@@ -995,3 +995,86 @@ func TestHub_ReadErrorDropsSessionStream(t *testing.T) {
 	for s.sc.Scan() {
 	}
 }
+
+// saveReplayCall stores call i (1-based) of one thread: the whole history so far as
+// request messages (user_k and assistant_k, the user messages from 2 on carrying the
+// tool_result of call_{k-1}), and a reply that asks for call_i.
+func (e *streamEnv) saveReplayCall(i int) string {
+	e.t.Helper()
+	id := fmt.Sprintf("c%02d", i)
+	e.save(id, "k", "cc", 10*i)
+	evs := []core.StoredEvent{{Seq: 0, Kind: core.KindRequest, Payload: []byte(`{"model":"m1"}`)}}
+	var contents []core.Content
+	msg := func(role, txt string, src core.Source) {
+		bh := sha(fmt.Sprintf("%s-%d", id, len(evs)))
+		raw, _ := json.Marshal(map[string]string{"type": "text", "text": txt})
+		mh := sha("replay-" + role + txt)
+		contents = append(contents, core.Content{Hash: bh, Bytes: raw}, core.Content{Hash: mh, Bytes: []byte(mh)})
+		p, _ := json.Marshal(map[string]any{"role": role, "blocks": []map[string]string{{"hash": bh, "type": "text"}}})
+		evs = append(evs, core.StoredEvent{Seq: len(evs), Kind: core.KindMessage, ContentHash: mh, Source: src, Payload: p})
+	}
+	for k := 1; k <= i; k++ {
+		msg("user", fmt.Sprintf("user %d", k), "request_history")
+		if k >= 2 {
+			h := sha(fmt.Sprintf("out-%d", k-1))
+			contents = append(contents, core.Content{Hash: h, Bytes: []byte("output")})
+			evs = append(evs, core.StoredEvent{Seq: len(evs), Kind: core.KindToolResult, ToolCallID: fmt.Sprintf("call_%d", k-1),
+				Source: "request_history", ContentHash: h, Payload: []byte(`{"is_error":false}`)})
+		}
+		if k < i {
+			msg("assistant", fmt.Sprintf("assistant %d", k), "request_history")
+		}
+	}
+	msg("assistant", fmt.Sprintf("assistant %d", i), core.SourceResponse)
+	h := sha(fmt.Sprintf("tc-%d", i))
+	contents = append(contents, core.Content{Hash: h, Bytes: []byte(`{}`)})
+	evs = append(evs, core.StoredEvent{Seq: len(evs), Kind: core.KindToolCall, ToolCallID: fmt.Sprintf("call_%d", i),
+		Source: core.SourceResponse, ContentHash: h, Payload: []byte(`{"name":"Bash"}`)},
+		core.StoredEvent{Seq: len(evs) + 1, Kind: core.KindUsage, Payload: []byte(`{"input_tokens":10,"output_tokens":5}`)})
+	if err := e.s.SaveParse(e.t.Context(), id, core.PrincipalLocal, core.ParseOK, evs, contents); err != nil {
+		e.t.Fatal(err)
+	}
+	return id
+}
+
+// A commit sends its own exchange and may resend at most the previous call of the
+// same thread, whose tool result it carries: never every earlier call. Each commit is
+// followed by the next one, so the events read before the next commit's own exchange are
+// exactly the resends of the one before; call 21 only closes the count for call 20.
+func TestStream_ReplayOf20CallsResendsAtMostThePreviousCall(t *testing.T) {
+	e := newStreamEnv(t, nil)
+	e.saveReplayCall(1)
+	e.publish("c01")
+	s := e.open(e.sessionPath())
+	if snap := s.take(1); snap[0].event != "exchange" {
+		t.Fatalf("snapshot = %+v", snap[0])
+	}
+	total := 0
+	for i := 2; i <= 21; i++ {
+		id := e.saveReplayCall(i)
+		e.publish(id)
+		var resent []string
+		for {
+			ev := s.nextData()
+			if ev.event == "entries" && strings.Contains(ev.data, `"exchange_id":"`+id+`"`) {
+				break
+			}
+			if ev.event != "exchange" {
+				t.Fatalf("commit before %s: unexpected %s event", id, ev.event)
+			}
+			resent = append(resent, decodeEntries(t, ev.data)[0]["exchange_id"].(string))
+		}
+		total += len(resent)
+		if i == 2 {
+			continue // commit 1 happened before the stream opened
+		}
+		prev := fmt.Sprintf("c%02d", i-2) // the call before commit i-1 in the same thread
+		if len(resent) > 1 || len(resent) == 1 && resent[0] != prev {
+			t.Fatalf("commit c%02d resent %v, want at most [%s]", i-1, resent, prev)
+		}
+	}
+	t.Logf("20 commits resent %d exchanges", total)
+	if total > 19 {
+		t.Fatalf("20 commits resent %d exchanges", total)
+	}
+}
