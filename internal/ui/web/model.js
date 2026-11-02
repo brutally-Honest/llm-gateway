@@ -200,18 +200,96 @@ function hookChip(phases) {
   return chipOf(call);
 }
 
-// contextOf is a call's context: input + cache write + cache read. A call without
-// complete usage borrows the nearest earlier call on its prev_id chain that has it.
-export function contextOf(call, byId) {
+const reported = (v) => v !== null && v !== undefined;
+
+// contextOf is one call's context: input + cache write + cache read. Any of the three
+// unreported gives value null (shown "—", never 0), flagged partial when some were
+// reported (E4, E5).
+export function contextOf(call) {
+  const u = (call && call.usage) || {};
+  const parts = [u.input, u.cache_write, u.cache_read];
+  const have = parts.filter(reported).length;
+  if (have === 3) return { value: u.input + u.cache_write + u.cache_read, partial: false };
+  return { value: null, partial: have > 0 };
+}
+
+// borrowedContext is a call's context, or the nearest earlier call's on its prev_id
+// chain when it has none; the stats row uses it for the last main call.
+function borrowedContext(call, byId) {
   let fallback = null;
   for (let c = call, seen = 0; c && seen < 10000; c = byId.get((c.call || {}).prev_id), seen++) {
+    const ctx = contextOf(c);
+    if (ctx.value === null) continue;
     const u = c.usage;
-    if (!u || !u.has_usage || u.input === null || u.input === undefined) continue;
-    const value = u.input + (u.cache_write || 0) + (u.cache_read || 0);
-    if (!u.partial) return { value, partial: c !== call, from: c.exchange_id };
-    fallback = fallback || { value, partial: true, from: c.exchange_id };
+    if (!u.partial) return { value: ctx.value, partial: c !== call, from: c.exchange_id };
+    fallback = fallback || { value: ctx.value, partial: true, from: c.exchange_id };
   }
   return fallback;
+}
+
+const isMain = (e) => e.kind === "model_call" && Boolean(e.call) && e.call.main && !e.call.side_call;
+
+// contextSeries is the trend of main-thread calls: side and sub-agent calls are left
+// out, and a call without a context value has no point (never 0). With no main calls
+// there is a note instead (E22).
+export function contextSeries(entries) {
+  const mains = entries.filter(isMain);
+  if (!mains.length) return { points: [], note: "no main-thread calls to plot" };
+  const points = [];
+  for (const e of mains) {
+    const ctx = contextOf(e);
+    if (ctx.value !== null) points.push({ n: e.call.n, exchangeId: e.exchange_id, value: ctx.value });
+  }
+  return { points, note: points.length ? "" : "no main-thread call reported a context" };
+}
+
+// deltaFor is a call's change in context: kind "first" for the first call of a thread,
+// "none" when the call has no context, else the change from the nearest earlier call on
+// its prev_id chain that has a context (E4, E6).
+export function deltaFor(call, byId) {
+  const prevId = (call.call || {}).prev_id;
+  if (!prevId) return { kind: "first", value: null };
+  const cur = contextOf(call);
+  if (cur.value === null) return { kind: "none", value: null };
+  let c = byId.get(prevId);
+  for (let seen = 0; c && seen < 10000; c = byId.get((c.call || {}).prev_id), seen++) {
+    const ctx = contextOf(c);
+    if (ctx.value !== null) return { kind: "delta", value: cur.value - ctx.value, from: c.exchange_id };
+  }
+  return { kind: "none", value: null };
+}
+
+export const MIN_BAR_WIDTH = 6;
+export const MAX_BAR_WIDTH = 48;
+
+// stripBars is one bar per call in start order: width by duration (never under
+// MIN_BAR_WIDTH, so the strip scrolls rather than hides calls), marked by turn, side
+// calls muted and named on hover (AC11, E13).
+export function stripBars(entries) {
+  const { cards } = buildTurns(entries);
+  const turnOf = new Map();
+  for (const card of cards) {
+    card.calls.forEach((c, i) => turnOf.set(c.exchangeId, { number: card.number, first: i === 0 && card.kind === "turn" }));
+  }
+  const calls = entries.filter((e) => e.kind === "model_call");
+  const tools = new Map();
+  for (const e of entries) if (e.kind === "tool_call") tools.set(e.exchange_id, [...(tools.get(e.exchange_id) || []), e.name]);
+  const maxMs = Math.max(1, ...calls.map((e) => e.duration_ms || 0));
+  return calls.map((e) => {
+    const f = e.call || {};
+    const t = turnOf.get(e.exchange_id) || { number: null, first: false };
+    const side = Boolean(f.side_call);
+    const names = tools.get(e.exchange_id) || [];
+    const status = e.status || 0;
+    const title = [`#${f.n}`, side ? "side call" : "", status ? `status ${status}` : "",
+      formatDuration(e.duration_ms ?? null), names.length ? `tool ${names.join(", ")}` : ""].filter(Boolean).join(" · ");
+    return {
+      n: f.n, exchangeId: e.exchange_id, turn: t.number, turnStart: t.first, side, muted: side,
+      errored: status >= 400, status, durationMs: e.duration_ms ?? null,
+      width: Math.max(MIN_BAR_WIDTH, Math.round(((e.duration_ms || 0) / maxMs) * MAX_BAR_WIDTH)),
+      tools: names, title,
+    };
+  });
 }
 
 // buildStats is the session stats row. Calls and tokens count every call, side calls
@@ -229,7 +307,7 @@ export function buildStats(entries, summary) {
     modelTimeMs: calls.reduce((t, e) => t + (e.duration_ms || 0), 0),
     toolStates: s.tool_states || {},
     errors: s.main_errors ?? 0,
-    context: last ? contextOf(last, byId) : null,
+    context: last ? borrowedContext(last, byId) : null,
     input: usage.input ? usage.input.value : null,
     output: usage.output ? usage.output.value : null,
   };
