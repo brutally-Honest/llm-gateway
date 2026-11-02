@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/brutally-honest/llm-gateway/internal/core"
 	"github.com/brutally-honest/llm-gateway/internal/store"
 )
 
@@ -166,6 +167,9 @@ func RenderText(w io.Writer, entries []Entry, loc *time.Location) error {
 			fmt.Fprintf(&b, "  tool_call %s (%s)%s%s: %s\n", escape(e.Name, false), escape(e.ToolCallID, false), mark, harnessSuffix(e), escape(e.Text, true))
 			if e.InputDiffers {
 				fmt.Fprintf(&b, "  hook input: %s\n", escape(e.HookInput, true))
+				if e.HookOmitted > 0 {
+					fmt.Fprintf(&b, "  … %d bytes omitted\n", e.HookOmitted)
+				}
 			}
 		case KindToolResult:
 			errMark := ""
@@ -177,6 +181,11 @@ func RenderText(w io.Writer, entries []Entry, loc *time.Location) error {
 			id := ""
 			if e.ToolCallID != "" {
 				id = " (" + escape(e.ToolCallID, false) + ")"
+			}
+			if e.Phase == string(core.PhaseUnknown) {
+				// The phase says nothing; the name the client sent is what identifies the event.
+				fmt.Fprintf(&b, "   hook %s unknown: %s%s%s\n", stamp(e.Start, loc), escape(e.Text, false), id, harnessSuffix(e))
+				break
 			}
 			fmt.Fprintf(&b, "   hook %s %s %s%s%s\n", stamp(e.Start, loc), escape(e.Phase, false), escape(e.Name, false), id, harnessSuffix(e))
 		case KindError:
@@ -211,6 +220,7 @@ type entryJSON struct {
 	Outcome      string `json:"outcome,omitempty"`
 	InputDiffers bool   `json:"input_differs,omitempty"`
 	HookInput    string `json:"hook_input,omitempty"`
+	HookOmitted  int    `json:"hook_omitted_bytes,omitempty"`
 	Phase        string `json:"phase,omitempty"`
 	AgentID      string `json:"agent_id,omitempty"`
 	AgentType    string `json:"agent_type,omitempty"`
@@ -251,7 +261,7 @@ func RenderJSON(w io.Writer, entries []Entry, loc *time.Location) error {
 		if err := enc.Encode(entryJSON{Usage: usage, NoUsage: noUsage, Type: string(e.Kind), RequestID: e.RequestID, Time: stamp(e.Start, loc),
 			Method: e.Method, Path: e.Path, Status: e.Status, Parse: e.Parse, Role: e.Role, Name: e.Name,
 			ToolCallID: e.ToolCallID, IsError: e.IsError, Text: e.Text, Omitted: e.Omitted, Partial: e.Partial,
-			State: e.State, Reason: e.Reason, Outcome: e.Outcome, InputDiffers: e.InputDiffers, HookInput: e.HookInput,
+			State: e.State, Reason: e.Reason, Outcome: e.Outcome, InputDiffers: e.InputDiffers, HookInput: e.HookInput, HookOmitted: e.HookOmitted,
 			Phase: e.Phase, AgentID: e.AgentID, AgentType: e.AgentType}); err != nil {
 			return err
 		}

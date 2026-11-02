@@ -76,6 +76,7 @@ type entryJSON struct {
 	Outcome      string `json:"outcome,omitempty"`
 	InputDiffers bool   `json:"input_differs,omitempty"`
 	HookInput    string `json:"hook_input,omitempty"`
+	HookOmitted  int    `json:"hook_omitted_bytes,omitempty"`
 	Phase        string `json:"phase,omitempty"`
 	AgentID      string `json:"agent_id,omitempty"`
 	AgentType    string `json:"agent_type,omitempty"`
@@ -138,7 +139,7 @@ func mapEntries(entries []timeline.Entry, exs map[string]store.ExchangeRow) []en
 			add(e, entryJSON{Kind: kindToolCall, Name: e.Name, ToolCallID: e.ToolCallID, Text: e.Text,
 				Truncated: e.Omitted > 0, Partial: e.Partial,
 				State: e.State, Reason: e.Reason, Outcome: e.Outcome, InputDiffers: e.InputDiffers,
-				HookInput: e.HookInput, AgentID: e.AgentID, AgentType: e.AgentType})
+				HookInput: e.HookInput, HookOmitted: e.HookOmitted, AgentID: e.AgentID, AgentType: e.AgentType})
 		case timeline.KindToolResult:
 			add(e, entryJSON{Kind: kindToolResult, ToolCallID: e.ToolCallID, IsError: ptr(e.IsError),
 				Text: e.Text, Truncated: e.Omitted > 0, Partial: e.Partial})

@@ -361,6 +361,36 @@ func TestRender_UnmatchedHookLinesInTimeOrder(t *testing.T) {
 	}
 }
 
+func TestRender_TruncatedHookInputShowsBytesOmitted(t *testing.T) {
+	out := renderEntries(t, []timeline.Entry{{Kind: timeline.KindToolCall, Name: "Bash", ToolCallID: "t1",
+		State: timeline.StateRanNotReported, InputDiffers: true, HookInput: `{"a"`, HookOmitted: 42}})
+	if !strings.Contains(out, "42 bytes omitted") {
+		t.Errorf("no omitted count: %q", out)
+	}
+}
+
+func TestRender_UnknownHookShowsStoredName(t *testing.T) {
+	out := renderEntries(t, []timeline.Entry{{Kind: timeline.KindHarness, Phase: "unknown", Text: "FutureEvent"}})
+	if !strings.Contains(out, "hook") || !strings.Contains(out, "unknown: FutureEvent") {
+		t.Errorf("stored name missing: %q", out)
+	}
+}
+
+func TestTimelineJSON_CarriesOmittedCount(t *testing.T) {
+	var b bytes.Buffer
+	es := []timeline.Entry{{Kind: timeline.KindToolCall, ToolCallID: "t1", InputDiffers: true, HookInput: "{", HookOmitted: 7}}
+	if err := timeline.RenderJSON(&b, es, time.UTC); err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b.Bytes(), &m); err != nil {
+		t.Fatal(err)
+	}
+	if m["hook_omitted_bytes"] != float64(7) {
+		t.Errorf("json: %v", m)
+	}
+}
+
 func TestRender_ShowsAgentLabels(t *testing.T) {
 	out := renderEntries(t, []timeline.Entry{
 		{Kind: timeline.KindToolCall, Name: "Bash", ToolCallID: "t1", AgentID: "a1", AgentType: "Explore"},

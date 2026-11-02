@@ -1,3 +1,5 @@
+import { pendingBadgeShown } from "./entries.js";
+
 // copyButton copies getText() to the clipboard.
 export function copyButton(getText) {
   const b = document.createElement("button");
@@ -61,10 +63,10 @@ export class ToolCard extends HTMLElement {
     name.textContent = call.name || "tool";
     head.append(name);
     const state = document.createElement("span");
-    if (!result) {
+    if (pendingBadgeShown(call, result)) {
       state.className = "badge pending";
       state.textContent = "pending";
-    } else if (result.is_error === true) {
+    } else if (result && result.is_error === true) {
       state.className = "badge err";
       state.textContent = "error";
       this.classList.add("is-error");
@@ -78,7 +80,14 @@ export class ToolCard extends HTMLElement {
     }
     this.append(head);
     if (call.input_differs) {
-      this.append(section("hook input", call.hook_input || "", call, data.isOpen(`${call.id}:hook`), (o) => data.setOpen(`${call.id}:hook`, o), "tool-input"));
+      const hook = section("hook input", call.hook_input || "", call, data.isOpen(`${call.id}:hook`), (o) => data.setOpen(`${call.id}:hook`, o), "tool-input");
+      if (call.hook_omitted_bytes > 0) {
+        const note = document.createElement("div");
+        note.className = "muted";
+        note.textContent = `… ${call.hook_omitted_bytes} bytes omitted`;
+        hook.append(note);
+      }
+      this.append(hook);
     }
     this.append(section("input", data.prettyInput, call, data.isOpen(`${call.id}:in`), (o) => data.setOpen(`${call.id}:in`, o), "tool-input"));
     if (result) {

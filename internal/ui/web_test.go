@@ -91,7 +91,8 @@ func TestWeb_NoHTMLInjectionSinks(t *testing.T) {
 func TestWeb_ServesHarnessBadgeRendering(t *testing.T) {
 	files := webFiles(t)
 	want := map[string][]string{
-		"tool-card.js":    {"e.state", "input_differs", "agent_id", "agent_type", "hook_input"},
+		"tool-card.js":    {"e.state", "input_differs", "agent_id", "agent_type", "hook_input", "pendingBadgeShown(call, result)", "hook_omitted_bytes"},
+		"entries.js":      {"export function pendingBadgeShown"},
 		"session-view.js": {`case "hook_event"`},
 		"session-list.js": {"hooks_only", "hooks only"},
 	}

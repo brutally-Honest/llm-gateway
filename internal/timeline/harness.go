@@ -142,7 +142,7 @@ func applyHarness(src Source, session store.SessionRow, exchangeEvents [][]store
 			continue
 		}
 		out[i].State, out[i].Reason, out[i].Outcome = v.State, v.Reason, v.Outcome
-		out[i].InputDiffers, out[i].HookInput = v.InputDiffers, v.HookInput
+		out[i].InputDiffers, out[i].HookInput, out[i].HookOmitted = v.InputDiffers, v.HookInput, v.HookOmitted
 		out[i].AgentID, out[i].AgentType = v.AgentID, v.AgentType
 	}
 
@@ -234,7 +234,7 @@ func verdict(src Source, all, mine []store.HookRow, c *callInfo, results []int, 
 			v.InputDiffers = true
 			v.HookInput = string(hin)
 			if !opts.Full {
-				v.HookInput, _ = cut(v.HookInput, opts.limit())
+				v.HookInput, v.HookOmitted = cut(v.HookInput, opts.limit())
 			}
 		}
 	}

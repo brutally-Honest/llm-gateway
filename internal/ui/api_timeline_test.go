@@ -474,6 +474,24 @@ func TestAPITimeline_StatesFlagsAndHookLines(t *testing.T) {
 	}
 }
 
+func TestAPITimeline_TruncatedHookInputCarriesOmittedCount(t *testing.T) {
+	e := newAPIEnv(t)
+	e.toolSession(`{"a":1}`)
+	big := `{"a":"` + strings.Repeat("x", entryCut+100) + `"}`
+	e.hook("k", core.HarnessEvent{Phase: core.PhasePreTool, ToolCallID: "call_1", ToolName: "bash", ToolInput: []byte(big)}, 2)
+	p := e.timeline("/api/sessions/" + sid() + "/timeline")
+	for _, en := range p.Entries {
+		if en["kind"] == "tool_call" {
+			n, _ := en["hook_omitted_bytes"].(float64)
+			if en["input_differs"] != true || n < 100 || len(en["hook_input"].(string))+int(n) != len(big) {
+				t.Fatalf("tool call = hook_omitted_bytes %v, hook_input len %d", en["hook_omitted_bytes"], len(en["hook_input"].(string)))
+			}
+			return
+		}
+	}
+	t.Fatal("no tool call")
+}
+
 func TestAPITimeline_AgentLabels(t *testing.T) {
 	e := newAPIEnv(t)
 	e.toolSession(`{"a":1}`)

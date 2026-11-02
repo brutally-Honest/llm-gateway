@@ -179,7 +179,8 @@ export class SessionView extends HTMLElement {
       }
       case "hook_event": {
         const id = e.tool_call_id ? ` (${e.tool_call_id})` : "";
-        const div = el("div", "entry hook-event muted", `hook ${e.phase || ""} ${e.name || ""}${id}`.replace(/\s+/g, " ").trim());
+        const head = e.phase === "unknown" ? `hook unknown: ${e.text || ""}` : `hook ${e.phase || ""} ${e.name || ""}`;
+        const div = el("div", "entry hook-event muted", `${head}${id}`.replace(/\s+/g, " ").trim());
         for (const text of harnessLabels(e)) div.append(" ", el("span", "badge harness", text));
         return div;
       }
