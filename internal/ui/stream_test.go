@@ -116,7 +116,7 @@ func (s *sse) next() sseEvent {
 func (s *sse) nextData() sseEvent {
 	s.t.Helper()
 	for {
-		if ev := s.next(); ev.event != "" && !(s.skipEmptyHooks && ev.event == "hooks" && ev.data == "[]") {
+		if ev := s.next(); ev.event != "" && (!s.skipEmptyHooks || ev.event != "hooks" || ev.data != "[]") {
 			return ev
 		}
 	}
