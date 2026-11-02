@@ -879,20 +879,22 @@ func TestStream_SessionSnapshotWithoutRowSendsNoSummary(t *testing.T) {
 	}
 }
 
-// saveToolExchange stores an exchange with a tool call and usage at base+at seconds.
+// saveToolExchange stores an exchange with a tool call and usage at base+at seconds. Its
+// message hash is unique per exchange, as a real tool call's id makes it: a shared hash
+// would make a later exchange look like a resend of this one (003 AC13).
 func (e *streamEnv) saveToolExchange(id string, at int) {
 	e.t.Helper()
 	e.save(id, "k", "cc", at)
 	mp, _ := json.Marshal(map[string]any{"role": "assistant", "blocks": []map[string]string{{"hash": sha("msg"), "type": "text"}}})
 	evs := []core.StoredEvent{
 		{Seq: 0, Kind: core.KindRequest, Payload: []byte(`{"model":"m1"}`)},
-		{Seq: 1, Kind: core.KindMessage, ContentHash: sha("m"), Payload: mp},
+		{Seq: 1, Kind: core.KindMessage, ContentHash: sha("m" + id), Payload: mp},
 		{Seq: 2, Kind: core.KindToolCall, ToolCallID: "call_" + id, ContentHash: sha("in"),
 			Payload: []byte(`{"name":"bash","id":"call_` + id + `"}`)},
 		{Seq: 3, Kind: core.KindUsage, Payload: []byte(`{"input_tokens":10,"output_tokens":5}`)},
 	}
 	contents := []core.Content{{Hash: sha("msg"), Bytes: []byte(`{"type":"text","text":"run"}`)},
-		{Hash: sha("m"), Bytes: []byte(sha("m"))}, {Hash: sha("in"), Bytes: []byte(`{}`)}}
+		{Hash: sha("m" + id), Bytes: []byte(sha("m" + id))}, {Hash: sha("in"), Bytes: []byte(`{}`)}}
 	if err := e.s.SaveParse(e.t.Context(), id, core.PrincipalLocal, core.ParseOK, evs, contents); err != nil {
 		e.t.Fatal(err)
 	}
@@ -917,8 +919,17 @@ func TestLive_SessionHeaderMatchesReloadAfterCommits(t *testing.T) {
 	if err := json.Unmarshal([]byte(e.reload()), &want); err != nil {
 		t.Fatal(err)
 	}
-	if got.ToolCalls == 0 || got.ExchangeCount != 3 || !reflect.DeepEqual(got, want) {
+	if got.ToolCalls != 2 || got.ExchangeCount != 3 || !reflect.DeepEqual(got, want) {
 		t.Fatalf("live header %+v != reload %+v", got, want)
+	}
+	var calls []any
+	for _, en := range e.freshTimeline() {
+		if en["kind"] == "tool_call" {
+			calls = append(calls, en["tool_call_id"])
+		}
+	}
+	if !reflect.DeepEqual(calls, []any{"call_b", "call_c"}) {
+		t.Fatalf("timeline tool calls = %v, want call_b and call_c", calls)
 	}
 }
 
