@@ -421,16 +421,19 @@ func readLive(ctx context.Context, d Deps, who sessIdent, ids []string, summary,
 	c := d.Reader.WithContext(ctx)
 	var m liveMsg
 	if summary {
+		// No stored row means no summary to send, not a failed read.
 		row, err := c.SessionByKey(who.principal, who.client, who.name)
-		if err != nil {
+		switch {
+		case err == nil:
+			st, err := timeline.SessionStats(c, row)
+			if err != nil {
+				return liveMsg{}, err
+			}
+			s := buildSummary(who.id(), row, st, d.now())
+			m.Summary = &s
+		case !errors.Is(err, store.ErrNotFound):
 			return liveMsg{}, err
 		}
-		st, err := timeline.SessionStats(c, row)
-		if err != nil {
-			return liveMsg{}, err
-		}
-		s := buildSummary(who.id(), row, st, d.now())
-		m.Summary = &s
 	}
 	if entries {
 		all, err := sessionExchanges(c, who)
