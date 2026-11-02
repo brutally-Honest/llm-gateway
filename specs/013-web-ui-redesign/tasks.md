@@ -1,12 +1,12 @@
 ---
 feature: 013-web-ui-redesign
-status: draft
+status: approved
 version: 2
-approved:
-approved-by:
-sha256:
-fingerprint:
-plan-fingerprint:
+approved: 2026-11-02T15:06:42Z
+approved-by: human
+sha256: ffde490c362104893aad201edcaf3db9a8e16bb2a0153af7d7682fe9ec297bb9
+fingerprint: bc69f654d2bdc59ba7ac798290565482996c39df523455e3661b3d92b8c3d5ea
+plan-fingerprint: a156ca1161755466280cc470fd9e1b5ab3bc62d0c4414131f90eddb81fb638ec
 previous: db06cef
 ---
 # Tasks — 013-web-ui-redesign
