@@ -26,6 +26,9 @@ export class StubElement {
   addEventListener(type, fn) {
     (this.listeners[type] ||= []).push(fn);
   }
+  focus() {
+    globalThis.document.activeElement = this;
+  }
   fire(type) {
     for (const fn of this.listeners[type] || []) fn({});
   }
@@ -34,7 +37,7 @@ export class StubElement {
 export function installDom() {
   globalThis.HTMLElement = StubElement;
   globalThis.customElements = { define() {} };
-  globalThis.document = { createElement: (tag) => new StubElement(tag) };
+  globalThis.document = { activeElement: null, createElement: (tag) => new StubElement(tag) };
 }
 
 // all returns every element under root, root included.

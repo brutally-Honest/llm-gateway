@@ -6,6 +6,7 @@ import { createSessionsPage, localMidnight, note } from "./sessions-page.js";
 import { initTheme } from "./theme.js";
 import { buildRoute, parseRoute } from "./route.js";
 import { handleKey, isTextInput } from "./keys.js";
+import { shouldFollow } from "./drawer.js";
 import { mountShell } from "./shell.js";
 import "./exchange-detail.js";
 import "./ungrouped-list.js";
@@ -31,6 +32,7 @@ let view = null;
 let page = null; // the Sessions page while it is shown
 let tpage = null; // the timeline page while a session is shown
 let todayTimer = null;
+let sessionSync = null; // the shown session, so a drawer URL change does not reload it
 
 async function load(kind, after) {
   const path = kind === "sessions" ? "sessions" : "ungrouped";
@@ -107,10 +109,17 @@ let seq = 0;
 // opens its stream. A stale load (the route changed meanwhile) is dropped.
 async function showSession(id) {
   const mine = ++seq;
-  const tl = createTimelinePage();
+  const tl = createTimelinePage({
+    nav: {
+      push: (r) => { location.hash = buildRoute(r); },
+      replace: (r) => location.replace(buildRoute(r)),
+      back: () => history.back(),
+    },
+  });
   app.replaceChildren(tl.el);
-  const st = { summary: null, entries: [], error: "", snapshotError: "" };
+  const st = { summary: null, entries: [], error: "", snapshotError: "", callId: parseRoute(location.hash).call || null, loaded: false };
   tpage = tl;
+  sessionSync = { id, apply: (call) => { st.callId = call || null; draw(); } };
   const draw = () => {
     tl.render(st);
     shell.setKeyBar(parseRoute(location.hash), tl.position());
@@ -135,6 +144,7 @@ async function showSession(id) {
       },
     );
     if (mine !== seq) return;
+    set({ loaded: true });
     if (!summary.active) return;
   } catch (e) {
     set({ error: e.message });
@@ -146,7 +156,7 @@ async function showSession(id) {
     return d.scrollHeight - (window.scrollY + window.innerHeight) <= 8;
   };
   const live = (patch) => {
-    const follow = nearBottom();
+    const follow = shouldFollow(tl.drawerOpen(), nearBottom());
     set(patch);
     if (follow && mine === seq) window.scrollTo(0, document.documentElement.scrollHeight);
   };
@@ -217,6 +227,12 @@ function showSessions() {
 }
 
 function route() {
+  const next = parseRoute(location.hash);
+  if (sessionSync && next.name === "session" && next.id === sessionSync.id) {
+    sessionSync.apply(next.call);
+    return;
+  }
+  sessionSync = null;
   if (view) view();
   view = null;
   page = null;
@@ -269,9 +285,14 @@ window.addEventListener("keydown", (e) => {
     else tpage.toggleHooks();
     shell.setKeyBar(parseRoute(location.hash), tpage.position());
   } else if (act.type === "openFirstCall" && tpage) {
-    const r = parseRoute(location.hash);
-    const id = tpage.firstCallId();
-    if (id) location.hash = buildRoute({ name: "session", id: r.id, call: id });
+    tpage.openFirstCall();
+  } else if (tpage && act.type === "call") {
+    e.preventDefault();
+    tpage.stepCall(act.delta);
+  } else if (tpage && act.type === "close") {
+    tpage.closeDrawer();
+  } else if (tpage && act.type === "backToTurn") {
+    tpage.backToTurn();
   } else if (act.type === "filter") {
     const f = app.querySelector("input");
     if (f) {

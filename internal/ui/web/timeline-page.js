@@ -1,5 +1,6 @@
 import { countText, hookLabel, timeElement } from "./entries.js";
 import { filterTurns, toolNames } from "./filters.js";
+import { createDrawer } from "./drawer.js";
 import { turnTarget } from "./keys.js";
 import { agentLabel, buildStats, buildTurns, contextBars, formatDuration, hooksLabel, railItems, stripBars } from "./model.js";
 import { buildRoute } from "./route.js";
@@ -28,7 +29,8 @@ function contextText(c) {
 // createTimelinePage builds the session page once; render(data) redraws it from
 // data = { summary, entries, error, snapshotError }. The toolbar is built once so typing
 // keeps focus across live re-renders. All text goes in through textContent.
-export function createTimelinePage() {
+export function createTimelinePage({ nav } = {}) {
+  const go = nav || { push() {}, replace() {}, back() {} };
   const root = el("section", "timeline-page");
   const header = el("section", "session-head");
   const stats = el("div", "stats");
@@ -53,7 +55,8 @@ export function createTimelinePage() {
   main.append(bar, status, list);
   const layout = el("div", "timeline-layout");
   layout.append(main, rail); // main first so the filter box leads the tab order; CSS puts the rail left
-  root.append(header, stats, strip, ctxLine, layout);
+  const drawer = createDrawer({ nav: go, turnHeading: () => headEls.get(turnCards()[current] && turnCards()[current].number) });
+  root.append(header, stats, strip, ctxLine, layout, drawer.el);
 
   // Show options apply at once (AC16); context per call starts on.
   const opts = { hooks: false, reminders: false, context: true, errorsOnly: false };
@@ -75,12 +78,14 @@ export function createTimelinePage() {
   let current = 0; // index among the numbered turns
   const cardEls = new Map(); // turn number -> its card element
   const railEls = new Map();
+  const headEls = new Map(); // turn number -> its heading, where focus falls back to
 
   const open = new Set(); // section keys and hook toggles that stay open across redraws
   let data = { summary: null, entries: [], error: "", snapshotError: "" };
   let tool = "";
   let built = null;
   let builtFor = null;
+  let drawn = { index: 0, total: 0 };
 
   input.addEventListener("input", () => drawList());
   picker.addEventListener("change", () => {
@@ -155,6 +160,7 @@ export function createTimelinePage() {
       const a = el("a", `strip-bar${b.muted ? " is-muted" : ""}${b.errored ? " is-error" : ""}${b.turnStart ? " turn-start" : ""}`);
       a.href = buildRoute({ name: "session", id: sessionId, call: b.exchangeId });
       a.title = b.title;
+      a.addEventListener("click", () => drawer.noteOpener(a));
       a.setAttribute("aria-label", b.title);
       a.style.width = `${b.width}px`;
       strip.append(a);
@@ -247,6 +253,7 @@ export function createTimelinePage() {
     const a = el("a", `call-link${c.errored ? " is-error" : ""}`, c.label);
     a.href = buildRoute({ name: "session", id: sessionId, call: c.exchangeId });
     const box = el("span", "call");
+    a.addEventListener("click", () => drawer.noteOpener(a));
     box.append(a);
     if (opts.context) box.append(el("span", "muted call-context", `context ${contextText(c.context)}`));
     if (c.agent) box.append(el("span", "badge harness", c.agent));
@@ -278,6 +285,8 @@ export function createTimelinePage() {
   function cardNode(card, sessionId, hooksOnlyNote) {
     const box = el("section", `turn card-${card.kind}${card.errored ? " is-error" : ""}`);
     const head = el("h2", "turn-head", card.heading);
+    head.setAttribute("tabindex", "-1");
+    if (card.kind === "turn") headEls.set(card.number, head);
     if (card.errored) head.append(el("span", "badge err", "✗ error"));
     box.append(head);
     if (card.prompt) box.append(promptNode(card));
@@ -308,6 +317,7 @@ export function createTimelinePage() {
     if (opts.errorsOnly) shown = shown.filter((c) => c.errored);
     const sessionId = data.summary ? data.summary.id : "";
     cardEls.clear();
+    headEls.clear();
     for (const card of shown) {
       const node = cardNode(card, sessionId, hooksNote);
       if (card.kind === "turn") cardEls.set(card.number, node);
@@ -330,9 +340,25 @@ export function createTimelinePage() {
       drawStrip();
       drawContext();
       drawList();
+      drawn = drawer.sync({ sessionId: data.summary ? data.summary.id : "", callId: data.callId || null, entries: data.entries, loaded: Boolean(data.loaded) });
+      if (drawn.missing) status.append(note("error", "No such call in this session."));
+    },
+    drawerOpen: () => drawer.isOpen(),
+    stepCall: (delta) => drawer.step(delta),
+    closeDrawer: () => drawer.close(),
+    // backToTurn closes the drawer and makes the call's turn the current one.
+    backToTurn() {
+      const id = drawer.callId();
+      const bar = stripBars(data.entries).find((b) => b.exchangeId === id);
+      if (bar && bar.turn) {
+        const i = turnCards().findIndex((c) => c.number === bar.turn);
+        if (i >= 0) current = i;
+      }
+      drawer.close();
     },
     // position is the key bar position: the current turn among the numbered turns.
     position() {
+      if (drawer.isOpen()) return { index: drawn.index, total: drawn.total };
       const total = turnCards().length;
       return { index: total ? current + 1 : 0, total };
     },
@@ -351,6 +377,12 @@ export function createTimelinePage() {
     firstCallId() {
       const card = turnCards()[current];
       return card && card.calls.length ? card.calls[0].exchangeId : "";
+    },
+    // openFirstCall opens the drawer on the current turn's first call, from its heading.
+    openFirstCall() {
+      const id = this.firstCallId();
+      const card = turnCards()[current];
+      if (id) drawer.openCall(id, headEls.get(card.number));
     },
     toggleHooks() {
       setOption("hooks", !opts.hooks);
