@@ -1,0 +1,119 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { buildTurns } from "../web/model.js";
+import { call, item } from "./fixtures.js";
+
+const prompt = (id, text) => item(id, "user_prompt", { role: "user", text });
+const reply = (id, text) => item(id, "assistant_text", { role: "assistant", text });
+
+test("turnStartsAtMainPrompt", () => {
+  const { turns, cards } = buildTurns([
+    call("a", 1), prompt("a", "one"), reply("a", "r1"),
+    call("b", 2, { prev: "a" }), item("b", "user_prompt", { text: "" }), reply("b", "r1b"),
+    call("c", 3, { prev: "b" }), prompt("c", "two"),
+  ]);
+  assert.equal(turns.length, 2);
+  assert.equal(cards.length, 2);
+  assert.equal(turns[0].number, 1);
+  assert.equal(turns[0].prompt.text, "one");
+  assert.deepEqual(turns[0].texts, ["r1", "r1b"]);
+  assert.equal(turns[0].counts.calls, 2);
+  assert.equal(turns[0].durationMs, 2000);
+  assert.deepEqual(turns[0].calls.map((c) => c.label), ["#1 · 1.0s", "#2 · 1.0s"]);
+  assert.equal(turns[1].prompt.text, "two");
+});
+
+test("otherThreadCallJoinsOpenTurn", () => {
+  const { turns } = buildTurns([
+    call("a", 1), prompt("a", "go"),
+    call("s", 2, { main: false, thread: 1 }), prompt("s", "sub prompt"),
+    call("b", 3, { prev: "a" }),
+  ]);
+  assert.equal(turns.length, 1);
+  assert.deepEqual(turns[0].calls.map((c) => c.n), [1, 2, 3]);
+});
+
+test("sideCallsNeverStartTurn", () => {
+  const { cards, turns } = buildTurns([
+    call("a", 1), prompt("a", "go"),
+    call("q", 2, { main: false, side: true, thread: 1 }), prompt("q", "quota"),
+    call("b", 3, { prev: "a" }),
+    call("p", 4, { main: false, side: true, thread: 2 }), prompt("p", "other"),
+  ]);
+  assert.equal(turns.length, 1);
+  assert.deepEqual(cards.map((c) => c.kind), ["turn", "side"]);
+  assert.equal(cards[1].number, null);
+  assert.deepEqual(cards[1].calls.map((c) => c.n), [2, 4]);
+  assert.equal(turns[0].prompt.text, "go");
+});
+
+test("beforeFirstPromptCard", () => {
+  const { cards, turns } = buildTurns([
+    call("x", 1, { main: false, side: true, thread: 1 }), prompt("x", "quota"),
+    call("y", 2, { thread: 2 }),
+    call("a", 3), prompt("a", "hello"),
+  ]);
+  assert.deepEqual(cards.map((c) => c.kind), ["before", "turn"]);
+  assert.equal(cards[0].number, null);
+  assert.deepEqual(cards[0].calls.map((c) => c.n), [1, 2]);
+  assert.equal(turns.length, 1);
+  assert.equal(turns[0].number, 1);
+});
+
+test("onlySideCallsOneCardNoTurns", () => {
+  const { cards, turns } = buildTurns([
+    call("x", 1, { main: false, side: true }), prompt("x", "quota"),
+    call("y", 2, { main: false, side: true }), prompt("y", "quota"),
+  ]);
+  assert.equal(turns.length, 0);
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].kind, "before");
+  assert.equal(cards[0].calls.length, 2);
+});
+
+test("hooksOnlySessionStartsTurnsAtPrompt", () => {
+  const h = (id, phase, extra = {}) => ({ id: `hook:${id}`, kind: "hook_event", phase, ...extra });
+  const r = buildTurns([
+    h(1, "prompt", { text: "first" }),
+    h(2, "pre_tool", { tool_call_id: "t1", name: "Bash" }), h(3, "post_tool", { tool_call_id: "t1", name: "Bash" }),
+    h(4, "prompt", { text: "second" }),
+    h(5, "pre_tool", { tool_call_id: "t2", name: "Read" }), h(6, "post_tool_failed", { tool_call_id: "t2", name: "Read" }),
+  ]);
+  assert.equal(r.turns.length, 2);
+  assert.match(r.note, /no model calls/);
+  assert.equal(r.turns[0].tools[0].chip.text, "ok");
+  assert.equal(r.turns[1].tools[0].chip.text, "failed");
+  assert.equal(r.turns[0].calls.length, 0);
+  assert.equal(r.turns[0].hooksOnly, true);
+});
+
+test("erroredSideCallStillRed", () => {
+  const { cards } = buildTurns([
+    call("a", 1), prompt("a", "go"),
+    call("q", 2, { main: false, side: true, status: 500 }),
+    item("q", "error", { text: "boom" }),
+  ]);
+  const side = cards.find((c) => c.kind === "side");
+  assert.equal(side.errored, true);
+  assert.equal(side.calls[0].errored, true);
+  assert.equal(side.calls[0].errorWord, "error");
+  assert.equal(cards[0].errored, false);
+});
+
+test("agentLabelAndErrorMarkKept", () => {
+  const { turns } = buildTurns([
+    call("a", 1), prompt("a", "go"),
+    item("a", "tool_call", { name: "Agent", tool_call_id: "t1", state: "asked+ran+reported", outcome: "succeeded" }),
+    call("s", 2, { main: false, thread: 1 }),
+    item("s", "tool_call", { name: "Read", tool_call_id: "t2", agent_id: "ag1", agent_type: "explore", state: "pending" }),
+    item("s", "tool_result", { tool_call_id: "t2", is_error: true }),
+    item("s", "error", { text: "x" }),
+  ]);
+  const t = turns[0];
+  assert.equal(t.calls[1].agent, "agent explore ag1");
+  assert.equal(t.calls[1].errored, true);
+  assert.equal(t.tools[1].agent, "agent explore ag1");
+  assert.equal(t.tools[1].resultError, true);
+  assert.equal(t.tools[0].agent, "");
+  assert.equal(t.tools[0].chip.text, "ok");
+});
