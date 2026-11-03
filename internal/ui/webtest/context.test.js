@@ -68,7 +68,7 @@ test("contextLineIsAnSvgPolylineWithADotPerCall", async () => {
   const es = [call("a", 1, { usage: u(100, 0, 0) }), call("q", 2, { main: false, side: true }), call("b", 3, { prev: "a", usage: u(300, 0, 0) })];
   p.render({ summary, entries: es, error: "", snapshotError: "" });
   const [line] = withClass(p.el, "context-line");
-  const svg = line.children[0];
+  const svg = line.children[0].children[0]; // inside the block that sizes it
   assert.equal(svg.tagName, "svg");
   assert.equal(svg.attrs.role, "img");
   assert.match(svg.attrs["aria-label"], /over 2 calls/);
@@ -78,6 +78,44 @@ test("contextLineIsAnSvgPolylineWithADotPerCall", async () => {
   const dots = kids.filter((e) => e.tagName === "circle");
   assert.equal(dots.length, 2);
   assert.match(dots[1].children[0].textContent, /#3 · context 300/);
+});
+
+test("plotFitsItsBlockAndFollowsResize", async () => {
+  installDom();
+  const { fitContextPlot } = await import("../web/plot.js");
+  const watchers = [];
+  globalThis.ResizeObserver = class {
+    constructor(fire) { this.fire = fire; this.ended = false; watchers.push(this); }
+    observe() {}
+    disconnect() { this.ended = true; }
+  };
+  try {
+    const es = [call("a", 1, { usage: u(100, 0, 0) }), call("b", 2, { usage: u(300, 0, 0) })];
+    const widths = [];
+    const host = fitContextPlot((w) => { widths.push(w); return contextPlot(es, w); });
+    const svg = () => host.children[0];
+    const points = () => all(svg()).find((e) => e.tagName === "polyline").attrs.points;
+    assert.equal(svg().attrs.viewBox, "0 0 800 60"); // not in the page yet
+    assert.equal(svg().attrs.preserveAspectRatio, undefined); // never stretched
+    host.clientWidth = 400;
+    watchers[0].fire();
+    assert.equal(svg().attrs.viewBox, "0 0 400 60");
+    assert.equal(points(), "20,52 380,8");
+    assert.equal(all(svg()).find((e) => e.tagName === "line").attrs.x2, "400");
+    watchers[0].fire(); // same width: not redrawn
+    assert.deepEqual(widths, [800, 400]);
+    host.clientWidth = 250;
+    watchers[0].fire();
+    assert.equal(svg().attrs.viewBox, "0 0 250 60");
+    assert.equal(points(), "20,52 230,8");
+    host.isConnected = false; // left the page
+    host.clientWidth = 0;
+    watchers[0].fire();
+    assert.equal(watchers[0].ended, true);
+    assert.equal(svg().attrs.viewBox, "0 0 250 60");
+  } finally {
+    delete globalThis.ResizeObserver;
+  }
 });
 
 test("contextLineKeepsTheNoMainCallsNote", async () => {

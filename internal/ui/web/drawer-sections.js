@@ -1,5 +1,5 @@
 import { agentLabel, callNumbers, contextOf, contextPlot, deltaFor } from "./model.js";
-import { contextPlotNode } from "./plot.js";
+import { fitContextPlot } from "./plot.js";
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -48,7 +48,7 @@ function contextSection(call, entries, detail) {
     body.push(fact("Change since previous call", `${d.value > 0 ? "+" : ""}${d.value}${from ? ` since #${from}` : ""}`));
   }
   const plot = contextPlot(entries);
-  if (!plot.note) body.push(contextPlotNode(plot, call.exchange_id));
+  if (!plot.note) body.push(fitContextPlot((width) => contextPlot(entries, width), call.exchange_id));
   const here = plot.points.some((p) => p.exchangeId === call.exchange_id);
   body.push(el("p", "muted", plot.note || (here ? "this call is marked" : "this call is not on the main thread plot")));
   return section("Context", "how full the context was, and how it moved", ...body);

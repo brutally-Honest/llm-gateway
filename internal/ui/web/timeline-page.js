@@ -3,7 +3,7 @@ import { filterTurns, toolNames } from "./filters.js";
 import { createDrawer } from "./drawer.js";
 import { turnTarget } from "./keys.js";
 import { agentLabel, buildStats, buildTurns, contextPlot, formatDuration, hooksLabel, railItems, stripBars } from "./model.js";
-import { contextPlotNode } from "./plot.js";
+import { fitContextPlot } from "./plot.js";
 import { buildRoute } from "./route.js";
 import { countedChips, note } from "./sessions-page.js";
 import { chipNode, copyButton, toolRowNode, truncatedLink } from "./tool-card.js";
@@ -177,7 +177,7 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
       ctxLine.append(note("muted", plot.note));
       return;
     }
-    ctxLine.append(contextPlotNode(plot));
+    ctxLine.append(fitContextPlot((width) => contextPlot(data.entries, width)));
   }
 
   function drawHeader() {
