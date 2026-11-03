@@ -159,10 +159,18 @@ test("contextPartsAndDelta", async () => {
   assert.match(t, /Cache write: 30/);
   assert.match(t, /Cache read: 10/);
   assert.match(t, /\+60 since #1/);
-  const bars = withClass(s.drawer, "context-bar");
-  assert.equal(bars.length, 2);
-  assert.equal(withClass(s.drawer, "is-this").length, 1);
-  assert.match(withClass(s.drawer, "is-this")[0].title, /#2/);
+  const plot = byTag(s.drawer, "svg");
+  assert.equal(plot.length, 1);
+  assert.equal(plot[0].attrs.class, "ctx-svg"); // the main page's plot, styled the same
+  assert.equal(byTag(s.drawer, "polyline")[0].attrs.points, "20,52 780,8");
+  const dots = byTag(s.drawer, "circle");
+  assert.equal(dots.length, 2);
+  const marked = dots.filter((d) => d.attrs.class === "is-this");
+  assert.equal(marked.length, 1);
+  assert.equal(marked[0], dots[1]);
+  assert.equal(marked[0].attrs.r, "6");
+  assert.match(textOf(marked[0]), /#2 · context 160 · this call/);
+  assert.match(s.text(), /this call is marked/);
 });
 
 test("messagesMarkedCarriedOrNew", async () => {

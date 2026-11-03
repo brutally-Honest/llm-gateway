@@ -1,4 +1,5 @@
-import { agentLabel, callNumbers, contextBars, contextOf, deltaFor } from "./model.js";
+import { agentLabel, callNumbers, contextOf, contextPlot, deltaFor } from "./model.js";
+import { contextPlotNode } from "./plot.js";
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -46,19 +47,10 @@ function contextSection(call, entries, detail) {
     const from = callNumbers(entries).get(d.from);
     body.push(fact("Change since previous call", `${d.value > 0 ? "+" : ""}${d.value}${from ? ` since #${from}` : ""}`));
   }
-  const { bars, note } = contextBars(entries);
-  const trend = el("div", "drawer-trend");
-  trend.setAttribute("aria-label", "Context trend");
-  for (const b of bars) {
-    const mine = b.exchangeId === call.exchange_id;
-    const c = el("span", `context-bar${mine ? " is-this" : ""}`);
-    c.title = mine ? `${b.title} · this call` : b.title;
-    c.style.height = `${(b.pct / 50).toFixed(2)}rem`;
-    trend.append(c);
-  }
-  body.push(trend);
-  const here = bars.some((b) => b.exchangeId === call.exchange_id);
-  body.push(el("p", "muted", note || (here ? "this call is marked" : "this call is not on the main thread plot")));
+  const plot = contextPlot(entries);
+  if (!plot.note) body.push(contextPlotNode(plot, call.exchange_id));
+  const here = plot.points.some((p) => p.exchangeId === call.exchange_id);
+  body.push(el("p", "muted", plot.note || (here ? "this call is marked" : "this call is not on the main thread plot")));
   return section("Context", "how full the context was, and how it moved", ...body);
 }
 

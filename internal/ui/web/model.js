@@ -319,17 +319,6 @@ export function railItems(cards) {
   });
 }
 
-// contextBars is the context line: one column per main-thread call, height by its share
-// of the largest context, with the value on hover (AC12).
-export function contextBars(entries) {
-  const { points, note } = contextSeries(entries);
-  const max = Math.max(1, ...points.map((p) => p.value));
-  return {
-    note,
-    bars: points.map((p) => ({ ...p, pct: Math.max(2, Math.round((p.value / max) * 100)), title: `#${p.n} · context ${p.value}` })),
-  };
-}
-
 export const PLOT_WIDTH = 800;
 export const PLOT_HEIGHT = 60;
 const PLOT_PAD_X = 20;

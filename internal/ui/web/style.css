@@ -102,7 +102,7 @@ footer#keybar kbd { font: inherit; color: var(--fg); border: 1px solid var(--lin
 .ctx-svg line { stroke: var(--line); }
 .ctx-svg polyline { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .ctx-svg circle { fill: var(--accent); }
-.context-bar { flex: none; width: 4px; background: var(--muted); }
+.ctx-svg circle.is-this { fill: var(--fg); stroke: var(--accent); stroke-width: 2; }
 
 .drawer { position: fixed; top: 0; right: 0; bottom: 2.2rem; width: min(40rem, 100vw); overflow-y: auto; background: var(--surface); color: var(--fg); border-left: 1px solid var(--line); padding: .8rem 1rem; z-index: 5; }
 .drawer[hidden] { display: none; }
@@ -113,8 +113,6 @@ footer#keybar kbd { font: inherit; color: var(--fg); border: 1px solid var(--lin
 .drawer-block { margin-bottom: .8rem; }
 .drawer-reason { margin: 0 0 .3rem; font-size: .8rem; }
 .drawer-fact { font-size: .85rem; }
-.drawer-trend { display: flex; align-items: flex-end; gap: 2px; min-height: 1.2rem; }
-.drawer-trend .context-bar.is-this { background: var(--fg); outline: 1px solid var(--fg); }
 .drawer-messages { list-style: none; padding: 0; margin: .3rem 0; }
 .drawer-messages li { padding: .15rem 0; font-size: .85rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .drawer-messages .is-carried { opacity: .7; }
