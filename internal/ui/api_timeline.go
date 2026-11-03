@@ -7,7 +7,6 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/brutally-honest/llm-gateway/internal/store"
-	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
 
 const (
@@ -19,17 +18,6 @@ type timelinePage struct {
 	Entries     []entryJSON `json:"entries"`
 	NextAfter   *string     `json:"next_after"`
 	StreamSince int64       `json:"stream_since"`
-}
-
-// snapshotSource serves the exchanges of one snapshot read, so the timeline and
-// stream_since describe the same rows.
-type snapshotSource struct {
-	*store.CtxReader
-	exs []store.ExchangeRow
-}
-
-func (s snapshotSource) SessionExchanges(string, string, string) ([]store.ExchangeRow, error) {
-	return s.exs, nil
 }
 
 func mountExchanges(api chi.Router, d Deps) {
@@ -92,12 +80,12 @@ func (d Deps) getTimeline(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := storeCtx(r)
 	defer cancel()
 	c := d.Reader.WithContext(ctx)
-	rows, _, err := c.SessionSnapshot(principal, client, key)
+	bs, err := buildSession(c, sessIdent{principal, client, key}, d.Rules[client], entryCut)
 	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
-	if len(rows) == 0 {
+	if bs.rows == 0 {
 		// A session known only from hook events has a timeline of hook lines (AC25).
 		hooks, err := c.HookEvents(principal, client, key)
 		if err != nil {
@@ -109,25 +97,7 @@ func (d Deps) getTimeline(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	exs := make([]store.ExchangeRow, len(rows))
-	byID := make(map[string]store.ExchangeRow, len(rows))
-	rowID := make(map[string]int64, len(rows))
-	for i, x := range rows {
-		exs[i] = x.ExchangeRow
-		byID[x.RequestID] = x.ExchangeRow
-		rowID[x.RequestID] = x.RowID
-	}
-	session := store.SessionRow{PrincipalID: principal, Client: client, SessionKey: key}
-	entries, _, err := timeline.BuildWithUsage(snapshotSource{c, exs}, session, timeline.Options{Cut: entryCut})
-	if err != nil {
-		writeStoreErr(w, err)
-		return
-	}
-	facts, err := callFacts(snapshotSource{c, exs}, entries, d.Rules[client], byID)
-	if err != nil {
-		writeStoreErr(w, err)
-		return
-	}
+	entries, byID, facts, rowID := bs.entries, bs.byID, bs.facts, bs.rowID
 	all := mapEntries(entries, byID, facts, d.Rules[client])
 	pos := make([]position, len(all))
 	for i, e := range all {

@@ -15,7 +15,6 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/capture"
 	"github.com/brutally-honest/llm-gateway/internal/logging"
 	"github.com/brutally-honest/llm-gateway/internal/store"
-	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
 
 const (
@@ -471,27 +470,11 @@ func readLive(ctx context.Context, d Deps, who sessIdent, ids []string, summary,
 // Entries are [] when the session has no hook line, never null). Exchanges with no entry
 // are left out.
 func sessionExchanges(c *store.CtxReader, who sessIdent, rules ClientRules) ([]liveExchange, error) {
-	rows, _, err := c.SessionSnapshot(who.principal, who.client, who.name)
+	bs, err := buildSession(c, who, rules, entryCut)
 	if err != nil {
 		return nil, err
 	}
-	exs := make([]store.ExchangeRow, len(rows))
-	byID := make(map[string]store.ExchangeRow, len(rows))
-	rowID := make(map[string]int64, len(rows))
-	for i, x := range rows {
-		exs[i] = x.ExchangeRow
-		byID[x.RequestID] = x.ExchangeRow
-		rowID[x.RequestID] = x.RowID
-	}
-	session := store.SessionRow{PrincipalID: who.principal, Client: who.client, SessionKey: who.name}
-	built, _, err := timeline.BuildWithUsage(snapshotSource{c, exs}, session, timeline.Options{Cut: entryCut})
-	if err != nil {
-		return nil, err
-	}
-	facts, err := callFacts(snapshotSource{c, exs}, built, rules, byID)
-	if err != nil {
-		return nil, err
-	}
+	built, facts, byID, rowID := bs.entries, bs.facts, bs.byID, bs.rowID
 	var out []liveExchange
 	at := map[string]int{}
 	for _, e := range mapEntries(built, byID, facts, rules) {

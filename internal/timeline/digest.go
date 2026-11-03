@@ -172,6 +172,12 @@ func UserTexts(src Source, ex store.ExchangeRow) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	return UserTextsOf(src, evs)
+}
+
+// UserTextsOf is UserTexts for events the caller has already loaded; src serves only
+// the message content.
+func UserTextsOf(src Source, evs []store.EventRow) ([]string, error) {
 	var out []string
 	for _, e := range evs {
 		if e.Kind != "message" {

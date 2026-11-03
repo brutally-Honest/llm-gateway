@@ -33,7 +33,8 @@ type callFactsJSON struct {
 // thread is main when it holds a user prompt and is not a sub-agent: its tool calls
 // carry an agent id or type, or its first prompt is the prompt of an agent tool call
 // made in another thread.
-func callFacts(src timeline.Source, built []timeline.Entry, rules ClientRules, exs map[string]store.ExchangeRow) (map[string]*callFactsJSON, error) {
+// evs holds the events already loaded for each request, so nothing is read twice.
+func callFacts(src timeline.Source, built []timeline.Entry, rules ClientRules, evs map[string][]store.EventRow) (map[string]*callFactsJSON, error) {
 	type call struct {
 		req    string
 		thread int
@@ -59,7 +60,7 @@ func callFacts(src timeline.Source, built []timeline.Entry, rules ClientRules, e
 			if e.Call == nil {
 				continue
 			}
-			texts, err := timeline.UserTexts(src, exs[e.RequestID])
+			texts, err := timeline.UserTextsOf(src, evs[e.RequestID])
 			if err != nil {
 				return nil, err
 			}

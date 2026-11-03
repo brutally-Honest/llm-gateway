@@ -162,7 +162,8 @@ func TestTimeline_SubAgentByAgentLabels(t *testing.T) {
 	}
 	// stub events: both calls hold a user prompt
 	src := &promptSource{}
-	facts, err := callFacts(src, built, testRules{}, map[string]store.ExchangeRow{"a": {RequestID: "a"}})
+	evs, _ := src.Events("a")
+	facts, err := callFacts(src, built, testRules{}, map[string][]store.EventRow{"a": evs})
 	if err != nil {
 		t.Fatal(err)
 	}

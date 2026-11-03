@@ -140,27 +140,18 @@ func (d Deps) getExchange(w http.ResponseWriter, r *http.Request) {
 // place the call among its threads; a section it cannot build gets a reason instead.
 func (d Deps) fillDrawer(c *store.CtxReader, ex store.ExchangeRow, out *exchangeJSON) error {
 	out.Messages, out.ResponseToolCallIDs = []exchangeMessageJSON{}, []string{}
-	exs := []store.ExchangeRow{ex}
+	who := sessIdent{ex.PrincipalID, ex.Client, ex.SessionKey}
+	var bs builtSession
+	var err error
 	if ex.SessionKey != "" {
-		var err error
-		if exs, err = c.SessionExchanges(ex.PrincipalID, ex.Client, ex.SessionKey); err != nil {
-			return err
-		}
+		bs, err = buildSession(c, who, d.Rules[ex.Client], 1)
+	} else {
+		bs, err = buildFrom(c, who, []store.ExchangeRow{ex}, d.Rules[ex.Client], 1)
 	}
-	byID := make(map[string]store.ExchangeRow, len(exs))
-	for _, x := range exs {
-		byID[x.RequestID] = x
-	}
-	src := snapshotSource{c, exs}
-	session := store.SessionRow{PrincipalID: ex.PrincipalID, Client: ex.Client, SessionKey: ex.SessionKey}
-	built, err := timeline.Build(src, session, timeline.Options{Cut: 1})
 	if err != nil {
 		return err
 	}
-	facts, err := callFacts(src, built, d.Rules[ex.Client], byID)
-	if err != nil {
-		return err
-	}
+	facts := bs.facts
 	f := facts[ex.RequestID]
 	if f != nil {
 		out.SideCall, out.PrevID, out.ThreadNew = f.SideCall, f.PrevID, f.Thread >= 0 && f.PrevID == ""
