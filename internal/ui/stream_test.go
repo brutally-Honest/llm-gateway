@@ -388,6 +388,63 @@ func TestStream_CommitOutOfRowIDOrderStillReachesPage(t *testing.T) {
 	}
 }
 
+// A late commit sends its own exchange and each call that directly continues it, since
+// prev_id changes on all of them: 1 + the direct children. A grandchild and a call of
+// another thread keep their bytes, so they are not resent.
+func TestStream_LateCommitResendsItsDirectChildrenOnly(t *testing.T) {
+	for children := range 4 {
+		t.Run(fmt.Sprintf("%d_children", children), func(t *testing.T) {
+			e := newStreamEnv(t, nil)
+			e.save("late", "k", "cc", 10)
+			shared := [][]any{{"user", text("q1")}, {"assistant", text("r1")}}
+			want := []string{"late"}
+			saved := 1
+			for i := range children {
+				id := fmt.Sprintf("child%d", i)
+				e.save(id, "k", "cc", 20+i)
+				e.parseMsgs(id, "ok", append(shared[:2:2], []any{"user", text(id)})...)
+				want = append(want, id)
+				saved++
+			}
+			if children > 0 {
+				e.save("grandchild", "k", "cc", 30)
+				e.parseMsgs("grandchild", "ok", append(shared[:2:2], []any{"user", text("child0")},
+					[]any{"assistant", text("r2")}, []any{"user", text("q3")})...)
+				saved++
+			}
+			e.save("other", "k", "cc", 40)
+			e.parseMsgs("other", "ok", []any{"user", text("another thread")})
+			e.save("marker", "k", "cc", 50)
+			saved += 2
+			s := e.open(e.sessionPath())
+			s.take(saved)
+
+			e.parseMsgs("late", "ok", shared...)
+			e.publish("late")
+			first := s.nextData()
+			if id := decodeEntries(t, first.data)[0]["exchange_id"]; first.event != "entries" || id != "late" {
+				t.Fatalf("the late commit's first event = %+v", first)
+			}
+			// A later commit closes the count: whatever came before its entries is the late one's.
+			got := []string{"late"}
+			e.parseMsgs("marker", "ok", []any{"user", text("marker")})
+			e.publish("marker")
+			for {
+				id := decodeEntries(t, s.nextData().data)[0]["exchange_id"].(string)
+				if id == "marker" {
+					break
+				}
+				got = append(got, id)
+			}
+			sort.Strings(got)
+			sort.Strings(want)
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("late commit sent %v, want %v", got, want)
+			}
+		})
+	}
+}
+
 func TestStream_CommitDuringSnapshotNotMissed(t *testing.T) {
 	var e *streamEnv
 	e = newStreamEnv(t, func(h *Hub) {
