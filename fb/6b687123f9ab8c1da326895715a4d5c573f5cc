@@ -1,0 +1,6 @@
+Spec: specs/013-web-ui-redesign/spec.md (AC8, AC20, AC38)
+Why this approach: human decision after the 21-call replay resent 15 exchanges for one late commit; every later #n changed, so the bytes changed.
+Thread was not in the decision's text but had to go too: it numbers threads in start order, so a late call in another thread moved it (TestStream_CommitOutOfRowIDOrderStillReachesPage fails with it back). The browser never read it; the server still uses it internally.
+Alternatives rejected: accept the resends; a compact renumbering event.
+Trade-off / known limit: a late call that changes a thread's main status (its first prompt) still changes every call of that thread.
+Verified by: TestStream_LateCommitOf21CallsResendsAtMostTheNextCall (sends c05, c06), mutation with n and with thread restored, callNumbersFollowStartThenExchangeId, lateCallRenumbersTheOpenDrawerWithoutMovingIt
