@@ -1,12 +1,12 @@
 ---
 feature: 013-web-ui-redesign
-status: draft
+status: approved
 version: 4
-approved:
-approved-by:
-sha256:
-fingerprint:
-plan-fingerprint:
+approved: 2026-11-03T15:33:37Z
+approved-by: human
+sha256: 34fbc5b1e5552e34d7cfa90682bf27d983174141dfd5f31bb7fc81890e82799f
+fingerprint: 29e02d7bc1bde2238d8cfb1d2ef590d574b2e906d3aa3b3ac8fe3efb87a41af0
+plan-fingerprint: 863ba78ddc3d516f28d2f1e104b907ac2b22340edc47f5975d7bb7a267988ce4
 previous: aa82289
 ---
 # Tasks — 013-web-ui-redesign
@@ -175,8 +175,54 @@ previous: aa82289
 - Size: M
 - Risk: high
 
+### T017 — Load events once per build
+- Do: in `internal/ui` add one `buildSession` that loads a session's events once and feeds both `callFacts` (now taking the loaded events instead of reading its own) and `timeline.BuildWithUsage`; `getTimeline`, `getExchange` and `sessionExchanges` call it. No caching yet, behaviour and JSON unchanged.
+- Tests: TestBuildSession_LoadsEventsOnce (counting source), TestCallFacts_UnchangedWithSharedEvents; the existing call-facts, timeline, exchange and stream tests stay green unchanged
+- AC: AC19 (rework), AC28 (rework), AC36 (rework)
+- Commit: refactor(ui): load session events once per timeline build
+- Depends: T016
+- Size: M
+- Risk: high
+
+### T018 — Cache timeline builds with singleflight and detached builds
+- Do: `TimelineCache` (mutex-guarded LRU keyed by session id and `SessionVersions` key; at most 4 sessions or about 512 MB estimated retained size; immutable entries) in `Deps.Timelines`, created when nil by `newRouter` and `newHub`; hand-written per-session singleflight (mutex and channels, no new dependency) for timeline and digest builds, run on a server-lifetime context so a build finishes and is cached after its request times out; `getTimeline` pages slice the cached build with the existing Index/Seq/Row token unchanged; every timeline and summary response gains additive `version` and `event_position`. `storeTimeout` and storage unchanged. Measure the retained size of a 2,000-call build and append it to `specs/013-web-ui-redesign/research.md` Notes (over about 128 MB: log it and continue); also append the follow-up note that incremental append-only builds are out of scope for 013.
+- Tests: TestTimelineCache_IdleSessionFivePagesOneBuild, TestTimelineCache_TimedOutBuildIsCachedAndRetryHits, TestTimelineCache_ConcurrentRequestsOneBuild, TestTimelineCache_LRUEvictsOldestSession, TestTimelineCache_SizeCapEvicts, TestDigestCache_TimedOutComputeIsCachedAndRetryHits, TestDigestCache_ConcurrentRequestsOneCompute, TestTimeline_ResponseCarriesVersionAndEventPosition; all under -race, counters not wall-clock
+- AC: AC1 (rework), AC3 (rework), AC36
+- Commit: feat(ui): cache session timeline builds
+- Depends: T017
+- Size: L
+- Risk: high
+
+### T019 — Serve live sessions from the cache and resume the stream
+- Do: per session at most one build running and one queued; a live event or version change during a build sets a dirty flag and triggers exactly one follow-up build; readers get the latest cached build at once while a rebuild runs (wait only when none is cached); `sessionExchanges` and stream snapshots use the cache and carry `version` and `event_position`; the stream resumes from exactly that position (rowid and hook id).
+- Tests: TestLiveBuild_BurstDuringBuildOneFollowUp, TestLiveBuild_RequestDuringRebuildGetsOlderBuildWithoutWaiting, TestLiveBuild_PagedPlusStreamEqualsFinalIdleBuild, TestStream_ResumesFromBuildPosition; existing stream resend-bound tests stay green; all under -race
+- AC: AC19 (rework), AC28 (rework), AC36
+- Commit: feat(ui): serve live sessions from the build cache
+- Depends: T018
+- Size: L
+- Risk: high
+
+### T020 — Pin cursor stability and retry a 504 once in the browser
+- Do: no change to the paging token; add the cursor test. In `internal/ui/web`, `api.js getJSON` throws an error carrying the HTTP status; `showSession` retries the session summary or first timeline page once on a 504 after about 1 s (injectable delay), showing "building session…" meanwhile, then shows the error; later pages and other errors are not retried.
+- Tests: TestTimelinePaging_CursorResolvesToSamePositionOnRebuiltTimeline (entries present in both builds); app.test.js: retriesSessionLoadOnceAfter504 (stubbed 504 then 200), secondFailureShowsTheError (504, 504), laterPage504IsNotRetried; the existing loadsEveryTimelinePage and error-display tests unchanged; TestWeb_NoCostOrContextPercent stays green
+- AC: AC36 (rework), AC19 (rework)
+- Commit: feat(ui): retry a session load once after a 504
+- Depends: T018
+- Size: M
+- Risk: low
+
+### T021 — Benchmark the build, log pprof and fix the 504 docs
+- Do: `BenchmarkTimeline_2000Calls` (cold build and cached page); re-run the pprof of research.md "Where one page's time goes" and append before/after build time, allocation and `store.Events` share to research.md Notes (append-only); fix the 504 message in `docs/manual-checks/seed-calls.mjs` and the timing line in `docs/manual-checks/013-web-ui.md` to state the real cause.
+- Tests: BenchmarkTimeline_2000Calls (measurement, not a behaviour test); make verify stays green
+- AC: none — measurement and doc fixes; the behaviour is proven in T017 to T020
+- Commit: docs(ui): log the timeline build numbers and fix the 504 notes
+- Depends: T020
+- Size: S
+- Risk: low
+
 ## Changelog
 - v1 (2026-11-02) — generated from the approved plan
 - v2 (2026-11-02) — reopened: CR-001: Plan: tool call chips are computed on the server
 - v3 (2026-11-03) — CR-002: T015 Tests line reworded (starts with "none new"); no other task changed
 - v4 (2026-11-03) — reopened: CR-003: Build each session timeline once, cache it, and serve pages and live updates from the cache
+- v4 (2026-11-03) — CR-003: added T017 to T021; T001 to T016 unchanged; the branch review over 80c6332..HEAD is the loop's own step, not a task
