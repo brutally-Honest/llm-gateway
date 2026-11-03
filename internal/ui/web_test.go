@@ -129,6 +129,24 @@ func TestWeb_GuardExemptsOnlyTheSVGNamespace(t *testing.T) {
 	}
 }
 
+// The browser takes side calls and reminders from the API and never reads message text to
+// decide (AC40). These strings are what the client rules match on, so no file of the web
+// client may hold them, in any case. Test inputs may: a fixture needs real text to show
+// the browser leaves it alone.
+func TestWeb_NoSideCallTextMatching(t *testing.T) {
+	files := webFiles(t)
+	if _, ok := files["model.js"]; !ok {
+		t.Fatal("the web files were not read")
+	}
+	for name, src := range files {
+		for _, bad := range []string{"quota", "<system-reminder>", "<session>", "write the title"} {
+			if strings.Contains(strings.ToLower(src), bad) {
+				t.Errorf("%s contains %q", name, bad)
+			}
+		}
+	}
+}
+
 func TestWeb_NoHTMLInjectionSinks(t *testing.T) {
 	sinks := []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "createContextualFragment", "srcdoc"}
 	for name, src := range webFiles(t) {
