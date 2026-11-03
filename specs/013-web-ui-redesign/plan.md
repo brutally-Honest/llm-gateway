@@ -1,13 +1,13 @@
 ---
 feature: 013-web-ui-redesign
-status: approved
-version: 3
-approved: 2026-11-03T03:09:54Z
-approved-by: human
-sha256: e71026bad79eb1acda9575d5cef8ecb19eea345fd13119fc81ac093107bd7793
-fingerprint: 40792e9f9f244622418bc1e71751c568a4276f734f811a5accfbc02bc642d056
-spec-fingerprint: 5c8ccf9abea20e2cea6fb75e71dc6bb5cb3fa777528b3ea6b27288ae8b3b9aeb
-previous: bec96fd
+status: draft
+version: 4
+approved:
+approved-by:
+sha256:
+fingerprint:
+spec-fingerprint:
+previous: aa82289
 ---
 # Plan — 013-web-ui-redesign
 
@@ -123,3 +123,4 @@ None.
 - v1 (2026-11-02) — first draft; errors stay all errors with added `main_errors`/`side_errors`; digest memo added
 - v2 (2026-11-02) — CR-001: chips are server-computed (3dc0b7c, 150baf7); hooks-only tools show unmatched
 - v3 (2026-11-03) — CR-002: plan brought in line with the build (call numbering in the browser, live resend bound, shared SVG plot, SVG guard exemption, server reminder split, shared `NewMessages`, `Deps.Digests`); CR-001's edits applied
+- v4 (2026-11-03) — reopened: CR-003: Build each session timeline once, cache it, and serve pages and live updates from the cache

@@ -1,13 +1,13 @@
 ---
 feature: 013-web-ui-redesign
-status: approved
-version: 3
-approved: 2026-11-03T03:09:55Z
-approved-by: human
-sha256: 88dea41986b60854ec41dbec627ea447bdfd9ee057354f79d72c7f08d9e6707d
-fingerprint: 9376b0842161fc04af8665a24ade7a3a16d49e50152c203bda0b5dcd274b2c6d
-plan-fingerprint: 40792e9f9f244622418bc1e71751c568a4276f734f811a5accfbc02bc642d056
-previous: bec96fd
+status: draft
+version: 4
+approved:
+approved-by:
+sha256:
+fingerprint:
+plan-fingerprint:
+previous: aa82289
 ---
 # Tasks — 013-web-ui-redesign
 
@@ -179,3 +179,4 @@ previous: bec96fd
 - v1 (2026-11-02) — generated from the approved plan
 - v2 (2026-11-02) — reopened: CR-001: Plan: tool call chips are computed on the server
 - v3 (2026-11-03) — CR-002: T015 Tests line reworded (starts with "none new"); no other task changed
+- v4 (2026-11-03) — reopened: CR-003: Build each session timeline once, cache it, and serve pages and live updates from the cache
