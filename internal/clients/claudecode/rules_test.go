@@ -28,7 +28,7 @@ func TestRules_PlainPromptNotSideCall(t *testing.T) {
 	}
 }
 
-func TestRules_StripReminders(t *testing.T) {
+func TestRules_StripsReminders(t *testing.T) {
 	got := (Profile{}).StripReminders("<system-reminder>a</system-reminder>hello <system-reminder>b</system-reminder>world")
 	if got != "hello world" {
 		t.Fatalf("got %q", got)
