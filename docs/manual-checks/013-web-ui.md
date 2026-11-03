@@ -17,9 +17,23 @@ XDG_DATA_HOME=/tmp/ui013-data make run      # in the background
 
 Open <http://127.0.0.1:7199>. Use a session with traffic: run `claude` through the proxy as
 in [010-hooks-ui.md](010-hooks-ui.md), or send requests to `http://127.0.0.1:7197/anthropic`.
-The 2,000-call check needs one session with 2,000 captured calls. Build it in the scratch
-data directory only (for example a loop of requests through the proxy to a local stub
-upstream), never in the real store.
+
+Steps 13 to 15 need one session with 2,000 captured calls. Stop the gateway if it is running,
+then start it against the seed's stub upstream, on the scratch data directory only:
+
+```sh
+XDG_DATA_HOME=/tmp/ui013-data \
+  GATEWAY_UPSTREAMS_ANTHROPIC_BASE_URL=http://127.0.0.1:7196 make run   # in the background
+node docs/manual-checks/seed-calls.mjs --live                          # leave it running
+```
+
+The seed takes about a minute and prints `seeded 2000 calls` once all of them are captured;
+any shortfall exits 1 instead. `--live` then adds a call every 2 s, which keeps the session
+active and gives steps 14 and 15 their live traffic. Stop it with Ctrl-C after step 15. With
+the setting above, the stub answers every call and nothing reaches a provider. Without it,
+the first call goes to the configured upstream with a fake key, and the seed stops there. A
+turn is 10 calls, most with a tool use, and one call in 50 is an error. The session is the
+newest one on the Sessions page.
 
 Use the keyboard only for steps 1 to 7. Do not touch the mouse there.
 
@@ -52,4 +66,4 @@ expectation.
 
 ## Cleanup
 
-Stop the gateway, then remove the scratch data directory `/tmp/ui013-data`.
+Stop the seed and the gateway, then remove the scratch data directory `/tmp/ui013-data`.
