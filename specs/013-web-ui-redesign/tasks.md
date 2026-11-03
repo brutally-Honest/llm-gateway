@@ -1,12 +1,12 @@
 ---
 feature: 013-web-ui-redesign
-status: draft
+status: approved
 version: 3
-approved:
-approved-by:
-sha256:
-fingerprint:
-plan-fingerprint:
+approved: 2026-11-03T03:09:55Z
+approved-by: human
+sha256: 88dea41986b60854ec41dbec627ea447bdfd9ee057354f79d72c7f08d9e6707d
+fingerprint: 9376b0842161fc04af8665a24ade7a3a16d49e50152c203bda0b5dcd274b2c6d
+plan-fingerprint: 40792e9f9f244622418bc1e71751c568a4276f734f811a5accfbc02bc642d056
 previous: bec96fd
 ---
 # Tasks — 013-web-ui-redesign
@@ -158,7 +158,7 @@ previous: bec96fd
 
 ### T015 — Update docs and add the manual check
 - Do: add `docs/manual-checks/013-web-ui.md` (keyboard-only walk-through, both themes, contrast spot check, 2,000-call render under 2 s, drawer focus); update `docs/manual-checks/010-hooks-ui.md` and `docs/clients/claude-code-hooks.md` for the short chip text; delete the old stylesheet rules and files nothing imports any more.
-- Tests: TestWeb_ReferencedAssetsAreEmbedded and make verify stay green; none new — docs and dead-code removal only
+- Tests: none new — docs and dead-code removal only; TestWeb_ReferencedAssetsAreEmbedded and make verify stay green
 - AC: AC33, AC34
 - Commit: docs(ui): add the 013 manual check and update chip text
 - Depends: T014
@@ -178,4 +178,4 @@ previous: bec96fd
 ## Changelog
 - v1 (2026-11-02) — generated from the approved plan
 - v2 (2026-11-02) — reopened: CR-001: Plan: tool call chips are computed on the server
-- v3 (2026-11-03) — reopened: CR-002: Plan: bring plan.md in line with the built code (CR-001 edits, fix batch, decisions batch)
+- v3 (2026-11-03) — CR-002: T015 Tests line reworded (starts with "none new"); no other task changed
