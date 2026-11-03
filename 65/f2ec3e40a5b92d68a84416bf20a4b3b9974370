@@ -1,0 +1,4 @@
+Spec: specs/013-web-ui-redesign/spec.md (AC35)
+Why this approach: human decision to replace the svg-ns workaround with an explicit exemption. A probe showed the guard passed with https://evil.example.com/x.js in plot.js, so the exemption needed a guard that fires.
+Trade-off / known limit: a // preceded by anything but a colon or quote is still read as a comment, so " //evil.example.com" with a leading space is not caught.
+Verified by: TestWeb_GuardExemptsOnlyTheSVGNamespace, mutations (exemption removed, old stripper, any w3.org url exempt).
