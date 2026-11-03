@@ -8,15 +8,19 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
 
-// callFactsJSON is what the browser needs to place a model call: its start-order
-// number over every thread, the conversation thread, the call it continues, whether
-// the client's rules call it a side call, and whether it is a main-thread call.
+// callFactsJSON is what the browser needs to place a model call: the call it continues,
+// whether the client's rules call it a side call, and whether it is a main-thread call.
 // Carried and New split the request's messages into those shared with PrevID and the
 // rest. A call that was folded (its events were not parsed) has thread -1 and is never
 // main.
+//
+// Nothing on the wire may depend on a call's position among other calls, or one late
+// commit would change, and so resend, every later exchange. So the call's number is not
+// sent: the browser numbers calls from the entry's start and exchange id. Thread is kept
+// off the wire for the same reason, since a late call that starts a thread renumbers the
+// threads after it.
 type callFactsJSON struct {
-	N        int    `json:"n"`
-	Thread   int    `json:"thread"`
+	Thread   int    `json:"-"`
 	PrevID   string `json:"prev_id"`
 	SideCall bool   `json:"side_call"`
 	Main     bool   `json:"main"`
@@ -48,7 +52,7 @@ func callFacts(src timeline.Source, built []timeline.Entry, rules ClientRules, e
 		switch e.Kind {
 		case timeline.KindFolded:
 			if e.Call != nil {
-				facts[e.RequestID] = &callFactsJSON{N: len(calls) + 1, Thread: -1}
+				facts[e.RequestID] = &callFactsJSON{Thread: -1}
 				calls = append(calls, call{req: e.RequestID, thread: -1})
 			}
 		case timeline.KindExchange:
@@ -79,7 +83,7 @@ func callFacts(src timeline.Source, built []timeline.Entry, rules ClientRules, e
 				}
 			}
 			reqThread[e.RequestID] = e.Thread
-			facts[e.RequestID] = &callFactsJSON{N: len(calls) + 1, Thread: e.Thread, PrevID: e.PrevID,
+			facts[e.RequestID] = &callFactsJSON{Thread: e.Thread, PrevID: e.PrevID,
 				SideCall: c.side, Carried: e.Carried, New: timeline.NewMessages(e.RequestMessages, e.Carried)}
 			calls = append(calls, c)
 		case timeline.KindToolCall:

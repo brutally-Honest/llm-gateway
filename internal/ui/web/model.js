@@ -1,5 +1,16 @@
+import { compareEntries } from "./entries.js";
+
 // Pure model over timeline entries: chips, turns, call links and the stats row. The
 // browser never classifies by message text; every fact comes from the API fields.
+
+// callNumbers maps each model call's exchange id to its #n: its position among the
+// session's calls in start order, counting every thread, with the exchange id breaking a
+// tie. The server sends only that order key, so a late commit renumbers the calls here
+// without resending them. Links and drawer URLs stay keyed by exchange id.
+export function callNumbers(entries) {
+  const calls = entries.filter((e) => e.kind === "model_call").sort(compareEntries);
+  return new Map(calls.map((e, i) => [e.exchange_id, i + 1]));
+}
 
 const CHIPS = {
   ok: { key: "ok", glyph: "✓", text: "ok" },
@@ -114,6 +125,7 @@ export function buildTurns(entries) {
   const hasCalls = entries.some((e) => e.kind === "model_call");
   if (!hasCalls && entries.some((e) => e.kind === "hook_event")) return hookTurns(entries);
 
+  const numbers = callNumbers(entries);
   const groups = [];
   const byEx = new Map();
   for (const e of entries) {
@@ -152,6 +164,7 @@ export function buildTurns(entries) {
     const mc = g.find((e) => e.kind === "model_call");
     if (!mc) continue;
     const facts = mc.call || {};
+    const n = numbers.get(mc.exchange_id);
     const prompt = facts.main && !facts.side_call ? g.find(isRealPrompt) : null;
     let card;
     if (facts.side_call) {
@@ -169,14 +182,14 @@ export function buildTurns(entries) {
       card = open || beforeCard();
     }
     const errored = isErrored(mc, g);
-    const tools = g.filter((e) => e.kind === "tool_call").map((e) => toolRow(e, results, facts.n));
+    const tools = g.filter((e) => e.kind === "tool_call").map((e) => toolRow(e, results, n));
     const label = g.map(agentLabel).find(Boolean) || "";
     if (!card.start || (mc.start || "") < card.start) card.start = mc.start || "";
     card.calls.push({
-      n: facts.n, exchangeId: mc.exchange_id, durationMs: mc.duration_ms ?? null,
-      label: `#${facts.n} · ${formatDuration(mc.duration_ms ?? null)}`,
+      n, exchangeId: mc.exchange_id, durationMs: mc.duration_ms ?? null,
+      label: `#${n} · ${formatDuration(mc.duration_ms ?? null)}`,
       model: mc.model || "", errored, errorWord: errored ? "error" : "", side: Boolean(facts.side_call),
-      agent: label, link: `#${facts.n}`, context: contextOf(mc),
+      agent: label, link: `#${n}`, context: contextOf(mc),
     });
     card.tools.push(...tools);
     for (const e of g) if (e.kind === "assistant_text" && e.text) card.texts.push(e.text);
@@ -265,10 +278,11 @@ const isMain = (e) => e.kind === "model_call" && Boolean(e.call) && e.call.main 
 export function contextSeries(entries) {
   const mains = entries.filter(isMain);
   if (!mains.length) return { points: [], note: "no main-thread calls to plot" };
+  const numbers = callNumbers(entries);
   const points = [];
   for (const e of mains) {
     const ctx = contextOf(e);
-    if (ctx.value !== null) points.push({ n: e.call.n, exchangeId: e.exchange_id, value: ctx.value });
+    if (ctx.value !== null) points.push({ n: numbers.get(e.exchange_id), exchangeId: e.exchange_id, value: ctx.value });
   }
   return { points, note: points.length ? "" : "no main-thread call reported a context" };
 }
@@ -363,20 +377,22 @@ export function stripBars(entries) {
     card.calls.forEach((c, i) => turnOf.set(c.exchangeId, { number: card.number, first: i === 0 && card.kind === "turn" }));
   }
   const calls = entries.filter((e) => e.kind === "model_call");
+  const numbers = callNumbers(entries);
   const tools = new Map();
   for (const e of entries) if (e.kind === "tool_call") tools.set(e.exchange_id, [...(tools.get(e.exchange_id) || []), e.name]);
   const maxMs = Math.max(1, ...calls.map((e) => e.duration_ms || 0));
   return calls.map((e) => {
     const f = e.call || {};
+    const n = numbers.get(e.exchange_id);
     const t = turnOf.get(e.exchange_id) || { number: null, first: false };
     const side = Boolean(f.side_call);
     const names = tools.get(e.exchange_id) || [];
     const status = e.status || 0;
     const errored = status >= 400;
-    const title = [`#${f.n}`, t.number ? `turn ${t.number}` : "", side ? "side call" : "", errored ? "error" : "", status ? `status ${status}` : "",
+    const title = [`#${n}`, t.number ? `turn ${t.number}` : "", side ? "side call" : "", errored ? "error" : "", status ? `status ${status}` : "",
       formatDuration(e.duration_ms ?? null), names.length ? `tool ${names.join(", ")}` : ""].filter(Boolean).join(" · ");
     return {
-      n: f.n, exchangeId: e.exchange_id, turn: t.number, turnStart: t.first, side, muted: side,
+      n, exchangeId: e.exchange_id, turn: t.number, turnStart: t.first, side, muted: side,
       errored, status, durationMs: e.duration_ms ?? null,
       width: Math.max(MIN_BAR_WIDTH, errored ? ERROR_BAR_WIDTH : 0, Math.round(((e.duration_ms || 0) / maxMs) * MAX_BAR_WIDTH)),
       tools: names, title,

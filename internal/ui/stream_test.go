@@ -380,16 +380,11 @@ func TestStream_CommitOutOfRowIDOrderStillReachesPage(t *testing.T) {
 	e.parseMsgs("a", "ok", []any{"user", text("first")})
 	pub("a")
 	ev := s.nextData()
-	if ev.event != "entries" {
+	if ev.event != "entries" || ev.id != "1" {
 		t.Fatalf("late commit with lower row id = %+v", ev)
 	}
 	if es := decodeEntries(t, ev.data); es[0]["exchange_id"] != "a" {
 		t.Fatalf("entries = %v", es)
-	}
-	// b follows a, so its call number moved: it is resent, and the batch's last event
-	// carries the highest row id in it.
-	if ev := s.nextData(); ev.event != "exchange" || ev.id != "1" {
-		t.Fatalf("resent b = %+v", ev)
 	}
 }
 
@@ -714,7 +709,7 @@ func TestLive_OutOfOrderInsertsAtSortedPosition(t *testing.T) {
 	evs = append(evs, s.take(1)...)
 	e.parseMsgs("A", "ok", []any{"user", text("a")}) // started first, committed last
 	e.publish("A")
-	evs = append(evs, s.take(2)...) // A, then C resent: its call number moved
+	evs = append(evs, s.take(1)...)
 	got := applyEvents(evs)
 	var order []string
 	for _, en := range got {
@@ -740,7 +735,7 @@ func TestLive_ConvergesWithReloadAndCLI(t *testing.T) {
 	e.publish("C")
 	evs = append(evs, s.take(1)...)
 	e.commitAParse()
-	evs = append(evs, s.take(3)...) // A, then B and C resent: their call numbers moved
+	evs = append(evs, s.take(2)...)
 	live := applyEvents(evs)
 	if !reflect.DeepEqual(live, e.freshTimeline()) {
 		t.Fatalf("live != reload:\n%v\n%v", live, e.freshTimeline())
@@ -1076,5 +1071,54 @@ func TestStream_ReplayOf20CallsResendsAtMostThePreviousCall(t *testing.T) {
 	t.Logf("20 commits resent %d exchanges", total)
 	if total > 19 {
 		t.Fatalf("20 commits resent %d exchanges", total)
+	}
+}
+
+// One call of 21 commits last, after every call that started later. Its commit sends that
+// exchange and at most the next call of its thread, whose previous call it now is: the
+// calls after that keep their bytes, because no call carries its position.
+func TestStream_LateCommitOf21CallsResendsAtMostTheNextCall(t *testing.T) {
+	e := newStreamEnv(t, nil)
+	e.saveReplayCall(1)
+	e.publish("c01")
+	s := e.open(e.sessionPath())
+	if snap := s.take(1); snap[0].event != "exchange" {
+		t.Fatalf("snapshot = %+v", snap[0])
+	}
+	const late = 5
+	last := ""
+	for i := 2; i <= 21; i++ {
+		if i != late {
+			last = e.saveReplayCall(i)
+			e.publish(last)
+		}
+	}
+	for {
+		ev := s.nextData()
+		if ev.event == "entries" && strings.Contains(ev.data, `"exchange_id":"`+last+`"`) {
+			break
+		}
+	}
+	e.saveReplayCall(late)
+	e.publish("c05")
+	first := s.nextData()
+	if id := decodeEntries(t, first.data)[0]["exchange_id"]; first.event != "entries" || id != "c05" {
+		t.Fatalf("the late commit's first event = %+v", first)
+	}
+	// A later commit closes the count: whatever came before its entries is the late one's.
+	sent := []string{"c05"}
+	last = e.saveReplayCall(22)
+	e.publish(last)
+	for {
+		ev := s.nextData()
+		id := decodeEntries(t, ev.data)[0]["exchange_id"].(string)
+		if id == last {
+			break
+		}
+		sent = append(sent, id)
+	}
+	t.Logf("late commit sent %v", sent)
+	if len(sent) > 2 || len(sent) == 2 && sent[1] != "c06" {
+		t.Fatalf("late commit sent %v, want c05 and at most c06", sent)
 	}
 }

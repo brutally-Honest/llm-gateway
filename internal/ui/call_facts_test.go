@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brutally-honest/llm-gateway/internal/capture"
 	"github.com/brutally-honest/llm-gateway/internal/core"
@@ -75,11 +76,11 @@ func TestTimeline_ModelCallCarriesCallFacts(t *testing.T) {
 	e.call("b", 2, 0, 5, "user:one", "assistant:two", "user:three")
 	f := e.facts()
 	a, b := f["a"], f["b"]
-	if a["n"] != 1.0 || a["thread"] != 0.0 || a["prev_id"] != "" || a["main"] != true || a["side_call"] != false ||
+	if a["prev_id"] != "" || a["main"] != true || a["side_call"] != false ||
 		a["carried"] != 0.0 || a["new"] != 1.0 {
 		t.Fatalf("a = %v", a)
 	}
-	if b["n"] != 2.0 || b["thread"] != 0.0 || b["prev_id"] != "a" || b["main"] != true ||
+	if b["prev_id"] != "a" || b["main"] != true ||
 		b["carried"] != 1.0 || b["new"] != 2.0 {
 		t.Fatalf("b = %v", b)
 	}
@@ -98,17 +99,45 @@ func TestTimeline_SideCallFlag(t *testing.T) {
 	}
 }
 
-func TestTimeline_CallNumbersCountEveryThread(t *testing.T) {
+// A later call continues its own thread across a call of another thread.
+func TestTimeline_PrevIDFollowsTheThreadAcrossOtherThreads(t *testing.T) {
 	e := withRules(t)
 	e.call("a", 1, 0, 5, "user:one")
 	e.call("b", 2, 0, 5, "user:quota")
 	e.call("c", 3, 0, 5, "user:one", "assistant:x", "user:more")
 	f := e.facts()
-	if f["a"]["n"] != 1.0 || f["b"]["n"] != 2.0 || f["c"]["n"] != 3.0 {
-		t.Fatalf("n = %v %v %v", f["a"]["n"], f["b"]["n"], f["c"]["n"])
+	if f["b"]["prev_id"] != "" || f["c"]["prev_id"] != "a" {
+		t.Fatalf("prev ids: %v", f)
 	}
-	if f["b"]["thread"] == f["a"]["thread"] || f["c"]["thread"] != f["a"]["thread"] || f["c"]["prev_id"] != "a" {
-		t.Fatalf("threads: %v", f)
+}
+
+// The wire carries the call's order key, the entry's start at full precision and its
+// exchange id, and nothing that depends on the call's position among other calls.
+func TestTimeline_CallSendsOrderKeyNotAPosition(t *testing.T) {
+	e := withRules(t)
+	e.call("a", 1, 0, 5, "user:one")
+	e.call("b", 2, 0, 5, "user:two")
+	starts := map[string]int{"a": 1, "b": 2}
+	seen := 0
+	for _, en := range e.timeline("/api/sessions/" + sid() + "/timeline").Entries {
+		if en["kind"] != "model_call" {
+			continue
+		}
+		seen++
+		id := en["exchange_id"].(string)
+		c := en["call"].(map[string]any)
+		for _, key := range []string{"n", "thread"} {
+			if _, has := c[key]; has {
+				t.Fatalf("%s: call carries %q: %v", id, key, c)
+			}
+		}
+		want := nsTime(baseTime.Add(time.Duration(starts[id]) * time.Second).UnixNano())
+		if en["start"] != want {
+			t.Fatalf("%s: start = %v, want %s", id, en["start"], want)
+		}
+	}
+	if seen != 2 {
+		t.Fatalf("calls seen = %d", seen)
 	}
 }
 
@@ -159,7 +188,7 @@ func TestTimeline_CompactionThreadStaysMain(t *testing.T) {
 	e.call("a", 1, 0, 5, "user:one")
 	e.call("b", 2, 0, 5, "user:summary of the work so far")
 	f := e.facts()
-	if f["b"]["thread"] == f["a"]["thread"] || f["b"]["main"] != true {
+	if f["b"]["prev_id"] != "" || f["b"]["main"] != true {
 		t.Fatalf("b = %v", f["b"])
 	}
 }
@@ -194,7 +223,7 @@ func TestStream_ExchangeEventCarriesCallFacts(t *testing.T) {
 	ev := s.nextData()
 	entries := decodeEntries(t, ev.data)
 	c, ok := entries[0]["call"].(map[string]any)
-	if !ok || c["n"] != 1.0 || c["side_call"] != true || c["main"] != false {
+	if !ok || c["side_call"] != true || c["main"] != false {
 		t.Fatalf("entries = %v", entries)
 	}
 }

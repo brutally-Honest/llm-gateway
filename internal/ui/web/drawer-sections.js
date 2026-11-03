@@ -1,4 +1,4 @@
-import { agentLabel, contextBars, contextOf, deltaFor } from "./model.js";
+import { agentLabel, callNumbers, contextBars, contextOf, deltaFor } from "./model.js";
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -43,8 +43,8 @@ function contextSection(call, entries, detail) {
   if (d.kind === "first") body.push(fact("Change since previous call", "first call"));
   else if (d.kind === "none") body.push(fact("Change since previous call", "—"));
   else {
-    const from = byId.get(d.from);
-    body.push(fact("Change since previous call", `${d.value > 0 ? "+" : ""}${d.value}${from && from.call ? ` since #${from.call.n}` : ""}`));
+    const from = callNumbers(entries).get(d.from);
+    body.push(fact("Change since previous call", `${d.value > 0 ? "+" : ""}${d.value}${from ? ` since #${from}` : ""}`));
   }
   const { bars, note } = contextBars(entries);
   const trend = el("div", "drawer-trend");

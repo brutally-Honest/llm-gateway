@@ -1,4 +1,4 @@
-import { chipOf, formatDuration } from "./model.js";
+import { callNumbers, chipOf, formatDuration } from "./model.js";
 import { getJSON } from "./api.js";
 import { buildSections } from "./drawer-sections.js";
 import { chipNode } from "./tool-card.js";
@@ -115,8 +115,7 @@ export function createDrawer({ nav, turnHeading, loadDetail = (id) => getJSON(`e
     if (current !== call.exchange_id) fetchDetail(call);
     current = call.exchange_id;
     draw(call);
-    const f = call.call || {};
-    title.textContent = `Call #${f.n} · ${formatDuration(call.duration_ms ?? null)}`;
+    title.textContent = `Call #${callNumbers(lastEntries).get(call.exchange_id)} · ${formatDuration(call.duration_ms ?? null)}`;
     chips.replaceChildren(...toolCalls.map((t) => chipNode(chipOf(t))));
     prev.disabled = index === 0;
     next.disabled = index === ids.length - 1;

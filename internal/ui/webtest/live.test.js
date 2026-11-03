@@ -50,6 +50,22 @@ test("drawerKeepsCallFocusAndScrollOnLiveData", async () => {
   assert.equal(prev.disabled, false);
 });
 
+test("lateCallRenumbersTheOpenDrawerWithoutMovingIt", async () => {
+  const { installDom, withClass } = await import("./dom-stub.js");
+  installDom();
+  const { call } = await import("./fixtures.js");
+  const { createTimelinePage } = await import("../web/timeline-page.js");
+  const summary = { id: "s1", client: "c", models: [], first_at: "", last_at: "", exchange_count: 2, model_calls: 2, main_errors: 0, active: true, usage: {}, tool_states: {} };
+  const p = createTimelinePage();
+  const shown = (entries) => p.render({ summary, entries, error: "", snapshotError: "", callId: "c", loaded: true });
+  shown([call("a", 1), call("c", 3, { prev: "a" })]);
+  const title = withClass(p.el, "drawer")[0].children[0].children[0];
+  assert.match(title.textContent, /Call #2/);
+  shown([call("a", 1), call("b", 2, { prev: "a" }), call("c", 3, { prev: "b" })]);
+  assert.match(title.textContent, /Call #3/);
+  assert.equal(p.position().index, 3); // still call c, now third of three
+});
+
 test("followOnlyWhenDrawerClosedAndAtBottom", async () => {
   const { shouldFollow } = await import("../web/drawer.js");
   assert.equal(shouldFollow(false, true), true);

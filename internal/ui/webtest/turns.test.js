@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildTurns, hooksLabel } from "../web/model.js";
+import { buildTurns, callNumbers, hooksLabel } from "../web/model.js";
+import { replaceExchange } from "../web/entries.js";
 import { all, byTag, installDom, textOf, withClass } from "./dom-stub.js";
 import { call, item } from "./fixtures.js";
 
@@ -249,4 +250,20 @@ test("showOptionsApplyAtOnce", async () => {
   assert.equal(withClass(p.el, "turn").length, 1);
   assert.match(textOf(withClass(p.el, "turn")[0]), /Turn 2/);
   assert.equal(withClass(p.el, "rail-item").length, 3);
+});
+
+test("callNumbersFollowStartThenExchangeId", () => {
+  const tied = { ...call("a", 2), start: call("b", 2).start };
+  const fine = { ...call("f", 3), start: "2026-01-01T00:00:03.12Z" };
+  const finer = { ...call("e", 3), start: "2026-01-01T00:00:03.123Z" };
+  const numbers = callNumbers([finer, call("b", 2), fine, tied, call("z", 1), { ...call("h", 9), kind: "exchange" }]);
+  assert.deepEqual([...numbers.entries()].sort((x, y) => x[1] - y[1]), [["z", 1], ["a", 2], ["b", 3], ["f", 4], ["e", 5]]);
+});
+
+test("lateCommitRenumbersFromTheOrderKey", () => {
+  const es = [call("a", 1), call("c", 3, { prev: "a" })];
+  assert.deepEqual(buildTurns(es).cards[0].calls.map((c) => [c.exchangeId, c.n]), [["a", 1], ["c", 2]]);
+  const late = replaceExchange(es, [call("b", 2, { prev: "a" })]);
+  assert.deepEqual(buildTurns(late).cards[0].calls.map((c) => [c.exchangeId, c.n, c.link]),
+    [["a", 1, "#1"], ["b", 2, "#2"], ["c", 3, "#3"]]);
 });
