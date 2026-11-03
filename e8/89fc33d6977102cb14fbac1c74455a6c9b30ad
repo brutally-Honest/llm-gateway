@@ -1,0 +1,4 @@
+Spec: specs/013-web-ui-redesign/spec.md (2,000-call render budget), manual check steps 13 to 15
+Why this approach: seeding through the proxy takes the real capture path; writing rows directly would bypass it, and a checked-in fixture would be a large binary store tied to the schema.
+Trade-off / known limit: a gateway not pointed at the stub receives the first call, with a fake key, before the script stops.
+Verified by: 2,000 calls captured with 0 drops on a scratch store; a one-slot queue exits 1; a closed upstream exits 1; the doc's commands run on the default ports with 200 calls.
