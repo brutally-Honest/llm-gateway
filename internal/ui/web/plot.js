@@ -1,9 +1,11 @@
 import { PLOT_HEIGHT, PLOT_WIDTH } from "./model.js";
 
-// The SVG namespace is read from the empty <svg id="svg-ns"> in index.html rather than
-// written out here, so no absolute URL appears in a script.
+// The SVG namespace is an identifier, never fetched. It is the one absolute URL the guard
+// in web_test.go exempts.
+const SVG_NS = "http://www.w3.org/2000/svg";
+
 function svg(tag, attrs = {}) {
-  const e = document.createElementNS(document.getElementById("svg-ns").namespaceURI, tag);
+  const e = document.createElementNS(SVG_NS, tag);
   for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
   return e;
 }

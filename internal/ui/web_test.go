@@ -3,6 +3,7 @@ package ui
 import (
 	"io/fs"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -50,24 +51,81 @@ func TestWeb_ReferencedAssetsAreEmbedded(t *testing.T) {
 	}
 }
 
-func TestWeb_NoInlineOrExternalReferences(t *testing.T) {
-	bad := map[string]*regexp.Regexp{
-		"absolute url":    regexp.MustCompile(`(?i)(?:https?:)?//[a-z0-9.-]+\.[a-z]{2,}|\bhttps?://`),
-		"inline script":   regexp.MustCompile(`(?i)<script\b(?:[^>]*\bsrc=)?[^>]*>\s*[^<\s]`),
-		"style element":   regexp.MustCompile(`(?i)<style\b`),
-		"style attribute": regexp.MustCompile(`(?i)\sstyle\s*=`),
-		"event handler":   regexp.MustCompile(`(?i)\son[a-z]+\s*=\s*["']`),
-		"css import/url":  regexp.MustCompile(`(?i)@import|url\(\s*["']?(?:https?:)?//`),
+// inlineOrExternalBad names what no embedded web file may hold.
+var inlineOrExternalBad = map[string]*regexp.Regexp{
+	"absolute url":    regexp.MustCompile(`(?i)(?:https?:)?//[a-z0-9.-]+\.[a-z]{2,}|\bhttps?://`),
+	"inline script":   regexp.MustCompile(`(?i)<script\b(?:[^>]*\bsrc=)?[^>]*>\s*[^<\s]`),
+	"style element":   regexp.MustCompile(`(?i)<style\b`),
+	"style attribute": regexp.MustCompile(`(?i)\sstyle\s*=`),
+	"event handler":   regexp.MustCompile(`(?i)\son[a-z]+\s*=\s*["']`),
+	"css import/url":  regexp.MustCompile(`(?i)@import|url\(\s*["']?(?:https?:)?//`),
+}
+
+// jsLineComment matches a // comment. The // must not follow a colon or an opening quote,
+// so the URL inside a string is left for the guard to see.
+var jsLineComment = regexp.MustCompile("(?m)(^|[^:\"'`])//.*$")
+
+// svgNamespaceLiteral is the guard's one exemption, matched whole with its quotes: the
+// SVG namespace, an identifier createElementNS needs and the browser never fetches.
+const svgNamespaceLiteral = `"http://www.w3.org/2000/svg"`
+
+// inlineOrExternalFindings lists what a web file breaks. Line comments of a script are
+// ignored and the SVG namespace literal is exempt, in scripts only.
+func inlineOrExternalFindings(name, src string) []string {
+	if strings.HasSuffix(name, ".js") {
+		src = jsLineComment.ReplaceAllString(src, "$1")
+		src = strings.ReplaceAll(src, svgNamespaceLiteral, `""`)
 	}
+	var out []string
+	for what, re := range inlineOrExternalBad {
+		if re.MatchString(src) {
+			out = append(out, what)
+		}
+	}
+	return out
+}
+
+func TestWeb_NoInlineOrExternalReferences(t *testing.T) {
 	for name, src := range webFiles(t) {
-		if strings.HasSuffix(name, ".js") {
-			src = regexp.MustCompile(`(?m)//.*$`).ReplaceAllString(src, "")
+		for _, what := range inlineOrExternalFindings(name, src) {
+			t.Errorf("%s: %s", name, what)
 		}
-		for what, re := range bad {
-			if re.MatchString(src) {
-				t.Errorf("%s: %s", name, what)
-			}
+	}
+}
+
+// The guard sees URLs inside script strings, ignores them in comments, and exempts the
+// SVG namespace literal exactly: nothing near it, and nowhere but a script.
+func TestWeb_GuardExemptsOnlyTheSVGNamespace(t *testing.T) {
+	allowed := map[string]string{
+		"exact literal":    `const SVG_NS = "http://www.w3.org/2000/svg";`,
+		"comment":          `const a = 1; // see https://example.com/doc`,
+		"whole comment":    `// see http://example.com/doc`,
+		"comment after ns": `const SVG_NS = "http://www.w3.org/2000/svg"; // https://example.com`,
+	}
+	for what, src := range allowed {
+		if got := inlineOrExternalFindings("a.js", src); len(got) != 0 {
+			t.Errorf("%s: flagged %v: %s", what, got, src)
 		}
+	}
+	banned := map[string]string{
+		"other url":         `const u = "https://evil.example.com/x.js";`,
+		"http url":          `fetch("http://evil.example.com");`,
+		"protocol relative": `const u = "//evil.example.com/x.js";`,
+		"https namespace":   `const u = "https://www.w3.org/2000/svg";`,
+		"longer path":       `const u = "http://www.w3.org/2000/svg/x.js";`,
+		"prefix of path":    `const u = "http://www.w3.org/2000/sv";`,
+		"other w3 path":     `const u = "http://www.w3.org/1999/xlink";`,
+		"unquoted":          `fetch(http://www.w3.org/2000/svg);`,
+		"after the literal": `const a = "http://www.w3.org/2000/svg", b = "https://evil.example.com";`,
+		"template literal":  "const u = `http://www.w3.org/2000/svg`;",
+	}
+	for what, src := range banned {
+		if got := inlineOrExternalFindings("a.js", src); !slices.Contains(got, "absolute url") {
+			t.Errorf("%s: not flagged: %s", what, src)
+		}
+	}
+	if got := inlineOrExternalFindings("index.html", `<svg xmlns="http://www.w3.org/2000/svg"></svg>`); !slices.Contains(got, "absolute url") {
+		t.Error("the exemption reached a file that is not a script")
 	}
 }
 
