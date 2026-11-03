@@ -1,0 +1,3 @@
+Spec: specs/013-web-ui-redesign/spec.md (E16, AC17, AC28)
+Why this approach: the existing streamDropKeepsDrawer never touches the stream code; dropping openStream's report, the header text, or wiping entries on a drop all left the whole suite green.
+Verified by: mutations in app.js and api.js (drawer closed, history lost, header text gone, no report, no reopen) each turn droppedSessionStreamKeepsDrawerAndHistoryAndShowsDisconnected red.
