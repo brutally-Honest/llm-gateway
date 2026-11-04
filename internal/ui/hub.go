@@ -124,10 +124,10 @@ func (h *Hub) Timelines() *TimelineCache { return h.timelines }
 func newHub(d Deps, queue int) *Hub {
 	ctx, cancel := context.WithCancel(context.Background())
 	if d.Digests == nil {
-		d.Digests = newDigestCacheCtx(ctx, digestCacheSize)
+		d.Digests = newDigestCacheCtx(ctx, d.Log, digestCacheSize)
 	}
 	if d.Timelines == nil {
-		d.Timelines = newTimelineCache(ctx, timelineCacheSessions, timelineCacheBytes)
+		d.Timelines = newTimelineCache(ctx, d.Log, timelineCacheSessions, timelineCacheBytes)
 	}
 	log := d.Log
 	if log == nil {

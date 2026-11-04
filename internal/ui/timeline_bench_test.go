@@ -95,11 +95,11 @@ func BenchmarkTimeline_2000Calls(b *testing.B) {
 	b.Run("cold", func(b *testing.B) {
 		b.ReportAllocs()
 		for range b.N {
-			get(Handler(deps(NewTimelineCache(context.Background()))))
+			get(Handler(deps(NewTimelineCache(context.Background(), nil))))
 		}
 	})
 	b.Run("cached", func(b *testing.B) {
-		h := Handler(deps(NewTimelineCache(context.Background())))
+		h := Handler(deps(NewTimelineCache(context.Background(), nil)))
 		get(h) // the first request builds; the timed ones slice its build
 		b.ReportAllocs()
 		b.ResetTimer()

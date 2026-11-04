@@ -6,6 +6,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"go.uber.org/zap"
+
 	"github.com/brutally-honest/llm-gateway/internal/store"
 	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
@@ -39,12 +41,15 @@ type DigestCache struct {
 // NewDigestCache returns an empty cache holding at most 512 digests.
 func NewDigestCache() *DigestCache { return newDigestCache(digestCacheSize) }
 
-func newDigestCache(max int) *DigestCache { return newDigestCacheCtx(context.Background(), max) }
+func newDigestCache(max int) *DigestCache {
+	return newDigestCacheCtx(context.Background(), nil, max)
+}
 
-// newDigestCacheCtx is a cache whose computes run on base, the server's lifetime.
-func newDigestCacheCtx(base context.Context, max int) *DigestCache {
+// newDigestCacheCtx is a cache whose computes run on base, the server's lifetime, and
+// log their panics to log.
+func newDigestCacheCtx(base context.Context, log *zap.Logger, max int) *DigestCache {
 	return &DigestCache{max: max, ll: list.New(), items: map[digestKey]*list.Element{},
-		flights: newFlightGroup[digestKey, timeline.Digest](base)}
+		flights: newFlightGroup[digestKey, timeline.Digest](base, log)}
 }
 
 func cloneDigest(d timeline.Digest) timeline.Digest {

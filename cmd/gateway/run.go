@@ -432,7 +432,7 @@ func startCapture(ctx context.Context, c config.Capture, h config.Hooks, withUI 
 				zap.String("reason", storeOpenReason(err)))
 			return nil, exitRuntime
 		}
-		timelines = ui.NewTimelineCache(ctx)
+		timelines = ui.NewTimelineCache(ctx, log)
 		hub = ui.NewHub(ui.Deps{Log: log, Reader: reader, Rules: uiRules(), Timelines: timelines})
 		cfg.OnCommit = hub.Publish
 	}

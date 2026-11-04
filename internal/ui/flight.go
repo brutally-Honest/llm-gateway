@@ -29,15 +29,19 @@ type flight[V any] struct {
 // failed build is shared only by the callers waiting on it; the next call starts anew.
 type flightGroup[K comparable, V any] struct {
 	base context.Context
+	log  *zap.Logger
 	mu   sync.Mutex
 	m    map[K]*flight[V]
 }
 
-func newFlightGroup[K comparable, V any](base context.Context) *flightGroup[K, V] {
+func newFlightGroup[K comparable, V any](base context.Context, log *zap.Logger) *flightGroup[K, V] {
 	if base == nil {
 		base = context.Background()
 	}
-	return &flightGroup[K, V]{base: base, m: map[K]*flight[V]{}}
+	if log == nil {
+		log = zap.NewNop()
+	}
+	return &flightGroup[K, V]{base: base, log: log, m: map[K]*flight[V]{}}
 }
 
 // do returns fn's result for k, sharing one run among concurrent callers. It stops
@@ -48,7 +52,7 @@ func (g *flightGroup[K, V]) do(ctx context.Context, k K, fn func(context.Context
 	if !running {
 		f = &flight[V]{done: make(chan struct{})}
 		g.m[k] = f
-		logging.Go(zap.NewNop(), "ui_build", func() error { g.run(k, f, fn); return nil })
+		logging.Go(g.log, "ui_build", func() error { g.run(k, f, fn); return nil })
 	}
 	g.mu.Unlock()
 	select {
@@ -65,6 +69,7 @@ func (g *flightGroup[K, V]) run(k K, f *flight[V], fn func(context.Context) (V, 
 	defer cancel()
 	defer func() {
 		if r := recover(); r != nil {
+			logging.LogPanic(g.log, "ui build panicked", r)
 			f.err = fmt.Errorf("ui: build panicked: %v", r)
 		}
 		g.mu.Lock()

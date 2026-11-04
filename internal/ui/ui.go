@@ -83,10 +83,10 @@ func allowedHosts(addr string) map[string]bool {
 // newRouter builds the router; extra mounts are for tests and later routes.
 func newRouter(d Deps, extra ...func(chi.Router)) chi.Router {
 	if d.Digests == nil {
-		d.Digests = newDigestCacheCtx(d.Ctx, digestCacheSize)
+		d.Digests = newDigestCacheCtx(d.Ctx, d.Log, digestCacheSize)
 	}
 	if d.Timelines == nil {
-		d.Timelines = newTimelineCache(d.Ctx, timelineCacheSessions, timelineCacheBytes)
+		d.Timelines = newTimelineCache(d.Ctx, d.Log, timelineCacheSessions, timelineCacheBytes)
 	}
 	log := d.Log
 	if log == nil {

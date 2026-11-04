@@ -74,6 +74,7 @@ type TimelineCache struct {
 
 	// base is the server's lifetime: builds run on it, not on a request's context.
 	base context.Context
+	log  *zap.Logger
 	// fmu guards active. Lock order: fmu, then mu.
 	fmu    sync.Mutex
 	active map[store.SessionIdent]*sessionBuilds
@@ -94,19 +95,22 @@ type buildRun struct {
 type sessionBuilds struct{ cur, next *buildRun }
 
 // NewTimelineCache returns an empty cache with the production bounds, whose builds run
-// on base, the server's lifetime.
-func NewTimelineCache(base context.Context) *TimelineCache {
-	return newTimelineCache(base, timelineCacheSessions, timelineCacheBytes)
+// on base, the server's lifetime, and log their panics to log (nil logs nothing).
+func NewTimelineCache(base context.Context, log *zap.Logger) *TimelineCache {
+	return newTimelineCache(base, log, timelineCacheSessions, timelineCacheBytes)
 }
 
 // newTimelineCache is a cache whose builds run on base, the server's lifetime.
-func newTimelineCache(base context.Context, sessions int, bytes int64) *TimelineCache {
+func newTimelineCache(base context.Context, log *zap.Logger, sessions int, bytes int64) *TimelineCache {
 	if base == nil {
 		base = context.Background()
 	}
+	if log == nil {
+		log = zap.NewNop()
+	}
 	return &TimelineCache{maxSess: sessions, maxBytes: bytes, ll: list.New(),
 		items: map[store.SessionIdent]*list.Element{},
-		base:  base, active: map[store.SessionIdent]*sessionBuilds{}}
+		base:  base, log: log, active: map[store.SessionIdent]*sessionBuilds{}}
 }
 
 func (c *TimelineCache) lookup(id store.SessionIdent, ver store.Version) (*cachedBuild, bool) {
@@ -218,7 +222,7 @@ func (c *TimelineCache) joinLocked(id store.SessionIdent, ver store.Version,
 }
 
 func (c *TimelineCache) start(id store.SessionIdent, r *buildRun) {
-	logging.Go(zap.NewNop(), "ui_build", func() error { c.run(id, r); return nil })
+	logging.Go(c.log, "ui_build", func() error { c.run(id, r); return nil })
 }
 
 // run builds r, stores the result, and starts the queued follow-up if one was asked for.
@@ -228,6 +232,7 @@ func (c *TimelineCache) run(id store.SessionIdent, r *buildRun) {
 		defer cancel()
 		defer func() {
 			if p := recover(); p != nil {
+				logging.LogPanic(c.log, "ui timeline build panicked", p)
 				r.err = fmt.Errorf("ui: build panicked: %v", p)
 			}
 		}()

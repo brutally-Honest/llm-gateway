@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/brutally-honest/llm-gateway/internal/core"
 	"github.com/brutally-honest/llm-gateway/internal/store"
@@ -34,7 +35,7 @@ func newTLEnv(t *testing.T) *tlEnv {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = r.Close() })
-	cache := NewTimelineCache(context.Background())
+	cache := NewTimelineCache(context.Background(), nil)
 	d := Deps{Addr: addr, Reader: r, Rules: map[string]ClientRules{"cc": testRules{}}, Timelines: cache,
 		Now: func() time.Time { return baseTime.Add(100 * time.Second) }}
 	return &tlEnv{digestEnv: &digestEnv{apiEnv: &apiEnv{t: t, s: s, dir: dir, h: Handler(d)}, d: d}, cache: cache}
@@ -72,7 +73,7 @@ func ident(key string) store.SessionIdent {
 }
 
 func TestTimelineCache_TimedOutBuildIsCachedAndRetryHits(t *testing.T) {
-	c := NewTimelineCache(context.Background())
+	c := NewTimelineCache(context.Background(), nil)
 	release := make(chan struct{})
 	build := func(context.Context) (builtSession, error) {
 		<-release
@@ -98,7 +99,7 @@ func TestTimelineCache_TimedOutBuildIsCachedAndRetryHits(t *testing.T) {
 }
 
 func TestTimelineCache_FailedBuildIsNotCached(t *testing.T) {
-	c := NewTimelineCache(context.Background())
+	c := NewTimelineCache(context.Background(), nil)
 	boom := errors.New("boom")
 	if _, err := c.get(t.Context(), ident("k"), store.Version{}, func(context.Context) (builtSession, error) {
 		return builtSession{}, boom
@@ -116,7 +117,7 @@ func TestTimelineCache_FailedBuildIsNotCached(t *testing.T) {
 }
 
 func TestTimelineCache_ConcurrentRequestsOneBuild(t *testing.T) {
-	c := NewTimelineCache(context.Background())
+	c := NewTimelineCache(context.Background(), nil)
 	started, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	build := func(context.Context) (builtSession, error) {
@@ -145,7 +146,7 @@ func fill(c *TimelineCache, key string, ver store.Version, bs builtSession) {
 }
 
 func TestTimelineCache_LRUEvictsOldestSession(t *testing.T) {
-	c := newTimelineCache(t.Context(), 2, 1<<30)
+	c := newTimelineCache(t.Context(), nil, 2, 1<<30)
 	v := store.Version{ExCount: 1}
 	fill(c, "a", v, builtSession{})
 	fill(c, "b", v, builtSession{})
@@ -167,7 +168,7 @@ func TestTimelineCache_LRUEvictsOldestSession(t *testing.T) {
 }
 
 func TestTimelineCache_NewVersionReplacesOldOfSameSession(t *testing.T) {
-	c := newTimelineCache(t.Context(), 4, 1<<30)
+	c := newTimelineCache(t.Context(), nil, 4, 1<<30)
 	fill(c, "a", store.Version{ExCount: 1}, builtSession{})
 	fill(c, "a", store.Version{ExCount: 2}, builtSession{})
 	if c.len() != 1 {
@@ -184,7 +185,7 @@ func TestTimelineCache_SizeCapEvicts(t *testing.T) {
 	if one < 1000 {
 		t.Fatalf("estimate = %d", one)
 	}
-	c := newTimelineCache(t.Context(), 4, one*3/2) // room for one build, not two
+	c := newTimelineCache(t.Context(), nil, 4, one*3/2) // room for one build, not two
 	v := store.Version{ExCount: 1}
 	fill(c, "a", v, big())
 	fill(c, "b", v, big())
@@ -293,3 +294,68 @@ func TestTimeline_ResponseCarriesVersionAndEventPosition(t *testing.T) {
 }
 
 func who2id() string { return sessIdent{core.PrincipalLocal, "cc", "k"}.id() }
+
+func panicLogged(t *testing.T, logs *observer.ObservedLogs, msg string) {
+	t.Helper()
+	got := logs.FilterMessage(msg).All()
+	if len(got) != 1 || got[0].Level != zap.ErrorLevel {
+		t.Fatalf("log lines %q = %+v, want one error", msg, logs.All())
+	}
+	if ty, _ := got[0].ContextMap()["panic_type"].(string); ty != "string" {
+		t.Fatalf("panic_type = %q in %+v", ty, got[0].ContextMap())
+	}
+}
+
+// A panic in a build is logged, and everyone waiting gets it as an error.
+func TestTimelineCache_BuildPanicIsLoggedAndReturned(t *testing.T) {
+	obs, logs := observer.New(zap.ErrorLevel)
+	c := NewTimelineCache(t.Context(), zap.New(obs))
+	_, err := c.get(t.Context(), ident("k"), store.Version{ExCount: 1}, func(context.Context) (builtSession, error) {
+		panic("boom")
+	})
+	if err == nil || !strings.Contains(err.Error(), "panicked") {
+		t.Fatalf("err = %v, want the panic as an error", err)
+	}
+	panicLogged(t, logs, "ui timeline build panicked")
+}
+
+func TestDigestCache_ComputePanicIsLoggedAndReturned(t *testing.T) {
+	obs, logs := observer.New(zap.ErrorLevel)
+	c := newDigestCacheCtx(t.Context(), zap.New(obs), 8)
+	_, err := c.get(t.Context(), digestKey{ident("k"), store.Version{ExCount: 1}}, func(context.Context) (timeline.Digest, error) {
+		panic("boom")
+	})
+	if err == nil || !strings.Contains(err.Error(), "panicked") {
+		t.Fatalf("err = %v, want the panic as an error", err)
+	}
+	panicLogged(t, logs, "ui build panicked")
+}
+
+// panicRules makes every build that classifies a call panic.
+type panicRules struct{ testRules }
+
+func (panicRules) IsSideCall([]string) bool { panic("boom") }
+
+// The caches the router makes for itself log to Deps.Log, and the request gets an error
+// response rather than a dropped connection.
+func TestHandler_FallbackCachesLogBuildPanics(t *testing.T) {
+	e := newTLEnv(t)
+	e.save("a", "k", "cc", 10)
+	e.parseMsgs("a", "ok", []any{"user", text("q")})
+	obs, logs := observer.New(zap.ErrorLevel)
+	d := e.d
+	d.Log, d.Timelines, d.Digests = zap.New(obs), nil, nil
+	d.Rules = map[string]ClientRules{"cc": panicRules{}}
+	e.h = Handler(d)
+	if rec := e.get(sessionPath()); rec.Code < 500 {
+		t.Fatalf("timeline status = %d, want a server error", rec.Code)
+	}
+	panicLogged(t, logs, "ui timeline build panicked")
+}
+
+func TestHub_FallbackCachesLogToDepsLog(t *testing.T) {
+	log := zap.NewExample()
+	if got := newHub(Deps{Log: log}, 1).Timelines().log; got != log {
+		t.Fatalf("hub cache logger = %p, want %p", got, log)
+	}
+}
