@@ -105,6 +105,24 @@ function startStream() {
 
 let seq = 0;
 
+// The server answers 504 while it is still building a large session; the build finishes and
+// is cached, so one retry after about a second finds it (AC36, AC19). The delay is injectable
+// through globalThis.__retryDelay so tests do not wait.
+const retryDelay = (ms) => (globalThis.__retryDelay ? globalThis.__retryDelay(ms) : new Promise((r) => setTimeout(r, ms)));
+
+// retryOn504 runs fn; on a 504 it calls onWait, waits and runs fn once more. Any other error,
+// and a second 504, reach the caller.
+async function retryOn504(fn, onWait) {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e.status !== 504) throw e;
+    onWait();
+    await retryDelay(1000);
+    return fn();
+  }
+}
+
 // showSession loads the summary and every timeline page, then, for an active session,
 // opens its stream. A stale load (the route changed meanwhile) is dropped.
 async function showSession(id) {
@@ -131,15 +149,22 @@ async function showSession(id) {
     draw();
   };
   try {
-    const summary = await getJSON(`sessions/${encodeURIComponent(id)}`);
+    const waiting = () => set({ building: true });
+    const summary = await retryOn504(() => getJSON(`sessions/${encodeURIComponent(id)}`), waiting);
     if (mine !== seq) return;
-    set({ summary });
+    set({ summary, building: false });
     if (mine === seq) shell.setRoute(parseRoute(location.hash), summary.title || id);
+    const fetchPage = (after) => getJSON(`sessions/${encodeURIComponent(id)}/timeline`, { after, limit: 2000 });
+    let first = true;
     await loadAllPages(
-      (after) => getJSON(`sessions/${encodeURIComponent(id)}/timeline`, { after, limit: 2000 }),
+      (after) => {
+        if (!first) return fetchPage(after); // later pages are not retried
+        first = false;
+        return retryOn504(() => fetchPage(after), waiting);
+      },
       (p) => {
         if (mine !== seq) return false;
-        set({ entries: st.entries.concat(p.entries) });
+        set({ entries: st.entries.concat(p.entries), building: false });
         return true;
       },
     );
@@ -147,7 +172,7 @@ async function showSession(id) {
     set({ loaded: true });
     if (!summary.active) return;
   } catch (e) {
-    set({ error: e.message });
+    set({ error: e.message, building: false });
     return;
   }
   // follow new entries only when the page is already at the bottom (AC45)

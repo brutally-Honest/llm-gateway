@@ -11,7 +11,9 @@ export async function getJSON(path, params = {}) {
     } catch {
       // keep the status text
     }
-    throw new Error(msg);
+    const err = new Error(msg);
+    err.status = res.status;
+    throw err;
   }
   return res.json();
 }

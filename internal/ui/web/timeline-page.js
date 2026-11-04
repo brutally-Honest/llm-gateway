@@ -306,7 +306,7 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
   function drawList() {
     list.replaceChildren();
     if (data.entries.length === 0) {
-      if (!data.error) list.append(note("empty", "No entries yet."));
+      if (!data.error && !data.building) list.append(note("empty", "No entries yet."));
       return;
     }
     const { cards, note: hooksNote } = turns();
@@ -329,6 +329,7 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
     render(next) {
       data = next;
       status.replaceChildren();
+      if (data.building) status.append(note("empty", "building session…"));
       if (data.error) status.append(note("error", data.error));
       if (data.snapshotError) status.append(note("error", `Live snapshot failed: ${data.snapshotError}`));
       drawHeader();

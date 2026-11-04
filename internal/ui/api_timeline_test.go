@@ -653,3 +653,42 @@ func TestAPITimeline_HookOrderTiesOnTimeAndSeq(t *testing.T) {
 		t.Errorf("concatenated pages = %v, want the store order %v", paged, want)
 	}
 }
+
+// The after token names a position by (start, exchange id), not a slice index, so a token
+// from one build resolves to the same position in a rebuilt timeline: entries present in
+// both builds come back in the same order, whatever was added before or after them.
+func TestTimelinePaging_AfterTokenResolvesToSamePositionOnRebuiltTimeline(t *testing.T) {
+	e := newAPIEnv(t)
+	for i, id := range []string{"b", "c", "d", "f"} {
+		e.save(id, "k", "cc", 20+10*i)
+		e.parseMsgs(id, "ok", []any{"user", text("m-" + id)}, []any{"assistant", text("r-" + id)})
+	}
+	url := "/api/sessions/" + sid() + "/timeline"
+	ids := func(p tlPage) []string {
+		var out []string
+		for _, en := range p.Entries {
+			out = append(out, en["id"].(string))
+		}
+		return out
+	}
+	page1 := e.timeline(url + "?limit=5")
+	if page1.NextAfter == nil {
+		t.Fatalf("page 1 has no next_after: %v", ids(page1))
+	}
+	want := ids(e.timeline(url + "?after=" + *page1.NextAfter)) // from the first build
+	if len(want) == 0 {
+		t.Fatal("no entries after the token")
+	}
+	// Rebuild: one exchange sorts before the token position, one after the last entry.
+	e.save("a", "k", "cc", 5)
+	e.parseMsgs("a", "ok", []any{"user", text("m-a")})
+	e.save("z", "k", "cc", 90)
+	e.parseMsgs("z", "ok", []any{"user", text("m-z")})
+	got := ids(e.timeline(url + "?after=" + *page1.NextAfter))
+	if len(got) < len(want) || !slices.Equal(got[:len(want)], want) {
+		t.Fatalf("after the rebuild the token gives %v, want it to start with %v", got, want)
+	}
+	if len(got) == len(want) {
+		t.Fatalf("the late exchange is missing from %v", got)
+	}
+}
