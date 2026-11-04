@@ -161,7 +161,7 @@ func run(ctx context.Context, d deps) int {
 	var capt *captureRun
 	if cfg.Capture.Enabled {
 		var code int
-		if capt, code = startCapture(cfg.Capture, cfg.Hooks, cfg.UI.Enabled, profiles, d, log); capt == nil {
+		if capt, code = startCapture(ctx, cfg.Capture, cfg.Hooks, cfg.UI.Enabled, profiles, d, log); capt == nil {
 			return code
 		}
 	} else if cfg.UI.Enabled {
@@ -248,10 +248,7 @@ func run(ctx context.Context, d deps) int {
 	var uiErr <-chan error // nil, so never ready, when the UI is off
 	if uiLn != nil {
 		uiSrv = &http.Server{
-			Handler: ui.Handler(ui.Deps{
-				Addr: uiLn.Addr().String(), Log: log, Reader: capt.reader, Hub: capt.hub,
-				Rules: uiRules(), Ctx: ctx,
-			}),
+			Handler:           ui.Handler(capt.uiDeps(ctx, uiLn.Addr().String(), log)),
 			ReadHeaderTimeout: 10 * time.Second,
 		}
 		uiErr = logging.Go(log, "ui_serve", func() error { return uiSrv.Serve(uiLn) })
@@ -359,6 +356,9 @@ type captureRun struct {
 	// reader and hub are set only when the UI is on.
 	reader *store.Reader
 	hub    *ui.Hub
+	// timelines is the one timeline cache the hub and the UI handler share, so the
+	// process holds a single set of builds under a single byte budget.
+	timelines *ui.TimelineCache
 }
 
 // hookSink is the hook sink, or nil with capture off or a store that cannot save hooks.
@@ -389,9 +389,17 @@ func hookConfig(h config.Hooks, profiles []core.Profile) hooks.Config {
 // hasUI reports whether the UI is on for this run.
 func (c *captureRun) hasUI() bool { return c != nil && c.hub != nil }
 
+// uiDeps is what the UI handler is built from.
+func (c *captureRun) uiDeps(ctx context.Context, addr string, log *zap.Logger) ui.Deps {
+	return ui.Deps{
+		Addr: addr, Log: log, Reader: c.reader, Hub: c.hub,
+		Rules: uiRules(), Ctx: ctx, Timelines: c.timelines,
+	}
+}
+
 // startCapture resolves capture.dir, opens the store and starts the sink. On failure
 // it logs one line and returns nil and the exit code.
-func startCapture(c config.Capture, h config.Hooks, withUI bool, profiles []core.Profile, d deps, log *zap.Logger) (*captureRun, int) {
+func startCapture(ctx context.Context, c config.Capture, h config.Hooks, withUI bool, profiles []core.Profile, d deps, log *zap.Logger) (*captureRun, int) {
 	dir, ok := captureDir(c, d.lookupEnv, log)
 	if !ok {
 		return nil, exitConfig
@@ -413,6 +421,7 @@ func startCapture(c config.Capture, h config.Hooks, withUI bool, profiles []core
 	cfg := capture.Config{QueueSize: c.QueueSize, Workers: c.Workers, DecodeLimit: c.MaxBodyBytes}
 	var reader *store.Reader
 	var hub *ui.Hub
+	var timelines *ui.TimelineCache
 	if withUI {
 		// The store exists now (E2), so the read-only view can open on it.
 		if reader, err = store.OpenReader(dir); err != nil {
@@ -423,7 +432,8 @@ func startCapture(c config.Capture, h config.Hooks, withUI bool, profiles []core
 				zap.String("reason", storeOpenReason(err)))
 			return nil, exitRuntime
 		}
-		hub = ui.NewHub(ui.Deps{Log: log, Reader: reader, Rules: uiRules()})
+		timelines = ui.NewTimelineCache(ctx)
+		hub = ui.NewHub(ui.Deps{Log: log, Reader: reader, Rules: uiRules(), Timelines: timelines})
 		cfg.OnCommit = hub.Publish
 	}
 	sink := capture.NewSink(cfg, st, log)
@@ -438,7 +448,7 @@ func startCapture(c config.Capture, h config.Hooks, withUI bool, profiles []core
 	}
 	return &captureRun{
 		store: st, sink: sink, hooks: hookSink, budget: core.NewBudget(c.MemoryLimit), maxBodyBytes: c.MaxBodyBytes,
-		reader: reader, hub: hub,
+		reader: reader, hub: hub, timelines: timelines,
 	}, exitOK
 }
 

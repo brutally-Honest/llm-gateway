@@ -34,7 +34,7 @@ func newTLEnv(t *testing.T) *tlEnv {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = r.Close() })
-	cache := NewTimelineCache()
+	cache := NewTimelineCache(context.Background())
 	d := Deps{Addr: addr, Reader: r, Rules: map[string]ClientRules{"cc": testRules{}}, Timelines: cache,
 		Now: func() time.Time { return baseTime.Add(100 * time.Second) }}
 	return &tlEnv{digestEnv: &digestEnv{apiEnv: &apiEnv{t: t, s: s, dir: dir, h: Handler(d)}, d: d}, cache: cache}
@@ -72,7 +72,7 @@ func ident(key string) store.SessionIdent {
 }
 
 func TestTimelineCache_TimedOutBuildIsCachedAndRetryHits(t *testing.T) {
-	c := NewTimelineCache()
+	c := NewTimelineCache(context.Background())
 	release := make(chan struct{})
 	build := func(context.Context) (builtSession, error) {
 		<-release
@@ -98,7 +98,7 @@ func TestTimelineCache_TimedOutBuildIsCachedAndRetryHits(t *testing.T) {
 }
 
 func TestTimelineCache_FailedBuildIsNotCached(t *testing.T) {
-	c := NewTimelineCache()
+	c := NewTimelineCache(context.Background())
 	boom := errors.New("boom")
 	if _, err := c.get(t.Context(), ident("k"), store.Version{}, func(context.Context) (builtSession, error) {
 		return builtSession{}, boom
@@ -116,7 +116,7 @@ func TestTimelineCache_FailedBuildIsNotCached(t *testing.T) {
 }
 
 func TestTimelineCache_ConcurrentRequestsOneBuild(t *testing.T) {
-	c := NewTimelineCache()
+	c := NewTimelineCache(context.Background())
 	started, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	build := func(context.Context) (builtSession, error) {

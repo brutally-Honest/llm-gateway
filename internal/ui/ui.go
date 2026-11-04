@@ -37,7 +37,7 @@ type Deps struct {
 	// Digests memoises session digests; nil gets a fresh cache from Handler and NewHub.
 	Digests *DigestCache
 	// Timelines memoises whole-session timeline builds; nil gets a fresh cache from
-	// Handler and NewHub.
+	// Handler and NewHub. The server passes one instance to both.
 	Timelines *TimelineCache
 	// Ctx is the server's lifetime: digest and timeline builds started by a request run
 	// on it, so they finish after the request times out. Nil is context.Background.

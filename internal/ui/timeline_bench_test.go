@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -94,11 +95,11 @@ func BenchmarkTimeline_2000Calls(b *testing.B) {
 	b.Run("cold", func(b *testing.B) {
 		b.ReportAllocs()
 		for range b.N {
-			get(Handler(deps(NewTimelineCache())))
+			get(Handler(deps(NewTimelineCache(context.Background()))))
 		}
 	})
 	b.Run("cached", func(b *testing.B) {
-		h := Handler(deps(NewTimelineCache()))
+		h := Handler(deps(NewTimelineCache(context.Background())))
 		get(h) // the first request builds; the timed ones slice its build
 		b.ReportAllocs()
 		b.ResetTimer()

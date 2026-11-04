@@ -93,9 +93,10 @@ type buildRun struct {
 // build asks for exactly one follow-up, however many arrive.
 type sessionBuilds struct{ cur, next *buildRun }
 
-// NewTimelineCache returns an empty cache with the production bounds.
-func NewTimelineCache() *TimelineCache {
-	return newTimelineCache(context.Background(), timelineCacheSessions, timelineCacheBytes)
+// NewTimelineCache returns an empty cache with the production bounds, whose builds run
+// on base, the server's lifetime.
+func NewTimelineCache(base context.Context) *TimelineCache {
+	return newTimelineCache(base, timelineCacheSessions, timelineCacheBytes)
 }
 
 // newTimelineCache is a cache whose builds run on base, the server's lifetime.

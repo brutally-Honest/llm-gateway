@@ -12,10 +12,18 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/store"
 )
 
+// A hub reads through the cache it is given rather than making its own.
+func TestHub_KeepsGivenTimelineCache(t *testing.T) {
+	c := NewTimelineCache(t.Context())
+	if got := newHub(Deps{Timelines: c}, 1).Timelines(); got != c {
+		t.Fatalf("hub cache %p, want %p", got, c)
+	}
+}
+
 // A burst of version changes during a build asks for exactly one follow-up build, aimed
 // at the newest version asked.
 func TestLiveBuild_BurstDuringBuildOneFollowUp(t *testing.T) {
-	c := NewTimelineCache()
+	c := NewTimelineCache(context.Background())
 	fill(c, "k", store.Version{ExCount: 1}, builtSession{rows: 1})
 	started, release := make(chan struct{}), make(chan struct{})
 	var mu sync.Mutex
@@ -68,7 +76,7 @@ func TestLiveBuild_BurstDuringBuildOneFollowUp(t *testing.T) {
 // While a rebuild runs, a reader gets the cached older build at once; a fresh reader
 // (the stream) waits for the build it needs.
 func TestLiveBuild_RequestDuringRebuildGetsOlderBuildWithoutWaiting(t *testing.T) {
-	c := NewTimelineCache()
+	c := NewTimelineCache(context.Background())
 	v1, v2 := store.Version{ExCount: 1}, store.Version{ExCount: 2}
 	fill(c, "k", v1, builtSession{rows: 1})
 	started, release := make(chan struct{}), make(chan struct{})
