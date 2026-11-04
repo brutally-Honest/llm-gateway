@@ -65,6 +65,7 @@ feature: 013-web-ui-redesign
 - 2026-11-04 — Name drift, tasks.md and plan.md left as approved: both name TestTimelinePaging_CursorResolvesToSamePositionOnRebuiltTimeline. The committed test is TestTimelinePaging_AfterTokenResolvesToSamePositionOnRebuiltTimeline, renamed because TestCore_NoProviderOrClientIdentifiers bans the word in internal/ui.
 - 2026-11-04 — Name drift, plan.md left as approved: it names `ranNotReportedStaysPendingInEndedSession`, which does not exist. E14 is covered by other tests: `chainShowsRanWithReportedMissing` in drawer.test.js and the `pending` chip mapping in chips.test.js.
 - 2026-11-04 — Correction to the line above: tasks.md names `ranNotReportedStaysPendingInEndedSession` too (T008's Tests line), not only plan.md. It is left as approved as well.
+- 2026-11-04 — Follow-up: add backoff when a session build keeps failing. Today it retries per request while serving stale, limited to one build per session at a time, with a 2-minute cap on each build and a warning per failure.
 
 ## Build policy for T011-T016 and the branch review
 Set by the user on 2026-11-02.
