@@ -250,7 +250,7 @@ func run(ctx context.Context, d deps) int {
 		uiSrv = &http.Server{
 			Handler: ui.Handler(ui.Deps{
 				Addr: uiLn.Addr().String(), Log: log, Reader: capt.reader, Hub: capt.hub,
-				Rules: uiRules(),
+				Rules: uiRules(), Ctx: ctx,
 			}),
 			ReadHeaderTimeout: 10 * time.Second,
 		}

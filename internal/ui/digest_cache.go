@@ -2,6 +2,7 @@ package ui
 
 import (
 	"container/list"
+	"context"
 	"sync"
 	"sync/atomic"
 
@@ -31,14 +32,19 @@ type DigestCache struct {
 	max      int
 	ll       *list.List // front is most recently used
 	items    map[digestKey]*list.Element
+	flights  *flightGroup[digestKey, timeline.Digest]
 	computes atomic.Int64
 }
 
 // NewDigestCache returns an empty cache holding at most 512 digests.
 func NewDigestCache() *DigestCache { return newDigestCache(digestCacheSize) }
 
-func newDigestCache(max int) *DigestCache {
-	return &DigestCache{max: max, ll: list.New(), items: map[digestKey]*list.Element{}}
+func newDigestCache(max int) *DigestCache { return newDigestCacheCtx(context.Background(), max) }
+
+// newDigestCacheCtx is a cache whose computes run on base, the server's lifetime.
+func newDigestCacheCtx(base context.Context, max int) *DigestCache {
+	return &DigestCache{max: max, ll: list.New(), items: map[digestKey]*list.Element{},
+		flights: newFlightGroup[digestKey, timeline.Digest](base)}
 }
 
 func cloneDigest(d timeline.Digest) timeline.Digest {
@@ -50,31 +56,26 @@ func cloneDigest(d timeline.Digest) timeline.Digest {
 	return d
 }
 
-// get returns the digest at k, computing it outside the lock on a miss. Two callers
-// may compute the same entry at once; the values are equal, the last write wins.
-func (c *DigestCache) get(k digestKey, compute func() (timeline.Digest, error)) (timeline.Digest, error) {
+// lookup returns the cached digest at k.
+func (c *DigestCache) lookup(k digestKey) (timeline.Digest, bool) {
 	c.mu.Lock()
-	if el, ok := c.items[k]; ok {
-		c.ll.MoveToFront(el)
-		v := cloneDigest(el.Value.(*digestEntry).val)
-		c.mu.Unlock()
-		return v, nil
+	defer c.mu.Unlock()
+	el, ok := c.items[k]
+	if !ok {
+		return timeline.Digest{}, false
 	}
-	c.mu.Unlock()
+	c.ll.MoveToFront(el)
+	return cloneDigest(el.Value.(*digestEntry).val), true
+}
 
-	c.computes.Add(1)
-	d, err := compute()
-	if err != nil {
-		return timeline.Digest{}, err
-	}
+func (c *DigestCache) store(k digestKey, d timeline.Digest) {
 	stored := cloneDigest(d)
-
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if el, ok := c.items[k]; ok {
 		el.Value.(*digestEntry).val = stored
 		c.ll.MoveToFront(el)
-		return d, nil
+		return
 	}
 	c.items[k] = c.ll.PushFront(&digestEntry{at: k, val: stored})
 	for c.ll.Len() > c.max {
@@ -82,7 +83,31 @@ func (c *DigestCache) get(k digestKey, compute func() (timeline.Digest, error)) 
 		c.ll.Remove(last)
 		delete(c.items, last.Value.(*digestEntry).at)
 	}
-	return d, nil
+}
+
+// get returns the digest at k. A miss computes it once however many requests ask: the
+// compute runs on the cache's own context and stores its result, so a request that
+// times out leaves the digest cached for its retry. A failed compute stores nothing.
+func (c *DigestCache) get(ctx context.Context, k digestKey, compute func(context.Context) (timeline.Digest, error)) (timeline.Digest, error) {
+	if d, ok := c.lookup(k); ok {
+		return d, nil
+	}
+	d, err := c.flights.do(ctx, k, func(bctx context.Context) (timeline.Digest, error) {
+		if d, ok := c.lookup(k); ok { // stored by a flight that just ended
+			return d, nil
+		}
+		c.computes.Add(1)
+		d, err := compute(bctx)
+		if err != nil {
+			return timeline.Digest{}, err
+		}
+		c.store(k, d)
+		return d, nil
+	})
+	if err != nil {
+		return timeline.Digest{}, err
+	}
+	return cloneDigest(d), nil
 }
 
 func (c *DigestCache) len() int {

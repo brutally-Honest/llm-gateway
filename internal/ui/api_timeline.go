@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
@@ -18,6 +19,10 @@ type timelinePage struct {
 	Entries     []entryJSON `json:"entries"`
 	NextAfter   *string     `json:"next_after"`
 	StreamSince int64       `json:"stream_since"`
+	// Version and EventPosition are the build's store version and how far into the
+	// store it reaches.
+	Version       versionJSON       `json:"version"`
+	EventPosition eventPositionJSON `json:"event_position"`
 }
 
 func mountExchanges(api chi.Router, d Deps) {
@@ -80,23 +85,28 @@ func (d Deps) getTimeline(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := storeCtx(r)
 	defer cancel()
 	c := d.Reader.WithContext(ctx)
-	bs, err := buildSession(c, sessIdent{principal, client, key}, d.Rules[client], entryCut)
+	ident := store.SessionIdent{Principal: principal, Client: client, Key: key}
+	vers, err := c.SessionVersions([]store.SessionIdent{ident})
 	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
-	if bs.rows == 0 {
-		// A session known only from hook events has a timeline of hook lines (AC25).
-		hooks, err := c.HookEvents(principal, client, key)
-		if err != nil {
-			writeStoreErr(w, err)
-			return
-		}
-		if len(hooks) == 0 {
-			writeErr(w, http.StatusNotFound, "not_found", "no such session")
-			return
-		}
+	ver := vers[ident]
+	if ver.ExCount == 0 && ver.HookCount == 0 {
+		// Neither exchanges nor hook events (AC25): there is no such session.
+		writeErr(w, http.StatusNotFound, "not_found", "no such session")
+		return
 	}
+	// The build runs on the cache's context, not the request's: when this request times
+	// out the build still finishes and is cached, and the retry hits it.
+	built, err := d.Timelines.get(ctx, ident, ver, func(bctx context.Context) (builtSession, error) {
+		return buildSession(d.Reader.WithContext(bctx), sessIdent{principal, client, key}, d.Rules[client], entryCut)
+	})
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	bs := built.bs
 	entries, byID, facts, rowID := bs.entries, bs.byID, bs.facts, bs.rowID
 	all := mapEntries(entries, byID, facts, d.Rules[client])
 	pos := make([]position, len(all))
@@ -113,7 +123,7 @@ func (d Deps) getTimeline(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	end := min(from+limit, len(all))
-	page := timelinePage{Entries: all[from:end]}
+	page := timelinePage{Entries: all[from:end], Version: versionToJSON(built.ver), EventPosition: positionOf(built.ver)}
 	for _, e := range page.Entries {
 		page.StreamSince = max(page.StreamSince, rowID[e.ExchangeID])
 	}

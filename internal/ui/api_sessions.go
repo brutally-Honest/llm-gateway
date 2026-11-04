@@ -75,6 +75,10 @@ type sessionSummary struct {
 	Active     bool           `json:"active"`
 	// HooksOnly marks a session known only from hook events (AC25).
 	HooksOnly bool `json:"hooks_only"`
+	// Version and EventPosition are the store version the summary's digest was read at
+	// and how far into the store it reaches; absent for an ungrouped exchange.
+	Version       *versionJSON       `json:"version,omitempty"`
+	EventPosition *eventPositionJSON `json:"event_position,omitempty"`
 }
 
 type listPage struct {
@@ -203,8 +207,8 @@ func (s singleSource) SessionExchanges(string, string, string) ([]store.Exchange
 }
 
 // summarize reads one session's version, stats and digest and builds its summary.
-func (d Deps) summarize(c *store.CtxReader, id string, row store.SessionRow, now time.Time) (sessionSummary, error) {
-	out, err := d.summarizeRows(c, []string{id}, []store.SessionRow{row}, now)
+func (d Deps) summarize(ctx context.Context, c *store.CtxReader, id string, row store.SessionRow, now time.Time) (sessionSummary, error) {
+	out, err := d.summarizeRows(ctx, c, []string{id}, []store.SessionRow{row}, now)
 	if err != nil {
 		return sessionSummary{}, err
 	}
@@ -218,7 +222,7 @@ func sessionIdent(row store.SessionRow) store.SessionIdent {
 // summarizeRows builds the summaries of rows (ids[i] is rows[i]'s id). The versions
 // of the whole page come from one read; digests are memoised on them, while stats and
 // the clock-dependent values are always fresh.
-func (d Deps) summarizeRows(c *store.CtxReader, ids []string, rows []store.SessionRow, now time.Time) ([]sessionSummary, error) {
+func (d Deps) summarizeRows(ctx context.Context, c *store.CtxReader, ids []string, rows []store.SessionRow, now time.Time) ([]sessionSummary, error) {
 	idents := make([]store.SessionIdent, len(rows))
 	for i, r := range rows {
 		idents[i] = sessionIdent(r)
@@ -234,17 +238,25 @@ func (d Deps) summarizeRows(c *store.CtxReader, ids []string, rows []store.Sessi
 		if err != nil {
 			return nil, err
 		}
-		compute := func() (timeline.Digest, error) { return sessionDigest(c, rules, row) }
 		var dg timeline.Digest
-		if d.Digests != nil {
-			dg, err = d.Digests.get(digestKey{idents[i], vers[idents[i]]}, compute)
+		if d.Digests != nil && d.Reader != nil {
+			// The compute runs on the cache's own context and reader, so it still lands
+			// in the cache when this request times out.
+			compute := func(bctx context.Context) (timeline.Digest, error) {
+				return sessionDigest(d.Reader.WithContext(bctx), rules, row)
+			}
+			dg, err = d.Digests.get(ctx, digestKey{idents[i], vers[idents[i]]}, compute)
 		} else {
-			dg, err = compute()
+			dg, err = sessionDigest(c, rules, row)
 		}
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, buildSummary(ids[i], row, st, dg, now))
+		sum := buildSummary(ids[i], row, st, dg, now)
+		v := vers[idents[i]]
+		vj, pj := versionToJSON(v), positionOf(v)
+		sum.Version, sum.EventPosition = &vj, &pj
+		out = append(out, sum)
 	}
 	return out, nil
 }
@@ -316,7 +328,7 @@ func (d Deps) listSessions(w http.ResponseWriter, r *http.Request) {
 	for i, row := range rows {
 		ids[i] = sessionID(row)
 	}
-	items, err := d.summarizeRows(c, ids, rows, d.now())
+	items, err := d.summarizeRows(ctx, c, ids, rows, d.now())
 	if err != nil {
 		writeStoreErr(w, err)
 		return
@@ -394,7 +406,7 @@ func (d Deps) getSession(w http.ResponseWriter, r *http.Request) {
 		writeStoreErr(w, err)
 		return
 	}
-	sum, err := d.summarize(c, sessionID(row), row, d.now())
+	sum, err := d.summarize(ctx, c, sessionID(row), row, d.now())
 	if err != nil {
 		writeStoreErr(w, err)
 		return

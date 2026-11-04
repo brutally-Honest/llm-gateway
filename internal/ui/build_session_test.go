@@ -9,15 +9,15 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
 
-// countingSource counts Events reads per request.
+// countingSource counts Events reads per request; everything else is the store's.
 type countingSource struct {
-	timeline.Source
+	*store.CtxReader
 	reads map[string]int
 }
 
 func (c *countingSource) Events(id string) ([]store.EventRow, error) {
 	c.reads[id]++
-	return c.Source.Events(id)
+	return c.CtxReader.Events(id)
 }
 
 func TestBuildSession_LoadsEventsOnce(t *testing.T) {
@@ -25,13 +25,9 @@ func TestBuildSession_LoadsEventsOnce(t *testing.T) {
 	e.call("a", 1, 0, 1, "user:start")
 	e.call("b", 2, 0, 1, "user:start", "assistant:ok", "user:next")
 	e.call("c", 3, 0, 1, "user:start", "assistant:ok", "user:next", "assistant:k", "user:more")
-	rows, err := e.d.Reader.SessionExchanges(core.PrincipalLocal, "cc", "k")
-	if err != nil || len(rows) != 3 {
-		t.Fatalf("rows = %d err = %v", len(rows), err)
-	}
-	src := &countingSource{Source: e.d.Reader, reads: map[string]int{}}
+	src := &countingSource{CtxReader: e.d.Reader.WithContext(t.Context()), reads: map[string]int{}}
 	who := sessIdent{core.PrincipalLocal, "cc", "k"}
-	bs, err := buildFrom(src, who, rows, testRules{}, entryCut)
+	bs, err := buildSession(src, who, testRules{}, entryCut)
 	if err != nil {
 		t.Fatal(err)
 	}

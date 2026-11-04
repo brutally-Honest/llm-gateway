@@ -39,8 +39,15 @@ func (s *eventsOnce) Events(id string) ([]store.EventRow, error) {
 	return evs, nil
 }
 
+// sessionSource is what a session build reads: the timeline's events and content, and
+// the one-snapshot read of the session's exchanges. *store.CtxReader is one.
+type sessionSource interface {
+	timeline.Source
+	SessionSnapshot(principal, client, key string) ([]store.RowExchange, int64, error)
+}
+
 // buildSession reads a session's exchanges in one snapshot and builds it.
-func buildSession(c *store.CtxReader, who sessIdent, rules ClientRules, cut int) (builtSession, error) {
+func buildSession(c sessionSource, who sessIdent, rules ClientRules, cut int) (builtSession, error) {
 	rows, _, err := c.SessionSnapshot(who.principal, who.client, who.name)
 	if err != nil {
 		return builtSession{}, err

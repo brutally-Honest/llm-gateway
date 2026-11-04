@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"context"
 	"embed"
 	"io/fs"
 	"net"
@@ -35,6 +36,12 @@ type Deps struct {
 	Rules map[string]ClientRules
 	// Digests memoises session digests; nil gets a fresh cache from Handler and NewHub.
 	Digests *DigestCache
+	// Timelines memoises whole-session timeline builds; nil gets a fresh cache from
+	// Handler and NewHub.
+	Timelines *TimelineCache
+	// Ctx is the server's lifetime: digest and timeline builds started by a request run
+	// on it, so they finish after the request times out. Nil is context.Background.
+	Ctx context.Context
 }
 
 // ClientRules is the client-specific knowledge the UI needs, implemented by a client
@@ -76,7 +83,10 @@ func allowedHosts(addr string) map[string]bool {
 // newRouter builds the router; extra mounts are for tests and later routes.
 func newRouter(d Deps, extra ...func(chi.Router)) chi.Router {
 	if d.Digests == nil {
-		d.Digests = NewDigestCache()
+		d.Digests = newDigestCacheCtx(d.Ctx, digestCacheSize)
+	}
+	if d.Timelines == nil {
+		d.Timelines = newTimelineCache(d.Ctx, timelineCacheSessions, timelineCacheBytes)
 	}
 	log := d.Log
 	if log == nil {

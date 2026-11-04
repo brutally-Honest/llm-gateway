@@ -115,8 +115,12 @@ func NewHub(d Deps) *Hub {
 }
 
 func newHub(d Deps, queue int) *Hub {
+	ctx, cancel := context.WithCancel(context.Background())
 	if d.Digests == nil {
-		d.Digests = NewDigestCache()
+		d.Digests = newDigestCacheCtx(ctx, digestCacheSize)
+	}
+	if d.Timelines == nil {
+		d.Timelines = newTimelineCache(ctx, timelineCacheSessions, timelineCacheBytes)
 	}
 	log := d.Log
 	if log == nil {
@@ -128,7 +132,7 @@ func newHub(d Deps, queue int) *Hub {
 		q:       make(chan capture.Committed, queue), done: make(chan struct{}),
 		subs: map[*subscriber]struct{}{},
 	}
-	h.ctx, h.cancel = context.WithCancel(context.Background())
+	h.ctx, h.cancel = ctx, cancel
 	h.read = func(ctx context.Context, who sessIdent, ids []string, summary, entries bool) (liveMsg, error) {
 		return readLive(ctx, d, who, ids, summary, entries)
 	}
@@ -427,7 +431,7 @@ func readLive(ctx context.Context, d Deps, who sessIdent, ids []string, summary,
 		row, err := c.SessionByKey(who.principal, who.client, who.name)
 		switch {
 		case err == nil:
-			s, err := d.summarize(c, who.id(), row, d.now())
+			s, err := d.summarize(ctx, c, who.id(), row, d.now())
 			if err != nil {
 				return liveMsg{}, err
 			}
@@ -527,7 +531,7 @@ func readSnapshot(ctx context.Context, d Deps, session string) (snapshot, error)
 		row, err := c.SessionByKey(principal, client, key)
 		switch {
 		case err == nil:
-			s, err := d.summarize(c, session, row, d.now())
+			s, err := d.summarize(ctx, c, session, row, d.now())
 			if err != nil {
 				return snapshot{}, err
 			}
@@ -547,7 +551,7 @@ func readSnapshot(ctx context.Context, d Deps, session string) (snapshot, error)
 	for i, row := range rows {
 		ids[i] = sessionID(row)
 	}
-	sums, err := d.summarizeRows(c, ids, rows, d.now())
+	sums, err := d.summarizeRows(ctx, c, ids, rows, d.now())
 	if err != nil {
 		return snapshot{}, err
 	}
