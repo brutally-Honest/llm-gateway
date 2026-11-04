@@ -58,12 +58,12 @@ func buildSession(c *store.CtxReader, who sessIdent, rules ClientRules, cut int)
 
 // buildFrom builds the timeline of exs, loading each exchange's events once for both
 // the entries and the call facts.
-func buildFrom(c *store.CtxReader, who sessIdent, exs []store.ExchangeRow, rules ClientRules, cut int) (builtSession, error) {
+func buildFrom(source timeline.Source, who sessIdent, exs []store.ExchangeRow, rules ClientRules, cut int) (builtSession, error) {
 	byID := make(map[string]store.ExchangeRow, len(exs))
 	for _, x := range exs {
 		byID[x.RequestID] = x
 	}
-	src := &eventsOnce{Source: c, exs: exs, events: map[string][]store.EventRow{}}
+	src := &eventsOnce{Source: source, exs: exs, events: map[string][]store.EventRow{}}
 	session := store.SessionRow{PrincipalID: who.principal, Client: who.client, SessionKey: who.name}
 	entries, _, err := timeline.BuildWithUsage(src, session, timeline.Options{Cut: cut})
 	if err != nil {

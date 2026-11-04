@@ -29,22 +29,22 @@ func TestBuildSession_LoadsEventsOnce(t *testing.T) {
 	if err != nil || len(rows) != 3 {
 		t.Fatalf("rows = %d err = %v", len(rows), err)
 	}
-	src := &eventsOnce{Source: &countingSource{Source: e.d.Reader, reads: map[string]int{}}, exs: rows, events: map[string][]store.EventRow{}}
-	session := store.SessionRow{PrincipalID: core.PrincipalLocal, Client: "cc", SessionKey: "k"}
-	entries, _, err := timeline.BuildWithUsage(src, session, timeline.Options{Cut: entryCut})
+	src := &countingSource{Source: e.d.Reader, reads: map[string]int{}}
+	who := sessIdent{core.PrincipalLocal, "cc", "k"}
+	bs, err := buildFrom(src, who, rows, testRules{}, entryCut)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := callFacts(src, entries, testRules{}, src.events); err != nil {
-		t.Fatal(err)
+	if len(bs.entries) == 0 || len(bs.facts) != 3 {
+		t.Fatalf("entries = %d facts = %d", len(bs.entries), len(bs.facts))
 	}
-	for id, n := range src.Source.(*countingSource).reads {
+	for id, n := range src.reads {
 		if n != 1 {
 			t.Fatalf("events of %s read %d times", id, n)
 		}
 	}
-	if len(src.Source.(*countingSource).reads) != 3 {
-		t.Fatalf("reads = %v", src.Source.(*countingSource).reads)
+	if len(src.reads) != 3 {
+		t.Fatalf("reads = %v", src.reads)
 	}
 }
 
