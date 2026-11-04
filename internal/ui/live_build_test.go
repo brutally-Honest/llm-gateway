@@ -214,6 +214,111 @@ func TestLiveBuild_FailedRebuildIsLoggedAndKeepsStale(t *testing.T) {
 	}
 }
 
+// A build of an older version that finishes after a newer one was stored does not replace
+// it. The caller that asked for it still gets its own build.
+func TestLiveBuild_SlowOlderBuildDoesNotReplaceNewer(t *testing.T) {
+	c := NewTimelineCache(t.Context(), nil)
+	v2, v3 := store.Version{ExCount: 2}, store.Version{ExCount: 3}
+	started, release := make(chan struct{}), make(chan struct{})
+	newer := make(chan *cachedBuild, 1)
+	go func() {
+		b, _ := c.get(t.Context(), ident("k"), v3, func(context.Context) (builtSession, error) {
+			close(started)
+			<-release
+			return builtSession{rows: 3}, nil
+		})
+		newer <- b
+	}()
+	<-started
+	older := make(chan *cachedBuild, 1)
+	go func() { // read its version before the commit, so it asks late for an older build
+		b, _ := c.get(t.Context(), ident("k"), v2, func(context.Context) (builtSession, error) {
+			return builtSession{rows: 2}, nil
+		})
+		older <- b
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) { // the older build is queued behind the newer one
+		c.fmu.Lock()
+		queued := c.active[ident("k")].next != nil
+		c.fmu.Unlock()
+		if queued {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	close(release)
+	if b := <-newer; b == nil || b.bs.rows != 3 {
+		t.Fatalf("newer = %+v", b)
+	}
+	if b := <-older; b == nil || b.bs.rows != 2 {
+		t.Fatalf("older caller got %+v, want its own build", b)
+	}
+	got, ok := c.peek(ident("k"))
+	if !ok || got.ver != v3 || got.bs.rows != 3 {
+		t.Fatalf("cached = %+v, want the newer build kept", got)
+	}
+	if _, ok := c.lookup(ident("k"), v3); !ok {
+		t.Fatal("the newer version misses")
+	}
+}
+
+// An older version asked after a newer one does not move the queued follow-up back.
+func TestLiveBuild_FollowUpStaysAtNewestVersion(t *testing.T) {
+	c := NewTimelineCache(t.Context(), nil)
+	started, release := make(chan struct{}), make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = c.get(t.Context(), ident("k"), store.Version{ExCount: 1}, func(context.Context) (builtSession, error) {
+			close(started)
+			<-release
+			return builtSession{rows: 1}, nil
+		})
+	}()
+	<-started
+	build := func(rows int) func(context.Context) (builtSession, error) {
+		return func(context.Context) (builtSession, error) { return builtSession{rows: rows}, nil }
+	}
+	v3, v2 := store.Version{ExCount: 3}, store.Version{ExCount: 2}
+	c.fmu.Lock()
+	c.joinLocked(ident("k"), v3, build(3))
+	r := c.joinLocked(ident("k"), v2, build(2)) // the older asker shares the newer run
+	c.fmu.Unlock()
+	close(release)
+	<-done
+	<-r.done
+	if r.res == nil || r.res.ver != v3 || r.res.bs.rows != 3 {
+		t.Fatalf("follow-up = %+v, want the newest version", r.res)
+	}
+}
+
+// Versions are ordered field by field; a pair no write could produce still stores, so the
+// cache can never be pinned to its entry.
+func TestVersionAfter(t *testing.T) {
+	base := store.Version{ExCount: 2, ExMaxRow: 5, Parsed: 1, HookCount: 1, HookMaxID: 3}
+	for _, c := range []struct {
+		name string
+		mod  func(*store.Version)
+		want bool
+	}{
+		{"same", func(*store.Version) {}, false},
+		{"exchange count", func(v *store.Version) { v.ExCount++ }, true},
+		{"exchange row", func(v *store.Version) { v.ExMaxRow++ }, true},
+		{"parse landed", func(v *store.Version) { v.Parsed++ }, true},
+		{"hook count", func(v *store.Version) { v.HookCount++ }, true},
+		{"hook id", func(v *store.Version) { v.HookMaxID++ }, true},
+		{"older", func(v *store.Version) { v.ExCount-- }, false},
+		{"unordered", func(v *store.Version) { v.ExCount--; v.HookCount++ }, true},
+	} {
+		v := base
+		c.mod(&v)
+		if got := versionAfter(v, base); got != c.want {
+			t.Errorf("%s: versionAfter = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
 func timelineOver(t *testing.T, e *streamEnv, path string) tlPage {
 	t.Helper()
 	resp, err := http.Get(e.ts.URL + path)

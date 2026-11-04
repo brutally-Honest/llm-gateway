@@ -124,10 +124,24 @@ func (c *TimelineCache) lookup(id store.SessionIdent, ver store.Version) (*cache
 	return el.Value.(*cachedBuild), true
 }
 
+// versionAfter reports whether a is newer than b. Every field only grows, because the
+// store never deletes, so two versions of a session are ordered unless something
+// unforeseen moved a field back. Such a pair counts as newer: refusing it would pin the
+// cache to its entry for good, while storing it costs at most one rebuild.
+func versionAfter(a, b store.Version) bool {
+	older := a.ExCount <= b.ExCount && a.ExMaxRow <= b.ExMaxRow && a.Parsed <= b.Parsed &&
+		a.HookCount <= b.HookCount && a.HookMaxID <= b.HookMaxID
+	return !older
+}
+
+// store keeps b unless the session's cached build is at b's version or newer.
 func (c *TimelineCache) store(id store.SessionIdent, b *cachedBuild) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if el, ok := c.items[id]; ok { // an older version of the session
+	if el, ok := c.items[id]; ok {
+		if !versionAfter(b.ver, el.Value.(*cachedBuild).ver) {
+			return // a build that started on older data finished last
+		}
 		c.bytes -= el.Value.(*cachedBuild).size
 		c.ll.Remove(el)
 	}
@@ -211,7 +225,7 @@ func (c *TimelineCache) joinLocked(id store.SessionIdent, ver store.Version,
 	}
 	if sb.next == nil {
 		sb.next = newRun()
-	} else {
+	} else if versionAfter(ver, sb.next.ver) {
 		sb.next.ver, sb.next.build = ver, build
 	}
 	return sb.next
