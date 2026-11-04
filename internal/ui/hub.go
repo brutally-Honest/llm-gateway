@@ -89,6 +89,7 @@ func (s *subscriber) drop() { s.once.Do(func() { close(s.gone) }) }
 type Hub struct {
 	log       *zap.Logger
 	timelines *TimelineCache
+	digests   *DigestCache
 	read      readFn
 	snap      snapFn
 	heartbeat time.Duration
@@ -121,6 +122,9 @@ func NewHub(d Deps) *Hub {
 // Timelines is the timeline cache the hub reads through.
 func (h *Hub) Timelines() *TimelineCache { return h.timelines }
 
+// Digests is the digest cache the hub reads through.
+func (h *Hub) Digests() *DigestCache { return h.digests }
+
 func newHub(d Deps, queue int) *Hub {
 	ctx, cancel := context.WithCancel(context.Background())
 	if d.Digests == nil {
@@ -134,7 +138,7 @@ func newHub(d Deps, queue int) *Hub {
 		log = zap.NewNop()
 	}
 	h := &Hub{
-		log: log, timelines: d.Timelines, heartbeat: heartbeatEvery, hookEvery: hookRefreshEvery,
+		log: log, timelines: d.Timelines, digests: d.Digests, heartbeat: heartbeatEvery, hookEvery: hookRefreshEvery,
 		pending: map[sessIdent]*pendingRefresh{},
 		q:       make(chan capture.Committed, queue), done: make(chan struct{}),
 		subs: map[*subscriber]struct{}{},

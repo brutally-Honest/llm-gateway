@@ -38,8 +38,11 @@ type DigestCache struct {
 	computes atomic.Int64
 }
 
-// NewDigestCache returns an empty cache holding at most 512 digests.
-func NewDigestCache() *DigestCache { return newDigestCache(digestCacheSize) }
+// NewDigestCache returns an empty cache holding at most 512 digests, whose computes run
+// on base, the server's lifetime, and log their panics to log (nil logs nothing).
+func NewDigestCache(base context.Context, log *zap.Logger) *DigestCache {
+	return newDigestCacheCtx(base, log, digestCacheSize)
+}
 
 func newDigestCache(max int) *DigestCache {
 	return newDigestCacheCtx(context.Background(), nil, max)

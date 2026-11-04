@@ -35,6 +35,7 @@ type Deps struct {
 	// Rules maps a client name to its rules; nil means no side calls and whole prompts.
 	Rules map[string]ClientRules
 	// Digests memoises session digests; nil gets a fresh cache from Handler and NewHub.
+	// The server passes one instance to both.
 	Digests *DigestCache
 	// Timelines memoises whole-session timeline builds; nil gets a fresh cache from
 	// Handler and NewHub. The server passes one instance to both.

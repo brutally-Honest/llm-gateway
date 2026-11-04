@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -165,7 +166,7 @@ func TestDigestCache_BoundedAndRaceFree(t *testing.T) {
 }
 
 func TestDigestCache_ProductionBound(t *testing.T) {
-	if c := NewDigestCache(); c.max != 512 {
+	if c := NewDigestCache(context.Background(), nil); c.max != 512 {
 		t.Fatalf("max = %d", c.max)
 	}
 }
@@ -188,7 +189,7 @@ func BenchmarkSessionList_WarmCache(b *testing.B) {
 		b.Fatal(err)
 	}
 	defer func() { _ = r.Close() }()
-	cache := NewDigestCache()
+	cache := NewDigestCache(context.Background(), nil)
 	d := Deps{Addr: addr, Reader: r, Rules: map[string]ClientRules{"cc": testRules{}}, Digests: cache,
 		Now: func() time.Time { return baseTime.Add(100 * time.Second) }}
 	h := Handler(d)
@@ -211,5 +212,13 @@ func BenchmarkSessionList_WarmCache(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		serve(h)
+	}
+}
+
+// A hub reads through the digest cache it is given rather than making its own.
+func TestHub_KeepsGivenDigestCache(t *testing.T) {
+	c := NewDigestCache(t.Context(), nil)
+	if got := newHub(Deps{Digests: c}, 1).Digests(); got != c {
+		t.Fatalf("hub cache %p, want %p", got, c)
 	}
 }

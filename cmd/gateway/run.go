@@ -359,6 +359,8 @@ type captureRun struct {
 	// timelines is the one timeline cache the hub and the UI handler share, so the
 	// process holds a single set of builds under a single byte budget.
 	timelines *ui.TimelineCache
+	// digests is the one digest cache they share, for the same reason.
+	digests *ui.DigestCache
 }
 
 // hookSink is the hook sink, or nil with capture off or a store that cannot save hooks.
@@ -393,7 +395,7 @@ func (c *captureRun) hasUI() bool { return c != nil && c.hub != nil }
 func (c *captureRun) uiDeps(ctx context.Context, addr string, log *zap.Logger) ui.Deps {
 	return ui.Deps{
 		Addr: addr, Log: log, Reader: c.reader, Hub: c.hub,
-		Rules: uiRules(), Ctx: ctx, Timelines: c.timelines,
+		Rules: uiRules(), Ctx: ctx, Timelines: c.timelines, Digests: c.digests,
 	}
 }
 
@@ -422,6 +424,7 @@ func startCapture(ctx context.Context, c config.Capture, h config.Hooks, withUI 
 	var reader *store.Reader
 	var hub *ui.Hub
 	var timelines *ui.TimelineCache
+	var digests *ui.DigestCache
 	if withUI {
 		// The store exists now (E2), so the read-only view can open on it.
 		if reader, err = store.OpenReader(dir); err != nil {
@@ -433,7 +436,8 @@ func startCapture(ctx context.Context, c config.Capture, h config.Hooks, withUI 
 			return nil, exitRuntime
 		}
 		timelines = ui.NewTimelineCache(ctx, log)
-		hub = ui.NewHub(ui.Deps{Log: log, Reader: reader, Rules: uiRules(), Timelines: timelines})
+		digests = ui.NewDigestCache(ctx, log)
+		hub = ui.NewHub(ui.Deps{Log: log, Reader: reader, Rules: uiRules(), Timelines: timelines, Digests: digests})
 		cfg.OnCommit = hub.Publish
 	}
 	sink := capture.NewSink(cfg, st, log)
@@ -448,7 +452,7 @@ func startCapture(ctx context.Context, c config.Capture, h config.Hooks, withUI 
 	}
 	return &captureRun{
 		store: st, sink: sink, hooks: hookSink, budget: core.NewBudget(c.MemoryLimit), maxBodyBytes: c.MaxBodyBytes,
-		reader: reader, hub: hub, timelines: timelines,
+		reader: reader, hub: hub, timelines: timelines, digests: digests,
 	}, exitOK
 }
 
