@@ -27,9 +27,12 @@ XDG_DATA_HOME=/tmp/ui013-data \
 node docs/manual-checks/seed-calls.mjs --live                          # leave it running
 ```
 
-The seed takes about a minute and prints `seeded 2000 calls` once all of them are captured;
-any shortfall exits 1 instead. `--live` then adds a call every 2 s, which keeps the session
-active and gives steps 14 and 15 their live traffic. Stop it with Ctrl-C after step 15. With
+A clean run takes about a minute and prints `seeded 2000 calls` once all of them are captured.
+If the UI answers 504 to the seed's capture poll, the seed stops early and exits 1, at about
+1,500 to 2,000 calls. The 504 means the UI's 5 s store timeout ran out while the session list
+was built cold, so the gateway is up and only slow; run the seed again on a fresh data
+directory. `--live` then adds a call every 2 s, which keeps the session active and gives steps
+14 and 15 their live traffic. Stop it with Ctrl-C after step 15. With
 the setting above, the stub answers every call and nothing reaches a provider. Without it,
 the first call goes to the configured upstream with a fake key, and the seed stops there. A
 turn is 10 calls, most with a tool use, and one call in 50 is an error. The session is the

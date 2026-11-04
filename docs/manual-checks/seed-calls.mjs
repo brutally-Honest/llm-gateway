@@ -97,6 +97,11 @@ async function step(n) {
 // the session key, so the session's title finds it.
 async function capturedCalls() {
   const res = await fetch(`${args.ui}/api/sessions`);
+  // A 504 is the UI's 5 s store timeout running out while the session list is built cold for
+  // a session this large. The gateway is up; the build goes on and is cached.
+  if (res.status === 504) {
+    throw new Error(`${args.ui}/api/sessions answered 504: the UI's 5 s store timeout ran out while the session list was being built, so the gateway is running but slow to answer. Run the seed again on a fresh data directory.`);
+  }
   if (!res.ok) throw new Error(`${args.ui}/api/sessions answered ${res.status}`);
   const { items } = await res.json();
   return items.find((s) => s.title?.includes(sessionKey))?.model_calls ?? 0;
@@ -144,7 +149,9 @@ stub.listen(Number(args["stub-port"]), "127.0.0.1", async () => {
       await new Promise((r) => setTimeout(r, 2000));
     }
   } catch (e) {
-    console.error(`stopped: ${e.message}. Is the gateway running at ${args.gateway}?`);
+    console.error(`stopped: ${e.message}`);
+    // Node's fetch throws a TypeError when no server answers; only then is the gateway the suspect.
+    if (e instanceof TypeError) console.error(`No answer from ${args.gateway} or ${args.ui}. Is the gateway running?`);
     process.exit(1);
   }
 });
