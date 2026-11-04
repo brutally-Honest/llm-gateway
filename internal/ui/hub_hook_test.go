@@ -150,7 +150,7 @@ func TestHub_HookRefreshSendsOnlyChangedExchanges(t *testing.T) {
 	}
 	sent := map[string]string{"a": "1", "b": "old"}
 	w := httptest.NewRecorder()
-	if err := writeLive(w, liveMsg{All: all, Refresh: true}, sent); err != nil {
+	if err := writeLive(w, liveMsg{All: all, Refresh: true}, sent, eventPositionJSON{}); err != nil {
 		t.Fatal(err)
 	}
 	body := w.Body.String()
@@ -161,7 +161,7 @@ func TestHub_HookRefreshSendsOnlyChangedExchanges(t *testing.T) {
 		t.Fatalf("body = %q", body)
 	}
 	w = httptest.NewRecorder()
-	if err := writeLive(w, liveMsg{All: all, Refresh: true}, sent); err != nil || w.Body.Len() != 0 {
+	if err := writeLive(w, liveMsg{All: all, Refresh: true}, sent, eventPositionJSON{}); err != nil || w.Body.Len() != 0 {
 		t.Fatalf("second write = %q %v", w.Body.String(), err)
 	}
 }

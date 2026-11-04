@@ -892,7 +892,7 @@ func TestStream_CommitResendsEarlierExchangeWhoseStateChanged(t *testing.T) {
 	sent := map[string]string{"a": "old"}
 	w := httptest.NewRecorder()
 	m := liveMsg{All: []liveExchange{early, late}, Exchanges: []liveExchange{late}}
-	if err := writeLive(w, m, sent); err != nil {
+	if err := writeLive(w, m, sent, eventPositionJSON{}); err != nil {
 		t.Fatal(err)
 	}
 	body := w.Body.String()

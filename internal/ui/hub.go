@@ -62,6 +62,9 @@ type liveMsg struct {
 	All       []liveExchange // every exchange of the session, in timeline order
 	Inactive  bool           // the session's last exchange started over ActiveWindow ago (E21)
 	Refresh   bool           // a hook refresh: send every exchange in All that differs from what was sent
+	// Position is how far into the store the build behind Exchanges and All reaches.
+	// A stream drops a message built from less than its snapshot saw.
+	Position eventPositionJSON
 }
 
 // readFn reads what a batch of commits to one session needs: the summary and/or the
@@ -413,7 +416,7 @@ func (h *Hub) readAndSend(who sessIdent, ids []string, global, session, refresh 
 	}
 	if session && (refresh || len(m.Exchanges) > 0) {
 		for _, s := range h.targets(id, false) {
-			h.send(s, liveMsg{Summary: m.Summary, Exchanges: m.Exchanges, All: m.All, Inactive: m.Inactive, Refresh: refresh})
+			h.send(s, liveMsg{Summary: m.Summary, Exchanges: m.Exchanges, All: m.All, Inactive: m.Inactive, Refresh: refresh, Position: m.Position})
 		}
 	}
 }
@@ -441,10 +444,11 @@ func readLive(ctx context.Context, d Deps, who sessIdent, ids []string, summary,
 		}
 	}
 	if entries {
-		all, err := sessionExchanges(c, who, d.Rules[who.client])
+		all, ver, err := sessionExchanges(ctx, d, who)
 		if err != nil {
 			return liveMsg{}, err
 		}
+		m.Position = positionOf(ver)
 		want := make(map[string]bool, len(ids))
 		for _, id := range ids {
 			want[id] = true
@@ -472,11 +476,31 @@ func readLive(ctx context.Context, d Deps, who sessIdent, ids []string, summary,
 // sessionExchanges builds a session's whole timeline from one snapshot read and returns
 // each stored exchange with its entries, in timeline order, then the hooks item (its
 // Entries are [] when the session has no hook line, never null). Exchanges with no entry
-// are left out.
-func sessionExchanges(c *store.CtxReader, who sessIdent, rules ClientRules) ([]liveExchange, error) {
-	bs, err := buildSession(c, who, rules, entryCut)
+// are left out. The build comes from the timeline cache, and a caller that needs the
+// latest data waits for a running rebuild, so the result is at least as new as the
+// store was when this was called. It also returns the version the build was asked for.
+func sessionExchanges(ctx context.Context, d Deps, who sessIdent) ([]liveExchange, store.Version, error) {
+	rules := d.Rules[who.client]
+	ident := store.SessionIdent{Principal: who.principal, Client: who.client, Key: who.name}
+	vers, err := d.Reader.WithContext(ctx).SessionVersions([]store.SessionIdent{ident})
 	if err != nil {
-		return nil, err
+		return nil, store.Version{}, err
+	}
+	ver := vers[ident]
+	var bs builtSession
+	if d.Timelines == nil {
+		bs, err = buildSession(d.Reader.WithContext(ctx), who, rules, entryCut)
+	} else {
+		var cb *cachedBuild
+		cb, err = d.Timelines.get(ctx, ident, ver, func(bctx context.Context) (builtSession, error) {
+			return buildSession(d.Reader.WithContext(bctx), who, rules, entryCut)
+		})
+		if cb != nil {
+			bs = cb.bs
+		}
+	}
+	if err != nil {
+		return nil, ver, err
 	}
 	built, facts, byID, rowID := bs.entries, bs.facts, bs.byID, bs.rowID
 	var out []liveExchange
@@ -501,12 +525,12 @@ func sessionExchanges(c *store.CtxReader, who sessIdent, rules ClientRules) ([]l
 	for i := range out {
 		b, err := json.Marshal(out[i].Entries)
 		if err != nil {
-			return nil, err
+			return nil, ver, err
 		}
 		sum := sha256.Sum256(b)
 		out[i].Hash = string(sum[:])
 	}
-	return out, nil
+	return out, ver, nil
 }
 
 // snapshot is what a stream sends on open: the first page of sessions (global stream) or
@@ -514,6 +538,10 @@ func sessionExchanges(c *store.CtxReader, who sessIdent, rules ClientRules) ([]l
 type snapshot struct {
 	Sessions  []sessionSummary
 	Exchanges []liveExchange
+	// Version and Position are the build behind Exchanges; the stream resumes from
+	// Position, the exchange row and hook event ids it reaches.
+	Version  versionJSON
+	Position eventPositionJSON
 }
 
 // snapFn reads the connect snapshot; session "" is the global stream. Tests replace it.
@@ -539,8 +567,9 @@ func readSnapshot(ctx context.Context, d Deps, session string) (snapshot, error)
 		case !errors.Is(err, store.ErrNotFound):
 			return snapshot{}, err
 		}
-		x, err := sessionExchanges(c, who, d.Rules[who.client])
+		x, ver, err := sessionExchanges(ctx, d, who)
 		out.Exchanges = x
+		out.Version, out.Position = versionToJSON(ver), positionOf(ver)
 		return out, err
 	}
 	rows, err := c.SessionPage(nil, defaultListLimit)

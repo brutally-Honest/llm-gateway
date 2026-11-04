@@ -99,7 +99,7 @@ func (d Deps) getTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 	// The build runs on the cache's context, not the request's: when this request times
 	// out the build still finishes and is cached, and the retry hits it.
-	built, err := d.Timelines.get(ctx, ident, ver, func(bctx context.Context) (builtSession, error) {
+	built, err := d.Timelines.latest(ctx, ident, ver, func(bctx context.Context) (builtSession, error) {
 		return buildSession(d.Reader.WithContext(bctx), sessIdent{principal, client, key}, d.Rules[client], entryCut)
 	})
 	if err != nil {

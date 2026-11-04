@@ -4,9 +4,13 @@ import (
 	"container/list"
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"sync/atomic"
 
+	"go.uber.org/zap"
+
+	"github.com/brutally-honest/llm-gateway/internal/logging"
 	"github.com/brutally-honest/llm-gateway/internal/store"
 )
 
@@ -55,12 +59,6 @@ func positionOf(v store.Version) eventPositionJSON {
 	return eventPositionJSON{Row: v.ExMaxRow, Hook: v.HookMaxID}
 }
 
-// buildKey names a build: a session at a store version.
-type buildKey struct {
-	id  store.SessionIdent
-	ver store.Version
-}
-
 // TimelineCache memoises whole-session timeline builds. It is a pure cache, lost on
 // restart. It keeps the latest build of at most timelineCacheSessions sessions, least
 // recently used out first, and no more than a byte budget. Concurrent requests for one
@@ -72,9 +70,28 @@ type TimelineCache struct {
 	bytes    int64
 	ll       *list.List // front is most recently used
 	items    map[store.SessionIdent]*list.Element
-	flights  *flightGroup[buildKey, *cachedBuild]
 	builds   atomic.Int64
+
+	// base is the server's lifetime: builds run on it, not on a request's context.
+	base context.Context
+	// fmu guards active. Lock order: fmu, then mu.
+	fmu    sync.Mutex
+	active map[store.SessionIdent]*sessionBuilds
 }
+
+// buildRun is one build and the callers waiting on it.
+type buildRun struct {
+	ver   store.Version
+	build func(context.Context) (builtSession, error)
+	done  chan struct{}
+	res   *cachedBuild
+	err   error
+}
+
+// sessionBuilds is a session's builds in flight: the one running and at most one
+// queued. The queued one is the dirty flag: a version change or live event during a
+// build asks for exactly one follow-up, however many arrive.
+type sessionBuilds struct{ cur, next *buildRun }
 
 // NewTimelineCache returns an empty cache with the production bounds.
 func NewTimelineCache() *TimelineCache {
@@ -83,9 +100,12 @@ func NewTimelineCache() *TimelineCache {
 
 // newTimelineCache is a cache whose builds run on base, the server's lifetime.
 func newTimelineCache(base context.Context, sessions int, bytes int64) *TimelineCache {
+	if base == nil {
+		base = context.Background()
+	}
 	return &TimelineCache{maxSess: sessions, maxBytes: bytes, ll: list.New(),
-		items:   map[store.SessionIdent]*list.Element{},
-		flights: newFlightGroup[buildKey, *cachedBuild](base)}
+		items: map[store.SessionIdent]*list.Element{},
+		base:  base, active: map[store.SessionIdent]*sessionBuilds{}}
 }
 
 func (c *TimelineCache) lookup(id store.SessionIdent, ver store.Version) (*cachedBuild, bool) {
@@ -116,27 +136,124 @@ func (c *TimelineCache) store(id store.SessionIdent, b *cachedBuild) {
 	}
 }
 
-// get returns the build of session id at ver. build runs at most once per (session,
-// version) at a time, on the cache's context, and a successful result is stored even if
-// every request waiting for it has timed out. A failed build is not stored.
+// peek returns the session's cached build whatever its version.
+func (c *TimelineCache) peek(id store.SessionIdent) (*cachedBuild, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	el, ok := c.items[id]
+	if !ok {
+		return nil, false
+	}
+	return el.Value.(*cachedBuild), true
+}
+
+// get returns the build of session id at ver, waiting for one if need be. build runs on
+// the cache's context, once per session at a time, and a successful result is stored
+// even if every request waiting for it has timed out. A failed build is not stored and
+// is shared only by those waiting on it.
 func (c *TimelineCache) get(ctx context.Context, id store.SessionIdent, ver store.Version,
 	build func(context.Context) (builtSession, error)) (*cachedBuild, error) {
 	if b, ok := c.lookup(id, ver); ok {
 		return b, nil
 	}
-	return c.flights.do(ctx, buildKey{id, ver}, func(bctx context.Context) (*cachedBuild, error) {
-		if b, ok := c.lookup(id, ver); ok { // stored by a flight that just ended
-			return b, nil
+	c.fmu.Lock()
+	r := c.joinLocked(id, ver, build)
+	c.fmu.Unlock()
+	return c.wait(ctx, r)
+}
+
+// latest is get for a reader that can do with an older build: while a build of the
+// session runs and some build is cached, it returns the cached one at once and asks for
+// a rebuild at ver. With nothing cached it waits for the first build.
+func (c *TimelineCache) latest(ctx context.Context, id store.SessionIdent, ver store.Version,
+	build func(context.Context) (builtSession, error)) (*cachedBuild, error) {
+	if b, ok := c.lookup(id, ver); ok {
+		return b, nil
+	}
+	c.fmu.Lock()
+	if c.active[id] != nil {
+		if old, ok := c.peek(id); ok {
+			c.joinLocked(id, ver, build)
+			c.fmu.Unlock()
+			return old, nil
+		}
+	}
+	r := c.joinLocked(id, ver, build)
+	c.fmu.Unlock()
+	return c.wait(ctx, r)
+}
+
+func (c *TimelineCache) wait(ctx context.Context, r *buildRun) (*cachedBuild, error) {
+	select {
+	case <-r.done:
+		return r.res, r.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// joinLocked returns the run that will produce a build for ver: the running one when it
+// is for ver, else the queued follow-up, created if absent and aimed at the newest ver
+// asked. With nothing running it starts one. fmu is held.
+func (c *TimelineCache) joinLocked(id store.SessionIdent, ver store.Version,
+	build func(context.Context) (builtSession, error)) *buildRun {
+	newRun := func() *buildRun { return &buildRun{ver: ver, build: build, done: make(chan struct{})} }
+	sb := c.active[id]
+	if sb == nil {
+		r := newRun()
+		c.active[id] = &sessionBuilds{cur: r}
+		c.start(id, r)
+		return r
+	}
+	if sb.cur.ver == ver {
+		return sb.cur
+	}
+	if sb.next == nil {
+		sb.next = newRun()
+	} else {
+		sb.next.ver, sb.next.build = ver, build
+	}
+	return sb.next
+}
+
+func (c *TimelineCache) start(id store.SessionIdent, r *buildRun) {
+	logging.Go(zap.NewNop(), "ui_build", func() error { c.run(id, r); return nil })
+}
+
+// run builds r, stores the result, and starts the queued follow-up if one was asked for.
+func (c *TimelineCache) run(id store.SessionIdent, r *buildRun) {
+	func() {
+		ctx, cancel := context.WithTimeout(c.base, buildTimeout)
+		defer cancel()
+		defer func() {
+			if p := recover(); p != nil {
+				r.err = fmt.Errorf("ui: build panicked: %v", p)
+			}
+		}()
+		if b, ok := c.lookup(id, r.ver); ok { // built meanwhile
+			r.res = b
+			return
 		}
 		c.builds.Add(1)
-		bs, err := build(bctx)
+		bs, err := r.build(ctx)
 		if err != nil {
-			return nil, err
+			r.err = err
+			return
 		}
-		b := &cachedBuild{bs: bs, ver: ver, id: id, size: estimateSize(bs)}
+		b := &cachedBuild{bs: bs, ver: r.ver, id: id, size: estimateSize(bs)}
 		c.store(id, b)
-		return b, nil
-	})
+		r.res = b
+	}()
+	c.fmu.Lock()
+	sb := c.active[id]
+	close(r.done)
+	if sb.next != nil {
+		sb.cur, sb.next = sb.next, nil
+		c.start(id, sb.cur)
+	} else {
+		delete(c.active, id)
+	}
+	c.fmu.Unlock()
 }
 
 func (c *TimelineCache) len() int {

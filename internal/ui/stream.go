@@ -66,7 +66,7 @@ func (h *Hub) serve(w http.ResponseWriter, r *http.Request, session string) {
 	hd.Set("Content-Type", "text/event-stream")
 	hd.Set("Cache-Control", "no-cache")
 	w.WriteHeader(http.StatusOK)
-	sent, ok := h.sendSnapshot(w, r, rc, session)
+	sent, from, ok := h.sendSnapshot(w, r, rc, session)
 	if !ok {
 		return
 	}
@@ -89,7 +89,7 @@ func (h *Hub) serve(w http.ResponseWriter, r *http.Request, session string) {
 		case <-tick.C:
 			_, err = fmt.Fprint(w, ": ping\n\n")
 		case m := <-sub.ch:
-			err = writeLive(w, m, sent)
+			err = writeLive(w, m, sent, from)
 		}
 		if err != nil || rc.Flush() != nil {
 			return
@@ -100,13 +100,13 @@ func (h *Hub) serve(w http.ResponseWriter, r *http.Request, session string) {
 // sendSnapshot writes the connect snapshot straight to the response, outside the
 // subscriber buffer. On a read failure it sends snapshot_error and reports false. It returns
 // this stream's sent-record: per exchange, the hash of the entry list just sent (AC54).
-func (h *Hub) sendSnapshot(w http.ResponseWriter, r *http.Request, rc *http.ResponseController, session string) (map[string]string, bool) {
+func (h *Hub) sendSnapshot(w http.ResponseWriter, r *http.Request, rc *http.ResponseController, session string) (map[string]string, eventPositionJSON, bool) {
 	ctx, cancel := storeCtx(r)
 	defer cancel()
 	snap, err := h.snap(ctx, session)
 	if err != nil {
 		if errors.Is(err, context.Canceled) && r.Context().Err() != nil {
-			return nil, false
+			return nil, eventPositionJSON{}, false
 		}
 		code, msg := "store_error", "the store could not be read"
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -116,15 +116,15 @@ func (h *Hub) sendSnapshot(w http.ResponseWriter, r *http.Request, rc *http.Resp
 		_, werr := fmt.Fprintf(w, "retry: %d\nevent: snapshot_error\ndata: %s\n\n", snapshotRetryMS, b)
 		_ = werr
 		_ = rc.Flush()
-		return nil, false
+		return nil, eventPositionJSON{}, false
 	}
 	for i := range snap.Sessions {
 		b, err := json.Marshal(snap.Sessions[i])
 		if err != nil {
-			return nil, false
+			return nil, eventPositionJSON{}, false
 		}
 		if _, err := fmt.Fprintf(w, "event: session\ndata: %s\n\n", b); err != nil {
-			return nil, false
+			return nil, eventPositionJSON{}, false
 		}
 	}
 	sent := make(map[string]string, len(snap.Exchanges))
@@ -132,13 +132,13 @@ func (h *Hub) sendSnapshot(w http.ResponseWriter, r *http.Request, rc *http.Resp
 		sent[x.RequestID] = x.Hash
 		b, err := json.Marshal(x.Entries)
 		if err != nil {
-			return nil, false
+			return nil, eventPositionJSON{}, false
 		}
 		if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", exchangeEvent(x), b); err != nil {
-			return nil, false
+			return nil, eventPositionJSON{}, false
 		}
 	}
-	return sent, rc.Flush() == nil
+	return sent, snap.Position, rc.Flush() == nil
 }
 
 // exchangeEvent is the SSE event that carries x's whole entry list: "hooks" for the hooks
@@ -155,8 +155,9 @@ func exchangeEvent(x liveExchange) string {
 // with the whole list for every exchange that started after the earliest committed one
 // and differs from what this stream last sent (AC54). Only the batch's last event has an
 // id, the highest row id in it (D14). sent is this stream's record; an inactive session
-// drops it (E21).
-func writeLive(w http.ResponseWriter, m liveMsg, sent map[string]string) error {
+// drops it (E21). A message built from less of the store than from, the snapshot's
+// position, is dropped whole.
+func writeLive(w http.ResponseWriter, m liveMsg, sent map[string]string, from eventPositionJSON) error {
 	if m.Summary != nil {
 		b, err := json.Marshal(m.Summary)
 		if err != nil {
@@ -165,6 +166,9 @@ func writeLive(w http.ResponseWriter, m liveMsg, sent map[string]string) error {
 		if _, err := fmt.Fprintf(w, "event: session\ndata: %s\n\n", b); err != nil {
 			return err
 		}
+	}
+	if m.behind(from) {
+		return nil // read from less of the store than the snapshot saw: it would undo it
 	}
 	if m.Refresh {
 		return writeRefresh(w, m, sent)
@@ -212,6 +216,16 @@ func writeLive(w http.ResponseWriter, m liveMsg, sent map[string]string) error {
 		}
 	}
 	return nil
+}
+
+// behind reports whether m's entries were built from less of the store than from, the
+// position of the snapshot the stream sent. A message with no entries, or from an
+// unknown position, is never behind.
+func (m liveMsg) behind(from eventPositionJSON) bool {
+	if len(m.All) == 0 {
+		return false
+	}
+	return m.Position.Row < from.Row || m.Position.Hook < from.Hook
 }
 
 // writeRefresh writes a hook refresh: an exchange event with the whole list for every
