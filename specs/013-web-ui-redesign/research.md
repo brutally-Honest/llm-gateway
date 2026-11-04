@@ -64,6 +64,7 @@ feature: 013-web-ui-redesign
 - 2026-11-04 — Mutation check of TestTimelinePaging_AfterTokenResolvesToSamePositionOnRebuiltTimeline, which T020 never saw fail. In `getTimeline` the token's Index was set to the slice index `end` and `from` read back from it. The test went red: "after the rebuild the token gives [c:0 c:1 c:2 d:0 d:1 d:2 f:0 f:1 f:2 z:0 z:1], want it to start with [c:2 d:0 d:1 d:2 f:0 f:1 f:2]". It was the only test matching `Timeline|Paging` in internal/ui to go red. Restored, not committed.
 - 2026-11-04 — Name drift, tasks.md and plan.md left as approved: both name TestTimelinePaging_CursorResolvesToSamePositionOnRebuiltTimeline. The committed test is TestTimelinePaging_AfterTokenResolvesToSamePositionOnRebuiltTimeline, renamed because TestCore_NoProviderOrClientIdentifiers bans the word in internal/ui.
 - 2026-11-04 — Name drift, plan.md left as approved: it names `ranNotReportedStaysPendingInEndedSession`, which does not exist. E14 is covered by other tests: `chainShowsRanWithReportedMissing` in drawer.test.js and the `pending` chip mapping in chips.test.js.
+- 2026-11-04 — Correction to the line above: tasks.md names `ranNotReportedStaysPendingInEndedSession` too (T008's Tests line), not only plan.md. It is left as approved as well.
 
 ## Build policy for T011-T016 and the branch review
 Set by the user on 2026-11-02.
