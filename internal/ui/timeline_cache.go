@@ -167,24 +167,20 @@ func (c *TimelineCache) get(ctx context.Context, id store.SessionIdent, ver stor
 	return c.wait(ctx, r)
 }
 
-// latest is get for a reader that can do with an older build: while a build of the
-// session runs and some build is cached, it returns the cached one at once and asks for
-// a rebuild at ver. With nothing cached it waits for the first build.
+// latest is get for a reader that can do with an older build: when some build of the
+// session is cached it returns that one at once, and starts or queues a rebuild at ver if
+// it is not at ver. It waits only when nothing is cached.
 func (c *TimelineCache) latest(ctx context.Context, id store.SessionIdent, ver store.Version,
 	build func(context.Context) (builtSession, error)) (*cachedBuild, error) {
 	if b, ok := c.lookup(id, ver); ok {
 		return b, nil
 	}
 	c.fmu.Lock()
-	if c.active[id] != nil {
-		if old, ok := c.peek(id); ok {
-			c.joinLocked(id, ver, build)
-			c.fmu.Unlock()
-			return old, nil
-		}
-	}
 	r := c.joinLocked(id, ver, build)
 	c.fmu.Unlock()
+	if old, ok := c.peek(id); ok {
+		return old, nil
+	}
 	return c.wait(ctx, r)
 }
 
@@ -243,6 +239,8 @@ func (c *TimelineCache) run(id store.SessionIdent, r *buildRun) {
 		c.builds.Add(1)
 		bs, err := r.build(ctx)
 		if err != nil {
+			// A rebuild behind a stale read has nobody waiting, so this is its only trace.
+			c.log.Warn("ui timeline build failed", zap.Error(err))
 			r.err = err
 			return
 		}

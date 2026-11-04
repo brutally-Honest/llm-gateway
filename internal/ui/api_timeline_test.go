@@ -31,6 +31,20 @@ type tlPage struct {
 	StreamSince int64            `json:"stream_since"`
 }
 
+// timelineUntil reads path until ready accepts the page, and returns the last page read.
+// A page read after a store write can be the previous build, served while the read's own
+// rebuild runs, so a test of the new data has to wait for that rebuild.
+func (e *apiEnv) timelineUntil(path string, ready func(tlPage) bool) tlPage {
+	e.t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	p := e.timeline(path)
+	for !ready(p) && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+		p = e.timeline(path)
+	}
+	return p
+}
+
 func (e *apiEnv) timeline(path string) tlPage {
 	e.t.Helper()
 	rec := e.get(path)
@@ -536,11 +550,15 @@ func TestAPITimeline_HookLineIdsSurviveEarlierArrival(t *testing.T) {
 		t.Fatal(err)
 	}
 	after := map[string]string{}
-	for _, en := range e.timeline("/api/sessions/" + sid() + "/timeline").Entries {
-		if en["kind"] == "hook_event" {
-			after[en["text"].(string)] = en["id"].(string)
+	e.timelineUntil("/api/sessions/"+sid()+"/timeline", func(p tlPage) bool {
+		clear(after)
+		for _, en := range p.Entries {
+			if en["kind"] == "hook_event" {
+				after[en["text"].(string)] = en["id"].(string)
+			}
 		}
-	}
+		return len(after) == 4
+	})
 	if len(after) != 4 {
 		t.Fatalf("hook lines after = %v", after)
 	}
@@ -684,7 +702,7 @@ func TestTimelinePaging_AfterTokenResolvesToSamePositionOnRebuiltTimeline(t *tes
 	e.parseMsgs("a", "ok", []any{"user", text("m-a")})
 	e.save("z", "k", "cc", 90)
 	e.parseMsgs("z", "ok", []any{"user", text("m-z")})
-	got := ids(e.timeline(url + "?after=" + *page1.NextAfter))
+	got := ids(e.timelineUntil(url+"?after="+*page1.NextAfter, func(p tlPage) bool { return len(ids(p)) > len(want) }))
 	if len(got) < len(want) || !slices.Equal(got[:len(want)], want) {
 		t.Fatalf("after the rebuild the token gives %v, want it to start with %v", got, want)
 	}

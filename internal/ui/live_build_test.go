@@ -3,11 +3,15 @@ package ui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/brutally-honest/llm-gateway/internal/store"
 )
@@ -115,6 +119,98 @@ func TestLiveBuild_RequestDuringRebuildGetsOlderBuildWithoutWaiting(t *testing.T
 	}
 	if b, err := c.latest(t.Context(), ident("k"), v2, build); err != nil || b.bs.rows != 2 {
 		t.Fatalf("after the rebuild = %+v, %v", b, err)
+	}
+}
+
+// A stale entry with no build running starts a rebuild and is served at once; the rebuild
+// then lands in the cache for the next reader.
+func TestLiveBuild_StaleWithNoBuildRunningServesStaleAndRebuilds(t *testing.T) {
+	c := NewTimelineCache(t.Context(), nil)
+	v1, v2 := store.Version{ExCount: 1}, store.Version{ExCount: 2}
+	fill(c, "k", v1, builtSession{rows: 1})
+	started, release := make(chan struct{}), make(chan struct{})
+	builds := 0
+	build := func(context.Context) (builtSession, error) {
+		builds++
+		close(started)
+		<-release
+		return builtSession{rows: 2}, nil
+	}
+	stale := make(chan *cachedBuild, 1)
+	go func() {
+		b, _ := c.latest(t.Context(), ident("k"), v2, build)
+		stale <- b
+	}()
+	<-started // the rebuild did start
+	select {
+	case b := <-stale:
+		if b == nil || b.ver != v1 || b.bs.rows != 1 {
+			t.Fatalf("latest = %+v, want the stale build", b)
+		}
+	case <-time.After(2 * time.Second):
+		close(release)
+		t.Fatal("the reader waited for the rebuild")
+	}
+	close(release)
+	got, err := c.get(t.Context(), ident("k"), v2, build) // joins the same run
+	if err != nil || got.bs.rows != 2 {
+		t.Fatalf("after the rebuild = %+v, %v", got, err)
+	}
+	if builds != 1 {
+		t.Fatalf("builds = %d, want 1", builds)
+	}
+}
+
+// With nothing cached a reader has nothing to be served, so it waits for the first build.
+func TestLiveBuild_NothingCachedWaitsForFirstBuild(t *testing.T) {
+	c := NewTimelineCache(t.Context(), nil)
+	started, release := make(chan struct{}), make(chan struct{})
+	got := make(chan *cachedBuild, 1)
+	go func() {
+		b, _ := c.latest(t.Context(), ident("k"), store.Version{ExCount: 1}, func(context.Context) (builtSession, error) {
+			close(started)
+			<-release
+			return builtSession{rows: 1}, nil
+		})
+		got <- b
+	}()
+	<-started
+	select {
+	case b := <-got:
+		t.Fatalf("returned %+v before the build ended", b)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(release)
+	if b := <-got; b == nil || b.bs.rows != 1 {
+		t.Fatalf("latest = %+v, want the first build", b)
+	}
+}
+
+// A rebuild that fails behind a stale read is logged, nothing replaces the stale entry,
+// and the next read tries again.
+func TestLiveBuild_FailedRebuildIsLoggedAndKeepsStale(t *testing.T) {
+	obs, logs := observer.New(zap.WarnLevel)
+	c := NewTimelineCache(t.Context(), zap.New(obs))
+	v1, v2 := store.Version{ExCount: 1}, store.Version{ExCount: 2}
+	fill(c, "k", v1, builtSession{rows: 1})
+	failed := make(chan struct{})
+	b, err := c.latest(t.Context(), ident("k"), v2, func(context.Context) (builtSession, error) {
+		defer close(failed)
+		return builtSession{}, errors.New("store down")
+	})
+	if err != nil || b.ver != v1 {
+		t.Fatalf("latest = %+v, %v; want the stale build", b, err)
+	}
+	<-failed
+	deadline := time.Now().Add(5 * time.Second)
+	for logs.FilterMessage("ui timeline build failed").Len() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the failed rebuild was not logged")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if got, ok := c.peek(ident("k")); !ok || got.ver != v1 {
+		t.Fatalf("cached = %+v, %v; want the stale build kept", got, ok)
 	}
 }
 
