@@ -1,0 +1,4 @@
+Manual check 013 F8. Red first: callLinkSeparatesDurationAndContext rendered
+'#1 · 0mscontext 1040' on the old code. Duration keeps formatDuration's existing '0ms'
+form (shared with turn headings, rail, strip and drawer, pinned by turns.test.js);
+only the call box changed. The stats line keeps 'context N'. make verify green.
