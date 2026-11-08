@@ -48,6 +48,13 @@ export function mountShell({ head, bar, storage, root, theme }) {
   }
   mark(theme);
   head.replaceChildren(el("h1", "Gateway"), crumbs, live, picker);
+  // The header and the key bar can wrap, so their heights are published for the turn
+  // rail, which sticks below the one and stops above the other (F7).
+  if (typeof ResizeObserver === "function" && root && root.style && typeof root.style.setProperty === "function") {
+    const publish = (name, e) => new ResizeObserver(() => root.style.setProperty(name, `${e.offsetHeight}px`)).observe(e);
+    publish("--head-h", head);
+    publish("--keybar-h", bar);
+  }
 
   return {
     setRoute(route, title) {
