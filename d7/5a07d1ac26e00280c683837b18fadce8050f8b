@@ -1,0 +1,8 @@
+Spec: specs/013-web-ui-redesign (manual check 013-web-ui.md step 13, F3)
+Why: headless Chrome on the 2,000-call seed (6 pages, 10,944 entries, 228 cards):
+all cards at ~1.9 s with 7 list rebuilds before; ~0.5-0.65 s with 2 after.
+Not proven to be the multi-minute hang seen during the manual check: that hang did
+not reproduce in 3 fresh headless runs or 2 runs in the user's Chrome.
+Trade-off: pages 2..n are not shown progressively; the first page still is.
+Verified by: sixPageLoadRendersABoundedNumberOfTimes, pagesBeforeAFailingPageStillShow
+(probe: reverting the catch change fails the latter), make verify.
