@@ -18,6 +18,7 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/clients/claudecode"
 	"github.com/brutally-honest/llm-gateway/internal/config"
 	"github.com/brutally-honest/llm-gateway/internal/core"
+	"github.com/brutally-honest/llm-gateway/internal/effects"
 	"github.com/brutally-honest/llm-gateway/internal/hooks"
 	"github.com/brutally-honest/llm-gateway/internal/logging"
 	"github.com/brutally-honest/llm-gateway/internal/protocols/anthropic"
@@ -161,7 +162,7 @@ func run(ctx context.Context, d deps) int {
 	var capt *captureRun
 	if cfg.Capture.Enabled {
 		var code int
-		if capt, code = startCapture(ctx, cfg.Capture, cfg.Hooks, cfg.UI.Enabled, profiles, d, log); capt == nil {
+		if capt, code = startCaptureWith(ctx, cfg.Capture, cfg.Hooks, cfg.UI.Enabled, cfg.Effects, profiles, d, log); capt == nil {
 			return code
 		}
 	} else if cfg.UI.Enabled {
@@ -402,6 +403,11 @@ func (c *captureRun) uiDeps(ctx context.Context, addr string, log *zap.Logger) u
 // startCapture resolves capture.dir, opens the store and starts the sink. On failure
 // it logs one line and returns nil and the exit code.
 func startCapture(ctx context.Context, c config.Capture, h config.Hooks, withUI bool, profiles []core.Profile, d deps, log *zap.Logger) (*captureRun, int) {
+	return startCaptureWith(ctx, c, h, withUI, config.Effects{}, profiles, d, log)
+}
+
+// startCaptureWith is startCapture with the effect sensors of e hanging off the hook sink.
+func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, withUI bool, e config.Effects, profiles []core.Profile, d deps, log *zap.Logger) (*captureRun, int) {
 	dir, ok := captureDir(c, d.lookupEnv, log)
 	if !ok {
 		return nil, exitConfig
@@ -444,9 +450,18 @@ func startCapture(ctx context.Context, c config.Capture, h config.Hooks, withUI 
 	var hookSink *hooks.Sink
 	if hs, ok := st.(hooks.Store); ok {
 		hcfg := hookConfig(h, profiles)
+		var onStored []func(hooks.HookStored)
 		if hub != nil {
 			// A stored hook event reaches the open web UI streams (AC26).
-			hcfg.OnStored = func(s hooks.HookStored) { hub.PublishHook(s.Principal, s.Client, s.SessionKey) }
+			onStored = append(onStored, func(s hooks.HookStored) { hub.PublishHook(s.Principal, s.Client, s.SessionKey) })
+		}
+		onStored = append(onStored, startEffects(e, st, hub, profiles, log)...)
+		if len(onStored) > 0 {
+			hcfg.OnStored = func(s hooks.HookStored) {
+				for _, f := range onStored {
+					f(s)
+				}
+			}
 		}
 		hookSink = hooks.NewSink(hcfg, hs, log)
 	}
@@ -454,6 +469,36 @@ func startCapture(ctx context.Context, c config.Capture, h config.Hooks, withUI 
 		store: st, sink: sink, hooks: hookSink, budget: core.NewBudget(c.MemoryLimit), maxBodyBytes: c.MaxBodyBytes,
 		reader: reader, hub: hub, timelines: timelines, digests: digests,
 	}, exitOK
+}
+
+// startEffects starts the effect sensors that hang off stored hook events (spec 014) and
+// returns their callbacks; none when effects are off (E15) or the store cannot hold them.
+func startEffects(e config.Effects, st capture.Store, hub *ui.Hub, profiles []core.Profile, log *zap.Logger) []func(hooks.HookStored) {
+	es, ok := st.(effects.EffectStore)
+	if !e.Enabled || !ok {
+		return nil
+	}
+	saved := func(principal, client, key string) {
+		if hub != nil {
+			hub.PublishEffects(principal, client, key)
+		}
+	}
+	reads := effects.NewReads(es, effectRules(profiles), saved, log)
+	return []func(hooks.HookStored){reads.OnStored}
+}
+
+// effectRules finds a client's effect rules through its profile.
+func effectRules(profiles []core.Profile) effects.Rules {
+	return func(client string) core.EffectRules {
+		for _, p := range profiles {
+			if p.Name() == client {
+				if r, ok := p.(core.EffectRules); ok {
+					return r
+				}
+			}
+		}
+		return nil
+	}
 }
 
 // storeOpenReason is a fixed reason for a failed store open.

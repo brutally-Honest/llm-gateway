@@ -26,9 +26,13 @@ type Store interface {
 	SaveHook(ctx context.Context, h *store.HookRecord) error
 }
 
-// HookStored names a hook event that is stored. It carries no body.
+// HookStored names a hook event that is stored. It carries no body: the stored row id,
+// when it arrived, and the event the client's profile mapped from it.
 type HookStored struct {
 	Principal, Client, SessionKey string
+	ID                            int64
+	At                            time.Time
+	Event                         core.HarnessEvent
 }
 
 // Config sizes the sink: hooks.queue_size, hooks.workers (both greater than 0) and
@@ -230,7 +234,8 @@ func (s *Sink) process(it item) {
 		s.log.Warn("hook event not stored", zap.String("client", client), zap.Error(err))
 		return
 	}
-	s.notify(HookStored{Principal: rec.PrincipalID, Client: client, SessionKey: ev.SessionKey})
+	s.notify(HookStored{Principal: rec.PrincipalID, Client: client, SessionKey: ev.SessionKey,
+		ID: rec.ID, At: rec.ReceivedAt, Event: ev})
 }
 
 // mapBody maps body through m; no mapper, or a panic in it, gives an unknown event.

@@ -99,6 +99,12 @@ Build decisions (2026-11-08, made during the build outside the kit; say if you w
   still fetches `/diff` or `/content` only when opened.
 - B4 (T005) — `api.test.js` pinned the stream's event list; it now includes `effects`, the
   new event AC14 needs. No assertion was removed.
+- B5 (T007) — `hooks.HookStored` now holds the mapped `HarnessEvent`, which has a slice, so
+  `TestSink_OnStoredCalledAfterSave` compares the identity fields one by one instead of the
+  whole struct, and also checks the event's session key. It also gains `At` (the receive
+  time) so a read effect is timed like its hook.
+- B6 (T007) — `startCapture` keeps its signature (a test calls it); `startCaptureWith` adds
+  the effects config and `run` calls that.
 
 Karthik's answers (2026-11-08):
 - K1 → changed: snapshots saved in SQLite with batched, per-checkpoint transactions (D14).
