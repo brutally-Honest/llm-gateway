@@ -7,6 +7,7 @@ export function parseRoute(hash) {
   try {
     if (h === "#/" || h === "#") return { name: "sessions" };
     if (h === "#/ungrouped") return { name: "ungrouped" };
+    if (h === "#/effects/unassigned") return { name: "unassigned" };
     if (h.startsWith("#/exchanges/")) return { name: "exchange", id: decodeURIComponent(h.slice(12)) };
     if (h.startsWith("#/sessions/")) {
       const rest = h.slice(11);
@@ -27,6 +28,8 @@ export function buildRoute(r) {
       return "#/";
     case "ungrouped":
       return "#/ungrouped";
+    case "unassigned":
+      return "#/effects/unassigned";
     case "exchange":
       return `#/exchanges/${enc(r.id)}`;
     case "session":

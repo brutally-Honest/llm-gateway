@@ -1,3 +1,6 @@
+import { getJSON } from "./api.js";
+import { effectsListNode } from "./drawer-sections.js";
+import { COVERAGE, countsText, placeEffects } from "./effects.js";
 import { countText, hookLabel, timeElement } from "./entries.js";
 import { filterTurns, toolNames } from "./filters.js";
 import { createDrawer } from "./drawer.js";
@@ -89,7 +92,7 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
   const headEls = new Map(); // turn number -> its heading, where focus falls back to
 
   const open = new Set(); // section keys and hook toggles that stay open across redraws
-  let data = { summary: null, entries: [], error: "", snapshotError: "" };
+  let data = { summary: null, entries: [], effects: [], error: "", snapshotError: "" };
   let tool = "";
   let built = null;
   let builtFor = null;
@@ -306,6 +309,24 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
     return box;
   }
 
+  // effectsRow is one folded row of a turn's effects, with its counts; it expands to the
+  // files, then the connections (AC14). Only its own box redraws on a toggle.
+  function effectsRow(key, b) {
+    const box = el("div", "effects");
+    const draw = () => {
+      box.replaceChildren();
+      const shown = open.has(key);
+      const t = button(`${shown ? "▾" : "▸"} ${countsText(b)}`, () => { toggle(key, !open.has(key)); draw(); });
+      t.className = "effects-toggle";
+      t.title = COVERAGE;
+      t.setAttribute("aria-expanded", String(shown));
+      box.append(t);
+      if (shown) box.append(effectsListNode(b.items, { isOpen: (k) => open.has(k), setOpen: toggle, getJSON, redraw: draw }));
+    };
+    draw();
+    return box;
+  }
+
   function cardNode(card, sessionId, hooksOnlyNote) {
     const box = el("section", `turn card-${card.kind}${card.errored ? " is-error" : ""}`);
     const head = el("h2", "turn-head", card.heading);
@@ -327,16 +348,33 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
     }
     if (card.hooksOnly && hooksOnlyNote) box.append(el("p", "muted", hooksOnlyNote));
     if (card.hooks.length > 0) box.append(hooksNode(card));
+    if (card.effects && card.effects.items.length > 0) box.append(effectsRow(`effects:${card.kind}:${card.number}`, card.effects));
     return box;
+  }
+
+  // placed puts the session's effects in its turns; effects before the first prompt go to
+  // the "before" card, or to a row of their own when the session has none.
+  function placed(cards) {
+    const tc = cards.filter((c) => c.kind === "turn");
+    const p = placeEffects(tc, data.effects || []);
+    const before = cards.find((c) => c.kind === "before");
+    for (const c of cards) c.effects = null;
+    tc.forEach((c, i) => { c.effects = p.turns[i]; });
+    if (before) before.effects = p.before;
+    return before ? null : p.before;
   }
 
   function drawList() {
     list.replaceChildren();
     if (data.entries.length === 0) {
-      if (!data.error && !data.building) list.append(note("empty", "No entries yet."));
+      const early = placeEffects([], data.effects || []).before;
+      if (early.items.length > 0) list.append(effectsRow("effects:before", early));
+      else if (!data.error && !data.building) list.append(note("empty", "No entries yet."));
       return;
     }
     const { cards, note: hooksNote } = turns();
+    const early = placed(cards);
+    if (early && early.items.length > 0) list.append(effectsRow("effects:before", early));
     let shown = filterTurns(cards, { text: input.value, tool });
     if (opts.errorsOnly) shown = shown.filter((c) => c.errored);
     const sessionId = data.summary ? data.summary.id : "";
@@ -367,6 +405,11 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
       drawList();
       drawn = drawer.sync({ sessionId: data.summary ? data.summary.id : "", callId: data.callId || null, entries: data.entries, loaded: Boolean(data.loaded) });
       if (drawn.missing) status.append(note("error", "No such call in this session."));
+    },
+    // setEffects redraws the list with the session's effects; the turns are not rebuilt.
+    setEffects(effects) {
+      data = { ...data, effects };
+      drawList();
     },
     drawerOpen: () => drawer.isOpen(),
     stepCall: (delta) => drawer.step(delta),

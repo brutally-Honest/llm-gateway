@@ -53,7 +53,7 @@ export async function getBody(id, part) {
 
 // STREAM_EVENTS are the named events the server sends on /api/.../stream. openStream listens
 // for each of them; app.js routes them with liveEffect.
-export const STREAM_EVENTS = ["session", "exchange", "hooks", "entries", "snapshot_error"];
+export const STREAM_EVENTS = ["session", "exchange", "hooks", "entries", "effects", "snapshot_error"];
 
 // Reopen delays for a stream the browser has given up on (AC50, E12).
 const firstDelay = 1000;

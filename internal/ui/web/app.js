@@ -1,4 +1,6 @@
 import { getJSON, loadAllPages, openStream } from "./api.js";
+import { effectsListNode } from "./drawer-sections.js";
+import { lastID } from "./effects.js";
 import { addUnique, liveBatch, upsertSession } from "./entries.js";
 import { createStore } from "./store.js";
 import { createTimelinePage } from "./timeline-page.js";
@@ -26,7 +28,7 @@ const shell = mountShell({
   root,
   theme: initTheme(storage, root),
 });
-const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "", ungrouped: [], ungroupedNext: null, ungroupedError: "", ungroupedHead: { items: [], next_after: null }, today: null });
+const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "", ungrouped: [], ungroupedNext: null, ungroupedError: "", ungroupedHead: { items: [], next_after: null }, today: null, unassigned: 0 });
 let closeStream = null;
 let view = null;
 let page = null; // the Sessions page while it is shown
@@ -43,6 +45,7 @@ async function load(kind, after) {
       [kind]: after ? addUnique(s[kind], page.items) : page.items,
       [`${kind}Next`]: page.next_after,
       [`${kind}Error`]: "",
+      ...(kind === "sessions" && !after ? { unassigned: page.unassigned_connections || 0 } : {}),
     });
   } catch (e) {
     store.set({ [`${kind}Error`]: e.message });
@@ -95,6 +98,11 @@ function startStream() {
       if (name === "session") {
         store.set({ sessions: upsertSession(store.get().sessions, data) });
         scheduleToday();
+      } else if (name === "effects") {
+        // effect counts move without a summary rebuild (spec 014)
+        if (data.unassigned_connections !== undefined) store.set({ unassigned: data.unassigned_connections });
+        const s = store.get().sessions.find((x) => x.id === data.session);
+        if (s && data.counts) store.set({ sessions: upsertSession(store.get().sessions, { ...s, effects: data.counts }) });
       }
     },
     (st) => {
@@ -141,7 +149,7 @@ async function showSession(id) {
     loadDetail: (callId) => retryOn504(() => getJSON(`exchanges/${encodeURIComponent(callId)}`), () => {}),
   });
   app.replaceChildren(tl.el);
-  const st = { summary: null, entries: [], error: "", snapshotError: "", callId: parseRoute(location.hash).call || null, loaded: false };
+  const st = { summary: null, entries: [], effects: [], error: "", snapshotError: "", callId: parseRoute(location.hash).call || null, loaded: false };
   tpage = tl;
   sessionSync = { id, apply: (call) => { st.callId = call || null; draw(); } };
   const draw = () => {
@@ -154,12 +162,44 @@ async function showSession(id) {
     Object.assign(st, patch);
     draw();
   };
+  // Effects load apart from the timeline, after the last id held, and redraw only the
+  // list: a live effects event never rebuilds the turns (AC14). A pull asked for while one
+  // runs is run once more when it ends.
+  const EFFECTS_PAGE = 5000;
+  let effBusy = false;
+  let effAgain = false;
+  const pullEffects = async () => {
+    if (effBusy) {
+      effAgain = true;
+      return;
+    }
+    effBusy = true;
+    try {
+      do {
+        effAgain = false;
+        for (;;) {
+          const p = await getJSON(`sessions/${encodeURIComponent(id)}/effects`, { after: lastID(st.effects), limit: EFFECTS_PAGE });
+          if (mine !== seq) return;
+          if (p.effects.length) {
+            st.effects = st.effects.concat(p.effects);
+            tl.setEffects(st.effects);
+          }
+          if (p.effects.length < EFFECTS_PAGE) break;
+        }
+      } while (effAgain);
+    } catch {
+      // the effects shown stay as they were; the timeline is unaffected
+    } finally {
+      effBusy = false;
+    }
+  };
   let held = []; // timeline pages fetched but not yet drawn
   try {
     const waiting = () => set({ building: true });
     const summary = await retryOn504(() => getJSON(`sessions/${encodeURIComponent(id)}`), waiting);
     if (mine !== seq) return;
     set({ summary, building: false });
+    pullEffects();
     if (mine === seq) shell.setRoute(parseRoute(location.hash), summary.title || id);
     const fetchPage = (after) => getJSON(`sessions/${encodeURIComponent(id)}/timeline`, { after, limit: 2000 });
     let first = true;
@@ -218,6 +258,10 @@ async function showSession(id) {
   closeStream = openStream(
     (name, data) => {
       if (mine !== seq) return;
+      if (name === "effects") {
+        pullEffects();
+        return;
+      }
       if (queued.length === 0) {
         follow = shouldFollow(tl.drawerOpen(), nearBottom());
         setTimeout(flushLive, LIVE_BATCH_MS);
@@ -229,6 +273,41 @@ async function showSession(id) {
     },
     `sessions/${encodeURIComponent(id)}/stream`,
   );
+}
+
+// showUnassigned lists the connections linked to no session (spec 014, AC15).
+async function showUnassigned() {
+  const mine = ++seq;
+  const box = document.createElement("section");
+  box.className = "unassigned-page";
+  const h = document.createElement("h1");
+  h.textContent = "Unassigned connections";
+  const why = note("muted", "Connections made while no session, or more than one, was active.");
+  const body = document.createElement("div");
+  box.append(h, why, body);
+  app.replaceChildren(box);
+  const open = new Set();
+  let items = [];
+  const draw = () => {
+    body.replaceChildren(effectsListNode(items, {
+      isOpen: (k) => open.has(k),
+      setOpen: (k, on) => (on ? open.add(k) : open.delete(k)),
+      getJSON,
+      redraw: draw,
+    }));
+  };
+  draw();
+  try {
+    for (;;) {
+      const p = await getJSON("effects/unassigned", { after: lastID(items), limit: 5000 });
+      if (mine !== seq) return;
+      items = items.concat(p.effects);
+      draw();
+      if (p.effects.length < 5000) break;
+    }
+  } catch (e) {
+    if (mine === seq) body.replaceChildren(note("error", e.message));
+  }
 }
 
 // showExchange loads one exchange's detail; its bodies load only when their sections open.
@@ -271,6 +350,7 @@ function showSessions() {
       error: s.sessionsError,
       today: s.today,
       ungrouped: s.ungroupedHead,
+      unassigned: s.unassigned,
     });
     shell.setKeyBar(r, page.position());
   };
@@ -308,6 +388,8 @@ function route() {
     showSession(r.id);
   } else if (r.name === "exchange") {
     showExchange(r.id);
+  } else if (r.name === "unassigned") {
+    showUnassigned();
   } else {
     app.replaceChildren(note("empty", "Nothing here."));
   }

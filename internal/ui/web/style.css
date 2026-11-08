@@ -130,3 +130,9 @@ footer#keybar kbd { font: inherit; color: var(--fg); border: 1px solid var(--lin
   .timeline-layout { padding-left: 0; }
   .rail { position: static; width: auto; order: -1; }
 }
+
+/* Effects (spec 014): one folded row per turn; status is glyph + word, never colour alone. */
+.effects { margin-top: 0.5rem; }
+.effects-list ul { list-style: none; padding-left: 0.5rem; margin: 0.25rem 0; }
+.effect-row { overflow-wrap: anywhere; }
+.effect-body { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; }

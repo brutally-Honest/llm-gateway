@@ -87,6 +87,19 @@ a recommendation; say if you want one changed.
   Claude Code has a setting that turns it off; that would close the gap in KI9 but make more
   commands fail. Not added to the printed settings in v1.
 
+Build decisions (2026-11-08, made during the build outside the kit; say if you want one changed):
+- B1 (T004) — `unassigned_connections` on `GET /api/sessions` is left out when it is 0, so the
+  existing exact-body test of an empty list (`TestAPI_EmptyStoreEmptyLists`) still holds; the
+  browser reads absent as 0.
+- B2 (T005) — The coverage line says "the agent's hook checkpoints, plus the agent's own reads"
+  instead of naming Claude: the purity test bans client names anywhere under `internal/ui/`.
+- B3 (T005) — The "Effect" section (`effectSection` in `drawer-sections.js`) opens inline under
+  the effect's row, not in the call drawer: the drawer is routed per model call
+  (`#/sessions/{id}/call/{exchange}`), and an effect belongs to no call (spec non-goal). It
+  still fetches `/diff` or `/content` only when opened.
+- B4 (T005) — `api.test.js` pinned the stream's event list; it now includes `effects`, the
+  new event AC14 needs. No assertion was removed.
+
 Karthik's answers (2026-11-08):
 - K1 → changed: snapshots saved in SQLite with batched, per-checkpoint transactions (D14).
 - K2 → accepted; revisit if it breaks something.

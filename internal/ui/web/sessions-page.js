@@ -88,7 +88,21 @@ export function rowCells(s) {
     output: counter(u.output),
     cacheWrite: counter(u.cache_write),
     cacheRead: counter(u.cache_read),
+    effects: effectsCell(s.effects),
   };
+}
+
+// effectsCell is a session's effect counts, "changed · read · sites", with a title naming
+// each; "—" when the session has none.
+export function effectsCell(e) {
+  if (!e || (e.changed === 0 && e.read === 0 && e.sites === 0)) return { text: DASH, title: "no effects" };
+  return { text: `${e.changed} · ${e.read} · ${e.sites}`, title: `${e.changed} changed files · ${e.read} files read · ${e.sites} sites` };
+}
+
+// unassignedText is the quiet link text for connections linked to no session; "" for none.
+export function unassignedText(n) {
+  if (!n) return "";
+  return `${n} unassigned ${n === 1 ? "connection" : "connections"}`;
 }
 
 // todayCells is the totals line from /api/today; 0 sessions and calls when nothing ran.
@@ -153,7 +167,7 @@ function rowNode(id) {
   tr.dataset.id = id;
   const parts = { tr, cells: [], a: document.createElement("a"), key: {} };
   parts.a.href = `#/sessions/${encodeURIComponent(id)}`;
-  for (const cls of ["time", "title", "", "num", "chips", "num", "", "num", "num", "num", "num"]) parts.cells.push(td(tr, null, cls));
+  for (const cls of ["time", "title", "", "num", "chips", "num", "", "num", "num", "num", "num", "num"]) parts.cells.push(td(tr, null, cls));
   parts.cells[1].append(parts.a);
   return parts;
 }
@@ -189,16 +203,18 @@ function fillRow(parts, s, selected) {
   setText(cells[8], c.output);
   setText(cells[9], c.cacheWrite);
   setText(cells[10], c.cacheRead);
+  setText(cells[11], c.effects.text);
+  if (cells[11].title !== c.effects.title) cells[11].title = c.effects.title;
 }
 
 const COLUMNS = [
   ["Start"], ["Title"], ["Sources"], ["Calls", "num"], ["Tools"], ["Errors", "num"], ["Status"],
-  ["Input", "num"], ["Output", "num"], ["Cache write", "num"], ["Cache read", "num"],
+  ["Input", "num"], ["Output", "num"], ["Cache write", "num"], ["Cache read", "num"], ["Effects", "num"],
 ];
 
 // createSessionsPage builds the landing page once; update(state) redraws the table, the
 // totals and the notes without touching the filter input, so typing keeps its focus.
-// state = { items, next_after, error, today, ungrouped: { items, next_after } }.
+// state = { items, next_after, error, today, ungrouped: { items, next_after }, unassigned }.
 // handlers = { onMore }.
 export function createSessionsPage(handlers) {
   const el = document.createElement("section");
@@ -234,7 +250,7 @@ export function createSessionsPage(handlers) {
   el.append(today, bar, filterNote, list, foot);
 
   let kind = "all";
-  let state = { items: [], next_after: null, error: "", today: null, ungrouped: { items: [], next_after: null } };
+  let state = { items: [], next_after: null, error: "", today: null, ungrouped: { items: [], next_after: null }, unassigned: 0 };
   let selected = "";
   let shown = [];
   input.addEventListener("input", () => redraw());
@@ -305,6 +321,16 @@ export function createSessionsPage(handlers) {
       a.className = "quiet";
       a.href = "#/ungrouped";
       a.textContent = ug;
+      const p = document.createElement("p");
+      p.append(a);
+      foot.append(p);
+    }
+    const ua = unassignedText(state.unassigned);
+    if (ua) {
+      const a = document.createElement("a");
+      a.className = "quiet";
+      a.href = "#/effects/unassigned";
+      a.textContent = ua;
       const p = document.createElement("p");
       p.append(a);
       foot.append(p);
