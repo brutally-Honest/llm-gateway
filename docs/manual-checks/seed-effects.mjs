@@ -41,6 +41,7 @@ const socksProxy = hostPort(args["socks-proxy"]);
 
 const session = randomUUID();
 const other = randomUUID();
+const open = new Set(); // sessions started and not yet ended; all are ended when the seed finishes
 let toolN = 0;
 
 async function hook(body) {
@@ -50,6 +51,15 @@ async function hook(body) {
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`hook ${body.hook_event_name}: HTTP ${res.status}`);
+  if (body.hook_event_name === "SessionStart") open.add(body.session_id);
+  if (body.hook_event_name === "SessionEnd") open.delete(body.session_id);
+}
+
+// endAll sends SessionEnd for every session still open, so none stays active after the seed
+// and a re-run in the same gateway gives the same counts (a second active session would send
+// its connections to unassigned, AC10).
+async function endAll() {
+  for (const sid of [...open]) await hook({ ...base("SessionEnd", sid), reason: "other" });
 }
 
 const base = (name, sid = session) => ({ hook_event_name: name, session_id: sid, cwd: dir, transcript_path: "" });
@@ -202,51 +212,54 @@ console.log(`seed repo: ${dir}`);
 console.log(`session:   ${session}`);
 console.log(`open:      ${args.ui}/#/sessions/${uiID}`);
 
-// The first hook with a working folder records the baseline; nothing is reported for it.
-await hook({ ...base("SessionStart"), source: "startup" });
-await sleep(pause);
+try {
+  // The first hook with a working folder records the baseline; nothing is reported for it.
+  await hook({ ...base("SessionStart"), source: "startup" });
+  await sleep(pause);
 
-// A second active session makes the next connection unassigned (AC10).
-await hook({ ...base("SessionStart", other), cwd: undefined, source: "startup" });
-console.log(`unassigned plain HTTP: ${await plainHTTP("/unassigned?token=should-not-be-stored")}`);
-await hook({ ...base("SessionEnd", other), cwd: undefined, reason: "other" });
-await sleep(pause);
+  // A second active session makes the next connection unassigned (AC10).
+  await hook({ ...base("SessionStart", other), cwd: undefined, source: "startup" });
+  console.log(`unassigned plain HTTP: ${await plainHTTP("/unassigned?token=should-not-be-stored")}`);
+  await hook({ ...base("SessionEnd", other), cwd: undefined, reason: "other" });
+  await sleep(pause);
 
-// Turn 1: a read, a write and an edit of a committed file.
-await prompt("Read the app, add a test and change the greeting.");
-await tool("Read", { file_path: join(dir, "src/app.js"), offset: 1, limit: 3 },
-  { type: "text", file: { filePath: join(dir, "src/app.js"), content: "export function greet(name) {\n  return `hello ${name}`;\n}\n", numLines: 3, startLine: 1, totalLines: 3 } });
-await tool("Grep", { pattern: "greet", output_mode: "content" }, { mode: "content", numFiles: 1, filenames: [], content: "src/app.js:1:export function greet(name) {" });
-write("src/app.test.js", "import { greet } from './app.js';\nconsole.assert(greet('x') === 'hi x');\n");
-await tool("Write", { file_path: join(dir, "src/app.test.js"), content: "…" }, { type: "create", filePath: join(dir, "src/app.test.js") });
-write("src/app.js", "export function greet(name) {\n  return `hi ${name}`;\n}\n");
-await tool("Edit", { file_path: join(dir, "src/app.js"), old_string: "hello", new_string: "hi" }, { filePath: join(dir, "src/app.js") });
-await stop();
-await sleep(pause);
+  // Turn 1: a read, a write and an edit of a committed file.
+  await prompt("Read the app, add a test and change the greeting.");
+  await tool("Read", { file_path: join(dir, "src/app.js"), offset: 1, limit: 3 },
+    { type: "text", file: { filePath: join(dir, "src/app.js"), content: "export function greet(name) {\n  return `hello ${name}`;\n}\n", numLines: 3, startLine: 1, totalLines: 3 } });
+  await tool("Grep", { pattern: "greet", output_mode: "content" }, { mode: "content", numFiles: 1, filenames: [], content: "src/app.js:1:export function greet(name) {" });
+  write("src/app.test.js", "import { greet } from './app.js';\nconsole.assert(greet('x') === 'hi x');\n");
+  await tool("Write", { file_path: join(dir, "src/app.test.js"), content: "…" }, { type: "create", filePath: join(dir, "src/app.test.js") });
+  write("src/app.js", "export function greet(name) {\n  return `hi ${name}`;\n}\n");
+  await tool("Edit", { file_path: join(dir, "src/app.js"), old_string: "hello", new_string: "hi" }, { filePath: join(dir, "src/app.js") });
+  await stop();
+  await sleep(pause);
 
-// Turn 2: a .env change (git-ignored, still seen) and connections through both proxies.
-await prompt("Set the API token in .env and fetch the docs.");
-write(".env", "API_TOKEN=seed-not-a-real-secret\n");
-await tool("Bash", { command: "echo API_TOKEN=… > .env" }, { stdout: "", stderr: "", interrupted: false });
-console.log(`plain HTTP:  ${await plainHTTP("/docs/page?token=should-not-be-stored")}`);
-console.log(`CONNECT:     ${await connectTo(targetPort)}`);
-console.log(`SOCKS5:      ${await socksTo(targetPort)}`);
-const closed = createServer();
-await new Promise((r) => closed.listen(0, "127.0.0.1", r));
-const closedPort = closed.address().port;
-await new Promise((r) => closed.close(r));
-console.log(`CONNECT to a closed port: ${await connectTo(closedPort)}`);
-await tool("Bash", { command: "curl https://example.com" }, { stdout: "", stderr: "", interrupted: false });
-await stop();
-await sleep(pause);
+  // Turn 2: a .env change (git-ignored, still seen) and connections through both proxies.
+  await prompt("Set the API token in .env and fetch the docs.");
+  write(".env", "API_TOKEN=seed-not-a-real-secret\n");
+  await tool("Bash", { command: "echo API_TOKEN=… > .env" }, { stdout: "", stderr: "", interrupted: false });
+  console.log(`plain HTTP:  ${await plainHTTP("/docs/page?token=should-not-be-stored")}`);
+  console.log(`CONNECT:     ${await connectTo(targetPort)}`);
+  console.log(`SOCKS5:      ${await socksTo(targetPort)}`);
+  const closed = createServer();
+  await new Promise((r) => closed.listen(0, "127.0.0.1", r));
+  const closedPort = closed.address().port;
+  await new Promise((r) => closed.close(r));
+  console.log(`CONNECT to a closed port: ${await connectTo(closedPort)}`);
+  await tool("Bash", { command: "curl https://example.com" }, { stdout: "", stderr: "", interrupted: false });
+  await stop();
+  await sleep(pause);
 
-// Turn 3: a 500-file burst behind one folded row, then a delete.
-await prompt("Generate the fixtures, then remove the readme.");
-for (let i = 0; i < 500; i++) write(`fixtures/f${String(i).padStart(3, "0")}.txt`, `fixture ${i}\n`);
-rmSync(join(dir, "README.md"));
-await tool("Bash", { command: "node gen-fixtures.js && rm README.md" }, { stdout: "500 files", stderr: "", interrupted: false });
-await stop();
-await sleep(pause);
-
-target.close();
-console.log("seeded: 3 turns; expect the counts in 014-effects.md");
+  // Turn 3: a 500-file burst behind one folded row, then a delete.
+  await prompt("Generate the fixtures, then remove the readme.");
+  for (let i = 0; i < 500; i++) write(`fixtures/f${String(i).padStart(3, "0")}.txt`, `fixture ${i}\n`);
+  rmSync(join(dir, "README.md"));
+  await tool("Bash", { command: "node gen-fixtures.js && rm README.md" }, { stdout: "500 files", stderr: "", interrupted: false });
+  await stop();
+  await sleep(pause);
+} finally {
+  target.close();
+  await endAll();
+}
+console.log("seeded: 3 turns, sessions ended; expect the counts in 014-effects.md");

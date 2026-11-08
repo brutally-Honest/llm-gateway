@@ -32,8 +32,11 @@ hand.
    a temp folder, so not `/tmp`), prints the session id and a link, and takes about 10 s.
    Every proxy line it prints must say `200` or `ok`, except `CONNECT to a closed port`,
    which must say `refused (HTTP/1.1 502 Bad Gateway)`. Open the link **before** it reaches
-   turn 1 to watch step 4 live (`--pause 5000` gives more time). Remove the scratch repo
-   afterwards.
+   turn 1 to watch step 4 live (`--pause 5000` gives more time). It ends every session it
+   starts, so none stays active. Remove the scratch repo afterwards.
+
+   The counts in the steps below assume a fresh data folder seeded once: each run adds a
+   session and one unassigned connection.
 
 ## Steps
 
