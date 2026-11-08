@@ -93,6 +93,38 @@ CREATE TABLE hook_events (
 CREATE INDEX hook_events_session ON hook_events(principal_id, client, session_key, received_at, seq);
 CREATE INDEX hook_events_tool_use ON hook_events(tool_use_id);
 `,
+	// 4: file and network effects, and each session's last checkpoint (feature 014,
+	// ADR 0014). No header column: nothing credential-bearing can land. A NULL
+	// session_key is an unassigned effect.
+	`
+CREATE TABLE effects (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  principal_id TEXT NOT NULL,
+  client       TEXT NOT NULL,
+  session_key  TEXT,
+  kind         TEXT NOT NULL CHECK (kind IN ('file_change','file_read','net_conn')),
+  at           INTEGER NOT NULL,
+  root TEXT, path TEXT, change TEXT, size INTEGER, mode TEXT,
+  after_hash  TEXT REFERENCES content(hash),
+  before_hash TEXT REFERENCES content(hash),
+  hook_id     INTEGER,
+  detail      TEXT,
+  host TEXT, port INTEGER, via TEXT,
+  bytes_up INTEGER, bytes_down INTEGER, ended_at INTEGER, outcome TEXT
+);
+CREATE INDEX effects_session ON effects(principal_id, client, session_key, id);
+
+CREATE TABLE effect_snapshots (
+  principal_id TEXT NOT NULL,
+  client       TEXT NOT NULL,
+  session_key  TEXT NOT NULL,
+  root         TEXT NOT NULL,
+  path         TEXT NOT NULL,
+  size         INTEGER, mtime_ns INTEGER, hash TEXT,
+  copy_hash    TEXT REFERENCES content(hash),
+  PRIMARY KEY (principal_id, client, session_key, root, path)
+) WITHOUT ROWID;
+`,
 }
 
 // migrate brings the database to len(migrations) inside one BEGIN IMMEDIATE, so
