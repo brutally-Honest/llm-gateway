@@ -13,11 +13,14 @@ import (
 // client profiles, both in registration order. Everything is registered before the
 // server starts; after that it is only read.
 type Registry struct {
-	log      *zap.Logger
-	capture  *Capture                                      // nil: capture off
-	guard    func(Adapter) func(http.Handler) http.Handler // nil: no guard
-	adapters []mounted
-	profiles []Profile
+	log     *zap.Logger
+	capture *Capture                                      // nil: capture off
+	guard   func(Adapter) func(http.Handler) http.Handler // nil: no guard
+	// ownProxies are the gateway's own forward proxy listeners; upstream calls never go
+	// through them (spec 014 AC11).
+	ownProxies []string
+	adapters   []mounted
+	profiles   []Profile
 }
 
 // RegistryOption configures a Registry when it is made.
@@ -34,6 +37,12 @@ func WithCapture(c Capture) RegistryOption {
 // nothing about it. Without it the proxy is mounted as it is.
 func WithGuard(g func(Adapter) func(http.Handler) http.Handler) RegistryOption {
 	return func(r *Registry) { r.guard = g }
+}
+
+// WithOwnProxies names the gateway's own forward proxy listeners, so an upstream call
+// whose environment proxy is one of them connects directly instead (spec 014 AC11).
+func WithOwnProxies(addrs ...string) RegistryOption {
+	return func(r *Registry) { r.ownProxies = append([]string(nil), addrs...) }
 }
 
 // mounted is one adapter and the handler in front of its upstream: its proxy,
@@ -59,7 +68,7 @@ func (r *Registry) AddProfile(p Profile) {
 
 // AddAdapter registers a protocol adapter and builds its proxy in front of up.
 func (r *Registry) AddAdapter(a Adapter, up config.Upstream) {
-	var h http.Handler = newProxy(a, up, r.Identify, r.sessionKey, r.log, r.capture)
+	var h http.Handler = newProxy(a, up, r.Identify, r.sessionKey, r.log, r.capture, r.ownProxies...)
 	if r.guard != nil {
 		if wrap := r.guard(a); wrap != nil {
 			h = wrap(h)

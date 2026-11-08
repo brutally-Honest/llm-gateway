@@ -244,6 +244,10 @@ func run(ctx context.Context, d deps) int {
 		defer hookSink.Close(context.Background()) // the early returns; Close is idempotent
 	}
 	hookHandler := hooks.NewHandler(hookSink, log, cfg.Capture.MaxBodyBytes, hookOn)
+	if capt.proxyOn() {
+		// Upstream calls never loop back through the gateway's own proxy (spec 014 AC11).
+		opts = append(opts, core.WithOwnProxies(cfg.Effects.Network.HTTPProxyAddr, cfg.Effects.Network.SocksProxyAddr))
+	}
 	registry := core.NewRegistry(log, opts...)
 	for _, p := range profiles {
 		registry.AddProfile(p)
@@ -596,6 +600,9 @@ func (e *effectsRun) close(ctx context.Context) {
 	}
 	e.runner.Close(ctx)
 }
+
+// proxyOn reports whether the gateway's own proxy listeners are serving.
+func (c *captureRun) proxyOn() bool { return c != nil && c.effects != nil && c.effects.proxy != nil }
 
 // proxyCounts are the network recorder's counters, zero with the sensor off.
 func (e *effectsRun) proxyCounts() netproxy.Counts {

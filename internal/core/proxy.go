@@ -27,6 +27,7 @@ var forwardingHeaders = []string{"Forwarded", "X-Forwarded-For", "X-Forwarded-Ho
 // back. It is protocol-agnostic: everything protocol-shaped comes from the Adapter.
 type Proxy struct {
 	rp         *httputil.ReverseProxy
+	ownProxies []string // the gateway's own forward proxy listeners (spec 014 AC11)
 	adapter    Adapter
 	identify   func(*http.Request) string
 	sessionKey func(*http.Request) (string, bool) // nil: no session keys
@@ -42,15 +43,15 @@ func NewProxy(a Adapter, up config.Upstream, identify func(*http.Request) string
 }
 
 // newProxy is NewProxy with capture on when c is not nil.
-func newProxy(a Adapter, up config.Upstream, identify func(*http.Request) string, sessionKey func(*http.Request) (string, bool), log *zap.Logger, c *Capture) *Proxy {
+func newProxy(a Adapter, up config.Upstream, identify func(*http.Request) string, sessionKey func(*http.Request) (string, bool), log *zap.Logger, c *Capture, ownProxies ...string) *Proxy {
 	prefix := a.Prefix()
 	base := up.BaseURL
-	p := &Proxy{adapter: a, identify: identify, sessionKey: sessionKey, log: log, principal: LocalPrincipal{}, capture: newCaptureConfig(a, c)}
+	p := &Proxy{adapter: a, identify: identify, sessionKey: sessionKey, log: log, principal: LocalPrincipal{}, capture: newCaptureConfig(a, c), ownProxies: ownProxies}
 	if p.capture != nil {
 		p.principal = p.capture.Principal
 	}
 	p.rp = &httputil.ReverseProxy{
-		Transport: newTransport(up),
+		Transport: newTransport(up, ownProxies...),
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			rewrite(pr, prefix, base)
 			teeRequest(pr)
@@ -230,13 +231,18 @@ func isEventStream(contentType string) bool {
 	return err == nil && mediaType == "text/event-stream"
 }
 
+// environmentProxy is the proxy the environment names for a request; tests swap it, as
+// http.ProxyFromEnvironment reads the environment only once per process.
+var environmentProxy = http.ProxyFromEnvironment
+
 // newTransport is built field by field rather than cloned from http.DefaultTransport,
 // which a test in the same process could have replaced. There is no whole-request
 // timeout anywhere: a stream runs as long as upstream sends.
-func newTransport(up config.Upstream) *http.Transport {
+func newTransport(up config.Upstream, ownProxies ...string) *http.Transport {
 	dialer := &net.Dialer{Timeout: up.ConnectTimeout, KeepAlive: 30 * time.Second}
 	return &http.Transport{
-		Proxy:       http.ProxyFromEnvironment, // research Q9
+		// research Q9; never through the gateway's own forward proxy (spec 014 AC11)
+		Proxy:       skipOwnProxies(environmentProxy, ownProxies),
 		DialContext: dialer.DialContext,
 		// Accept-Encoding goes upstream as sent, and a compressed body comes back as
 		// sent: the gateway never inflates it.
@@ -304,5 +310,35 @@ func stripProxyHeaders(h http.Header) {
 		if strings.HasPrefix(http.CanonicalHeaderKey(name), "Proxy-") {
 			delete(h, name)
 		}
+	}
+}
+
+// skipOwnProxies wraps next, the environment's proxy choice: a proxy whose host:port is
+// one of own, the gateway's own forward proxy listeners, gives a direct connection, so an
+// upstream call never loops back through the gateway (spec 014 AC11). own are loopback
+// addresses, so any loopback host on the same port is one of them.
+func skipOwnProxies(next func(*http.Request) (*url.URL, error), own []string) func(*http.Request) (*url.URL, error) {
+	if len(own) == 0 {
+		return next
+	}
+	return func(r *http.Request) (*url.URL, error) {
+		u, err := next(r)
+		if err != nil || u == nil {
+			return u, err
+		}
+		port := u.Port()
+		if port == "" {
+			port = map[string]string{"http": "80", "https": "443", "socks5": "1080"}[u.Scheme]
+		}
+		host := u.Hostname()
+		ip := net.ParseIP(host)
+		loopback := strings.EqualFold(host, "localhost") || (ip != nil && ip.IsLoopback())
+		for _, a := range own {
+			_, p, err := net.SplitHostPort(a)
+			if err == nil && loopback && p == port {
+				return nil, nil
+			}
+		}
+		return u, nil
 	}
 }
