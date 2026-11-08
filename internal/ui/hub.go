@@ -79,6 +79,14 @@ type freshFn func(ctx context.Context, who sessIdent, entries bool) error
 // entries of the exchanges with these request ids, in row id order.
 type readFn func(ctx context.Context, who sessIdent, ids []string, summary, entries bool) (liveMsg, error)
 
+// pendingCatch is what a session's catch-up must send once the rebuild lands: the summary
+// always; when entries is true, the session streams' entries too, as a batch of the
+// deferred commits in ids or, with none, as a refresh.
+type pendingCatch struct {
+	entries bool
+	ids     []string
+}
+
 // pendingRefresh is a session's armed hook refresh. It is a pointer so a fired timer can
 // tell whether it is still the session's current one.
 type pendingRefresh struct{ timer *time.Timer }
@@ -119,9 +127,8 @@ type Hub struct {
 	subs map[*subscriber]struct{}
 	// pending holds one refresh timer per session with hook events not yet re-read.
 	pending map[sessIdent]*pendingRefresh
-	// catching holds the sessions with a catch-up waiting on a rebuild, and whether it
-	// must resend entries as well as the summary.
-	catching map[sessIdent]bool
+	// catching holds the sessions with a catch-up waiting on a rebuild.
+	catching map[sessIdent]*pendingCatch
 }
 
 // NewHub returns a running hub that reads from d.Reader.
@@ -151,7 +158,7 @@ func newHub(d Deps, queue int) *Hub {
 	}
 	h := &Hub{
 		log: log, timelines: d.Timelines, digests: d.Digests, heartbeat: heartbeatEvery, hookEvery: hookRefreshEvery,
-		pending: map[sessIdent]*pendingRefresh{}, catching: map[sessIdent]bool{},
+		pending: map[sessIdent]*pendingRefresh{}, catching: map[sessIdent]*pendingCatch{},
 		q: make(chan capture.Committed, queue), done: make(chan struct{}),
 		subs: map[*subscriber]struct{}{},
 	}
@@ -437,22 +444,29 @@ func (h *Hub) readAndSend(who sessIdent, ids []string, global, session, refresh 
 			h.send(s, liveMsg{Summary: m.Summary})
 		}
 	}
-	if session && (refresh || len(m.Exchanges) > 0) {
+	// Entries from an older build than the store would hold back the commits they lack:
+	// the session streams get them in the catch-up instead, once the build lands.
+	deferred := session && m.StaleEntries
+	if session && !deferred && (refresh || len(m.Exchanges) > 0) {
 		for _, s := range h.targets(id, false) {
 			h.send(s, liveMsg{Summary: m.Summary, Exchanges: m.Exchanges, All: m.All, Inactive: m.Inactive, Refresh: refresh, Position: m.Position})
 		}
 	}
-	if m.StaleSummary || m.StaleEntries {
-		h.catchUp(who, m.StaleEntries)
+	switch {
+	case deferred:
+		h.catchUp(who, true, ids)
+	case m.StaleSummary:
+		h.catchUp(who, false, nil)
 	}
 }
 
 // catchUp sends a session's watchers what a stale read left out. It waits, off the
-// dispatcher, for the rebuild the stale read asked for, then re-reads and sends it: the
-// summary, and when entries were stale a refresh with every exchange that differs from
-// what a stream last sent. A session has at most one catch-up waiting; a read that is
-// stale again arms the next, so once writes stop the last one sends the store as it is.
-func (h *Hub) catchUp(who sessIdent, entries bool) {
+// dispatcher, for the rebuild the stale read asked for, then reads again and sends: the
+// deferred commits as one batch, or with none and stale entries a refresh of every
+// exchange that differs from what a stream last sent, or else the summary alone. A session
+// has at most one catch-up waiting, which gathers what later stale reads defer; a read that
+// is stale again arms the next, so once writes stop the last one sends the store as it is.
+func (h *Hub) catchUp(who sessIdent, entries bool, ids []string) {
 	h.mu.Lock()
 	select {
 	case <-h.done:
@@ -460,19 +474,20 @@ func (h *Hub) catchUp(who sessIdent, entries bool) {
 		return
 	default:
 	}
-	if armed, ok := h.catching[who]; ok {
-		h.catching[who] = armed || entries
+	if p, ok := h.catching[who]; ok {
+		p.entries = p.entries || entries
+		p.ids = append(p.ids, ids...)
 		h.mu.Unlock()
 		return
 	}
-	h.catching[who] = entries
+	h.catching[who] = &pendingCatch{entries: entries, ids: append([]string(nil), ids...)}
 	h.mu.Unlock()
 	logging.Go(h.log, "ui_hub_catchup", func() error {
 		ctx, cancel := context.WithTimeout(h.ctx, buildTimeout)
 		err := h.fresh(ctx, who, entries)
 		cancel()
 		h.mu.Lock()
-		entries = h.catching[who]
+		p := h.catching[who]
 		delete(h.catching, who)
 		h.mu.Unlock()
 		if err != nil {
@@ -490,7 +505,9 @@ func (h *Hub) catchUp(who sessIdent, entries bool) {
 		}
 		global, session := h.watchers(who.id())
 		switch {
-		case entries && session:
+		case session && len(p.ids) > 0:
+			h.readAndSend(who, p.ids, global, session, false)
+		case session && p.entries:
 			h.readAndSend(who, nil, global, session, true)
 		case global || session:
 			h.resendSummary(who)
@@ -524,12 +541,13 @@ func (h *Hub) resendSummary(who sessIdent) {
 		}
 	}
 	if m.StaleSummary {
-		h.catchUp(who, false)
+		h.catchUp(who, false, nil)
 	}
 }
 
 // waitFresh is the production freshFn: it waits for the session's digest at the store's
-// current version, computing it if no compute is under way.
+// current version, and its timeline build when entries is true, starting each one if none
+// is under way.
 func waitFresh(ctx context.Context, d Deps, who sessIdent, entries bool) error {
 	if d.Reader == nil {
 		return errors.New("ui: no reader")
@@ -546,6 +564,11 @@ func waitFresh(ctx context.Context, d Deps, who sessIdent, entries bool) error {
 			return err
 		}
 		if _, err := d.Digests.get(ctx, ident, vers[ident], d.digestCompute(row)); err != nil {
+			return err
+		}
+	}
+	if entries && d.Timelines != nil {
+		if _, err := d.Timelines.get(ctx, ident, vers[ident], d.timelineBuild(who)); err != nil {
 			return err
 		}
 	}
@@ -575,11 +598,11 @@ func readLive(ctx context.Context, d Deps, who sessIdent, ids []string, summary,
 		}
 	}
 	if entries {
-		all, ver, err := sessionExchanges(ctx, d, who)
+		all, ver, stale, err := sessionExchanges(ctx, d, who)
 		if err != nil {
 			return liveMsg{}, err
 		}
-		m.Position = positionOf(ver)
+		m.Position, m.StaleEntries = positionOf(ver), stale
 		want := make(map[string]bool, len(ids))
 		for _, id := range ids {
 			want[id] = true
@@ -607,31 +630,30 @@ func readLive(ctx context.Context, d Deps, who sessIdent, ids []string, summary,
 // sessionExchanges builds a session's whole timeline from one snapshot read and returns
 // each stored exchange with its entries, in timeline order, then the hooks item (its
 // Entries are [] when the session has no hook line, never null). Exchanges with no entry
-// are left out. The build comes from the timeline cache, and a caller that needs the
-// latest data waits for a running rebuild, so the result is at least as new as the
-// store was when this was called. It also returns the version the build was asked for.
-func sessionExchanges(ctx context.Context, d Deps, who sessIdent) ([]liveExchange, store.Version, error) {
+// are left out. The build is the timeline cache's latest for the session, served at once
+// when one is cached: it returns the version that build is at, and stale when that is
+// older than the store, in which case a rebuild was asked for.
+func sessionExchanges(ctx context.Context, d Deps, who sessIdent) ([]liveExchange, store.Version, bool, error) {
 	rules := d.Rules[who.client]
 	ident := store.SessionIdent{Principal: who.principal, Client: who.client, Key: who.name}
 	vers, err := d.Reader.WithContext(ctx).SessionVersions([]store.SessionIdent{ident})
 	if err != nil {
-		return nil, store.Version{}, err
+		return nil, store.Version{}, false, err
 	}
 	ver := vers[ident]
+	stale := false
 	var bs builtSession
 	if d.Timelines == nil {
 		bs, err = buildSession(d.Reader.WithContext(ctx), who, rules, entryCut)
 	} else {
 		var cb *cachedBuild
-		cb, err = d.Timelines.get(ctx, ident, ver, func(bctx context.Context) (builtSession, error) {
-			return buildSession(d.Reader.WithContext(bctx), who, rules, entryCut)
-		})
+		cb, err = d.Timelines.latest(ctx, ident, ver, d.timelineBuild(who))
 		if cb != nil {
-			bs = cb.bs
+			bs, stale, ver = cb.bs, versionAfter(ver, cb.ver), cb.ver
 		}
 	}
 	if err != nil {
-		return nil, ver, err
+		return nil, ver, false, err
 	}
 	built, facts, byID, rowID := bs.entries, bs.facts, bs.byID, bs.rowID
 	var out []liveExchange
@@ -656,12 +678,21 @@ func sessionExchanges(ctx context.Context, d Deps, who sessIdent) ([]liveExchang
 	for i := range out {
 		b, err := json.Marshal(out[i].Entries)
 		if err != nil {
-			return nil, ver, err
+			return nil, ver, false, err
 		}
 		sum := sha256.Sum256(b)
 		out[i].Hash = string(sum[:])
 	}
-	return out, ver, nil
+	return out, ver, stale, nil
+}
+
+// timelineBuild builds a session's timeline on bctx through the server's reader, so it
+// still lands in the cache when the request that asked for it has timed out.
+func (d Deps) timelineBuild(who sessIdent) func(context.Context) (builtSession, error) {
+	rules := d.Rules[who.client]
+	return func(bctx context.Context) (builtSession, error) {
+		return buildSession(d.Reader.WithContext(bctx), who, rules, entryCut)
+	}
 }
 
 // snapshot is what a stream sends on open: the first page of sessions (global stream) or
@@ -711,9 +742,12 @@ func readSnapshot(ctx context.Context, d Deps, session string) (snapshot, error)
 		case !errors.Is(err, store.ErrNotFound):
 			return snapshot{}, err
 		}
-		x, ver, err := sessionExchanges(ctx, d, who)
+		x, ver, stale, err := sessionExchanges(ctx, d, who)
 		out.Exchanges = x
 		out.Version, out.Position = versionToJSON(ver), positionOf(ver)
+		if stale {
+			out.Stale = append(out.Stale, staleRead{who: who, entries: true})
+		}
 		return out, err
 	}
 	rows, err := c.SessionPage(nil, defaultListLimit)

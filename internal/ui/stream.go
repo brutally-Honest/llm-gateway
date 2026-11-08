@@ -78,7 +78,7 @@ func (h *Hub) serve(w http.ResponseWriter, r *http.Request, session string) {
 	// A snapshot served from an older cache is caught up once the rebuild lands: this
 	// stream is subscribed, so it gets everything after the snapshot's position.
 	for _, st := range stale {
-		h.catchUp(st.who, st.entries)
+		h.catchUp(st.who, st.entries, nil)
 	}
 	tick := time.NewTicker(h.heartbeat)
 	defer tick.Stop()

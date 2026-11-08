@@ -854,10 +854,16 @@ func TestLive_ReconnectSnapshotReplacesEverything(t *testing.T) {
 	e.parseMsgs("C", "ok", []any{"user", text("q1")}, []any{"assistant", text("r1")}, []any{"user", text("q2")}, []any{"user", text("q3")})
 	e.publish("C")
 	re := e.open(e.sessionPath())
-	// The new snapshot replaces whatever the old view held.
-	view := applyEvents(append(evs, re.take(3)...))
-	if !reflect.DeepEqual(view, e.freshTimeline()) {
-		t.Fatalf("view = %v\nreload = %v", view, e.freshTimeline())
+	// The new snapshot replaces whatever the old view held. It may come from the build
+	// cached before the commits, and then the stream catches up once the rebuild lands, so
+	// the view reaches the reload with no further commit; one that never does fails on the
+	// read timeout.
+	want := e.freshTimeline()
+	for {
+		evs = append(evs, re.nextData())
+		if reflect.DeepEqual(applyEvents(evs), want) {
+			return
+		}
 	}
 }
 

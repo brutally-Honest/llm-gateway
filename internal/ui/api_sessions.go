@@ -273,7 +273,7 @@ func (d Deps) summarizeRows(ctx context.Context, c *store.CtxReader, ids []strin
 				return nil, nil, err
 			}
 			memo = hit.memo
-			if hit.ver != ver {
+			if versionAfter(ver, hit.ver) {
 				stale = append(stale, idents[i])
 				ver = hit.ver
 			}
