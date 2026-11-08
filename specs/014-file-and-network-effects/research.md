@@ -191,6 +191,16 @@ Karthik's answers (2026-11-08):
 - V6 — The PostToolUse payload of Read carries the file content in `tool_response`.
 - V7 — Hook `cwd` stays the starting folder after Claude runs `cd` in Bash.
 
+### Manual check results
+- 2026-11-08 — 014-effects.md steps 3–8 at f48bd50 (Linux, Chrome, fresh data folder, seed
+  with `--pause 5000`): steps 3, 5, 6, 7 and 8 pass; step 4 fails. The counts, the live
+  fill and the 501-row turn are right, but every live effects update replaced every turn
+  section of the timeline: `setEffects` redraws the whole list, so the turns above are
+  rebuilt (rebuilds seen at each update, 2–4 sections removed each time), against AC14's
+  "no timeline rebuild". A second seed run in the same gateway put its turn 2 connections
+  under unassigned: the first run's session still counted as active (AC10 working), so
+  the seed only gives the documented counts once per data folder.
+
 ### Sources (2026-11-08)
 - Claude Code honours `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`, does not support SOCKS
   itself, and every env var on that page can be set in settings.json:
