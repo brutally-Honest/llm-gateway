@@ -19,6 +19,11 @@ The snippet sends events to the gateway's `listen_addr`, read from its config (t
 gateway hooks print            # from a checkout: go run ./cmd/gateway hooks print
 ```
 
+With network effects on (`effects.network.enabled`, the default), the printed document also
+holds an `env` and a `sandbox` block and is saved as its own settings file instead: see
+[claude-code.md §6](claude-code.md#6-files-and-network-014). To print the hooks alone, run it
+with `GATEWAY_EFFECTS_NETWORK_ENABLED=false`.
+
 The command writes the snippet to stdout and nothing else. It writes no file and changes
 no setting, so nothing is installed until you copy it in. Run it again if `listen_addr`
 changes, because the address is written into the snippet.

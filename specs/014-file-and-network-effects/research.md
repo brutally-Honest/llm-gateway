@@ -115,6 +115,18 @@ Build decisions (2026-11-08, made during the build outside the kit; say if you w
   prints with network effects off. Their helper sets `GATEWAY_EFFECTS_NETWORK_ENABLED=false`
   unless a test sets it; every 010 assertion is unchanged. `ANTHROPIC_BASE_URL` is
   `listen_addr` plus the Anthropic adapter's prefix (`/anthropic`).
+- B10 (T012) — Found while writing the seed: a hooks-only session's turns (built from prompt
+  hooks) had no start time, so every effect fell into "before the first prompt". `hookTurns`
+  now gives each prompt turn its hook's time. Committed on its own as a fix.
+- B11 (T012) — `effects_stored` in the shutdown line counts checkpoint and network effects;
+  read effects are stored one by one on the hook worker and are not counted there.
+
+Karthik's answers to the build decisions (2026-11-08):
+- B8 → approved as is: no proxy listeners while capture is off.
+- B9 → approved: `TestHooksPrint_SettingsDoc` already runs `hooks print` with
+  `GATEWAY_EFFECTS_NETWORK_ENABLED=true` and checks the printed env block, the sandbox block
+  with both ports, the output with the sandbox off, and the output with SOCKS5 off; no new
+  test needed.
 
 Karthik's answers (2026-11-08):
 - K1 → changed: snapshots saved in SQLite with batched, per-checkpoint transactions (D14).
