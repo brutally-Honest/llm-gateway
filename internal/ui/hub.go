@@ -69,6 +69,10 @@ type liveMsg struct {
 	// from a cache older than the store; the hub then sends a catch-up once the rebuild
 	// lands. They never reach a stream.
 	StaleSummary, StaleEntries bool
+	// ReadAt is the store's version when the entries were read, and BuiltAt the version
+	// the build behind them reaches. A commit read at ReadAt is covered by any build at
+	// that version or newer. They never reach a stream.
+	ReadAt, BuiltAt store.Version
 }
 
 // freshFn waits until the caches hold the session at the store's current version: the
@@ -81,10 +85,12 @@ type readFn func(ctx context.Context, who sessIdent, ids []string, summary, entr
 
 // pendingCatch is what a session's catch-up must send once the rebuild lands: the summary
 // always; when entries is true, the session streams' entries too, as a batch of the
-// deferred commits in ids or, with none, as a refresh.
+// deferred commits in ids or, with none, as a refresh. need[i] is the store version ids[i]
+// was read at: a build at that version or newer covers it.
 type pendingCatch struct {
 	entries bool
 	ids     []string
+	need    []store.Version
 }
 
 // pendingRefresh is a session's armed hook refresh. It is a pointer so a fired timer can
@@ -253,7 +259,7 @@ func (h *Hub) refresh(who sessIdent, p *pendingRefresh) {
 	if !global && !session {
 		return
 	}
-	h.readAndSend(who, nil, global, session, true)
+	h.readAndSend(who, nil, nil, global, session, true, false)
 }
 
 // Close stops the dispatcher and ends every open stream. It is safe to call twice.
@@ -414,7 +420,7 @@ func (h *Hub) dispatch(batch []capture.Committed) {
 		h.sendMu.Lock()
 		global, session := h.watchers(g.who.id())
 		if global || session {
-			h.readAndSend(g.who, g.ids, global, session, false)
+			h.readAndSend(g.who, g.ids, nil, global, session, false, false)
 		}
 		h.sendMu.Unlock()
 	}
@@ -422,8 +428,10 @@ func (h *Hub) dispatch(batch []capture.Committed) {
 
 // readAndSend reads one session and hands the result to its watchers. A failed read drops
 // them, so they resync by snapshot. sendMu is held. A refresh sends the session streams
-// every exchange that differs, instead of the committed ones.
-func (h *Hub) readAndSend(who sessIdent, ids []string, global, session, refresh bool) {
+// every exchange that differs, instead of the committed ones. need[i] is the store version
+// ids[i] was first read at; nil means now, for commits the dispatcher has just seen. landed
+// is true when a catch-up calls it after a build landed.
+func (h *Hub) readAndSend(who sessIdent, ids []string, need []store.Version, global, session, refresh, landed bool) {
 	id := who.id()
 	ctx, cancel := context.WithTimeout(h.ctx, storeTimeout)
 	m, err := h.read(ctx, who, ids, true, session)
@@ -444,19 +452,47 @@ func (h *Hub) readAndSend(who sessIdent, ids []string, global, session, refresh 
 			h.send(s, liveMsg{Summary: m.Summary})
 		}
 	}
-	// Entries from an older build than the store would hold back the commits they lack:
-	// the session streams get them in the catch-up instead, once the build lands.
+	// Entries from a build older than the store are sent for what that build covers, and
+	// the rest wait for the catch-up: a commit read at version v is covered by a build at v
+	// or newer. Under steady writes every read is stale again by the time a build lands,
+	// so waiting for a caught-up build would hold the session streams back until the
+	// writes stop (F5).
 	deferred := session && m.StaleEntries
-	if session && !deferred && (refresh || len(m.Exchanges) > 0) {
+	send, restIDs, restNeed := m.Exchanges, []string(nil), []store.Version(nil)
+	if deferred && !refresh {
+		covered := map[string]bool{}
+		for i, x := range ids {
+			at := m.ReadAt
+			if need != nil {
+				at = need[i]
+			}
+			if versionAfter(at, m.BuiltAt) {
+				restIDs, restNeed = append(restIDs, x), append(restNeed, at)
+			} else {
+				covered[x] = true
+			}
+		}
+		send = nil
+		for _, x := range m.Exchanges {
+			if covered[x.RequestID] {
+				send = append(send, x)
+			}
+		}
+	}
+	// A stale refresh has nothing newer to send until a build lands: it waits for one.
+	waitForBuild := deferred && refresh && !landed
+	if session && (refresh || len(send) > 0) && !waitForBuild {
 		for _, s := range h.targets(id, false) {
-			h.send(s, liveMsg{Summary: m.Summary, Exchanges: m.Exchanges, All: m.All, Inactive: m.Inactive, Refresh: refresh, Position: m.Position})
+			h.send(s, liveMsg{Summary: m.Summary, Exchanges: send, All: m.All, Inactive: m.Inactive, Refresh: refresh, Position: m.Position})
 		}
 	}
 	switch {
-	case deferred:
-		h.catchUp(who, true, ids)
+	case deferred && refresh:
+		h.catchUp(who, true, nil, nil) // a refresh is resent once a newer build lands
+	case deferred && len(restIDs) > 0:
+		h.catchUp(who, true, restIDs, restNeed)
 	case m.StaleSummary:
-		h.catchUp(who, false, nil)
+		h.catchUp(who, false, nil, nil)
 	}
 }
 
@@ -466,7 +502,7 @@ func (h *Hub) readAndSend(who sessIdent, ids []string, global, session, refresh 
 // exchange that differs from what a stream last sent, or else the summary alone. A session
 // has at most one catch-up waiting, which gathers what later stale reads defer; a read that
 // is stale again arms the next, so once writes stop the last one sends the store as it is.
-func (h *Hub) catchUp(who sessIdent, entries bool, ids []string) {
+func (h *Hub) catchUp(who sessIdent, entries bool, ids []string, need []store.Version) {
 	h.mu.Lock()
 	select {
 	case <-h.done:
@@ -477,10 +513,11 @@ func (h *Hub) catchUp(who sessIdent, entries bool, ids []string) {
 	if p, ok := h.catching[who]; ok {
 		p.entries = p.entries || entries
 		p.ids = append(p.ids, ids...)
+		p.need = append(p.need, need...)
 		h.mu.Unlock()
 		return
 	}
-	h.catching[who] = &pendingCatch{entries: entries, ids: append([]string(nil), ids...)}
+	h.catching[who] = &pendingCatch{entries: entries, ids: append([]string(nil), ids...), need: append([]store.Version(nil), need...)}
 	h.mu.Unlock()
 	logging.Go(h.log, "ui_hub_catchup", func() error {
 		ctx, cancel := context.WithTimeout(h.ctx, buildTimeout)
@@ -506,9 +543,9 @@ func (h *Hub) catchUp(who sessIdent, entries bool, ids []string) {
 		global, session := h.watchers(who.id())
 		switch {
 		case session && len(p.ids) > 0:
-			h.readAndSend(who, p.ids, global, session, false)
+			h.readAndSend(who, p.ids, p.need, global, session, false, true)
 		case session && p.entries:
-			h.readAndSend(who, nil, global, session, true)
+			h.readAndSend(who, nil, nil, global, session, true, true)
 		case global || session:
 			h.resendSummary(who)
 		}
@@ -541,7 +578,7 @@ func (h *Hub) resendSummary(who sessIdent) {
 		}
 	}
 	if m.StaleSummary {
-		h.catchUp(who, false, nil)
+		h.catchUp(who, false, nil, nil)
 	}
 }
 
@@ -598,11 +635,12 @@ func readLive(ctx context.Context, d Deps, who sessIdent, ids []string, summary,
 		}
 	}
 	if entries {
-		all, ver, stale, err := sessionExchanges(ctx, d, who)
+		all, ver, read, stale, err := sessionExchanges(ctx, d, who)
 		if err != nil {
 			return liveMsg{}, err
 		}
 		m.Position, m.StaleEntries = positionOf(ver), stale
+		m.ReadAt, m.BuiltAt = read, ver
 		want := make(map[string]bool, len(ids))
 		for _, id := range ids {
 			want[id] = true
@@ -632,15 +670,17 @@ func readLive(ctx context.Context, d Deps, who sessIdent, ids []string, summary,
 // Entries are [] when the session has no hook line, never null). Exchanges with no entry
 // are left out. The build is the timeline cache's latest for the session, served at once
 // when one is cached: it returns the version that build is at, and stale when that is
-// older than the store, in which case a rebuild was asked for.
-func sessionExchanges(ctx context.Context, d Deps, who sessIdent) ([]liveExchange, store.Version, bool, error) {
+// older than the store, in which case a rebuild was asked for. It also returns the store's
+// version when it was read, which a build at that version or newer covers.
+func sessionExchanges(ctx context.Context, d Deps, who sessIdent) ([]liveExchange, store.Version, store.Version, bool, error) {
 	rules := d.Rules[who.client]
 	ident := store.SessionIdent{Principal: who.principal, Client: who.client, Key: who.name}
 	vers, err := d.Reader.WithContext(ctx).SessionVersions([]store.SessionIdent{ident})
 	if err != nil {
-		return nil, store.Version{}, false, err
+		return nil, store.Version{}, store.Version{}, false, err
 	}
 	ver := vers[ident]
+	read := ver
 	stale := false
 	var bs builtSession
 	if d.Timelines == nil {
@@ -653,7 +693,7 @@ func sessionExchanges(ctx context.Context, d Deps, who sessIdent) ([]liveExchang
 		}
 	}
 	if err != nil {
-		return nil, ver, false, err
+		return nil, ver, read, false, err
 	}
 	built, facts, byID, rowID := bs.entries, bs.facts, bs.byID, bs.rowID
 	var out []liveExchange
@@ -678,12 +718,12 @@ func sessionExchanges(ctx context.Context, d Deps, who sessIdent) ([]liveExchang
 	for i := range out {
 		b, err := json.Marshal(out[i].Entries)
 		if err != nil {
-			return nil, ver, false, err
+			return nil, ver, read, false, err
 		}
 		sum := sha256.Sum256(b)
 		out[i].Hash = string(sum[:])
 	}
-	return out, ver, stale, nil
+	return out, ver, read, stale, nil
 }
 
 // timelineBuild builds a session's timeline on bctx through the server's reader, so it
@@ -742,7 +782,7 @@ func readSnapshot(ctx context.Context, d Deps, session string) (snapshot, error)
 		case !errors.Is(err, store.ErrNotFound):
 			return snapshot{}, err
 		}
-		x, ver, stale, err := sessionExchanges(ctx, d, who)
+		x, ver, _, stale, err := sessionExchanges(ctx, d, who)
 		out.Exchanges = x
 		out.Version, out.Position = versionToJSON(ver), positionOf(ver)
 		if stale {
