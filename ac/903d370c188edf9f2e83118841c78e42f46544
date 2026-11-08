@@ -1,0 +1,8 @@
+Spec: specs/013-web-ui-redesign (manual check 013-web-ui.md step 1, F1; AC33)
+Verified by: focusedRowSurvivesALiveUpdate, focusedRowKeepsFocusWhenTheOrderChanges
+(probe: removing the re-focus line fails the latter); headless Chrome on a scratch
+gateway with seed --live: old code drops focus to BODY within 8 s, fixed code keeps
+the same link focused while Calls rises 2093 -> 2098. make verify green.
+Test harness: dom-stub gains dataset and removeAttribute, as browsers have.
+F2 (stale Calls column) was checked alongside and not reproduced: list API, stream
+session events and the page row all advance with live traffic (memo lags 1-3 calls).
