@@ -1,0 +1,16 @@
+Spec: specs/013-web-ui-redesign (manual check 013-web-ui.md steps 13-15, F3)
+Cause: the session stream's snapshot is one 'exchange' event per exchange (2,267
+events, 2.8 MB on the seeded session). Each event re-sorted all ~11k entries
+(replaceExchange, 8.7 s over the snapshot) and redrew the 46k-node list. Only an
+active session opens the stream, which is why an idle copy of the session loads fine.
+Diagnosis: headless Chrome against a scratch gateway with seed --live; Debugger.pause
+stack app.js live -> set -> draw -> render -> drawList, from api.js's event handler.
+Fix: liveBatch folds a burst in order, merging each run of exchange/entries events
+into one replaceExchange (2,000 exchanges: 19 ms); app.js draws once per 50 ms burst.
+Guard change: TestWeb_ComponentsCallTheTestedHelpers now requires app.js to call
+liveBatch and liveBatch to call liveEffect (was: app.js calls liveEffect); the
+no-direct-replace check is unchanged.
+Verified by: liveBatchMatchesApplyingEachEventInOrder (200 random mixed sequences),
+snapshotOfTwoThousandExchangesMergesUnderBudget, aStreamBurstIsDrawnOnceNotPerEvent
+(probes: per-event draws and per-event merges each turn them red); headless Chrome on
+the live session: responsive, all pages by ~0.4 s. make verify green.
