@@ -10,6 +10,7 @@ export class StubElement {
     this.listeners = {};
     this.open = false;
     this.style = {};
+    this.dataset = {};
     this.value = "";
     this.classes = new Set();
     this.classList = { add: (c) => this.classes.add(c), contains: (c) => this.classes.has(c), remove: (c) => this.classes.delete(c) };
@@ -22,6 +23,9 @@ export class StubElement {
   }
   setAttribute(k, v) {
     this.attrs[k] = String(v);
+  }
+  removeAttribute(k) {
+    delete this.attrs[k];
   }
   addEventListener(type, fn) {
     (this.listeners[type] ||= []).push(fn);

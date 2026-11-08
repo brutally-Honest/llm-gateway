@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { countedChips, localMidnight, moveSelection, rowCells, todayCells, ungroupedText } from "../web/sessions-page.js";
+import { countedChips, createSessionsPage, localMidnight, moveSelection, rowCells, todayCells, ungroupedText } from "../web/sessions-page.js";
+import { StubElement, all, byTag, installDom } from "./dom-stub.js";
 import { upsertSession } from "../web/entries.js";
 import { filterSessions } from "../web/filters.js";
 import { handleKey, keyBar } from "../web/keys.js";
@@ -90,4 +91,51 @@ test("arrowsSelectEnterOpens", () => {
   assert.equal(moveSelection(2, 1, 3), 2);
   assert.equal(moveSelection(0, 1, 0), -1);
   assert.equal(keyBar(route, { index: 2, total: 3 }).position, "session 2/3");
+});
+
+// A live update must not rebuild the rows: a focused session link would leave the page and
+// focus would drop to <body> (013 manual check step 1, F1). Rows are kept by session id.
+function livePage(items) {
+  installDom();
+  Object.assign(document, {
+    createDocumentFragment: () => new StubElement("fragment"),
+    createTextNode: (text) => Object.assign(new StubElement("text"), { textContent: text }),
+  });
+  const page = createSessionsPage({ onMore() {} });
+  page.update({ items });
+  const link = (id) => byTag(page.el, "a").find((a) => a.href === `#/sessions/${id}`);
+  const row = (id) => byTag(page.el, "tr").find((r) => r.dataset && r.dataset.id === id);
+  const cell = (id, i) => byTag(row(id), "td")[i].textContent;
+  return { page, link, row, cell };
+}
+
+test("focusedRowSurvivesALiveUpdate", () => {
+  const older = session({ id: "s2", title: "older", last_at: "2026-01-01T00:01:00Z" });
+  const p = livePage([session({ model_calls: 2000 }), older]);
+  const a = p.link("s1");
+  const tr = p.row("s1");
+  a.focus();
+  p.page.update({ items: [session({ model_calls: 2001, title: "Fix it again" }), older] });
+  assert.equal(p.link("s1"), a, "the same link element is kept");
+  assert.equal(p.row("s1"), tr, "the same row element is kept");
+  assert.equal(document.activeElement, a, "focus stays on the link");
+  assert.equal(a.textContent, "Fix it again", "the title updates in place");
+  assert.equal(p.cell("s1", 3), "2001", "the Calls cell updates in place");
+});
+
+test("focusedRowKeepsFocusWhenTheOrderChanges", () => {
+  const p = livePage([session(), session({ id: "s2", title: "older", last_at: "2026-01-01T00:01:00Z" })]);
+  const body = byTag(p.page.el, "tbody")[0];
+  // a browser blurs an element taken out of the page, as replaceChildren does to every row
+  const replace = body.replaceChildren.bind(body);
+  body.replaceChildren = (...nodes) => {
+    if (body.children.some((r) => all(r).includes(document.activeElement))) document.activeElement = null;
+    replace(...nodes);
+  };
+  const a = p.link("s2");
+  a.focus();
+  p.page.update({ items: [session({ id: "s2", title: "older", last_at: "2026-01-01T00:09:00Z" }), session()] });
+  assert.deepEqual(body.children.map((r) => r.dataset.id), ["s2", "s1"], "the rows are reordered");
+  assert.equal(p.link("s2"), a);
+  assert.equal(document.activeElement, a, "focus returns to the moved link");
 });

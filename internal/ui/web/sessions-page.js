@@ -146,32 +146,49 @@ function chipNode(c) {
   return s;
 }
 
-function rowNode(s, selected) {
-  const c = rowCells(s);
+// rowNode builds a session's row once; fillRow writes its values. A live update refills the
+// same row, so the title link it holds, and the focus on it, stay in the page (F1).
+function rowNode(id) {
   const tr = document.createElement("tr");
-  tr.dataset.id = c.id;
-  if (selected) {
-    tr.className = "selected";
-    tr.setAttribute("aria-selected", "true");
+  tr.dataset.id = id;
+  const parts = { tr, cells: [], a: document.createElement("a"), key: {} };
+  parts.a.href = `#/sessions/${encodeURIComponent(id)}`;
+  for (const cls of ["time", "title", "", "num", "chips", "num", "", "num", "num", "num", "num"]) parts.cells.push(td(tr, null, cls));
+  parts.cells[1].append(parts.a);
+  return parts;
+}
+
+// setText writes text only when it changed, so an unchanged cell is not touched.
+function setText(e, text) {
+  if (e.textContent !== text) e.textContent = text;
+}
+
+function fillRow(parts, s, selected) {
+  const c = rowCells(s);
+  const { tr, cells, a, key } = parts;
+  tr.className = selected ? "selected" : "";
+  if (selected) tr.setAttribute("aria-selected", "true");
+  else tr.removeAttribute("aria-selected");
+  if (key.start !== c.start) {
+    key.start = c.start;
+    cells[0].replaceChildren(timeElement(c.start));
   }
-  const start = td(tr, null, "time");
-  start.append(timeElement(c.start));
-  const title = td(tr, null, "title");
-  const a = document.createElement("a");
-  a.href = `#/sessions/${encodeURIComponent(c.id)}`;
-  a.textContent = c.title;
-  title.append(a);
-  td(tr, c.sources);
-  td(tr, String(c.calls), "num");
-  const chips = td(tr, null, "chips");
-  for (const ch of c.chips) chips.append(chipNode(ch), document.createTextNode(" "));
-  td(tr, String(c.errors), "num");
-  td(tr, `${c.status.glyph} ${c.status.text}`, `status status-${c.status.key}`);
-  td(tr, c.input, "num");
-  td(tr, c.output, "num");
-  td(tr, c.cacheWrite, "num");
-  td(tr, c.cacheRead, "num");
-  return tr;
+  setText(a, c.title);
+  setText(cells[2], c.sources);
+  setText(cells[3], String(c.calls));
+  const chips = c.chips.map((ch) => `${ch.key}:${ch.count}`).join(" ");
+  if (key.chips !== chips) {
+    key.chips = chips;
+    cells[4].replaceChildren();
+    for (const ch of c.chips) cells[4].append(chipNode(ch), document.createTextNode(" "));
+  }
+  setText(cells[5], String(c.errors));
+  cells[6].className = `status status-${c.status.key}`;
+  setText(cells[6], `${c.status.glyph} ${c.status.text}`);
+  setText(cells[7], c.input);
+  setText(cells[8], c.output);
+  setText(cells[9], c.cacheWrite);
+  setText(cells[10], c.cacheRead);
 }
 
 const COLUMNS = [
@@ -221,16 +238,44 @@ export function createSessionsPage(handlers) {
   let selected = "";
   let shown = [];
   input.addEventListener("input", () => redraw());
+  // The table and one row per session id are kept across redraws (F1): a live update
+  // refills the rows in place and moves only rows whose place changed. When a move takes
+  // the focused link out of the page for a moment, focus is put back on it.
+  const { table, body } = tableWithHead(COLUMNS);
+  const rows = new Map();
+
+  function drawRows() {
+    if (list.children.length !== 1 || list.children[0] !== table) list.replaceChildren(table);
+    const focused = document.activeElement;
+    const want = [];
+    const keep = new Set();
+    for (const s of shown) {
+      let parts = rows.get(s.id);
+      if (!parts) {
+        parts = rowNode(s.id);
+        rows.set(s.id, parts);
+      }
+      fillRow(parts, s, s.id === selected);
+      want.push(parts.tr);
+      keep.add(s.id);
+    }
+    for (const id of [...rows.keys()]) if (!keep.has(id)) rows.delete(id);
+    const have = Array.from(body.children);
+    if (have.length !== want.length || have.some((tr, i) => tr !== want[i])) {
+      body.replaceChildren(...want);
+      const back = [...rows.values()].find((p) => p.a === focused);
+      if (back && document.activeElement !== focused) focused.focus({ preventScroll: true });
+    }
+  }
 
   function redraw() {
     for (const [k, b] of kinds) b.setAttribute("aria-pressed", String(k === kind));
     const t = todayCells(state.today);
     today.textContent = `Today: ${t.sessions} sessions, ${t.calls} calls — input ${t.input}, output ${t.output}, cache-write ${t.cacheWrite}, cache-read ${t.cacheRead}`;
-    list.replaceChildren();
     foot.replaceChildren();
     filterNote.textContent = "";
     if (state.error) {
-      list.append(note("error", state.error));
+      list.replaceChildren(note("error", state.error));
       return;
     }
     const f = filterSessions(state.items, { kind, text: input.value, hasMore: Boolean(state.next_after) });
@@ -238,15 +283,11 @@ export function createSessionsPage(handlers) {
     filterNote.textContent = f.note;
     if (!shown.some((s) => s.id === selected)) selected = "";
     if (state.items.length === 0) {
-      list.append(note("empty", "No sessions captured yet."));
+      list.replaceChildren(note("empty", "No sessions captured yet."));
     } else if (shown.length === 0) {
-      list.append(note("empty", "no sessions match"));
+      list.replaceChildren(note("empty", "no sessions match"));
     } else {
-      const { table, body } = tableWithHead(COLUMNS);
-      const frag = document.createDocumentFragment();
-      for (const s of shown) frag.append(rowNode(s, s.id === selected));
-      body.append(frag);
-      list.append(table);
+      drawRows();
     }
     const more = loadMore(state, handlers.onMore);
     if (more) foot.append(more);
