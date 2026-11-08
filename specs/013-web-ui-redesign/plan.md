@@ -1,6 +1,6 @@
 ---
 feature: 013-web-ui-redesign
-status: approved
+status: done
 version: 4
 approved: 2026-11-03T15:33:36Z
 approved-by: human

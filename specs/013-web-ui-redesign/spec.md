@@ -1,7 +1,7 @@
 ---
 feature: 013-web-ui-redesign
 kind: feat
-status: approved
+status: done
 version: 1
 created: 2026-11-02
 supersedes:
