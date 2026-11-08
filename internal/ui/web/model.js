@@ -215,6 +215,7 @@ function hookTurns(entries) {
     if (e.phase === "prompt") {
       open = newCard("turn", ++number, { text: e.text || "", id: e.id });
       open.hooksOnly = true;
+      open.start = e.start || ""; // effects are placed in turns by this time (spec 014)
       cards.push(open);
       continue;
     }
