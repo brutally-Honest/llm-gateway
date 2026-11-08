@@ -95,12 +95,6 @@ export function replaceExchange(entries, list) {
   return out;
 }
 
-// pendingBadgeShown says whether a tool call shows the "pending" badge: only while it has
-// no result and no harness state (a hook-derived state says more than "pending").
-export function pendingBadgeShown(call, result) {
-  return !result && !(call && call.state);
-}
-
 // replaceHooks replaces the whole hook group: every hook_event entry is dropped, then the
 // list is inserted. An empty list removes the group.
 export function replaceHooks(entries, list) {
@@ -128,6 +122,45 @@ export function liveEffect(name, data, entries) {
     default:
       return null;
   }
+}
+
+// liveBatch applies a run of stream events ({ name, data }) in order, as liveEffect would one
+// by one, and returns the combined patch, or null when no event changes anything. Each run of
+// consecutive exchange and entries events is merged into one replaceExchange: a stream's
+// snapshot sends one event per exchange, and merging thousands one at a time re-sorts every
+// entry each time. Within a run a later event for an exchange wins, as it would in order.
+export function liveBatch(events, entries) {
+  let patch = null;
+  let cur = entries;
+  let run = new Map(); // exchange id -> its latest entries in this run
+  const flushRun = () => {
+    if (run.size === 0) return;
+    cur = replaceExchange(cur, [...run.values()].flat());
+    run = new Map();
+    patch = { ...patch, entries: cur, snapshotError: "" };
+  };
+  for (const { name, data } of events) {
+    if (name === "exchange" || name === "entries") {
+      if (!data || data.length === 0) {
+        patch = { ...patch, entries: cur, snapshotError: "" };
+        continue;
+      }
+      const byId = new Map();
+      for (const e of data) {
+        if (!byId.has(e.exchange_id)) byId.set(e.exchange_id, []);
+        byId.get(e.exchange_id).push(e);
+      }
+      for (const [id, list] of byId) run.set(id, list);
+      continue;
+    }
+    flushRun();
+    const p = liveEffect(name, data, cur);
+    if (!p) continue;
+    if (p.entries) cur = p.entries;
+    patch = { ...patch, ...p };
+  }
+  flushRun();
+  return patch;
 }
 
 // omittedNote is the note under a hook input that was cut short, or "" when nothing was.

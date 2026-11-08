@@ -28,10 +28,17 @@ type streamEnv struct {
 	*apiEnv
 	hub *Hub
 	ts  *httptest.Server
+	d   Deps
 }
 
 // newStreamEnv serves the real handler, store and hub on a real listener.
 func newStreamEnv(t *testing.T, tune func(*Hub)) *streamEnv {
+	t.Helper()
+	return newStreamEnvRules(t, tune, nil)
+}
+
+// newStreamEnvRules is newStreamEnv with client rules.
+func newStreamEnvRules(t *testing.T, tune func(*Hub), rules map[string]ClientRules) *streamEnv {
 	t.Helper()
 	dir := t.TempDir()
 	s, err := store.Open(dir, zap.NewNop())
@@ -45,8 +52,11 @@ func newStreamEnv(t *testing.T, tune func(*Hub)) *streamEnv {
 	}
 	t.Cleanup(func() { _ = r.Close() })
 	ts := httptest.NewUnstartedServer(nil)
-	d := Deps{Addr: ts.Listener.Addr().String(), Reader: r, Now: func() time.Time { return baseTime.Add(100 * time.Second) }}
+	d := Deps{Addr: ts.Listener.Addr().String(), Reader: r, Rules: rules, Now: func() time.Time { return baseTime.Add(100 * time.Second) }}
 	h := newHub(d, hubQueueSize)
+	// The handler shares the hub's caches, as cmd/gateway wires them; their computes run
+	// on the hub's context, which Close cancels.
+	d.Digests, d.Timelines = h.Digests(), h.Timelines()
 	if tune != nil {
 		tune(h)
 	}
@@ -55,7 +65,7 @@ func newStreamEnv(t *testing.T, tune func(*Hub)) *streamEnv {
 	ts.Config.Handler = newRouter(d)
 	ts.Start()
 	t.Cleanup(func() { h.Close(); ts.Close() })
-	return &streamEnv{apiEnv: &apiEnv{t: t, s: s, dir: dir, h: ts.Config.Handler}, hub: h, ts: ts}
+	return &streamEnv{apiEnv: &apiEnv{t: t, s: s, dir: dir, h: ts.Config.Handler}, hub: h, ts: ts, d: d}
 }
 
 // open starts a stream whose nextData skips an empty hooks event, so tests that predate the
@@ -379,6 +389,63 @@ func TestStream_CommitOutOfRowIDOrderStillReachesPage(t *testing.T) {
 	}
 	if es := decodeEntries(t, ev.data); es[0]["exchange_id"] != "a" {
 		t.Fatalf("entries = %v", es)
+	}
+}
+
+// A late commit sends its own exchange and each call that directly continues it, since
+// prev_id changes on all of them: 1 + the direct children. A grandchild and a call of
+// another thread keep their bytes, so they are not resent.
+func TestStream_LateCommitResendsItsDirectChildrenOnly(t *testing.T) {
+	for children := range 4 {
+		t.Run(fmt.Sprintf("%d_children", children), func(t *testing.T) {
+			e := newStreamEnv(t, nil)
+			e.save("late", "k", "cc", 10)
+			shared := [][]any{{"user", text("q1")}, {"assistant", text("r1")}}
+			want := []string{"late"}
+			saved := 1
+			for i := range children {
+				id := fmt.Sprintf("child%d", i)
+				e.save(id, "k", "cc", 20+i)
+				e.parseMsgs(id, "ok", append(shared[:2:2], []any{"user", text(id)})...)
+				want = append(want, id)
+				saved++
+			}
+			if children > 0 {
+				e.save("grandchild", "k", "cc", 30)
+				e.parseMsgs("grandchild", "ok", append(shared[:2:2], []any{"user", text("child0")},
+					[]any{"assistant", text("r2")}, []any{"user", text("q3")})...)
+				saved++
+			}
+			e.save("other", "k", "cc", 40)
+			e.parseMsgs("other", "ok", []any{"user", text("another thread")})
+			e.save("marker", "k", "cc", 50)
+			saved += 2
+			s := e.open(e.sessionPath())
+			s.take(saved)
+
+			e.parseMsgs("late", "ok", shared...)
+			e.publish("late")
+			first := s.nextData()
+			if id := decodeEntries(t, first.data)[0]["exchange_id"]; first.event != "entries" || id != "late" {
+				t.Fatalf("the late commit's first event = %+v", first)
+			}
+			// A later commit closes the count: whatever came before its entries is the late one's.
+			got := []string{"late"}
+			e.parseMsgs("marker", "ok", []any{"user", text("marker")})
+			e.publish("marker")
+			for {
+				id := decodeEntries(t, s.nextData().data)[0]["exchange_id"].(string)
+				if id == "marker" {
+					break
+				}
+				got = append(got, id)
+			}
+			sort.Strings(got)
+			sort.Strings(want)
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("late commit sent %v, want %v", got, want)
+			}
+		})
 	}
 }
 
@@ -787,10 +854,16 @@ func TestLive_ReconnectSnapshotReplacesEverything(t *testing.T) {
 	e.parseMsgs("C", "ok", []any{"user", text("q1")}, []any{"assistant", text("r1")}, []any{"user", text("q2")}, []any{"user", text("q3")})
 	e.publish("C")
 	re := e.open(e.sessionPath())
-	// The new snapshot replaces whatever the old view held.
-	view := applyEvents(append(evs, re.take(3)...))
-	if !reflect.DeepEqual(view, e.freshTimeline()) {
-		t.Fatalf("view = %v\nreload = %v", view, e.freshTimeline())
+	// The new snapshot replaces whatever the old view held. It may come from the build
+	// cached before the commits, and then the stream catches up once the rebuild lands, so
+	// the view reaches the reload with no further commit; one that never does fails on the
+	// read timeout.
+	want := e.freshTimeline()
+	for {
+		evs = append(evs, re.nextData())
+		if reflect.DeepEqual(applyEvents(evs), want) {
+			return
+		}
 	}
 }
 
@@ -829,7 +902,7 @@ func TestStream_CommitResendsEarlierExchangeWhoseStateChanged(t *testing.T) {
 	sent := map[string]string{"a": "old"}
 	w := httptest.NewRecorder()
 	m := liveMsg{All: []liveExchange{early, late}, Exchanges: []liveExchange{late}}
-	if err := writeLive(w, m, sent); err != nil {
+	if err := writeLive(w, m, sent, eventPositionJSON{}); err != nil {
 		t.Fatal(err)
 	}
 	body := w.Body.String()
@@ -914,11 +987,11 @@ func TestLive_SessionHeaderMatchesReloadAfterCommits(t *testing.T) {
 	if ev.event != "session" {
 		t.Fatalf("first live event = %q, want session before entries", ev.event)
 	}
-	got := sessionSummaries(t, []sseEvent{ev})[0]
 	var want sessionSummary
 	if err := json.Unmarshal([]byte(e.reload()), &want); err != nil {
 		t.Fatal(err)
 	}
+	got := s.summaryUntil(ev, want)
 	if got.ToolCalls != 2 || got.ExchangeCount != 3 || !reflect.DeepEqual(got, want) {
 		t.Fatalf("live header %+v != reload %+v", got, want)
 	}
@@ -933,8 +1006,34 @@ func TestLive_SessionHeaderMatchesReloadAfterCommits(t *testing.T) {
 	}
 }
 
-// reload fetches the session summary over HTTP, as a page reload does.
+// summaryUntil reads session events from first on, skipping other events, until one
+// equals want, and returns it. A live summary served from an older digest is followed by
+// a catch-up once the recompute lands, with no further commit; a stream that never gets
+// there fails on the read timeout.
+func (s *sse) summaryUntil(first sseEvent, want sessionSummary) sessionSummary {
+	s.t.Helper()
+	ev := first
+	for {
+		if ev.event == "session" {
+			got := sessionSummaries(s.t, []sseEvent{ev})[0]
+			if reflect.DeepEqual(got, want) {
+				return got
+			}
+		}
+		ev = s.nextData()
+	}
+}
+
+// reload fetches the session summary over HTTP, as a page reload does, once the digest
+// recompute a first read may ask for has landed, so it is at the store's version.
 func (e *streamEnv) reload() string {
+	e.t.Helper()
+	e.getSummary()
+	settle(e.t, e.hub.Digests())
+	return e.getSummary()
+}
+
+func (e *streamEnv) getSummary() string {
 	e.t.Helper()
 	resp, err := http.Get(e.ts.URL + "/api/sessions/" + sid())
 	if err != nil {
@@ -982,5 +1081,137 @@ func TestHub_ReadErrorDropsSessionStream(t *testing.T) {
 	timer := time.AfterFunc(5*time.Second, func() { t.Error("the stream stayed open"); _ = s.resp.Body.Close() })
 	defer timer.Stop()
 	for s.sc.Scan() {
+	}
+}
+
+// saveReplayCall stores call i (1-based) of one thread: the whole history so far as
+// request messages (user_k and assistant_k, the user messages from 2 on carrying the
+// tool_result of call_{k-1}), and a reply that asks for call_i.
+func (e *streamEnv) saveReplayCall(i int) string {
+	e.t.Helper()
+	id := fmt.Sprintf("c%02d", i)
+	e.save(id, "k", "cc", 10*i)
+	evs := []core.StoredEvent{{Seq: 0, Kind: core.KindRequest, Payload: []byte(`{"model":"m1"}`)}}
+	var contents []core.Content
+	msg := func(role, txt string, src core.Source) {
+		bh := sha(fmt.Sprintf("%s-%d", id, len(evs)))
+		raw, _ := json.Marshal(map[string]string{"type": "text", "text": txt})
+		mh := sha("replay-" + role + txt)
+		contents = append(contents, core.Content{Hash: bh, Bytes: raw}, core.Content{Hash: mh, Bytes: []byte(mh)})
+		p, _ := json.Marshal(map[string]any{"role": role, "blocks": []map[string]string{{"hash": bh, "type": "text"}}})
+		evs = append(evs, core.StoredEvent{Seq: len(evs), Kind: core.KindMessage, ContentHash: mh, Source: src, Payload: p})
+	}
+	for k := 1; k <= i; k++ {
+		msg("user", fmt.Sprintf("user %d", k), "request_history")
+		if k >= 2 {
+			h := sha(fmt.Sprintf("out-%d", k-1))
+			contents = append(contents, core.Content{Hash: h, Bytes: []byte("output")})
+			evs = append(evs, core.StoredEvent{Seq: len(evs), Kind: core.KindToolResult, ToolCallID: fmt.Sprintf("call_%d", k-1),
+				Source: "request_history", ContentHash: h, Payload: []byte(`{"is_error":false}`)})
+		}
+		if k < i {
+			msg("assistant", fmt.Sprintf("assistant %d", k), "request_history")
+		}
+	}
+	msg("assistant", fmt.Sprintf("assistant %d", i), core.SourceResponse)
+	h := sha(fmt.Sprintf("tc-%d", i))
+	contents = append(contents, core.Content{Hash: h, Bytes: []byte(`{}`)})
+	evs = append(evs, core.StoredEvent{Seq: len(evs), Kind: core.KindToolCall, ToolCallID: fmt.Sprintf("call_%d", i),
+		Source: core.SourceResponse, ContentHash: h, Payload: []byte(`{"name":"Bash"}`)},
+		core.StoredEvent{Seq: len(evs) + 1, Kind: core.KindUsage, Payload: []byte(`{"input_tokens":10,"output_tokens":5}`)})
+	if err := e.s.SaveParse(e.t.Context(), id, core.PrincipalLocal, core.ParseOK, evs, contents); err != nil {
+		e.t.Fatal(err)
+	}
+	return id
+}
+
+// A commit sends its own exchange and may resend at most the previous call of the
+// same thread, whose tool result it carries: never every earlier call. Each commit is
+// followed by the next one, so the events read before the next commit's own exchange are
+// exactly the resends of the one before; call 21 only closes the count for call 20.
+func TestStream_ReplayOf20CallsResendsAtMostThePreviousCall(t *testing.T) {
+	e := newStreamEnv(t, nil)
+	e.saveReplayCall(1)
+	e.publish("c01")
+	s := e.open(e.sessionPath())
+	if snap := s.take(1); snap[0].event != "exchange" {
+		t.Fatalf("snapshot = %+v", snap[0])
+	}
+	total := 0
+	for i := 2; i <= 21; i++ {
+		id := e.saveReplayCall(i)
+		e.publish(id)
+		var resent []string
+		for {
+			ev := s.nextData()
+			if ev.event == "entries" && strings.Contains(ev.data, `"exchange_id":"`+id+`"`) {
+				break
+			}
+			if ev.event != "exchange" {
+				t.Fatalf("commit before %s: unexpected %s event", id, ev.event)
+			}
+			resent = append(resent, decodeEntries(t, ev.data)[0]["exchange_id"].(string))
+		}
+		total += len(resent)
+		if i == 2 {
+			continue // commit 1 happened before the stream opened
+		}
+		prev := fmt.Sprintf("c%02d", i-2) // the call before commit i-1 in the same thread
+		if len(resent) > 1 || len(resent) == 1 && resent[0] != prev {
+			t.Fatalf("commit c%02d resent %v, want at most [%s]", i-1, resent, prev)
+		}
+	}
+	t.Logf("20 commits resent %d exchanges", total)
+	if total > 19 {
+		t.Fatalf("20 commits resent %d exchanges", total)
+	}
+}
+
+// One call of 21 commits last, after every call that started later. Its commit sends that
+// exchange and at most the next call of its thread, whose previous call it now is: the
+// calls after that keep their bytes, because no call carries its position.
+func TestStream_LateCommitOf21CallsResendsAtMostTheNextCall(t *testing.T) {
+	e := newStreamEnv(t, nil)
+	e.saveReplayCall(1)
+	e.publish("c01")
+	s := e.open(e.sessionPath())
+	if snap := s.take(1); snap[0].event != "exchange" {
+		t.Fatalf("snapshot = %+v", snap[0])
+	}
+	const late = 5
+	last := ""
+	for i := 2; i <= 21; i++ {
+		if i != late {
+			last = e.saveReplayCall(i)
+			e.publish(last)
+		}
+	}
+	for {
+		ev := s.nextData()
+		if ev.event == "entries" && strings.Contains(ev.data, `"exchange_id":"`+last+`"`) {
+			break
+		}
+	}
+	e.saveReplayCall(late)
+	e.publish("c05")
+	first := s.nextData()
+	if id := decodeEntries(t, first.data)[0]["exchange_id"]; first.event != "entries" || id != "c05" {
+		t.Fatalf("the late commit's first event = %+v", first)
+	}
+	// A later commit closes the count: whatever came before its entries is the late one's.
+	sent := []string{"c05"}
+	last = e.saveReplayCall(22)
+	e.publish(last)
+	for {
+		ev := s.nextData()
+		id := decodeEntries(t, ev.data)[0]["exchange_id"].(string)
+		if id == last {
+			break
+		}
+		sent = append(sent, id)
+	}
+	t.Logf("late commit sent %v", sent)
+	if len(sent) > 2 || len(sent) == 2 && sent[1] != "c06" {
+		t.Fatalf("late commit sent %v, want c05 and at most c06", sent)
 	}
 }

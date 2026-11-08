@@ -69,25 +69,28 @@ longer run the gateway.
 ## 4. Match states
 
 When a session has hook events, the gateway gives each captured tool call one state. The
-timeline shows it next to the call.
+server turns the state and outcome into one chip per call, and the web UI and the timeline
+show that chip next to the call. The chip is a glyph and a short word, so it never relies
+on colour alone. The full state, reason and outcome are the chip's hover text, and the CLI
+timeline prints the state itself.
 
-| State | Meaning |
-|---|---|
-| `asked+ran+reported` | The tool ran and its result went back to the model. A post-tool event and the captured tool result both name the call. Carries the outcome `succeeded` or `failed`. |
-| `ran-not-reported` | A post-tool event says the tool ran, but no captured tool result names the call. |
-| `asked-not-run`, reason `denied` | A permission-denied event names the call: the user or a rule refused it. |
-| `asked-not-run`, reason `not run` | A later request carries the call's tool result, and no post-tool event names the call. This covers rejected and interrupted calls too; the gateway does not tell them apart. |
-| `pending` | The call has a pre-tool event and nothing after it, whether or not the session is still running. |
-| `no harness data` | The session has no hook events at all. This does not mean the tool did not run. |
+| State | Chip | Meaning |
+|---|---|---|
+| `asked+ran+reported` | `✓ ok`, or `✗ failed` when the outcome is `failed` | The tool ran and its result went back to the model. A post-tool event and the captured tool result both name the call. Carries the outcome `succeeded` or `failed`. |
+| `ran-not-reported` | `… pending` | A post-tool event says the tool ran, but no captured tool result names the call. |
+| `asked-not-run`, reason `denied` | `⊘ not run` | A permission-denied event names the call: the user or a rule refused it. |
+| `asked-not-run`, reason `not run` | `⊘ not run` | A later request carries the call's tool result, and no post-tool event names the call. This covers rejected and interrupted calls too; the gateway does not tell them apart. |
+| `pending` | `… pending` | The call has a pre-tool event and nothing after it, whether or not the session is still running. |
+| `no harness data` | `– no hooks` | The session has no hook events at all. This does not mean the tool did not run. |
 
 Two more labels appear beside these:
 
 - **`input differs`** (a flag, not a state): the tool input in the pre-tool event differs
   from the input the model asked for. Usually another hook rewrote it. Both inputs are
   shown.
-- **`ran-not-asked-or-not-captured`**: a hook event names a call the gateway did not
-  capture, for example because the exchange had not been stored yet. The state changes to
-  the matched one once the exchange is stored.
+- **`ran-not-asked-or-not-captured`** (chip `? unmatched`): a hook event names a call the
+  gateway did not capture, for example because the exchange had not been stored yet. The
+  state changes to the matched one once the exchange is stored.
 
 Sessions known only from hook events are listed as `hooks only`.
 

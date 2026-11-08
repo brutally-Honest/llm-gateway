@@ -31,6 +31,20 @@ type tlPage struct {
 	StreamSince int64            `json:"stream_since"`
 }
 
+// timelineUntil reads path until ready accepts the page, and returns the last page read.
+// A page read after a store write can be the previous build, served while the read's own
+// rebuild runs, so a test of the new data has to wait for that rebuild.
+func (e *apiEnv) timelineUntil(path string, ready func(tlPage) bool) tlPage {
+	e.t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	p := e.timeline(path)
+	for !ready(p) && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+		p = e.timeline(path)
+	}
+	return p
+}
+
 func (e *apiEnv) timeline(path string) tlPage {
 	e.t.Helper()
 	rec := e.get(path)
@@ -338,7 +352,7 @@ func TestAPI_ToolEntriesCarryToolCallID(t *testing.T) {
 		// The entry's fields are exactly the API's tool fields: no other id name rides along.
 		allowed := map[string]bool{"id": true, "exchange_id": true, "index": true, "start": true, "kind": true,
 			"name": true, "tool_call_id": true, "text": true, "is_error": true, "truncated": true, "partial": true,
-			"state": true}
+			"state": true, "chip": true}
 		for k := range en {
 			if !allowed[k] {
 				t.Fatalf("%s carries unexpected field %q: %v", kind, k, en)
@@ -536,11 +550,15 @@ func TestAPITimeline_HookLineIdsSurviveEarlierArrival(t *testing.T) {
 		t.Fatal(err)
 	}
 	after := map[string]string{}
-	for _, en := range e.timeline("/api/sessions/" + sid() + "/timeline").Entries {
-		if en["kind"] == "hook_event" {
-			after[en["text"].(string)] = en["id"].(string)
+	e.timelineUntil("/api/sessions/"+sid()+"/timeline", func(p tlPage) bool {
+		clear(after)
+		for _, en := range p.Entries {
+			if en["kind"] == "hook_event" {
+				after[en["text"].(string)] = en["id"].(string)
+			}
 		}
-	}
+		return len(after) == 4
+	})
 	if len(after) != 4 {
 		t.Fatalf("hook lines after = %v", after)
 	}
@@ -651,5 +669,44 @@ func TestAPITimeline_HookOrderTiesOnTimeAndSeq(t *testing.T) {
 	}
 	if !slices.Equal(paged, want) {
 		t.Errorf("concatenated pages = %v, want the store order %v", paged, want)
+	}
+}
+
+// The after token names a position by (start, exchange id), not a slice index, so a token
+// from one build resolves to the same position in a rebuilt timeline: entries present in
+// both builds come back in the same order, whatever was added before or after them.
+func TestTimelinePaging_AfterTokenResolvesToSamePositionOnRebuiltTimeline(t *testing.T) {
+	e := newAPIEnv(t)
+	for i, id := range []string{"b", "c", "d", "f"} {
+		e.save(id, "k", "cc", 20+10*i)
+		e.parseMsgs(id, "ok", []any{"user", text("m-" + id)}, []any{"assistant", text("r-" + id)})
+	}
+	url := "/api/sessions/" + sid() + "/timeline"
+	ids := func(p tlPage) []string {
+		var out []string
+		for _, en := range p.Entries {
+			out = append(out, en["id"].(string))
+		}
+		return out
+	}
+	page1 := e.timeline(url + "?limit=5")
+	if page1.NextAfter == nil {
+		t.Fatalf("page 1 has no next_after: %v", ids(page1))
+	}
+	want := ids(e.timeline(url + "?after=" + *page1.NextAfter)) // from the first build
+	if len(want) == 0 {
+		t.Fatal("no entries after the token")
+	}
+	// Rebuild: one exchange sorts before the token position, one after the last entry.
+	e.save("a", "k", "cc", 5)
+	e.parseMsgs("a", "ok", []any{"user", text("m-a")})
+	e.save("z", "k", "cc", 90)
+	e.parseMsgs("z", "ok", []any{"user", text("m-z")})
+	got := ids(e.timelineUntil(url+"?after="+*page1.NextAfter, func(p tlPage) bool { return len(ids(p)) > len(want) }))
+	if len(got) < len(want) || !slices.Equal(got[:len(want)], want) {
+		t.Fatalf("after the rebuild the token gives %v, want it to start with %v", got, want)
+	}
+	if len(got) == len(want) {
+		t.Fatalf("the late exchange is missing from %v", got)
 	}
 }

@@ -333,3 +333,24 @@ func TestStates_SessionIsPrincipalClientAndKey(t *testing.T) {
 		t.Errorf("%d foreign hook entries shown", n)
 	}
 }
+
+// TestChipOf_MapsEveryStateAndOutcome pins the whole state-to-chip table, so a change to
+// any one row is caught here and not only through an end-to-end fixture.
+func TestChipOf_MapsEveryStateAndOutcome(t *testing.T) {
+	for _, c := range []struct{ state, outcome, want string }{
+		{timeline.StateAskedRanReported, timeline.OutcomeSucceeded, timeline.ChipOK},
+		{timeline.StateAskedRanReported, "", timeline.ChipOK},
+		{timeline.StateAskedRanReported, timeline.OutcomeFailed, timeline.ChipFailed},
+		{timeline.StateAskedNotRun, "", timeline.ChipNotRun},
+		{timeline.StateUnmatched, "", timeline.ChipUnmatched},
+		{timeline.StatePending, "", timeline.ChipPending},
+		{timeline.StateRanNotReported, "", timeline.ChipPending},
+		{timeline.StateNoHarnessData, "", timeline.ChipNoHooks},
+		{"", "", timeline.ChipNoHooks},
+		{"something new", "", timeline.ChipNoHooks},
+	} {
+		if got := timeline.ChipOf(c.state, c.outcome); got != c.want {
+			t.Errorf("ChipOf(%q, %q) = %q, want %q", c.state, c.outcome, got, c.want)
+		}
+	}
+}

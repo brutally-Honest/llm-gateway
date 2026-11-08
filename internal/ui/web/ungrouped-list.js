@@ -1,5 +1,5 @@
 import { timeElement, usageText } from "./entries.js";
-import { loadMore, note, tableWithHead } from "./session-list.js";
+import { loadMore, note, tableWithHead } from "./sessions-page.js";
 
 // UngroupedList renders data = { items, next_after, error, onMore }.
 export class UngroupedList extends HTMLElement {

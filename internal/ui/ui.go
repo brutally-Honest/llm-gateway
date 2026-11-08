@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"context"
 	"embed"
 	"io/fs"
 	"net"
@@ -31,6 +32,33 @@ type Deps struct {
 	Hub *Hub
 	// Now is the clock for the active flag; nil is time.Now.
 	Now func() time.Time
+	// Rules maps a client name to its rules; nil means no side calls and whole prompts.
+	Rules map[string]ClientRules
+	// Digests memoises session digests; nil gets a fresh cache from Handler and NewHub.
+	// The server passes one instance to both.
+	Digests *DigestCache
+	// Timelines memoises whole-session timeline builds; nil gets a fresh cache from
+	// Handler and NewHub. The server passes one instance to both.
+	Timelines *TimelineCache
+	// Ctx is the server's lifetime: digest and timeline builds started by a request run
+	// on it, so they finish after the request times out. Nil is context.Background.
+	Ctx context.Context
+}
+
+// ClientRules is the client-specific knowledge the UI needs, implemented by a client
+// profile so this package stays client-agnostic.
+type ClientRules interface {
+	// IsSideCall reports whether a request's user message texts mark a side call.
+	IsSideCall(userTexts []string) bool
+	// StripReminders removes injected reminder blocks from a prompt.
+	StripReminders(text string) string
+	// SplitReminders returns a prompt as the text the user wrote and its reminder
+	// blocks, each whole and in order.
+	SplitReminders(text string) (body string, reminders []string)
+	// TitleOf extracts a generated title from a response; false when unusable.
+	TitleOf(responseText string) (string, bool)
+	// IsAgentTool reports whether a tool name spawns a sub-agent.
+	IsAgentTool(name string) bool
 }
 
 // Handler returns the UI router.
@@ -55,6 +83,12 @@ func allowedHosts(addr string) map[string]bool {
 
 // newRouter builds the router; extra mounts are for tests and later routes.
 func newRouter(d Deps, extra ...func(chi.Router)) chi.Router {
+	if d.Digests == nil {
+		d.Digests = newDigestCacheCtx(d.Ctx, d.Log, digestCacheSize)
+	}
+	if d.Timelines == nil {
+		d.Timelines = newTimelineCache(d.Ctx, d.Log, timelineCacheSessions, timelineCacheBytes)
+	}
 	log := d.Log
 	if log == nil {
 		log = zap.NewNop()
@@ -68,6 +102,7 @@ func newRouter(d Deps, extra ...func(chi.Router)) chi.Router {
 		})
 		if d.Reader != nil {
 			mountSessions(api, d)
+			mountToday(api, d)
 			mountExchanges(api, d)
 		}
 		if d.Hub != nil {

@@ -8,6 +8,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"go.uber.org/zap"
+
+	"github.com/brutally-honest/llm-gateway/internal/config"
 )
 
 // uiEnv is captureEnv with the UI on an OS-chosen port.
@@ -260,5 +264,41 @@ func TestRun_UIServeFailureKeepsProxy(t *testing.T) {
 	}
 	if code := g.stop(); code != exitOK {
 		t.Errorf("exit code = %d, want %d", code, exitOK)
+	}
+}
+
+// The hub and the UI handler share one timeline cache, so the process keeps one set of
+// builds under one byte budget instead of two.
+func TestStartCapture_HubAndHandlerShareOneTimelineCache(t *testing.T) {
+	log := zap.NewNop()
+	capt, code := startCapture(t.Context(), config.Capture{Dir: t.TempDir()}, config.Hooks{}, true, nil, deps{}, log)
+	if capt == nil {
+		t.Fatalf("startCapture exit code = %d", code)
+	}
+	t.Cleanup(func() { capt.stop(t.Context(), log) })
+	shared := capt.hub.Timelines()
+	if shared == nil {
+		t.Fatal("the hub has no timeline cache")
+	}
+	if got := capt.uiDeps(t.Context(), "127.0.0.1:0", log).Timelines; got != shared {
+		t.Fatalf("handler cache %p, hub cache %p: want one instance", got, shared)
+	}
+}
+
+// The hub and the UI handler share one digest cache too, so a digest computed for one is
+// a hit for the other.
+func TestStartCapture_HubAndHandlerShareOneDigestCache(t *testing.T) {
+	log := zap.NewNop()
+	capt, code := startCapture(t.Context(), config.Capture{Dir: t.TempDir()}, config.Hooks{}, true, nil, deps{}, log)
+	if capt == nil {
+		t.Fatalf("startCapture exit code = %d", code)
+	}
+	t.Cleanup(func() { capt.stop(t.Context(), log) })
+	shared := capt.hub.Digests()
+	if shared == nil {
+		t.Fatal("the hub has no digest cache")
+	}
+	if got := capt.uiDeps(t.Context(), "127.0.0.1:0", log).Digests; got != shared {
+		t.Fatalf("handler cache %p, hub cache %p: want one instance", got, shared)
 	}
 }

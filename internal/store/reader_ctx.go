@@ -169,3 +169,9 @@ type rowIDScanner struct {
 func (s rowIDScanner) Scan(dest ...any) error {
 	return s.rows.Scan(append([]any{s.id}, dest...)...)
 }
+
+// ExchangesSince lists every exchange that started at or after since (unix
+// nanoseconds), grouped or not, in start order (ties by request ID).
+func (c *CtxReader) ExchangesSince(since int64) ([]ExchangeRow, error) {
+	return c.r.exchanges(c.ctx, `WHERE started_at >= ? ORDER BY started_at, request_id`, since)
+}

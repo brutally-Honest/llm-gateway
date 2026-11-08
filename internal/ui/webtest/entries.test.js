@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compareEntries, replaceHooks, pendingBadgeShown, liveEffect, omittedNote, hookLabel, hookInputEntry } from "../web/entries.js";
+import { compareEntries, replaceHooks, liveBatch, liveEffect, omittedNote, hookLabel, hookInputEntry } from "../web/entries.js";
 
 test("module loads and compareEntries orders by time", () => {
   const a = { start: "2026-01-01T00:00:05.12Z", exchange_id: "x", index: 0 };
@@ -26,14 +26,6 @@ test("exchange sorts before hook lines on an exact time tie", () => {
   assert.equal(compareEntries(call, hook), -1);
   assert.equal(compareEntries(hook, call), 1);
   assert.deepEqual(replaceHooks([call], [hook]).map((e) => e.id), ["a:0", "hook:1"]);
-});
-
-test("pending badge hidden when a harness state exists", () => {
-  assert.equal(pendingBadgeShown({ state: "pending" }, null), false);
-  assert.equal(pendingBadgeShown({ state: "ran-not-reported" }, null), false);
-  assert.equal(pendingBadgeShown({}, null), true);
-  assert.equal(pendingBadgeShown({ state: "pending" }, { text: "x" }), false);
-  assert.equal(pendingBadgeShown({}, { text: "x" }), false);
 });
 
 const exA = { id: "a:0", kind: "tool_call", exchange_id: "a", index: 0, start: "2026-01-01T00:00:01Z" };
@@ -94,4 +86,43 @@ test("hookInputEntry takes truncation from the hook input, not the call input", 
   assert.equal(hookInputEntry(call).exchange_id, "ex");
   assert.equal(hookInputEntry({ ...call, hook_omitted_bytes: 5 }).truncated, true);
   assert.equal(hookInputEntry({ id: "c", exchange_id: "ex" }).truncated, false);
+});
+
+// oneByOne is the reference liveBatch must match: liveEffect applied event by event.
+function oneByOne(events, entries) {
+  let patch = null;
+  let cur = entries;
+  for (const { name, data } of events) {
+    const p = liveEffect(name, data, cur);
+    if (!p) continue;
+    if (p.entries) cur = p.entries;
+    patch = { ...patch, ...p };
+  }
+  return patch;
+}
+
+test("liveBatchMatchesApplyingEachEventInOrder", () => {
+  let n = 0;
+  const at = () => new Date(Date.UTC(2026, 0, 1, 0, 0, 0, ++n)).toISOString();
+  const ex = (id, k = 1) => Array.from({ length: k }, (_, i) => ({ id: `${id}:${n}:${i}`, kind: "tool_call", exchange_id: id, index: i, start: at() }));
+  const hook = () => ({ id: `hook:${++n}`, kind: "hook_event", exchange_id: "", index: 0, start: at() });
+  let seed = 7;
+  const rnd = (k) => (seed = (seed * 1103515245 + 12345) % 2147483648) % k;
+  const ids = ["a", "b", "c", "d"];
+  for (let round = 0; round < 200; round++) {
+    const base = [...ex("a"), ...ex("b", 2), hook()].sort(compareEntries);
+    const events = [];
+    for (let i = 0, len = 1 + rnd(12); i < len; i++) {
+      const pick = rnd(9);
+      if (pick < 4) events.push({ name: pick % 2 ? "exchange" : "entries", data: ex(ids[rnd(4)], 1 + rnd(3)) });
+      else if (pick === 4) events.push({ name: "exchange", data: [...ex(ids[rnd(4)]), ...ex(ids[rnd(4)])] });
+      else if (pick === 5) events.push({ name: "hooks", data: rnd(2) ? [hook()] : [] });
+      else if (pick === 6) events.push({ name: "snapshot_error", data: { error: { message: `e${i}` } } });
+      else if (pick === 7) events.push({ name: rnd(2) ? "session" : "mystery", data: { id: `s${i}` } });
+      else events.push({ name: "exchange", data: [] });
+    }
+    assert.deepEqual(liveBatch(events, base), oneByOne(events, base), `round ${round}: ${events.map((e) => e.name).join(",")}`);
+  }
+  assert.equal(liveBatch([], [exA]), null);
+  assert.equal(liveBatch([{ name: "mystery", data: [] }], [exA]), null);
 });

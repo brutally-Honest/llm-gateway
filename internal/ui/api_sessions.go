@@ -53,20 +53,32 @@ type usageJSON struct {
 
 // sessionSummary is the summary shape of a session and of one ungrouped exchange.
 type sessionSummary struct {
-	ID            string    `json:"id"`
-	SessionKey    string    `json:"session_key"`
-	Client        string    `json:"client"`
-	Models        []string  `json:"models"`
-	FirstAt       string    `json:"first_at"`
-	LastAt        string    `json:"last_at"`
-	ExchangeCount int       `json:"exchange_count"`
-	ModelCalls    int       `json:"model_calls"`
-	ToolCalls     int       `json:"tool_calls"`
-	Errors        int       `json:"errors"`
-	Usage         usageJSON `json:"usage"`
-	Active        bool      `json:"active"`
+	ID            string   `json:"id"`
+	SessionKey    string   `json:"session_key"`
+	Client        string   `json:"client"`
+	Models        []string `json:"models"`
+	FirstAt       string   `json:"first_at"`
+	LastAt        string   `json:"last_at"`
+	ExchangeCount int      `json:"exchange_count"`
+	ModelCalls    int      `json:"model_calls"`
+	ToolCalls     int      `json:"tool_calls"`
+	// Errors counts every error: MainErrors + SideErrors.
+	Errors     int `json:"errors"`
+	MainErrors int `json:"main_errors"`
+	SideErrors int `json:"side_errors"`
+	// Title is the generated title or the first prompt outside side calls; "" when none.
+	Title      string         `json:"title"`
+	ToolStates map[string]int `json:"tool_states"`
+	HasCalls   bool           `json:"has_calls"`
+	HasHooks   bool           `json:"has_hooks"`
+	Usage      usageJSON      `json:"usage"`
+	Active     bool           `json:"active"`
 	// HooksOnly marks a session known only from hook events (AC25).
 	HooksOnly bool `json:"hooks_only"`
+	// Version and EventPosition are the store version the summary's digest was read at
+	// and how far into the store it reaches; absent for an ungrouped exchange.
+	Version       *versionJSON       `json:"version,omitempty"`
+	EventPosition *eventPositionJSON `json:"event_position,omitempty"`
 }
 
 type listPage struct {
@@ -87,7 +99,7 @@ func usageToJSON(s timeline.Summary) usageJSON {
 
 func nsTime(ns int64) string { return time.Unix(0, ns).UTC().Format(time.RFC3339Nano) }
 
-func buildSummary(id string, row store.SessionRow, st timeline.Stats, now time.Time) sessionSummary {
+func buildSummary(id string, row store.SessionRow, st timeline.Stats, dg timeline.Digest, now time.Time) sessionSummary {
 	models := make([]string, 0, len(st.Usage.Models))
 	for _, m := range st.Usage.Models {
 		models = append(models, m.Model)
@@ -97,6 +109,8 @@ func buildSummary(id string, row store.SessionRow, st timeline.Stats, now time.T
 		ID: id, SessionKey: row.SessionKey, Client: row.Client, Models: models,
 		FirstAt: nsTime(row.First), LastAt: nsTime(row.Last),
 		ExchangeCount: row.Count, ModelCalls: st.ModelCalls, ToolCalls: st.ToolCalls, Errors: st.Errors,
+		MainErrors: dg.MainErrors, SideErrors: dg.SideErrors, Title: dg.Title, ToolStates: dg.ToolStates,
+		HasCalls: dg.HasCalls, HasHooks: dg.HasHooks,
 		Usage: usageToJSON(st.Usage), Active: now.Sub(last) < ActiveWindow, HooksOnly: row.HooksOnly,
 	}
 }
@@ -192,13 +206,114 @@ func (s singleSource) SessionExchanges(string, string, string) ([]store.Exchange
 	return []store.ExchangeRow{s.ex}, nil
 }
 
-func ungroupedSummary(c *store.CtxReader, ex store.ExchangeRow, now time.Time) (sessionSummary, error) {
-	row := store.SessionRow{PrincipalID: ex.PrincipalID, Client: ex.Client, First: ex.StartedAt, Last: ex.StartedAt, Count: 1}
-	st, err := timeline.SessionStats(singleSource{c, ex}, row)
+// summarize reads one session's version, stats and digest and builds its summary. stale
+// reports that the digest is older than the store, and a recompute was asked for.
+func (d Deps) summarize(ctx context.Context, c *store.CtxReader, id string, row store.SessionRow, now time.Time) (sessionSummary, bool, error) {
+	out, stale, err := d.summarizeRows(ctx, c, []string{id}, []store.SessionRow{row}, now)
+	if err != nil {
+		return sessionSummary{}, false, err
+	}
+	return out[0], len(stale) > 0, nil
+}
+
+func sessionIdent(row store.SessionRow) store.SessionIdent {
+	return store.SessionIdent{Principal: row.PrincipalID, Client: row.Client, Key: row.SessionKey}
+}
+
+// digestCompute computes a session's memo on bctx through the server's reader, so it
+// still lands in the cache when the request that asked for it has timed out.
+func (d Deps) digestCompute(row store.SessionRow) func(context.Context) (digestMemo, error) {
+	rules := d.Rules[row.Client]
+	return func(bctx context.Context) (digestMemo, error) {
+		return computeMemo(d.Reader.WithContext(bctx), rules, row)
+	}
+}
+
+// computeMemo computes a session's stats and digest from one read of its exchanges, with
+// each exchange's events loaded once for both.
+func computeMemo(src timeline.Source, rules ClientRules, row store.SessionRow) (digestMemo, error) {
+	exs, err := src.SessionExchanges(row.PrincipalID, row.Client, row.SessionKey)
+	if err != nil {
+		return digestMemo{}, err
+	}
+	once := &eventsOnce{Source: src, exs: exs, events: map[string][]store.EventRow{}}
+	st, err := timeline.SessionStats(once, row)
+	if err != nil {
+		return digestMemo{}, err
+	}
+	dg, err := sessionDigest(once, rules, row)
+	if err != nil {
+		return digestMemo{}, err
+	}
+	return digestMemo{digest: dg, stats: st}, nil
+}
+
+// summarizeRows builds the summaries of rows (ids[i] is rows[i]'s id). The versions of
+// the whole page come from one read. Stats and digests come from the cache and never wait
+// for a recompute when the session has them cached: a summary carries the version they
+// were computed at, and stale lists the sessions whose memo is older than the store. The
+// session row's counts and the clock-dependent values are always fresh.
+func (d Deps) summarizeRows(ctx context.Context, c *store.CtxReader, ids []string, rows []store.SessionRow, now time.Time) ([]sessionSummary, []store.SessionIdent, error) {
+	idents := make([]store.SessionIdent, len(rows))
+	for i, r := range rows {
+		idents[i] = sessionIdent(r)
+	}
+	vers, err := c.SessionVersions(idents)
+	if err != nil {
+		return nil, nil, err
+	}
+	out := make([]sessionSummary, 0, len(rows))
+	var stale []store.SessionIdent
+	for i, row := range rows {
+		ver := vers[idents[i]]
+		var memo digestMemo
+		if d.Digests != nil && d.Reader != nil {
+			hit, err := d.Digests.latest(ctx, idents[i], ver, d.digestCompute(row))
+			if err != nil {
+				return nil, nil, err
+			}
+			memo = hit.memo
+			if versionAfter(ver, hit.ver) {
+				stale = append(stale, idents[i])
+				ver = hit.ver
+			}
+		} else if memo, err = computeMemo(c, d.Rules[row.Client], row); err != nil {
+			return nil, nil, err
+		}
+		sum := buildSummary(ids[i], row, memo.stats, memo.digest, now)
+		vj, pj := versionToJSON(ver), positionOf(ver)
+		sum.Version, sum.EventPosition = &vj, &pj
+		out = append(out, sum)
+	}
+	return out, stale, nil
+}
+
+func sessionDigest(src timeline.Source, rules ClientRules, row store.SessionRow) (timeline.Digest, error) {
+	var dr timeline.DigestRules
+	if rules != nil {
+		dr = rules
+	}
+	return timeline.SessionDigest(src, row, dr)
+}
+
+func summarizeFrom(src timeline.Source, rules ClientRules, id string, row store.SessionRow, now time.Time) (sessionSummary, error) {
+	st, err := timeline.SessionStats(src, row)
 	if err != nil {
 		return sessionSummary{}, err
 	}
-	s := buildSummary(ex.RequestID, row, st, now)
+	dg, err := sessionDigest(src, rules, row)
+	if err != nil {
+		return sessionSummary{}, err
+	}
+	return buildSummary(id, row, st, dg, now), nil
+}
+
+func (d Deps) ungroupedSummary(c *store.CtxReader, ex store.ExchangeRow, now time.Time) (sessionSummary, error) {
+	row := store.SessionRow{PrincipalID: ex.PrincipalID, Client: ex.Client, First: ex.StartedAt, Last: ex.StartedAt, Count: 1}
+	s, err := summarizeFrom(singleSource{c, ex}, d.Rules[ex.Client], ex.RequestID, row, now)
+	if err != nil {
+		return sessionSummary{}, err
+	}
 	s.SessionKey = ""
 	return s, nil
 }
@@ -236,16 +351,16 @@ func (d Deps) listSessions(w http.ResponseWriter, r *http.Request) {
 	if more {
 		rows = rows[:limit]
 	}
-	now := d.now()
-	page := listPage{Items: []sessionSummary{}}
-	for _, row := range rows {
-		st, err := timeline.SessionStats(c, row)
-		if err != nil {
-			writeStoreErr(w, err)
-			return
-		}
-		page.Items = append(page.Items, buildSummary(sessionID(row), row, st, now))
+	ids := make([]string, len(rows))
+	for i, row := range rows {
+		ids[i] = sessionID(row)
 	}
+	items, _, err := d.summarizeRows(ctx, c, ids, rows, d.now())
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	page := listPage{Items: items}
 	if more {
 		last := rows[len(rows)-1]
 		n := encodeAfter(afterToken{List: listSessions, At: last.Last, Principal: last.PrincipalID, Client: last.Client, Key: last.SessionKey})
@@ -284,7 +399,7 @@ func (d Deps) listUngrouped(w http.ResponseWriter, r *http.Request) {
 	now := d.now()
 	page := listPage{Items: []sessionSummary{}}
 	for _, ex := range rows {
-		s, err := ungroupedSummary(c, ex, now)
+		s, err := d.ungroupedSummary(c, ex, now)
 		if err != nil {
 			writeStoreErr(w, err)
 			return
@@ -318,10 +433,10 @@ func (d Deps) getSession(w http.ResponseWriter, r *http.Request) {
 		writeStoreErr(w, err)
 		return
 	}
-	st, err := timeline.SessionStats(c, row)
+	sum, _, err := d.summarize(ctx, c, sessionID(row), row, d.now())
 	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
-	writeJSON(w, buildSummary(sessionID(row), row, st, d.now()))
+	writeJSON(w, sum)
 }

@@ -1,13 +1,13 @@
 package ui
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/brutally-honest/llm-gateway/internal/store"
-	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
 
 const (
@@ -19,17 +19,10 @@ type timelinePage struct {
 	Entries     []entryJSON `json:"entries"`
 	NextAfter   *string     `json:"next_after"`
 	StreamSince int64       `json:"stream_since"`
-}
-
-// snapshotSource serves the exchanges of one snapshot read, so the timeline and
-// stream_since describe the same rows.
-type snapshotSource struct {
-	*store.CtxReader
-	exs []store.ExchangeRow
-}
-
-func (s snapshotSource) SessionExchanges(string, string, string) ([]store.ExchangeRow, error) {
-	return s.exs, nil
+	// Version and EventPosition are the build's store version and how far into the
+	// store it reaches.
+	Version       versionJSON       `json:"version"`
+	EventPosition eventPositionJSON `json:"event_position"`
 }
 
 func mountExchanges(api chi.Router, d Deps) {
@@ -92,38 +85,30 @@ func (d Deps) getTimeline(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := storeCtx(r)
 	defer cancel()
 	c := d.Reader.WithContext(ctx)
-	rows, _, err := c.SessionSnapshot(principal, client, key)
+	ident := store.SessionIdent{Principal: principal, Client: client, Key: key}
+	vers, err := c.SessionVersions([]store.SessionIdent{ident})
 	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
-	if len(rows) == 0 {
-		// A session known only from hook events has a timeline of hook lines (AC25).
-		hooks, err := c.HookEvents(principal, client, key)
-		if err != nil {
-			writeStoreErr(w, err)
-			return
-		}
-		if len(hooks) == 0 {
-			writeErr(w, http.StatusNotFound, "not_found", "no such session")
-			return
-		}
+	ver := vers[ident]
+	if ver.ExCount == 0 && ver.HookCount == 0 {
+		// Neither exchanges nor hook events (AC25): there is no such session.
+		writeErr(w, http.StatusNotFound, "not_found", "no such session")
+		return
 	}
-	exs := make([]store.ExchangeRow, len(rows))
-	byID := make(map[string]store.ExchangeRow, len(rows))
-	rowID := make(map[string]int64, len(rows))
-	for i, x := range rows {
-		exs[i] = x.ExchangeRow
-		byID[x.RequestID] = x.ExchangeRow
-		rowID[x.RequestID] = x.RowID
-	}
-	session := store.SessionRow{PrincipalID: principal, Client: client, SessionKey: key}
-	entries, _, err := timeline.BuildWithUsage(snapshotSource{c, exs}, session, timeline.Options{Cut: entryCut})
+	// The build runs on the cache's context, not the request's: when this request times
+	// out the build still finishes and is cached, and the retry hits it.
+	built, err := d.Timelines.latest(ctx, ident, ver, func(bctx context.Context) (builtSession, error) {
+		return buildSessionFn(d.Reader.WithContext(bctx), sessIdent{principal, client, key}, d.Rules[client], entryCut)
+	})
 	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
-	all := mapEntries(entries, byID)
+	bs := built.bs
+	entries, byID, facts, rowID := bs.entries, bs.byID, bs.facts, bs.rowID
+	all := mapEntries(entries, byID, facts, d.Rules[client])
 	pos := make([]position, len(all))
 	for i, e := range all {
 		pos[i] = position{start: e.startNS, req: e.ExchangeID, idx: e.Index}
@@ -138,7 +123,7 @@ func (d Deps) getTimeline(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	end := min(from+limit, len(all))
-	page := timelinePage{Entries: all[from:end]}
+	page := timelinePage{Entries: all[from:end], Version: versionToJSON(built.ver), EventPosition: positionOf(built.ver)}
 	for _, e := range page.Entries {
 		page.StreamSince = max(page.StreamSince, rowID[e.ExchangeID])
 	}

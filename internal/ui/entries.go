@@ -54,26 +54,34 @@ type entryJSON struct {
 	Start      string `json:"start"`
 	Kind       string `json:"kind"`
 
-	Role       string `json:"role,omitempty"`
-	Text       string `json:"text,omitempty"`
-	Truncated  bool   `json:"truncated,omitempty"`
-	Name       string `json:"name,omitempty"`
-	ToolCallID string `json:"tool_call_id,omitempty"`
-	IsError    *bool  `json:"is_error,omitempty"`
-	Method     string `json:"method,omitempty"`
-	Path       string `json:"path,omitempty"`
-	Status     *int   `json:"status,omitempty"`
-	Parse      string `json:"parse,omitempty"`
-	Partial    bool   `json:"partial,omitempty"`
-	Model      string `json:"model,omitempty"`
-	DurationMS *int64 `json:"duration_ms,omitempty"`
+	Role      string `json:"role,omitempty"`
+	Text      string `json:"text,omitempty"`
+	Truncated bool   `json:"truncated,omitempty"`
+	// Body and Reminders are set on a user prompt: Text split by the client's rules
+	// into what the user wrote and the injected reminder blocks. A client with no rules
+	// gets the whole Text as Body and no reminders.
+	Body       *string  `json:"body,omitempty"`
+	Reminders  []string `json:"reminders,omitempty"`
+	Name       string   `json:"name,omitempty"`
+	ToolCallID string   `json:"tool_call_id,omitempty"`
+	IsError    *bool    `json:"is_error,omitempty"`
+	Method     string   `json:"method,omitempty"`
+	Path       string   `json:"path,omitempty"`
+	Status     *int     `json:"status,omitempty"`
+	Parse      string   `json:"parse,omitempty"`
+	Partial    bool     `json:"partial,omitempty"`
+	Model      string   `json:"model,omitempty"`
+	DurationMS *int64   `json:"duration_ms,omitempty"`
 
 	Usage *callUsageJSON `json:"usage,omitempty"`
+	// Call is set on a model call: where it sits among the session's threads (AC40).
+	Call *callFactsJSON `json:"call,omitempty"`
 
 	// Harness fields (AC22, AC24): the state of a tool call, or a hook-event line.
 	State        string `json:"state,omitempty"`
 	Reason       string `json:"reason,omitempty"`
 	Outcome      string `json:"outcome,omitempty"`
+	Chip         string `json:"chip,omitempty"`
 	InputDiffers bool   `json:"input_differs,omitempty"`
 	HookInput    string `json:"hook_input,omitempty"`
 	HookOmitted  int    `json:"hook_omitted_bytes,omitempty"`
@@ -97,7 +105,7 @@ func ptr[T any](v T) *T { return &v }
 // mapEntries turns timeline entries into API entries. A message that holds readable
 // thinking gets a thinking entry before it. Indexes are recounted per exchange over
 // the API entries, so `<exchange_id>:<index>` is unique and stable (AC18).
-func mapEntries(entries []timeline.Entry, exs map[string]store.ExchangeRow) []entryJSON {
+func mapEntries(entries []timeline.Entry, exs map[string]store.ExchangeRow, facts map[string]*callFactsJSON, rules ClientRules) []entryJSON {
 	out := make([]entryJSON, 0, len(entries))
 	next := map[string]int{}
 	hooks := 0
@@ -115,6 +123,7 @@ func mapEntries(entries []timeline.Entry, exs map[string]store.ExchangeRow) []en
 				Parse: e.Parse, Partial: e.Partial}
 			if e.Call != nil {
 				en.Kind, en.Model, en.Usage = kindModelCall, e.Call.Model, callToJSON(e.Call)
+				en.Call = facts[e.RequestID]
 				if ex, ok := exs[e.RequestID]; ok {
 					en.DurationMS = ptr((ex.EndedAt - ex.StartedAt) / 1e6)
 				}
@@ -134,11 +143,19 @@ func mapEntries(entries []timeline.Entry, exs map[string]store.ExchangeRow) []en
 			case "assistant":
 				kind = kindAssistantText
 			}
-			add(e, entryJSON{Kind: kind, Role: e.Role, Text: e.Text, Truncated: e.Omitted > 0, Partial: e.Partial})
+			en := entryJSON{Kind: kind, Role: e.Role, Text: e.Text, Truncated: e.Omitted > 0, Partial: e.Partial}
+			if kind == kindUserPrompt {
+				body := e.Text
+				if rules != nil {
+					body, en.Reminders = rules.SplitReminders(e.Text)
+				}
+				en.Body = &body
+			}
+			add(e, en)
 		case timeline.KindToolCall:
 			add(e, entryJSON{Kind: kindToolCall, Name: e.Name, ToolCallID: e.ToolCallID, Text: e.Text,
 				Truncated: e.Omitted > 0, Partial: e.Partial,
-				State: e.State, Reason: e.Reason, Outcome: e.Outcome, InputDiffers: e.InputDiffers,
+				State: e.State, Reason: e.Reason, Outcome: e.Outcome, Chip: e.Chip, InputDiffers: e.InputDiffers,
 				HookInput: e.HookInput, HookOmitted: e.HookOmitted, AgentID: e.AgentID, AgentType: e.AgentType})
 		case timeline.KindToolResult:
 			add(e, entryJSON{Kind: kindToolResult, ToolCallID: e.ToolCallID, IsError: ptr(e.IsError),
@@ -151,7 +168,7 @@ func mapEntries(entries []timeline.Entry, exs map[string]store.ExchangeRow) []en
 			out = append(out, entryJSON{ID: "hook:" + strconv.FormatInt(e.HookID, 10), Index: i, Start: nsTime(e.Start),
 				startNS: e.Start, hookSeq: e.HookSeq, hookRow: e.HookID,
 				Kind: kindHookEvent, Name: e.Name, ToolCallID: e.ToolCallID, Text: e.Text, Phase: e.Phase,
-				State: e.State, AgentID: e.AgentID, AgentType: e.AgentType})
+				State: e.State, Reason: e.HookReason, Outcome: e.HookOutcome, Chip: e.Chip, AgentID: e.AgentID, AgentType: e.AgentType})
 		case timeline.KindError:
 			add(e, entryJSON{Kind: kindError, Name: e.Name, Status: ptr(e.Status), Text: e.Text,
 				Truncated: e.Omitted > 0, Partial: e.Partial})
