@@ -60,17 +60,19 @@ This changes earlier features:
 - **AC1** — When a hook event that carries a working folder is stored for a session, the
   system shall run a checkpoint of that session's watched folders after the ingest has
   answered, with at most one checkpoint running and one queued per session.
-- **AC2** — When a session's first checkpoint since the gateway started runs, the system shall
-  record the state of its watched folders and store no effect.
-- **AC3** — When a later checkpoint finds a file created, modified or deleted since the previous
-  checkpoint, the system shall store one file effect with the path, the change (`created`,
+- **AC2** — When a session has no saved snapshot, the system shall record the state of its
+  watched folders and store no effect; every later checkpoint saves its effects and the updated
+  snapshot in one database transaction, so after a gateway restart the next checkpoint reports
+  every change since the last saved checkpoint.
+- **AC3** — When a later checkpoint finds a file created, modified or deleted since the saved
+  snapshot, the system shall store one file effect with the path, the change (`created`,
   `modified`, `deleted`), the size and the time; a rename is stored as a delete and a create.
 - **AC4** — When a watched folder is in a git work tree, the system shall take candidate files
   from git (tracked changes, untracked files, and git-ignored files but not the contents of
-  git-ignored folders), running git without optional locks; otherwise it shall walk the folder
-  and skip the fixed ignore list (`.git`, `node_modules`, `dist`, `build`, `target`, `.venv`,
-  `venv`, `__pycache__`, `.next`, `.cache`). In both modes `.env` files are checked unless they
-  sit inside a skipped folder.
+  git-ignored folders), running git without optional locks; otherwise it shall walk the folder.
+  In both modes, a path with a part named in `effects.files.ignore` is skipped (default `.git`,
+  `node_modules`, `dist`, `build`, `target`, `.venv`, `venv`, `__pycache__`, `.next`, `.cache`);
+  the default list leaves out `.env`, so `.env` files are checked.
 - **AC5** — When a changed file is text (no NUL byte in its first 8 KB) and no larger than
   `effects.files.max_copy_bytes`, the system shall store a copy of its new content; the diff's
   "before" is the previous copy, else the last committed version in git mode, else none, and the
@@ -134,8 +136,9 @@ This changes earlier features:
 - **E8** — Claude writes to `/tmp/x` or `~/notes.txt` → no folder is learned from it (AC6).
 - **E9** — Two sessions at work in the same folder → each keeps its own state; a change can
   show in both (AC2, AC3).
-- **E10** — Gateway restarted mid-session → the next checkpoint is a new baseline; changes
-  made while it was down are not reported (AC2).
+- **E10** — Gateway restarted mid-session → the next checkpoint compares against the last saved
+  snapshot and reports every change since, including those made while the gateway was down,
+  in the turn where it finds them (AC2).
 - **E11** — Hook event with no session id or no working folder → no checkpoint (AC1).
 - **E12** — Proxy target unreachable → effect with outcome `refused` or `error`, client gets
   502 (CONNECT) or the SOCKS5 failure reply (AC8, AC9).
@@ -145,6 +148,10 @@ This changes earlier features:
   like `listen_addr` (AC8).
 - **E15** — `effects.enabled` false → no checkpoints, no read effects, no proxy listeners; the
   web UI shows no effects rows (AC1, AC7, AC8).
+- **E16** — A session ends, or has no hook event for `effects.files.snapshot_retention` (default
+  7 days) → its saved snapshot is deleted; a later checkpoint for it starts a new baseline (AC2).
+- **E17** — The gateway dies during a checkpoint → nothing from that checkpoint is saved; the
+  next checkpoint redoes it from the last saved snapshot (AC2).
 
 ## Constraints
 - One pure-Go code path for Linux and macOS (`CGO_ENABLED=0`). No new Go dependency: git runs
@@ -170,4 +177,4 @@ This changes earlier features:
 ## Open questions
 
 ## Changelog
-- v1 (2026-11-08) — first draft
+- v1 (2026-11-08) — first draft, with Karthik's answers to K1–K10 (research.md)

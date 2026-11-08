@@ -30,9 +30,10 @@ functional tests only, everything checked together in T012.
 
 ### T002 — Add the effects config block
 - Do: `internal/config/effects.go` with the block from plan.md (defaults, `GATEWAY_*` env
-  overrides, loopback and distinct-address checks, `.env` refused in `ignore`, absolute
-  `extra_dirs`); document it in `config.example.yaml`.
-- Tests: TestLoad_EffectsDefaults, TestLoad_EffectsRejectsEnvInIgnore
+  overrides, loopback and distinct-address checks, absolute `extra_dirs`,
+  `snapshot_retention`); document it in `config.example.yaml`, with the comment that `.env` is
+  left out of `ignore` on purpose.
+- Tests: TestLoad_EffectsDefaults
 - AC: AC4, AC12 (config side)
 - Commit: feat(config): add the effects config block
 - Depends: T001
@@ -40,9 +41,11 @@ functional tests only, everything checked together in T012.
 - Risk: low
 
 ### T003 — Add the effects table and effect versions
-- Do: one new migration (table and index from plan.md); `internal/store/effects.go`:
-  `SaveEffects` (one transaction per batch), `ListEffects`, `ListUnassigned`, `EffectVersions`
-  and `EffectCounts` with the `SessionVersions` CTE-join pattern; `SessionVersions` untouched.
+- Do: one new migration (`effects`, its index and `effect_snapshots` from plan.md);
+  `internal/store/effects.go`: `SaveEffects`, `SaveCheckpoint` (effects and snapshot rows in one
+  transaction), `LoadSnapshot`, `DeleteSnapshot`, `SweepSnapshots`, `ActiveSessions`,
+  `ListEffects`, `ListUnassigned`, `EffectVersions` and `EffectCounts` with the
+  `SessionVersions` CTE-join pattern; `SessionVersions` untouched.
 - Tests: TestEffects_SessionVersionUnchanged (save effects for a session, its
   `SessionVersions` value is equal before and after, its `EffectVersions` value moved)
 - AC: AC13
@@ -108,13 +111,17 @@ functional tests only, everything checked together in T012.
 - Risk: low
 
 ### T008 — Run file checkpoints on hook events
-- Do: `internal/effects/`: `runner.go` (per-session state, one running and one queued,
-  drop at session end or 24 h idle, active-session set for T009), `roots.go` (start folder,
+- Do: `internal/effects/`: `runner.go` (per-session cache loaded from `effect_snapshots`, one
+  running and one queued, evicted from memory after 1 h without a hook, snapshot deleted at
+  session end, `SweepSnapshots` at startup and hourly, active-session set seeded from
+  `ActiveSessions` for T009), `roots.go` (start folder,
   `ExtraDirs`, `extra_dirs`, learned roots, rejected roots), `git.go` (`--no-optional-locks`
   status, ignored-files listing, `show HEAD:<path>`, timeouts), `scan.go`, `checkpoint.go`
-  (baseline, compare, copies, before version, one `SaveEffects` batch); wire to `OnStored`.
+  (baseline, compare, copies, before version, one `SaveCheckpoint` per checkpoint); wire to
+  `OnStored`.
 - Tests: TestCheckpoint_GitRepoChanges, TestCheckpoint_PlainFolder,
-  TestCheckpoint_GitIgnoredEnvSeen, TestRoots_LearnedAndRejected,
+  TestCheckpoint_GitIgnoredEnvSeen, TestCheckpoint_RestartKeepsSnapshot,
+  TestRoots_LearnedAndRejected,
   TestRunner_BurstRunsOneFollowUp (slow fake checkpoint, 50 signals, exactly 2 runs; break the
   dirty flag, see it fail, restore)
 - AC: AC1, AC2, AC3, AC4, AC5, AC6

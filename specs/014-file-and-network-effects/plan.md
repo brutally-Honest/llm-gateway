@@ -16,8 +16,10 @@ Two sensors feed one new kind, `effect`, stored in its own table. Files are chec
 folder walk when there is no git). The network goes through a **forward proxy** (HTTP CONNECT
 plus optional SOCKS5) that Claude Code is pointed at by a settings file the gateway prints,
 with Claude Code's sandbox forcing Bash traffic through it. Claude's own Read/Grep/Glob calls
-become read effects straight from the stored hooks. Effects have their own version, API and
-live event, and show as one folded row per turn, so they never trigger a timeline rebuild.
+become read effects straight from the stored hooks. Each session's file snapshot is saved in
+SQLite in the same transaction as the checkpoint's effects, so a gateway restart loses nothing.
+Effects have their own version, API and live event, and show as one folded row per turn, so
+they never trigger a timeline rebuild.
 Built in this order (Option B): foundation (store, API, UI), then files, then network, then one
 end-to-end check. Functional tests only (research.md D1).
 
@@ -44,9 +46,10 @@ end-to-end check. Functional tests only (research.md D1).
 ## Approach
 - **Files:** a per-session runner hangs off `OnStored`. Each stored hook event with a session and
   a working folder marks the session dirty; one goroutine per busy session runs checkpoints, at
-  most one running and one queued. A checkpoint compares the watched folders to the previous
-  snapshot held in memory and stores created/modified/deleted effects, copying small text
-  files into the existing blob store.
+  most one running and one queued. A checkpoint compares the watched folders to the session's
+  last saved snapshot (SQLite, cached in memory while the session is active), copies small
+  text files into the existing blob store, and saves the new effects and the changed snapshot
+  rows in one transaction.
 - **Reads:** the same callback asks the client profile whether a completed tool call is a read,
   search or list, and stores a read effect pointing at the hook event.
 - **Network:** two loopback listeners in the same process. CONNECT and SOCKS5 tunnels are
@@ -98,9 +101,11 @@ effects:
   files:
     enabled: true
     extra_dirs: []
+    # .env is left out on purpose so changes to .env files are tracked; add it here to stop that.
     ignore: [.git, node_modules, dist, build, target, .venv, venv, __pycache__, .next, .cache]
     max_copy_bytes: 262144
     git_timeout: 10s
+    snapshot_retention: 168h
   network:
     enabled: true
     http_proxy_addr: 127.0.0.1:7198
@@ -110,9 +115,9 @@ effects:
 ```
 Validation: proxy addresses are loopback, distinct from each other, from `listen_addr` and from
 `ui.listen_addr`; an empty `socks_proxy_addr` turns SOCKS5 off; `sandbox: true` with SOCKS5 off
-prints a sandbox block with the HTTP port only; `max_copy_bytes` > 0; `extra_dirs` are absolute.
-Env overrides follow the existing `GATEWAY_*` naming. `.env` is never accepted in `ignore`
-(config error), so the list cannot hide it by mistake.
+prints a sandbox block with the HTTP port only; `max_copy_bytes` > 0; `extra_dirs` are absolute;
+`snapshot_retention` > 0. Env overrides follow the existing `GATEWAY_*` naming. `ignore` names
+are matched against each part of a path (folders and file names); nothing forbids adding `.env`.
 
 ### Store (`internal/store/effects.go`, one new migration)
 ```sql
@@ -132,11 +137,29 @@ CREATE TABLE effects (
   bytes_up INTEGER, bytes_down INTEGER, ended_at INTEGER, outcome TEXT
 );
 CREATE INDEX effects_session ON effects(principal_id, client, session_key, id);
+
+CREATE TABLE effect_snapshots (
+  principal_id TEXT NOT NULL,
+  client       TEXT NOT NULL,
+  session_key  TEXT NOT NULL,
+  root         TEXT NOT NULL,
+  path         TEXT NOT NULL,   -- '' marks the root itself, so a root with no files is kept
+  size         INTEGER, mtime_ns INTEGER, hash TEXT,
+  copy_hash    TEXT REFERENCES content(hash),
+  PRIMARY KEY (principal_id, client, session_key, root, path)
+) WITHOUT ROWID;
 ```
 - `at` uses the same unit as `hook_events.received_at`. A session's principal and client are
   taken from the hook event that triggered the checkpoint; unassigned connections use the
   principal the hook ingest uses and client `unknown`.
-- `SaveEffects(ctx, []Effect)` writes one batch per checkpoint in one transaction.
+- `SaveCheckpoint(ctx, session, []Effect, upserts, deletes)` writes a checkpoint's effects and
+  its changed snapshot rows in one transaction (AC2, E17). `SaveEffects(ctx, []Effect)` is the
+  same without snapshot rows, for read and network effects.
+- `LoadSnapshot(session)` returns a session's rows; `DeleteSnapshot(session)` drops them;
+  `SweepSnapshots(cutoff)` drops the rows of every session whose last hook event is older than
+  the cutoff (one query joined to `hook_events`).
+- `ActiveSessions(since)` returns sessions with a hook event after `since` and no session-end
+  event after it, so the network's active set survives a restart.
 - `EffectVersions(ids)` returns `COUNT(*), MAX(id)` per session with the CTE join used by
   `SessionVersions`; `SessionVersions` is untouched (AC13).
 - `EffectCounts(ids)` returns changed / read / sites per session for a list page, one grouped
@@ -147,9 +170,12 @@ CREATE INDEX effects_session ON effects(principal_id, client, session_key, id);
 - `Runner` subscribes to `OnStored`. `hooks.HookStored` gains `ID` and the mapped
   `core.HarnessEvent` (no body). The callback only updates in-memory session state and signals;
   it never blocks.
-- Per session: `roots` (set), `snap` (root → path → `{size, mtimeNs, hash, hasCopy}`), last hook
-  time, ended flag, and the run/dirty pair. A goroutine runs a checkpoint while the session is
-  dirty, so a burst of 60 hooks costs at most one running and one queued checkpoint.
+- Per session in memory: `roots` (set), `snap` (root → path → `{size, mtimeNs, hash, copyHash}`),
+  last hook time, ended flag, and the run/dirty pair. `roots` and `snap` are a cache of
+  `effect_snapshots`: loaded with `LoadSnapshot` on the session's first checkpoint after a
+  start or an eviction, and evicted from memory after 1 h without a hook. A goroutine runs a
+  checkpoint while the session is dirty, so a burst of 60 hooks costs at most one running and
+  one queued checkpoint.
 - **Roots (AC6):** at the first hook with a `WorkDir`: that folder, plus `rules.ExtraDirs`, plus
   `extra_dirs`. On each post-tool event, `WritePaths` and `ReadTarget` paths outside every root
   add the path's git top level (`git rev-parse --show-toplevel`) or, for a write outside any
@@ -159,21 +185,24 @@ CREATE INDEX effects_session ON effects(principal_id, client, session_key, id);
 - **Git mode (AC4):** per root, cached `git rev-parse --show-toplevel`. Candidates =
   `git --no-optional-locks -C <top> status --porcelain=v2 -z --untracked-files=all`
   ∪ `git --no-optional-locks -C <top> ls-files -z -o -i --exclude-standard --directory`
-  (entries ending in `/` are folders and skipped) ∪ every path already in `snap`. Paths under
-  a fixed-ignore folder are dropped. Every git call has `git_timeout`; a failure logs one line
+  (entries ending in `/` are folders and skipped) ∪ every path already in `snap`. Paths with a
+  part named in `ignore` are dropped. Every git call has `git_timeout`; a failure logs one line
   and skips that root for this checkpoint.
-- **Scan mode (AC4):** `filepath.WalkDir`, skipping fixed-ignore folders, not following
-  symlinks, regular files only.
+- **Scan mode (AC4):** `filepath.WalkDir`, skipping paths with a part named in `ignore`, not
+  following symlinks, regular files only.
 - **Compare (AC2, AC3):** `lstat` each candidate. Unchanged size and mtime → skip. Otherwise read
   the head to decide text or binary; for text under the cap read all, hash, store the copy; for
   others hash with a streaming read. A changed hash, a new path or a missing path gives one
-  effect: `created` (new and untracked, or new in scan mode), `modified`, `deleted`. The first
-  checkpoint only fills `snap`.
+  effect: `created` (new and untracked, or new in scan mode), `modified`, `deleted`. A session
+  with no saved rows only fills `snap` and saves it. Every checkpoint ends with one
+  `SaveCheckpoint` holding its effects and the rows that changed (new, updated, deleted, and
+  root markers), so a crash mid-checkpoint saves nothing and the next one redoes it.
 - **Before version (AC5):** previous copy if `snap` has one; else in git mode
   `git --no-optional-locks -C <top> show HEAD:<path>` (text under the cap only, stored as a
   blob); else none.
-- **End of life:** on the session-end phase, one last checkpoint, then the state is dropped.
-  A session with no hook for 24 h is dropped too.
+- **End of life (E16):** on the session-end phase, one last checkpoint, then `DeleteSnapshot`
+  and the memory entry go. `SweepSnapshots(now − snapshot_retention)` runs at startup and every
+  hour.
 - The runner never writes inside a root and never runs a git command that writes.
 
 ### Read effects (AC7)
@@ -196,7 +225,8 @@ In the same callback: on a post-tool event whose `ReadTarget` answers ok, store 
   Shutdown closes the listeners, waits up to the existing shutdown timeout, then stores open
   tunnels as `closed early`.
 - **Session link (AC10):** the runner keeps "active" = last hook within `active_window` and no
-  session end. Exactly one active session → linked; else unassigned.
+  session end, seeded at startup from `ActiveSessions(now − active_window)`. Exactly one active
+  session → linked; else unassigned.
 - **Loop guard (AC11):** `core/proxy.go` wraps `ProxyFromEnvironment`; when the chosen proxy's
   host:port equals one of the gateway's proxy listeners, it returns nil (direct).
 
@@ -269,7 +299,7 @@ effects stored, proxy records dropped, git failures).
 | AC | Where (package/file) | Verified by |
 |---|---|---|
 | AC1 | `effects/runner.go`, `hooks/sink.go` | `TestRunner_BurstRunsOneFollowUp`; manual step 4 |
-| AC2 | `effects/checkpoint.go` | `TestCheckpoint_GitRepoChanges` (first run stores nothing) |
+| AC2 | `effects/checkpoint.go`, `store/effects.go` | `TestCheckpoint_GitRepoChanges` (first run stores nothing), `TestCheckpoint_RestartKeepsSnapshot` |
 | AC3 | `effects/checkpoint.go` | `TestCheckpoint_GitRepoChanges`, `TestCheckpoint_PlainFolder` |
 | AC4 | `effects/git.go`, `effects/scan.go` | `TestCheckpoint_GitIgnoredEnvSeen`, `TestCheckpoint_PlainFolder` |
 | AC5 | `effects/checkpoint.go`, `store/effects.go` | `TestCheckpoint_GitRepoChanges` (copy and HEAD before) |
@@ -291,8 +321,10 @@ git is missing) and loopback servers; no mocks of the code under test.
 - Store/API: `TestEffects_SessionVersionUnchanged`, `TestEffectsAPI_ListAndDiff`.
 - Files: `TestCheckpoint_GitRepoChanges` (baseline, create, modify, delete, copy, HEAD as
   before), `TestCheckpoint_PlainFolder`, `TestCheckpoint_GitIgnoredEnvSeen`,
-  `TestRoots_LearnedAndRejected`, `TestRunner_BurstRunsOneFollowUp` (a slow fake checkpoint and
-  50 signals → exactly 2 runs; the 013 lesson).
+  `TestCheckpoint_RestartKeepsSnapshot` (checkpoint, a new runner on the same store, change a
+  file, the change is reported), `TestRoots_LearnedAndRejected`,
+  `TestRunner_BurstRunsOneFollowUp` (a slow fake checkpoint and 50 signals → exactly 2 runs;
+  the 013 lesson).
 - Reads: `TestClaudeCode_EffectRules` on fixture payloads.
 - Network: `TestNetProxy_ConnectCountsBytes`, `TestNetProxy_PlainHTTPRecordsURL`,
   `TestNetProxy_Socks5Connect`, `TestUpstream_SkipsOwnProxyListener`.
@@ -327,12 +359,17 @@ git is missing) and loopback servers; no mocks of the code under test.
   settings file; the `claude` function falls back to plain Claude only when the gateway is down.
 - **Sandbox breaks some Bash commands** (writes outside the project, tools that need local
   sockets) → `effects.network.sandbox: false`, reprint.
-- **Memory** → snapshots are per session (about 150 bytes per file in scan mode), dropped at
-  session end or after 24 h idle.
+- **Memory** → only active sessions are cached (about 150 bytes per file in scan mode), evicted
+  after 1 h without a hook and reloaded from SQLite when needed.
+- **Snapshot writes** → a session's first checkpoint in a folder without git writes one row per
+  file (about 0.1–0.3 s for 10,000 files, measured in the manual check); other captures queue
+  behind it for that long but never block Claude. Later checkpoints write only changed rows.
+- **Snapshot disk use** → rows are deleted at session end and by the hourly sweep after
+  `snapshot_retention`.
 - **Secrets in copies** → accepted, ADR 0005 (research.md known issues).
 - **Minimal tests** → live-update regressions may only surface in the manual check (D1).
 
 ## Open questions
 
 ## Changelog
-- v1 (2026-11-08) — first draft
+- v1 (2026-11-08) — first draft, with Karthik's answers to K1–K10 (research.md)

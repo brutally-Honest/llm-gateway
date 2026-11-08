@@ -50,6 +50,19 @@ feature: 014-file-and-network-effects
 - D13 (2026-11-08) — UI: one folded row per turn with counts, details on expand, diffs and
   content loaded on demand; effects have their own version and live event so they never
   rebuild the session timeline — the 013 lesson.
+- D14 (2026-11-08) — Replaces K1's recommendation: each session's file snapshot is saved in
+  SQLite (`effect_snapshots`) in the same transaction as the checkpoint's effects, and memory
+  only caches active sessions — a gateway restart, crash or rebuild during development then
+  loses nothing, and the process stays stateless as AGENTS.md asks; chosen by Karthik after
+  weighing the cost (a few rows per checkpoint, one row per file on the first checkpoint in a
+  folder without git).
+- D15 (2026-11-08) — Amends D6 and K3: `.env` is left out of the default ignore list, with a
+  comment in the config example saying so; nothing stops the user adding it later — the
+  ignore list is ordinary config, not a hard rule.
+- D16 (2026-11-08) — Replaces K8's 24-hour drop: the memory cache is evicted after 1 h without
+  a hook and reloaded from SQLite when needed; a session's saved snapshot is deleted at session
+  end or after `effects.files.snapshot_retention` (default 7 days) without a hook — follows
+  from D14.
 
 ## Decisions for Karthik
 Choices made while writing the spec that touch a repo rule or were not asked about. Each has
@@ -73,6 +86,15 @@ a recommendation; say if you want one changed.
 - K10 — The sandbox's escape hatch (Claude rerunning a command outside the sandbox) stays on.
   Claude Code has a setting that turns it off; that would close the gap in KI9 but make more
   commands fail. Not added to the printed settings in v1.
+
+Karthik's answers (2026-11-08):
+- K1 → changed: snapshots saved in SQLite with batched, per-checkpoint transactions (D14).
+- K2 → accepted; revisit if it breaks something.
+- K3 → changed: no hard rule, `.env` just left out of the default list with a comment (D15).
+- K4, K5, K7, K10 → accepted.
+- K6 → accepted, including the new tables.
+- K8 → changed with K1 (D16).
+- K9 → accepted: SOCKS5 stays on; Karthik may turn it off if it causes performance problems.
 
 ## Notes
 
@@ -102,10 +124,17 @@ a recommendation; say if you want one changed.
 - KI12 — If the gateway dies mid-session, that session's model and network calls fail until
   the login service restarts it (seconds).
 - KI13 — A gateway restart re-baselines; changes made while it was down are not reported.
+  (Replaced by KI17.)
 - KI14 — Phase C needs the gateway on the host, not in Docker.
 - KI15 — No store cleanup; copies grow with use, and a small file rewritten often (a log)
   gets a copy at every checkpoint.
 - KI16 — Minimal tests: regressions in live-update paths may only show in the manual check.
+- KI17 (2026-11-08, replaces KI13 after D14) — After a gateway restart, changes made while it
+  was down are reported at the next checkpoint, placed in the turn where they are found rather
+  than when they happened; that includes the user's own edits during the downtime. A session
+  resumed after `snapshot_retention` (7 days) starts a new baseline.
+- KI18 (2026-11-08) — A session's first checkpoint in a folder without git writes one snapshot
+  row per file (about 0.1–0.3 s for 10,000 files); other captures queue behind it for that long.
 
 ### To confirm in the manual check (T012)
 - V1 — `claude --settings <file>` applies that file's `env` and `sandbox` blocks, not only its
