@@ -21,6 +21,7 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/effects"
 	"github.com/brutally-honest/llm-gateway/internal/hooks"
 	"github.com/brutally-honest/llm-gateway/internal/logging"
+	"github.com/brutally-honest/llm-gateway/internal/netproxy"
 	"github.com/brutally-honest/llm-gateway/internal/protocols/anthropic"
 	"github.com/brutally-honest/llm-gateway/internal/ratelimit"
 	"github.com/brutally-honest/llm-gateway/internal/server"
@@ -210,6 +211,16 @@ func run(ctx context.Context, d deps) int {
 			log.Error("cannot bind", zap.String("key", "ui.listen_addr"), zap.String("reason", reason))
 			return exitRuntime
 		}
+	}
+	// The proxy listeners bind before anything serves too, so a taken port stops the
+	// gateway with one line (spec 014, E14).
+	if code := capt.startProxy(cfg.Effects, d.listen, log); code != exitOK {
+		_, _ = capt.close(context.Background())
+		_ = ln.Close()
+		if uiLn != nil {
+			_ = uiLn.Close()
+		}
+		return code
 	}
 	// The hook route is always mounted; with capture off it answers and counts only.
 	hookSink, hookOn := capt.hookSink(), true
@@ -486,6 +497,12 @@ type effectsStore interface {
 type effectsRun struct {
 	reads  *effects.Reads
 	runner *effects.Runner
+	saved  effects.Saved
+	store  effectsStore
+	// proxy and rec are set once the proxy listeners are bound; nil with the network
+	// sensor off.
+	proxy *netproxy.Proxy
+	rec   *netproxy.Recorder
 }
 
 // startEffects starts the effect sensors that hang off stored hook events (spec 014); nil
@@ -504,6 +521,8 @@ func startEffects(e config.Effects, st capture.Store, hub *ui.Hub, profiles []co
 	run := &effectsRun{
 		reads:  effects.NewReads(es, rules, saved, log),
 		runner: effects.NewRunner(e, es, rules, saved, log),
+		saved:  saved,
+		store:  es,
 	}
 	run.runner.Start()
 	return run
@@ -517,11 +536,73 @@ func (e *effectsRun) callbacks() []func(hooks.HookStored) {
 	return []func(hooks.HookStored){e.reads.OnStored, e.runner.OnStored}
 }
 
-// close stops the checkpoint runner, waiting for running checkpoints until ctx ends.
-func (e *effectsRun) close(ctx context.Context) {
-	if e != nil {
-		e.runner.Close(ctx)
+// startProxy binds the HTTP proxy listener and, when set, the SOCKS5 one, then serves
+// them; it links each connection to the runner's one active session (AC10). With effects
+// or the network sensor off it does nothing. A bind failure logs one line and closes
+// what was bound.
+func (c *captureRun) startProxy(e config.Effects, listen func(network, addr string) (net.Listener, error), log *zap.Logger) int {
+	if c == nil || c.effects == nil || !e.Network.Enabled {
+		return exitOK
 	}
+	type bound struct {
+		key string
+		ln  net.Listener
+	}
+	var lns []bound
+	for _, l := range []struct{ key, addr string }{
+		{"effects.network.http_proxy_addr", e.Network.HTTPProxyAddr},
+		{"effects.network.socks_proxy_addr", e.Network.SocksProxyAddr},
+	} {
+		if l.addr == "" {
+			continue
+		}
+		ln, err := listen("tcp", l.addr)
+		if err != nil {
+			for _, b := range lns {
+				_ = b.ln.Close()
+			}
+			reason := "bind failed"
+			if errors.Is(err, syscall.EADDRINUSE) {
+				reason = "address in use"
+			}
+			log.Error("cannot bind", zap.String("key", l.key), zap.String("reason", reason))
+			return exitRuntime
+		}
+		lns = append(lns, bound{l.key, ln})
+	}
+	run := c.effects
+	run.rec = netproxy.NewRecorder(run.store, run.runner.ActiveSession, netproxy.Saved(run.saved), log)
+	run.proxy = netproxy.New(run.rec, log)
+	for _, b := range lns {
+		if b.key == "effects.network.http_proxy_addr" {
+			run.proxy.ListenHTTP(b.ln)
+		} else {
+			run.proxy.ListenSOCKS(b.ln)
+		}
+		log.Info("proxy listener started", zap.String("key", b.key), zap.String("addr", b.ln.Addr().String()))
+	}
+	return exitOK
+}
+
+// close stops the proxy listeners (open tunnels are stored as closed early once ctx
+// ends), drains the network recorder, then stops the checkpoint runner.
+func (e *effectsRun) close(ctx context.Context) {
+	if e == nil {
+		return
+	}
+	if e.proxy != nil {
+		e.proxy.Shutdown(ctx)
+		e.rec.Close(ctx)
+	}
+	e.runner.Close(ctx)
+}
+
+// proxyCounts are the network recorder's counters, zero with the sensor off.
+func (e *effectsRun) proxyCounts() netproxy.Counts {
+	if e == nil || e.rec == nil {
+		return netproxy.Counts{}
+	}
+	return e.rec.Counts()
 }
 
 // counts are the sensors' counters for the shutdown line.
@@ -613,11 +694,13 @@ func (c *captureRun) stop(ctx context.Context, log *zap.Logger) {
 	if c.hooks != nil {
 		hc = c.hooks.Counts()
 	}
-	ec := c.effects.counts()
+	ec, pc := c.effects.counts(), c.effects.proxyCounts()
 	log.Info("capture stopped",
 		zap.Int64("effects_checkpoints", ec.Checkpoints),
-		zap.Int64("effects_stored", ec.EffectsStored),
+		zap.Int64("effects_stored", ec.EffectsStored+pc.Stored),
 		zap.Int64("effects_git_failures", ec.GitFailures),
+		zap.Int64("effects_proxy_dropped", pc.Dropped),
+		zap.Int64("effects_proxy_store_failed", pc.Failed),
 		zap.Int64("hooks_queue_full", hc.QueueFull),
 		zap.Int64("hooks_oversize", hc.Oversize),
 		zap.Int64("hooks_capture_off", hc.CaptureOff),

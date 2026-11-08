@@ -71,6 +71,15 @@ type options struct {
 // defaultUIAddr is ui.listen_addr when no test sets it.
 const defaultUIAddr = "127.0.0.1:7199"
 
+// defaultEffectAddrs are the effects proxy listeners when no test sets them (spec 014).
+// Like the UI's, they are never bound for real and listened leaves them out.
+var defaultEffectAddrs = []string{"127.0.0.1:7198", "127.0.0.1:7195"}
+
+// isDefaultSide reports whether addr is a default UI or effects proxy address.
+func isDefaultSide(addr string) bool {
+	return addr == defaultUIAddr || slices.Contains(defaultEffectAddrs, addr)
+}
+
 // signalListener signals accepted after each connection Accept returns.
 type signalListener struct {
 	net.Listener
@@ -107,8 +116,9 @@ func startGateway(t *testing.T, o options) *gateway {
 				return nil, o.listenErr
 			}
 			asked := addr
-			// The default UI address is never bound for real, so no test needs 7199 free.
-			if !o.realListen || addr == defaultUIAddr {
+			// The default UI and proxy addresses are never bound for real, so no test
+			// needs 7199, 7198 or 7195 free.
+			if !o.realListen || isDefaultSide(addr) {
 				addr = "127.0.0.1:0"
 			}
 			ln, err := net.Listen(network, addr)
@@ -212,7 +222,7 @@ func (g *gateway) wait() int {
 func (g *gateway) listened() []string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return slices.DeleteFunc(slices.Clone(g.listen), func(a string) bool { return a == defaultUIAddr })
+	return slices.DeleteFunc(slices.Clone(g.listen), isDefaultSide)
 }
 
 // AC3: one startup line with version, the bound address and the config source.

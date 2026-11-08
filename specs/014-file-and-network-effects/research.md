@@ -105,6 +105,12 @@ Build decisions (2026-11-08, made during the build outside the kit; say if you w
   time) so a read effect is timed like its hook.
 - B6 (T007) — `startCapture` keeps its signature (a test calls it); `startCaptureWith` adds
   the effects config and `run` calls that.
+- B7 (T009) — The run tests' harness treats the default proxy addresses (7198, 7195) as it
+  already treated the default UI address: never bound for real and left out of
+  `listened()`. Without it, every run test with the default config bound real fixed ports
+  and parallel tests collided; the tests' assertions are unchanged.
+- B8 (T009) — The proxy listeners are started only when capture is on: network effects need
+  the store. With capture off, `effects.network` binds nothing.
 
 Karthik's answers (2026-11-08):
 - K1 → changed: snapshots saved in SQLite with batched, per-checkpoint transactions (D14).
