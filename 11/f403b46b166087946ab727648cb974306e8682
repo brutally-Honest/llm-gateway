@@ -1,0 +1,14 @@
+Manual check 013 F5 (open session never catches up under --live).
+Cause: readAndSend deferred every commit whenever the cached build was older than the
+store, and catchUp's re-read after a build landed was stale again under a write every
+2 s, so it re-deferred forever ('once writes stop the last one sends').
+Fix: pendingCatch keeps need[i], the store version ids[i] was read at; liveMsg carries
+ReadAt and BuiltAt; a commit with need <= BuiltAt is sent at once from the landed build,
+the rest stay deferred. A stale refresh is sent only from a catch-up after a build
+lands (landed flag), else TestHub_HooksOnlySessionStreamGetsSummary saw a summary with
+no new hooks first.
+Red first: TestHub_SteadyWritesStillDeliverWhatEachLandedBuildCovers failed 3/3 on the
+old code (0 of 122 covered exchanges delivered while 150 were written); passes 5/5, and
+with the catch-up tests 10/10; go test -race ./internal/ui green.
+End to end: scratch gateway, 2,000 calls + --live: 12 session-stream events in the 22 s
+after the snapshot (was 0). make verify green.
