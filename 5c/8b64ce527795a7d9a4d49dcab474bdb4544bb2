@@ -1,0 +1,13 @@
+Manual check 013 F7b (rerun of F7). Replaces 92aa138's sticky + max-height rail.
+Cause: a sticky rail is in normal flow until it sticks, so at scrollY 0 it started
+below the stats (y 239) and its computed height ran 188 px under the key bar; at the
+page end its container ended 48 px above the viewport (main's padding-bottom), which
+pushed it 18 px under the header.
+Test change: railStaysBetweenHeaderAndKeyBarAtAnyHeight pinned the sticky design and is
+replaced by railIsFixedBetweenHeaderAndKeyBar and narrowWindowPutsTheRailBackInFlow, as
+the user asked for the fixed design; both were red on the old CSS.
+Headless Chrome on the 7199 session, working-tree CSS/JS: at 1400x600 and 1400x1000, at
+scrollY top, middle and end, rail top = header bottom (51), rail bottom = key bar top
+(570 / 970), last item reachable, no overlap with the turns (rail right 304, turns left
+320). At 700 px the rail is static, above the turns; it is then ~12,500 px tall for 225
+turns, which the spec left as is. make verify green.
