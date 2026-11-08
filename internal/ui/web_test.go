@@ -183,15 +183,16 @@ func TestWeb_ServesHarnessBadgeRendering(t *testing.T) {
 
 // TestWeb_ComponentsCallTheTestedHelpers: the dispatch of stream events, the omitted-bytes
 // note, the hook label and the hook input's truncation live in entries.js, where the Node
-// tests run them; the components must call those functions, not repeat the logic.
+// tests run them; the components must call those functions, not repeat the logic. Stream
+// events reach liveEffect through liveBatch, which applies a burst of them in order.
 func TestWeb_ComponentsCallTheTestedHelpers(t *testing.T) {
 	files := webFiles(t)
 	want := map[string][]string{
 		"api.js":           {"export const STREAM_EVENTS", "for (const name of STREAM_EVENTS)"},
-		"app.js":           {"liveEffect(name, data, st.entries)", "import { addUnique, liveEffect, upsertSession }"},
+		"app.js":           {"liveBatch(events, st.entries)", "import { addUnique, liveBatch, upsertSession }"},
 		"tool-card.js":     {"hookInputEntry(call)", "omittedNote(call.hook_omitted_bytes)"},
 		"timeline-page.js": {"hookLabel(h)"},
-		"entries.js":       {"export function liveEffect", "export function omittedNote", "export function hookInputEntry", "export function hookLabel"},
+		"entries.js":       {"export function liveEffect", "export function liveBatch", "const p = liveEffect(name, data, cur)", "export function omittedNote", "export function hookInputEntry", "export function hookLabel"},
 	}
 	for name, subs := range want {
 		for _, sub := range subs {
@@ -202,7 +203,7 @@ func TestWeb_ComponentsCallTheTestedHelpers(t *testing.T) {
 	}
 	for _, name := range []string{"app.js", "tool-card.js", "timeline-page.js"} {
 		if strings.Contains(files[name], "replaceHooks(") || strings.Contains(files[name], "replaceExchange(") {
-			t.Errorf("%s calls a replace function directly; app.js must route through liveEffect", name)
+			t.Errorf("%s calls a replace function directly; app.js must route through liveBatch and liveEffect", name)
 		}
 	}
 }

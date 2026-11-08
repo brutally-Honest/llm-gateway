@@ -1,5 +1,5 @@
 import { getJSON, loadAllPages, openStream } from "./api.js";
-import { addUnique, liveEffect, upsertSession } from "./entries.js";
+import { addUnique, liveBatch, upsertSession } from "./entries.js";
 import { createStore } from "./store.js";
 import { createTimelinePage } from "./timeline-page.js";
 import { createSessionsPage, localMidnight, note } from "./sessions-page.js";
@@ -110,6 +110,9 @@ let seq = 0;
 // through globalThis.__retryDelay so tests do not wait.
 const retryDelay = (ms) => (globalThis.__retryDelay ? globalThis.__retryDelay(ms) : new Promise((r) => setTimeout(r, ms)));
 
+// LIVE_BATCH_MS is how long a session view gathers stream events before it draws them.
+const LIVE_BATCH_MS = 50;
+
 // retryOn504 runs fn; on a 504 it calls onWait, waits and runs fn once more. Any other error,
 // and a second 504, reach the caller.
 async function retryOn504(fn, onWait) {
@@ -190,19 +193,33 @@ async function showSession(id) {
     const d = document.documentElement;
     return d.scrollHeight - (window.scrollY + window.innerHeight) <= 8;
   };
-  const live = (patch) => {
-    const follow = shouldFollow(tl.drawerOpen(), nearBottom());
+  // Stream events are queued and applied together, with one draw, LIVE_BATCH_MS after the
+  // first of a burst: a snapshot sends one event per exchange, and drawing after each one
+  // rebuilt the whole list thousands of times and froze the page on an active session.
+  // Whether to follow is decided before the burst changes the page, as for one event.
+  let queued = [];
+  let follow = false;
+  const flushLive = () => {
+    const events = queued;
+    queued = [];
+    if (mine !== seq) return;
+    const patch = liveBatch(events, st.entries);
+    if (!patch) return;
     set(patch);
-    if (follow && mine === seq) window.scrollTo(0, document.documentElement.scrollHeight);
+    // a snapshot error alone never scrolls the view
+    const moved = events.some((e) => e.name !== "snapshot_error");
+    if (moved && follow && mine === seq) window.scrollTo(0, document.documentElement.scrollHeight);
   };
   // The snapshot-error state survives the native error event and the reconnect; only the
   // first hooks, exchange or entries event of a later connection (its snapshot) clears it.
   closeStream = openStream(
     (name, data) => {
-      const patch = liveEffect(name, data, st.entries);
-      if (!patch) return;
-      if (name === "snapshot_error") set(patch);
-      else live(patch);
+      if (mine !== seq) return;
+      if (queued.length === 0) {
+        follow = shouldFollow(tl.drawerOpen(), nearBottom());
+        setTimeout(flushLive, LIVE_BATCH_MS);
+      }
+      queued.push({ name, data });
     },
     (state) => {
       shell.setLive(liveText(state));

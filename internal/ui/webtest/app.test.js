@@ -25,7 +25,13 @@ class FakeEventSource {
     this.url = url;
     streams.push(this);
   }
-  addEventListener() {}
+  addEventListener(name, fn) {
+    (this.handlers ||= {})[name] = fn;
+  }
+  // emit delivers a named server event, as the browser does
+  emit(name, data) {
+    this.handlers[name]({ data: JSON.stringify(data) });
+  }
   close() {
     this.readyState = FakeEventSource.CLOSED;
   }
@@ -200,4 +206,40 @@ test("pagesBeforeAFailingPageStillShow", async () => {
   assert.match(r.text(), /store timed out/);
   assert.match(r.text(), /first page/);
   assert.match(r.text(), /held page/, "a page fetched before the failure is drawn");
+});
+
+// A stream snapshot is one event per exchange. The page draws the burst once, after the
+// batch time, instead of rebuilding the whole list per event: on a 2,000-call active
+// session that froze the renderer for minutes (013 manual check, steps 13 to 15).
+test("aStreamBurstIsDrawnOnceNotPerEvent", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const path = "/api/sessions/act";
+  replies[path] = { ...session, id: "act", active: true };
+  replies[`${path}/timeline`] = { entries, next_after: null };
+  location.hash = "#/sessions/act";
+  for (const fn of listeners.hashchange) fn();
+  for (let i = 0; i < 6; i++) await settle();
+  const es = streams.at(-1);
+  assert.equal(es.url, `${path}/stream`);
+  const proto = Object.getPrototypeOf(byId("app"));
+  const replace = proto.replaceChildren;
+  let rebuilds = 0;
+  proto.replaceChildren = function (...nodes) {
+    if (this.className === "timeline") rebuilds++;
+    return replace.apply(this, nodes);
+  };
+  try {
+    for (let i = 1; i <= 300; i++) es.emit("exchange", [call(`z${i}`, 100 + i, { prev: i > 1 ? `z${i - 1}` : "b" })]);
+    assert.equal(rebuilds, 0, "nothing is drawn while the burst is gathered");
+    t.mock.timers.tick(50);
+    assert.equal(rebuilds, 1, "the burst is drawn once");
+    assert.equal(withClass(byId("app"), "call-link").length, 302, "every streamed call shows");
+    es.emit("session", { ...replies[path], title: "renamed" });
+    es.emit("snapshot_error", { error: { message: "store slow" } });
+    t.mock.timers.tick(50);
+    assert.equal(rebuilds, 2);
+    assert.match(textOf(byId("app")), /Live snapshot failed: store slow/, "events after a burst keep their order");
+  } finally {
+    proto.replaceChildren = replace;
+  }
 });
