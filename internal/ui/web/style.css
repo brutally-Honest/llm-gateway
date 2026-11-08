@@ -82,6 +82,9 @@ footer#keybar {
 footer#keybar .level { color: var(--fg); }
 footer#keybar kbd { font: inherit; color: var(--fg); border: 1px solid var(--line); border-radius: 3px; padding: 0 .3rem; }
 .timeline-layout { display: flex; flex-direction: column; gap: 1rem; padding-left: calc(var(--rail-w) + 1rem); }
+/* the session's header, stats, call strip and context line sit above the turns and clear
+   the fixed rail the same way */
+.timeline-page > .session-head, .timeline-page > .stats, .timeline-page > .strip, .timeline-page > .context-line { margin-left: calc(var(--rail-w) + 1rem); }
 .timeline-main { min-width: 0; }
 /* fixed between the header and the key bar, their measured heights (shell.js), so it fits
    at every scroll position; it scrolls on its own */
@@ -128,6 +131,7 @@ footer#keybar kbd { font: inherit; color: var(--fg); border: 1px solid var(--lin
 /* a narrow window has no room beside the turns: the rail goes back into the flow, first */
 @media (max-width: 760px) {
   .timeline-layout { padding-left: 0; }
+  .timeline-page > .session-head, .timeline-page > .stats, .timeline-page > .strip, .timeline-page > .context-line { margin-left: 0; }
   .rail { position: static; width: auto; order: -1; }
 }
 
