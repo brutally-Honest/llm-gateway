@@ -1,0 +1,6 @@
+Manual check 013 F6 (step 12), AC34.
+Correction to the manual-check report: errored call links already had a visible
+'✗ <word>' badge beside them (callLink's badge err); only the link's own accessible
+name lacked it. Rail items for error turns had no glyph or word at all.
+Red first: errorRailItemSaysErrorInWords and errorCallLinkNameSaysError both failed on
+the old code. make verify green.
