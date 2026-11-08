@@ -38,6 +38,11 @@ the first call goes to the configured upstream with a fake key, and the seed sto
 turn is 10 calls, most with a tool use, and one call in 50 is an error. The session is the
 newest one on the Sessions page.
 
+For step 13's numbers, `node docs/manual-checks/cold-open.mjs` cold-opens that session in
+headless Chrome (fresh profile, no extensions) and prints, per run, the time to the first
+turn card, the time until the card count settles, the cards, the DOM nodes and the list
+rebuilds. Run it while `--live` is sending: only an active session opens its live stream.
+
 Use the keyboard only for steps 1 to 7. Do not touch the mouse there.
 
 ## Steps
