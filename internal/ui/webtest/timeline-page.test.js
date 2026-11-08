@@ -115,3 +115,26 @@ test("chromeSearchEventRestoresTheTurns", () => {
     f.done();
   }
 });
+
+// An error turn's rail item and an errored call's link say so in words, not colour alone,
+// as the turn heading does (AC34, 013 manual check F6). The call box already shows a
+// visible "✗ error" badge beside the link; the link's own name now says it too.
+function erroredPage() {
+  return page([call("a", 1), prompt("a", "go"), call("b", 2, { prev: "a", status: 529 })]);
+}
+
+test("errorRailItemSaysErrorInWords", () => {
+  const p = erroredPage();
+  const rail = withClass(p.el, "rail-item");
+  assert.equal(rail.length, 1);
+  assert.match(textOf(rail[0]), /✗ error/, "the rail item shows the glyph and the word");
+});
+
+test("errorCallLinkNameSaysError", () => {
+  const p = erroredPage();
+  const links = withClass(p.el, "call-link");
+  const bad = links.find((a) => a.className.includes("is-error"));
+  const good = links.find((a) => !a.className.includes("is-error"));
+  assert.match(bad.attrs["aria-label"] || "", /^#2 .*✗ error$/, "the errored link's name keeps its label and says error");
+  assert.equal(good.attrs["aria-label"], undefined, "a call without an error keeps its text as its name");
+});

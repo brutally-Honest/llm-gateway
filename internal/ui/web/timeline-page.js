@@ -163,6 +163,8 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
       const meta = el("span", "rail-meta muted");
       for (const c of it.chips) meta.append(chipNode({ ...c, title: `${c.count} ${c.text}` }), el("span", "", String(c.count)));
       meta.append(el("span", "", countText(it.calls, "call", "calls")), el("span", "", it.duration));
+      // the glyph and the word, as on the turn heading, so colour is never the only sign (AC34)
+      if (it.errored) meta.append(el("span", "badge err", "✗ error"));
       b.append(meta);
       b.addEventListener("click", () => select(it.number - 1));
       railEls.set(it.number, b);
@@ -264,6 +266,8 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
 
   function callLink(c, sessionId) {
     const a = el("a", `call-link${c.errored ? " is-error" : ""}`, c.label);
+    // the badge beside the link shows the error; the link's own name says it too (AC34)
+    if (c.errored) a.setAttribute("aria-label", `${c.label}, ✗ ${c.errorWord}`);
     a.href = buildRoute({ name: "session", id: sessionId, call: c.exchangeId });
     const box = el("span", "call");
     a.addEventListener("click", () => drawer.noteOpener(a));
