@@ -67,3 +67,51 @@ test("remindersFoldBehindControl", () => {
   byTag(p.el, "button").find((b) => b.textContent === "+1 reminder").fire("click");
   assert.match(textOf(p.el), /secret/);
 });
+
+// Esc in the turns filter restores every turn and keeps the current one in view instead of
+// jumping back to turn 1 (F4). Chrome's own Esc fires `search`, not `input`.
+function threeTurnsFiltered() {
+  const p = page([
+    call("a", 1), prompt("a", "alpha task"),
+    call("b", 2, { prev: "a" }), prompt("b", "beta task"),
+    call("c", 3, { prev: "b" }), prompt("c", "gamma task"),
+  ]);
+  const heads = () => withClass(p.el, "turn-head").map((h) => h.textContent);
+  p.moveTurn(2); // turn 3 is current
+  const input = byTag(p.el, "input")[0];
+  input.value = "beta";
+  input.fire("input");
+  assert.equal(heads().length, 1);
+  const proto = Object.getPrototypeOf(p.el);
+  const scrolled = [];
+  proto.scrollIntoView = function () {
+    scrolled.push(this);
+  };
+  return { p, input, heads, scrolled, done: () => delete proto.scrollIntoView };
+}
+
+test("escInTurnFilterRestoresTurnsAndKeepsCurrentInView", () => {
+  const f = threeTurnsFiltered();
+  try {
+    f.input.fire("keydown", { key: "Escape" });
+    assert.equal(f.input.value, "");
+    assert.equal(f.heads().length, 3, "every turn shows again");
+    const last = f.scrolled.at(-1);
+    assert.ok(last, "the current turn is scrolled into view");
+    assert.match(withClass(last, "turn-head")[0].textContent, /^Turn 3/);
+  } finally {
+    f.done();
+  }
+});
+
+test("chromeSearchEventRestoresTheTurns", () => {
+  const f = threeTurnsFiltered();
+  try {
+    f.input.value = "";
+    f.input.fire("search");
+    assert.equal(f.heads().length, 3, "every turn shows again");
+    assert.match(withClass(f.scrolled.at(-1), "turn-head")[0].textContent, /^Turn 3/);
+  } finally {
+    f.done();
+  }
+});

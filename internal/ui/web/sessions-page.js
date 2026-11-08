@@ -238,6 +238,14 @@ export function createSessionsPage(handlers) {
   let selected = "";
   let shown = [];
   input.addEventListener("input", () => redraw());
+  // Esc clears the filter and shows the whole list in every browser; Chrome clears a search
+  // box on Esc by itself and fires `search`, not `input`, so that is handled too (F4).
+  input.addEventListener("search", () => redraw());
+  input.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || input.value === "") return;
+    input.value = "";
+    redraw();
+  });
   // The table and one row per session id are kept across redraws (F1): a live update
   // refills the rows in place and moves only rows whose place changed. When a move takes
   // the focused link out of the page for a moment, focus is put back on it.

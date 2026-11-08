@@ -89,6 +89,22 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
   let drawn = { index: 0, total: 0 };
 
   input.addEventListener("input", () => drawList());
+  // A cleared filter brings every turn back with the current one in view, not turn 1. Esc
+  // clears it in every browser; Chrome clears a search box on Esc itself and fires
+  // `search`, not `input` (F4).
+  const unfiltered = () => {
+    drawList();
+    markCurrent(true);
+  };
+  input.addEventListener("search", () => {
+    if (input.value === "") unfiltered();
+    else drawList();
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || input.value === "") return;
+    input.value = "";
+    unfiltered();
+  });
   picker.addEventListener("change", () => {
     tool = picker.value;
     drawList();

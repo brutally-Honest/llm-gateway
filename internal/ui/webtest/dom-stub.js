@@ -33,8 +33,8 @@ export class StubElement {
   focus() {
     globalThis.document.activeElement = this;
   }
-  fire(type) {
-    for (const fn of this.listeners[type] || []) fn({});
+  fire(type, event = {}) {
+    for (const fn of this.listeners[type] || []) fn(event);
   }
 }
 

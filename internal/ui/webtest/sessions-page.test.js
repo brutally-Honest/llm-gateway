@@ -139,3 +139,31 @@ test("focusedRowKeepsFocusWhenTheOrderChanges", () => {
   assert.equal(p.link("s2"), a);
   assert.equal(document.activeElement, a, "focus returns to the moved link");
 });
+
+// Esc in the filter box restores the whole list (F4). Chrome clears a search box on Esc
+// and fires `search`, not `input`; other browsers do not clear it at all.
+function filteredPage() {
+  const p = livePage([session(), session({ id: "s2", title: "older", last_at: "2026-01-01T00:01:00Z" })]);
+  const input = byTag(p.page.el, "input")[0];
+  const rows = () => byTag(p.page.el, "tr").filter((r) => r.dataset && r.dataset.id).length;
+  const listed = () => byTag(p.page.el, "tbody").length > 0 && all(p.page.el).some((e) => e.tagName === "table") && !all(p.page.el).some((e) => e.textContent === "no sessions match");
+  input.value = "zz";
+  input.fire("input");
+  assert.ok(!listed(), "the filter hides every row");
+  return { input, rows, listed };
+}
+
+test("escInSessionFilterRestoresTheList", () => {
+  const f = filteredPage();
+  f.input.fire("keydown", { key: "Escape" });
+  assert.equal(f.input.value, "", "Esc clears the box");
+  assert.ok(f.listed(), "the rows show again");
+  assert.equal(f.rows(), 2);
+});
+
+test("chromeSearchEventRestoresTheSessionList", () => {
+  const f = filteredPage();
+  f.input.value = ""; // Chrome clears the box itself, then fires search
+  f.input.fire("search");
+  assert.ok(f.listed(), "the rows show again");
+});
