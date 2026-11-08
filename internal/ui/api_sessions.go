@@ -206,59 +206,72 @@ func (s singleSource) SessionExchanges(string, string, string) ([]store.Exchange
 	return []store.ExchangeRow{s.ex}, nil
 }
 
-// summarize reads one session's version, stats and digest and builds its summary.
-func (d Deps) summarize(ctx context.Context, c *store.CtxReader, id string, row store.SessionRow, now time.Time) (sessionSummary, error) {
-	out, err := d.summarizeRows(ctx, c, []string{id}, []store.SessionRow{row}, now)
+// summarize reads one session's version, stats and digest and builds its summary. stale
+// reports that the digest is older than the store, and a recompute was asked for.
+func (d Deps) summarize(ctx context.Context, c *store.CtxReader, id string, row store.SessionRow, now time.Time) (sessionSummary, bool, error) {
+	out, stale, err := d.summarizeRows(ctx, c, []string{id}, []store.SessionRow{row}, now)
 	if err != nil {
-		return sessionSummary{}, err
+		return sessionSummary{}, false, err
 	}
-	return out[0], nil
+	return out[0], len(stale) > 0, nil
 }
 
 func sessionIdent(row store.SessionRow) store.SessionIdent {
 	return store.SessionIdent{Principal: row.PrincipalID, Client: row.Client, Key: row.SessionKey}
 }
 
-// summarizeRows builds the summaries of rows (ids[i] is rows[i]'s id). The versions
-// of the whole page come from one read; digests are memoised on them, while stats and
-// the clock-dependent values are always fresh.
-func (d Deps) summarizeRows(ctx context.Context, c *store.CtxReader, ids []string, rows []store.SessionRow, now time.Time) ([]sessionSummary, error) {
+// digestCompute computes a session's memo on bctx through the server's reader, so it
+// still lands in the cache when the request that asked for it has timed out.
+func (d Deps) digestCompute(row store.SessionRow) func(context.Context) (digestMemo, error) {
+	rules := d.Rules[row.Client]
+	return func(bctx context.Context) (digestMemo, error) {
+		dg, err := sessionDigest(d.Reader.WithContext(bctx), rules, row)
+		return digestMemo{digest: dg}, err
+	}
+}
+
+// summarizeRows builds the summaries of rows (ids[i] is rows[i]'s id). The versions of
+// the whole page come from one read. Digests come from the cache and never wait for a
+// recompute when the session has one cached: a summary carries the version its digest was
+// computed at, and stale lists the sessions whose digest is older than the store. Stats
+// and the clock-dependent values are always fresh.
+func (d Deps) summarizeRows(ctx context.Context, c *store.CtxReader, ids []string, rows []store.SessionRow, now time.Time) ([]sessionSummary, []store.SessionIdent, error) {
 	idents := make([]store.SessionIdent, len(rows))
 	for i, r := range rows {
 		idents[i] = sessionIdent(r)
 	}
 	vers, err := c.SessionVersions(idents)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	out := make([]sessionSummary, 0, len(rows))
+	var stale []store.SessionIdent
 	for i, row := range rows {
-		rules := d.Rules[row.Client]
 		st, err := timeline.SessionStats(c, row)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+		ver := vers[idents[i]]
 		var dg timeline.Digest
 		if d.Digests != nil && d.Reader != nil {
-			// The compute runs on the cache's own context and reader, so it still lands
-			// in the cache when this request times out.
-			compute := func(bctx context.Context) (timeline.Digest, error) {
-				return sessionDigest(d.Reader.WithContext(bctx), rules, row)
+			hit, err := d.Digests.latest(ctx, idents[i], ver, d.digestCompute(row))
+			if err != nil {
+				return nil, nil, err
 			}
-			dg, err = d.Digests.get(ctx, digestKey{idents[i], vers[idents[i]]}, compute)
-		} else {
-			dg, err = sessionDigest(c, rules, row)
-		}
-		if err != nil {
-			return nil, err
+			dg = hit.memo.digest
+			if hit.ver != ver {
+				stale = append(stale, idents[i])
+				ver = hit.ver
+			}
+		} else if dg, err = sessionDigest(c, d.Rules[row.Client], row); err != nil {
+			return nil, nil, err
 		}
 		sum := buildSummary(ids[i], row, st, dg, now)
-		v := vers[idents[i]]
-		vj, pj := versionToJSON(v), positionOf(v)
+		vj, pj := versionToJSON(ver), positionOf(ver)
 		sum.Version, sum.EventPosition = &vj, &pj
 		out = append(out, sum)
 	}
-	return out, nil
+	return out, stale, nil
 }
 
 func sessionDigest(src timeline.Source, rules ClientRules, row store.SessionRow) (timeline.Digest, error) {
@@ -328,7 +341,7 @@ func (d Deps) listSessions(w http.ResponseWriter, r *http.Request) {
 	for i, row := range rows {
 		ids[i] = sessionID(row)
 	}
-	items, err := d.summarizeRows(ctx, c, ids, rows, d.now())
+	items, _, err := d.summarizeRows(ctx, c, ids, rows, d.now())
 	if err != nil {
 		writeStoreErr(w, err)
 		return
@@ -406,7 +419,7 @@ func (d Deps) getSession(w http.ResponseWriter, r *http.Request) {
 		writeStoreErr(w, err)
 		return
 	}
-	sum, err := d.summarize(ctx, c, sessionID(row), row, d.now())
+	sum, _, err := d.summarize(ctx, c, sessionID(row), row, d.now())
 	if err != nil {
 		writeStoreErr(w, err)
 		return

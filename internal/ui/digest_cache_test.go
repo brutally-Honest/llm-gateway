@@ -222,3 +222,26 @@ func TestHub_KeepsGivenDigestCache(t *testing.T) {
 		t.Fatalf("hub cache %p, want %p", got, c)
 	}
 }
+
+// settle waits until c has no digest compute running or queued. It waits on the runs'
+// own done channels; the timer only turns a hang into a failure.
+func settle(t *testing.T, c *DigestCache) {
+	t.Helper()
+	for {
+		c.fmu.Lock()
+		var r *digestRun
+		for _, rs := range c.active {
+			r = rs.cur
+			break
+		}
+		c.fmu.Unlock()
+		if r == nil {
+			return
+		}
+		select {
+		case <-r.done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("a digest compute did not end")
+		}
+	}
+}

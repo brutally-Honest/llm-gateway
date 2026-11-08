@@ -203,19 +203,19 @@ func TestTimelineCache_SizeCapEvicts(t *testing.T) {
 func TestDigestCache_TimedOutComputeIsCachedAndRetryHits(t *testing.T) {
 	c := newDigestCache(8)
 	release := make(chan struct{})
-	compute := func(context.Context) (timeline.Digest, error) {
+	compute := func(context.Context) (digestMemo, error) {
 		<-release
-		return timeline.Digest{Title: "t", ToolStates: map[string]int{"ok": 1}}, nil
+		return digestMemo{digest: timeline.Digest{Title: "t", ToolStates: map[string]int{"ok": 1}}}, nil
 	}
-	k := digestKey{id: ident("k"), ver: store.Version{ExCount: 1}}
+	id, ver := ident("k"), store.Version{ExCount: 1}
 	timedOut, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := c.get(timedOut, k, compute); !errors.Is(err, context.Canceled) {
+	if _, err := c.get(timedOut, id, ver, compute); !errors.Is(err, context.Canceled) {
 		t.Fatalf("timed-out request err = %v", err)
 	}
 	close(release)
-	d, err := c.get(t.Context(), k, compute)
-	if err != nil || d.Title != "t" {
+	d, err := c.get(t.Context(), id, ver, compute)
+	if err != nil || d.memo.digest.Title != "t" {
 		t.Fatalf("retry = %+v, %v", d, err)
 	}
 	if got := c.computes.Load(); got != 1 {
@@ -230,16 +230,16 @@ func TestDigestCache_ConcurrentRequestsOneCompute(t *testing.T) {
 	c := newDigestCache(8)
 	started, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
-	compute := func(context.Context) (timeline.Digest, error) {
+	compute := func(context.Context) (digestMemo, error) {
 		once.Do(func() { close(started) })
 		<-release
-		return timeline.Digest{Title: "t", ToolStates: map[string]int{}}, nil
+		return digestMemo{digest: timeline.Digest{Title: "t", ToolStates: map[string]int{}}}, nil
 	}
-	k := digestKey{id: ident("k"), ver: store.Version{ExCount: 1}}
+	id, ver := ident("k"), store.Version{ExCount: 1}
 	var wg sync.WaitGroup
 	for range 16 {
 		wg.Go(func() {
-			if _, err := c.get(t.Context(), k, compute); err != nil {
+			if _, err := c.get(t.Context(), id, ver, compute); err != nil {
 				t.Errorf("get: %v", err)
 			}
 		})
@@ -322,7 +322,7 @@ func TestTimelineCache_BuildPanicIsLoggedAndReturned(t *testing.T) {
 func TestDigestCache_ComputePanicIsLoggedAndReturned(t *testing.T) {
 	obs, logs := observer.New(zap.ErrorLevel)
 	c := newDigestCacheCtx(t.Context(), zap.New(obs), 8)
-	_, err := c.get(t.Context(), digestKey{ident("k"), store.Version{ExCount: 1}}, func(context.Context) (timeline.Digest, error) {
+	_, err := c.get(t.Context(), ident("k"), store.Version{ExCount: 1}, func(context.Context) (digestMemo, error) {
 		panic("boom")
 	})
 	if err == nil || !strings.Contains(err.Error(), "panicked") {

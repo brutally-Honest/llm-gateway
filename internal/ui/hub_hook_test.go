@@ -542,13 +542,11 @@ func TestHub_HookRefreshSendsSessionSummary(t *testing.T) {
 	if ev.event != "session" {
 		t.Fatalf("first event after the hook = %q, want session", ev.event)
 	}
-	var got, want sessionSummary
-	if err := json.Unmarshal([]byte(ev.data), &got); err != nil {
-		t.Fatal(err)
-	}
+	var want sessionSummary
 	if err := json.Unmarshal([]byte(e.reload()), &want); err != nil {
 		t.Fatal(err)
 	}
+	got := s.summaryUntil(ev, want)
 	if got.ID != sid() || got.ToolCalls != 1 || !reflect.DeepEqual(got, want) {
 		t.Fatalf("summary %+v != reload %+v", got, want)
 	}

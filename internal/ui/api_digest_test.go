@@ -85,7 +85,8 @@ func newDigestEnv(t *testing.T, rules map[string]ClientRules) *digestEnv {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = r.Close() })
-	d := Deps{Addr: addr, Reader: r, Rules: rules, Now: func() time.Time { return baseTime.Add(100 * time.Second) }}
+	d := Deps{Addr: addr, Reader: r, Rules: rules, Digests: newDigestCache(digestCacheSize),
+		Now: func() time.Time { return baseTime.Add(100 * time.Second) }}
 	return &digestEnv{apiEnv: &apiEnv{t: t, s: s, dir: dir, h: Handler(d)}, d: d}
 }
 
@@ -122,9 +123,19 @@ func (e *digestEnv) call(id string, at int, errs, in int, msgs ...string) {
 	}
 }
 
+// freshPage reads a page after the digest recomputes it asks for have landed: the first
+// read may serve a digest older than the store and start a recompute; once that settles,
+// the second read is at the store's version.
+func (e *digestEnv) freshPage(path string) page {
+	e.t.Helper()
+	e.page(path)
+	settle(e.t, e.d.Digests)
+	return e.page(path)
+}
+
 func (e *digestEnv) summary() map[string]any {
 	e.t.Helper()
-	p := e.page("/api/sessions")
+	p := e.freshPage("/api/sessions")
 	if len(p.Items) != 1 {
 		e.t.Fatalf("items = %d", len(p.Items))
 	}
@@ -316,7 +327,7 @@ func TestSummary_Sources(t *testing.T) {
 	if err := e.s.SaveHook(t.Context(), &rec2); err != nil {
 		t.Fatal(err)
 	}
-	for _, it := range e.page("/api/sessions").Items {
+	for _, it := range e.freshPage("/api/sessions").Items {
 		calls, hooks := it["has_calls"], it["has_hooks"]
 		switch it["session_key"] {
 		case "k":
@@ -340,9 +351,16 @@ func TestHub_SessionEventCarriesNewTitle(t *testing.T) {
 		t.Fatalf("before: %+v, %v", m.Summary, err)
 	}
 	e.call("b", 2, 0, 0, "user:"+titlePrompt, `assistant:{"title":"New title"}`)
+	// The first read after the write serves the cached digest at once and says so; the
+	// hub's catch-up then sends the recomputed one.
 	m, err = readLive(t.Context(), e.d, who, nil, true, false)
-	if err != nil || m.Summary == nil || m.Summary.Title != "New title" {
-		t.Fatalf("after: %+v, %v", m.Summary, err)
+	if err != nil || m.Summary == nil || m.Summary.Title != "hello" || !m.StaleSummary {
+		t.Fatalf("right after the write: %+v stale=%v, %v; want the cached title, flagged stale", m.Summary, m.StaleSummary, err)
+	}
+	settle(t, e.d.Digests)
+	m, err = readLive(t.Context(), e.d, who, nil, true, false)
+	if err != nil || m.Summary == nil || m.Summary.Title != "New title" || m.StaleSummary {
+		t.Fatalf("after: %+v stale=%v, %v", m.Summary, m.StaleSummary, err)
 	}
 	snap, err := readSnapshot(t.Context(), e.d, who.id())
 	if err != nil || len(snap.Sessions) != 1 || snap.Sessions[0].Title != "New title" {

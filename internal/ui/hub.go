@@ -65,7 +65,15 @@ type liveMsg struct {
 	// Position is how far into the store the build behind Exchanges and All reaches.
 	// A stream drops a message built from less than its snapshot saw.
 	Position eventPositionJSON
+	// StaleSummary and StaleEntries report that the summary or the entries were served
+	// from a cache older than the store; the hub then sends a catch-up once the rebuild
+	// lands. They never reach a stream.
+	StaleSummary, StaleEntries bool
 }
+
+// freshFn waits until the caches hold the session at the store's current version: the
+// digest, and the timeline build too when entries is true. Tests replace it.
+type freshFn func(ctx context.Context, who sessIdent, entries bool) error
 
 // readFn reads what a batch of commits to one session needs: the summary and/or the
 // entries of the exchanges with these request ids, in row id order.
@@ -92,6 +100,7 @@ type Hub struct {
 	digests   *DigestCache
 	read      readFn
 	snap      snapFn
+	fresh     freshFn
 	heartbeat time.Duration
 	hookEvery time.Duration
 
@@ -110,6 +119,9 @@ type Hub struct {
 	subs map[*subscriber]struct{}
 	// pending holds one refresh timer per session with hook events not yet re-read.
 	pending map[sessIdent]*pendingRefresh
+	// catching holds the sessions with a catch-up waiting on a rebuild, and whether it
+	// must resend entries as well as the summary.
+	catching map[sessIdent]bool
 }
 
 // NewHub returns a running hub that reads from d.Reader.
@@ -139,8 +151,8 @@ func newHub(d Deps, queue int) *Hub {
 	}
 	h := &Hub{
 		log: log, timelines: d.Timelines, digests: d.Digests, heartbeat: heartbeatEvery, hookEvery: hookRefreshEvery,
-		pending: map[sessIdent]*pendingRefresh{},
-		q:       make(chan capture.Committed, queue), done: make(chan struct{}),
+		pending: map[sessIdent]*pendingRefresh{}, catching: map[sessIdent]bool{},
+		q: make(chan capture.Committed, queue), done: make(chan struct{}),
 		subs: map[*subscriber]struct{}{},
 	}
 	h.ctx, h.cancel = ctx, cancel
@@ -149,6 +161,9 @@ func newHub(d Deps, queue int) *Hub {
 	}
 	h.snap = func(ctx context.Context, session string) (snapshot, error) {
 		return readSnapshot(ctx, d, session)
+	}
+	h.fresh = func(ctx context.Context, who sessIdent, entries bool) error {
+		return waitFresh(ctx, d, who, entries)
 	}
 	return h
 }
@@ -427,6 +442,114 @@ func (h *Hub) readAndSend(who sessIdent, ids []string, global, session, refresh 
 			h.send(s, liveMsg{Summary: m.Summary, Exchanges: m.Exchanges, All: m.All, Inactive: m.Inactive, Refresh: refresh, Position: m.Position})
 		}
 	}
+	if m.StaleSummary || m.StaleEntries {
+		h.catchUp(who, m.StaleEntries)
+	}
+}
+
+// catchUp sends a session's watchers what a stale read left out. It waits, off the
+// dispatcher, for the rebuild the stale read asked for, then re-reads and sends it: the
+// summary, and when entries were stale a refresh with every exchange that differs from
+// what a stream last sent. A session has at most one catch-up waiting; a read that is
+// stale again arms the next, so once writes stop the last one sends the store as it is.
+func (h *Hub) catchUp(who sessIdent, entries bool) {
+	h.mu.Lock()
+	select {
+	case <-h.done:
+		h.mu.Unlock()
+		return
+	default:
+	}
+	if armed, ok := h.catching[who]; ok {
+		h.catching[who] = armed || entries
+		h.mu.Unlock()
+		return
+	}
+	h.catching[who] = entries
+	h.mu.Unlock()
+	logging.Go(h.log, "ui_hub_catchup", func() error {
+		ctx, cancel := context.WithTimeout(h.ctx, buildTimeout)
+		err := h.fresh(ctx, who, entries)
+		cancel()
+		h.mu.Lock()
+		entries = h.catching[who]
+		delete(h.catching, who)
+		h.mu.Unlock()
+		if err != nil {
+			if h.ctx.Err() == nil {
+				h.log.Warn("ui hub catch-up failed", zap.Error(err))
+			}
+			return nil
+		}
+		h.sendMu.Lock()
+		defer h.sendMu.Unlock()
+		select {
+		case <-h.done:
+			return nil
+		default:
+		}
+		global, session := h.watchers(who.id())
+		switch {
+		case entries && session:
+			h.readAndSend(who, nil, global, session, true)
+		case global || session:
+			h.resendSummary(who)
+		}
+		return nil
+	})
+}
+
+// resendSummary reads a session's summary and sends it to every stream that watches the
+// session, global and session streams alike. A failed read drops them, as readAndSend
+// does. sendMu is held.
+func (h *Hub) resendSummary(who sessIdent) {
+	id := who.id()
+	ctx, cancel := context.WithTimeout(h.ctx, storeTimeout)
+	m, err := h.read(ctx, who, nil, true, false)
+	cancel()
+	targets := append(h.targets(id, true), h.targets(id, false)...)
+	if err != nil {
+		if h.ctx.Err() == nil {
+			h.log.Warn("ui hub read failed", zap.Error(err))
+		}
+		for _, s := range targets {
+			h.unsubscribe(s)
+			s.drop()
+		}
+		return
+	}
+	if m.Summary != nil {
+		for _, s := range targets {
+			h.send(s, liveMsg{Summary: m.Summary})
+		}
+	}
+	if m.StaleSummary {
+		h.catchUp(who, false)
+	}
+}
+
+// waitFresh is the production freshFn: it waits for the session's digest at the store's
+// current version, computing it if no compute is under way.
+func waitFresh(ctx context.Context, d Deps, who sessIdent, entries bool) error {
+	if d.Reader == nil {
+		return errors.New("ui: no reader")
+	}
+	c := d.Reader.WithContext(ctx)
+	ident := store.SessionIdent{Principal: who.principal, Client: who.client, Key: who.name}
+	vers, err := c.SessionVersions([]store.SessionIdent{ident})
+	if err != nil {
+		return err
+	}
+	if d.Digests != nil {
+		row, err := c.SessionByKey(who.principal, who.client, who.name)
+		if err != nil {
+			return err
+		}
+		if _, err := d.Digests.get(ctx, ident, vers[ident], d.digestCompute(row)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // readLive is the production readFn: the summary needs SessionStats only; the entries
@@ -442,11 +565,11 @@ func readLive(ctx context.Context, d Deps, who sessIdent, ids []string, summary,
 		row, err := c.SessionByKey(who.principal, who.client, who.name)
 		switch {
 		case err == nil:
-			s, err := d.summarize(ctx, c, who.id(), row, d.now())
+			s, stale, err := d.summarize(ctx, c, who.id(), row, d.now())
 			if err != nil {
 				return liveMsg{}, err
 			}
-			m.Summary = &s
+			m.Summary, m.StaleSummary = &s, stale
 		case !errors.Is(err, store.ErrNotFound):
 			return liveMsg{}, err
 		}
@@ -550,6 +673,16 @@ type snapshot struct {
 	// Position, the exchange row and hook event ids it reaches.
 	Version  versionJSON
 	Position eventPositionJSON
+	// Stale lists what the snapshot served from a cache older than the store. The stream
+	// asks the hub to catch each one up after it sends the snapshot.
+	Stale []staleRead
+}
+
+// staleRead is a session a read served from an older cache: its summary, and its entries
+// too when entries is true.
+type staleRead struct {
+	who     sessIdent
+	entries bool
 }
 
 // snapFn reads the connect snapshot; session "" is the global stream. Tests replace it.
@@ -567,11 +700,14 @@ func readSnapshot(ctx context.Context, d Deps, session string) (snapshot, error)
 		row, err := c.SessionByKey(principal, client, key)
 		switch {
 		case err == nil:
-			s, err := d.summarize(ctx, c, session, row, d.now())
+			s, stale, err := d.summarize(ctx, c, session, row, d.now())
 			if err != nil {
 				return snapshot{}, err
 			}
 			out.Sessions = append(out.Sessions, s)
+			if stale {
+				out.Stale = append(out.Stale, staleRead{who: who})
+			}
 		case !errors.Is(err, store.ErrNotFound):
 			return snapshot{}, err
 		}
@@ -588,9 +724,13 @@ func readSnapshot(ctx context.Context, d Deps, session string) (snapshot, error)
 	for i, row := range rows {
 		ids[i] = sessionID(row)
 	}
-	sums, err := d.summarizeRows(ctx, c, ids, rows, d.now())
+	sums, stale, err := d.summarizeRows(ctx, c, ids, rows, d.now())
 	if err != nil {
 		return snapshot{}, err
 	}
-	return snapshot{Sessions: sums}, nil
+	out := snapshot{Sessions: sums}
+	for _, s := range stale {
+		out.Stale = append(out.Stale, staleRead{who: sessIdent{s.Principal, s.Client, s.Key}})
+	}
+	return out, nil
 }

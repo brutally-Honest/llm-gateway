@@ -28,6 +28,7 @@ type streamEnv struct {
 	*apiEnv
 	hub *Hub
 	ts  *httptest.Server
+	d   Deps
 }
 
 // newStreamEnv serves the real handler, store and hub on a real listener.
@@ -53,6 +54,9 @@ func newStreamEnvRules(t *testing.T, tune func(*Hub), rules map[string]ClientRul
 	ts := httptest.NewUnstartedServer(nil)
 	d := Deps{Addr: ts.Listener.Addr().String(), Reader: r, Rules: rules, Now: func() time.Time { return baseTime.Add(100 * time.Second) }}
 	h := newHub(d, hubQueueSize)
+	// The handler shares the hub's caches, as cmd/gateway wires them; their computes run
+	// on the hub's context, which Close cancels.
+	d.Digests, d.Timelines = h.Digests(), h.Timelines()
 	if tune != nil {
 		tune(h)
 	}
@@ -61,7 +65,7 @@ func newStreamEnvRules(t *testing.T, tune func(*Hub), rules map[string]ClientRul
 	ts.Config.Handler = newRouter(d)
 	ts.Start()
 	t.Cleanup(func() { h.Close(); ts.Close() })
-	return &streamEnv{apiEnv: &apiEnv{t: t, s: s, dir: dir, h: ts.Config.Handler}, hub: h, ts: ts}
+	return &streamEnv{apiEnv: &apiEnv{t: t, s: s, dir: dir, h: ts.Config.Handler}, hub: h, ts: ts, d: d}
 }
 
 // open starts a stream whose nextData skips an empty hooks event, so tests that predate the
@@ -977,11 +981,11 @@ func TestLive_SessionHeaderMatchesReloadAfterCommits(t *testing.T) {
 	if ev.event != "session" {
 		t.Fatalf("first live event = %q, want session before entries", ev.event)
 	}
-	got := sessionSummaries(t, []sseEvent{ev})[0]
 	var want sessionSummary
 	if err := json.Unmarshal([]byte(e.reload()), &want); err != nil {
 		t.Fatal(err)
 	}
+	got := s.summaryUntil(ev, want)
 	if got.ToolCalls != 2 || got.ExchangeCount != 3 || !reflect.DeepEqual(got, want) {
 		t.Fatalf("live header %+v != reload %+v", got, want)
 	}
@@ -996,8 +1000,34 @@ func TestLive_SessionHeaderMatchesReloadAfterCommits(t *testing.T) {
 	}
 }
 
-// reload fetches the session summary over HTTP, as a page reload does.
+// summaryUntil reads session events from first on, skipping other events, until one
+// equals want, and returns it. A live summary served from an older digest is followed by
+// a catch-up once the recompute lands, with no further commit; a stream that never gets
+// there fails on the read timeout.
+func (s *sse) summaryUntil(first sseEvent, want sessionSummary) sessionSummary {
+	s.t.Helper()
+	ev := first
+	for {
+		if ev.event == "session" {
+			got := sessionSummaries(s.t, []sseEvent{ev})[0]
+			if reflect.DeepEqual(got, want) {
+				return got
+			}
+		}
+		ev = s.nextData()
+	}
+}
+
+// reload fetches the session summary over HTTP, as a page reload does, once the digest
+// recompute a first read may ask for has landed, so it is at the store's version.
 func (e *streamEnv) reload() string {
+	e.t.Helper()
+	e.getSummary()
+	settle(e.t, e.hub.Digests())
+	return e.getSummary()
+}
+
+func (e *streamEnv) getSummary() string {
 	e.t.Helper()
 	resp, err := http.Get(e.ts.URL + "/api/sessions/" + sid())
 	if err != nil {

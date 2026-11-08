@@ -66,7 +66,7 @@ func (h *Hub) serve(w http.ResponseWriter, r *http.Request, session string) {
 	hd.Set("Content-Type", "text/event-stream")
 	hd.Set("Cache-Control", "no-cache")
 	w.WriteHeader(http.StatusOK)
-	sent, from, ok := h.sendSnapshot(w, r, rc, session)
+	sent, from, stale, ok := h.sendSnapshot(w, r, rc, session)
 	if !ok {
 		return
 	}
@@ -74,6 +74,11 @@ func (h *Hub) serve(w http.ResponseWriter, r *http.Request, session string) {
 	// snapshot is complete.
 	if _, err := fmt.Fprint(w, ": open\n\n"); err != nil || rc.Flush() != nil {
 		return
+	}
+	// A snapshot served from an older cache is caught up once the rebuild lands: this
+	// stream is subscribed, so it gets everything after the snapshot's position.
+	for _, st := range stale {
+		h.catchUp(st.who, st.entries)
 	}
 	tick := time.NewTicker(h.heartbeat)
 	defer tick.Stop()
@@ -99,14 +104,15 @@ func (h *Hub) serve(w http.ResponseWriter, r *http.Request, session string) {
 
 // sendSnapshot writes the connect snapshot straight to the response, outside the
 // subscriber buffer. On a read failure it sends snapshot_error and reports false. It returns
-// this stream's sent-record: per exchange, the hash of the entry list just sent (AC54).
-func (h *Hub) sendSnapshot(w http.ResponseWriter, r *http.Request, rc *http.ResponseController, session string) (map[string]string, eventPositionJSON, bool) {
+// this stream's sent-record: per exchange, the hash of the entry list just sent (AC54),
+// and the sessions the snapshot served from an older cache.
+func (h *Hub) sendSnapshot(w http.ResponseWriter, r *http.Request, rc *http.ResponseController, session string) (map[string]string, eventPositionJSON, []staleRead, bool) {
 	ctx, cancel := storeCtx(r)
 	defer cancel()
 	snap, err := h.snap(ctx, session)
 	if err != nil {
 		if errors.Is(err, context.Canceled) && r.Context().Err() != nil {
-			return nil, eventPositionJSON{}, false
+			return nil, eventPositionJSON{}, nil, false
 		}
 		code, msg := "store_error", "the store could not be read"
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -116,15 +122,15 @@ func (h *Hub) sendSnapshot(w http.ResponseWriter, r *http.Request, rc *http.Resp
 		_, werr := fmt.Fprintf(w, "retry: %d\nevent: snapshot_error\ndata: %s\n\n", snapshotRetryMS, b)
 		_ = werr
 		_ = rc.Flush()
-		return nil, eventPositionJSON{}, false
+		return nil, eventPositionJSON{}, nil, false
 	}
 	for i := range snap.Sessions {
 		b, err := json.Marshal(snap.Sessions[i])
 		if err != nil {
-			return nil, eventPositionJSON{}, false
+			return nil, eventPositionJSON{}, nil, false
 		}
 		if _, err := fmt.Fprintf(w, "event: session\ndata: %s\n\n", b); err != nil {
-			return nil, eventPositionJSON{}, false
+			return nil, eventPositionJSON{}, nil, false
 		}
 	}
 	sent := make(map[string]string, len(snap.Exchanges))
@@ -132,13 +138,13 @@ func (h *Hub) sendSnapshot(w http.ResponseWriter, r *http.Request, rc *http.Resp
 		sent[x.RequestID] = x.Hash
 		b, err := json.Marshal(x.Entries)
 		if err != nil {
-			return nil, eventPositionJSON{}, false
+			return nil, eventPositionJSON{}, nil, false
 		}
 		if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", exchangeEvent(x), b); err != nil {
-			return nil, eventPositionJSON{}, false
+			return nil, eventPositionJSON{}, nil, false
 		}
 	}
-	return sent, snap.Position, rc.Flush() == nil
+	return sent, snap.Position, snap.Stale, rc.Flush() == nil
 }
 
 // exchangeEvent is the SSE event that carries x's whole entry list: "hooks" for the hooks
