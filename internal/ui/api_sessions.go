@@ -225,16 +225,34 @@ func sessionIdent(row store.SessionRow) store.SessionIdent {
 func (d Deps) digestCompute(row store.SessionRow) func(context.Context) (digestMemo, error) {
 	rules := d.Rules[row.Client]
 	return func(bctx context.Context) (digestMemo, error) {
-		dg, err := sessionDigest(d.Reader.WithContext(bctx), rules, row)
-		return digestMemo{digest: dg}, err
+		return computeMemo(d.Reader.WithContext(bctx), rules, row)
 	}
 }
 
+// computeMemo computes a session's stats and digest from one read of its exchanges, with
+// each exchange's events loaded once for both.
+func computeMemo(src timeline.Source, rules ClientRules, row store.SessionRow) (digestMemo, error) {
+	exs, err := src.SessionExchanges(row.PrincipalID, row.Client, row.SessionKey)
+	if err != nil {
+		return digestMemo{}, err
+	}
+	once := &eventsOnce{Source: src, exs: exs, events: map[string][]store.EventRow{}}
+	st, err := timeline.SessionStats(once, row)
+	if err != nil {
+		return digestMemo{}, err
+	}
+	dg, err := sessionDigest(once, rules, row)
+	if err != nil {
+		return digestMemo{}, err
+	}
+	return digestMemo{digest: dg, stats: st}, nil
+}
+
 // summarizeRows builds the summaries of rows (ids[i] is rows[i]'s id). The versions of
-// the whole page come from one read. Digests come from the cache and never wait for a
-// recompute when the session has one cached: a summary carries the version its digest was
-// computed at, and stale lists the sessions whose digest is older than the store. Stats
-// and the clock-dependent values are always fresh.
+// the whole page come from one read. Stats and digests come from the cache and never wait
+// for a recompute when the session has them cached: a summary carries the version they
+// were computed at, and stale lists the sessions whose memo is older than the store. The
+// session row's counts and the clock-dependent values are always fresh.
 func (d Deps) summarizeRows(ctx context.Context, c *store.CtxReader, ids []string, rows []store.SessionRow, now time.Time) ([]sessionSummary, []store.SessionIdent, error) {
 	idents := make([]store.SessionIdent, len(rows))
 	for i, r := range rows {
@@ -247,26 +265,22 @@ func (d Deps) summarizeRows(ctx context.Context, c *store.CtxReader, ids []strin
 	out := make([]sessionSummary, 0, len(rows))
 	var stale []store.SessionIdent
 	for i, row := range rows {
-		st, err := timeline.SessionStats(c, row)
-		if err != nil {
-			return nil, nil, err
-		}
 		ver := vers[idents[i]]
-		var dg timeline.Digest
+		var memo digestMemo
 		if d.Digests != nil && d.Reader != nil {
 			hit, err := d.Digests.latest(ctx, idents[i], ver, d.digestCompute(row))
 			if err != nil {
 				return nil, nil, err
 			}
-			dg = hit.memo.digest
+			memo = hit.memo
 			if hit.ver != ver {
 				stale = append(stale, idents[i])
 				ver = hit.ver
 			}
-		} else if dg, err = sessionDigest(c, d.Rules[row.Client], row); err != nil {
+		} else if memo, err = computeMemo(c, d.Rules[row.Client], row); err != nil {
 			return nil, nil, err
 		}
-		sum := buildSummary(ids[i], row, st, dg, now)
+		sum := buildSummary(ids[i], row, memo.stats, memo.digest, now)
 		vj, pj := versionToJSON(ver), positionOf(ver)
 		sum.Version, sum.EventPosition = &vj, &pj
 		out = append(out, sum)

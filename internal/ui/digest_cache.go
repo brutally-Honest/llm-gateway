@@ -17,9 +17,12 @@ import (
 // digestCacheSize bounds the digest cache.
 const digestCacheSize = 512
 
-// digestMemo is what the cache keeps for a session at one store version.
+// digestMemo is what the cache keeps for a session at one store version: its digest and
+// its stats, computed from one read of its exchanges and events. The stats are never
+// changed after the memo is stored, so they are shared, not copied.
 type digestMemo struct {
 	digest timeline.Digest
+	stats  timeline.Stats
 }
 
 // digestEntry is a session's latest computed memo and the version it was computed at.

@@ -227,3 +227,46 @@ func TestStream_GlobalSnapshotFromCacheThenCatchesUp(t *testing.T) {
 		}
 	}
 }
+
+// The stats come from the memo with the digest: while a recompute is held, a summary
+// shows the cached version's model calls, not a fresh count, so a list row costs no
+// stats pass; once the recompute lands they are the store's.
+func TestSummary_StatsComeFromTheMemo(t *testing.T) {
+	e := newCacheEnv(t, 8)
+	e.call("a", 1, 0, 1, "user:hello")
+	e.summary() // cached at version 1
+	e.call("b", 2, 0, 1, "user:hello", "assistant:ok", "user:next")
+	release := heldCompute(t, e.d, e.cache)
+	rec := noWait(t, "summary", func() *httptest.ResponseRecorder { return e.get("/api/sessions/" + sid()) })
+	var sum sessionSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &sum); err != nil {
+		t.Fatal(err)
+	}
+	if sum.ModelCalls != 1 || sum.Usage.Calls != 1 || sum.Version == nil || sum.Version.Exchanges != 1 {
+		t.Fatalf("held summary: model calls %d, usage calls %d at %+v; want the memo's 1 at version 1",
+			sum.ModelCalls, sum.Usage.Calls, sum.Version)
+	}
+	release()
+	if s := e.summary(); s["model_calls"] != float64(2) {
+		t.Fatalf("after the recompute: model calls = %v, want 2", s["model_calls"])
+	}
+}
+
+// One memo compute reads each exchange's events once for the stats and the digest.
+func TestComputeMemo_LoadsEventsOnce(t *testing.T) {
+	e := withRules(t)
+	e.call("a", 1, 1, 1, "user:start")
+	e.call("b", 2, 0, 1, "user:start", "assistant:ok", "user:next")
+	src := &countingSource{CtxReader: e.d.Reader.WithContext(t.Context()), reads: map[string]int{}}
+	row := store.SessionRow{PrincipalID: core.PrincipalLocal, Client: "cc", SessionKey: "k"}
+	m, err := computeMemo(src, testRules{}, row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.stats.ModelCalls != 2 || m.stats.Errors != 1 || m.digest.MainErrors != 1 {
+		t.Fatalf("memo = %+v", m)
+	}
+	if len(src.reads) != 2 || src.reads["a"] != 1 || src.reads["b"] != 1 {
+		t.Fatalf("events reads = %v, want each exchange once", src.reads)
+	}
+}
