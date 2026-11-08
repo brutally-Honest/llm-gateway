@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -129,22 +130,23 @@ func (d Deps) getExchange(w http.ResponseWriter, r *http.Request) {
 	if ex.SessionKey != "" {
 		out.SessionID = sessionID(store.SessionRow{PrincipalID: ex.PrincipalID, Client: ex.Client, SessionKey: ex.SessionKey})
 	}
-	if err := d.fillDrawer(c, ex, &out); err != nil {
+	if err := d.fillDrawer(ctx, c, ex, &out); err != nil {
 		writeStoreErr(w, err)
 		return
 	}
 	writeJSON(w, out)
 }
 
-// fillDrawer adds the thread, message and reply facts. It reads the whole session to
-// place the call among its threads; a section it cannot build gets a reason instead.
-func (d Deps) fillDrawer(c *store.CtxReader, ex store.ExchangeRow, out *exchangeJSON) error {
+// fillDrawer adds the thread, message and reply facts. It places the call among its
+// session's threads from the session's build; a section it cannot build gets a reason
+// instead.
+func (d Deps) fillDrawer(ctx context.Context, c *store.CtxReader, ex store.ExchangeRow, out *exchangeJSON) error {
 	out.Messages, out.ResponseToolCallIDs = []exchangeMessageJSON{}, []string{}
 	who := sessIdent{ex.PrincipalID, ex.Client, ex.SessionKey}
 	var bs builtSession
 	var err error
 	if ex.SessionKey != "" {
-		bs, err = buildSession(c, who, d.Rules[ex.Client], 1)
+		bs, err = d.drawerBuild(ctx, c, who, ex.RequestID)
 	} else {
 		bs, err = buildFrom(c, who, []store.ExchangeRow{ex}, d.Rules[ex.Client], 1)
 	}
@@ -247,4 +249,33 @@ func (d Deps) getBody(w http.ResponseWriter, r *http.Request) {
 	}
 	h.Set("Content-Length", strconv.Itoa(len(body)))
 	_, _ = w.Write(body)
+}
+
+// drawerBuild is the session build a call's detail reads its thread facts from. Like the
+// timeline, the digest and the snapshot, it is the cached build when one is, so a slow
+// rebuild under live traffic never holds the detail (F9). It waits only when nothing is
+// cached, or when this call is newer than the cached build and so has no facts there.
+func (d Deps) drawerBuild(ctx context.Context, c *store.CtxReader, who sessIdent, id string) (builtSession, error) {
+	rules := d.Rules[who.client]
+	if d.Timelines == nil {
+		return buildSessionFn(c, who, rules, 1)
+	}
+	ident := store.SessionIdent{Principal: who.principal, Client: who.client, Key: who.name}
+	vers, err := c.SessionVersions([]store.SessionIdent{ident})
+	if err != nil {
+		return builtSession{}, err
+	}
+	ver := vers[ident]
+	cb, err := d.Timelines.latest(ctx, ident, ver, d.timelineBuild(who))
+	if err != nil {
+		return builtSession{}, err
+	}
+	if _, ok := cb.bs.byID[id]; ok || !versionAfter(ver, cb.ver) {
+		return cb.bs, nil
+	}
+	cb, err = d.Timelines.get(ctx, ident, ver, d.timelineBuild(who))
+	if err != nil {
+		return builtSession{}, err
+	}
+	return cb.bs, nil
 }

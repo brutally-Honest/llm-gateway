@@ -46,6 +46,9 @@ type sessionSource interface {
 	SessionSnapshot(principal, client, key string) ([]store.RowExchange, int64, error)
 }
 
+// buildSessionFn is how every caller builds a session; tests replace it with a slow build.
+var buildSessionFn = buildSession
+
 // buildSession reads a session's exchanges in one snapshot and builds it.
 func buildSession(c sessionSource, who sessIdent, rules ClientRules, cut int) (builtSession, error) {
 	rows, _, err := c.SessionSnapshot(who.principal, who.client, who.name)

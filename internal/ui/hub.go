@@ -684,7 +684,7 @@ func sessionExchanges(ctx context.Context, d Deps, who sessIdent) ([]liveExchang
 	stale := false
 	var bs builtSession
 	if d.Timelines == nil {
-		bs, err = buildSession(d.Reader.WithContext(ctx), who, rules, entryCut)
+		bs, err = buildSessionFn(d.Reader.WithContext(ctx), who, rules, entryCut)
 	} else {
 		var cb *cachedBuild
 		cb, err = d.Timelines.latest(ctx, ident, ver, d.timelineBuild(who))
@@ -731,7 +731,7 @@ func sessionExchanges(ctx context.Context, d Deps, who sessIdent) ([]liveExchang
 func (d Deps) timelineBuild(who sessIdent) func(context.Context) (builtSession, error) {
 	rules := d.Rules[who.client]
 	return func(bctx context.Context) (builtSession, error) {
-		return buildSession(d.Reader.WithContext(bctx), who, rules, entryCut)
+		return buildSessionFn(d.Reader.WithContext(bctx), who, rules, entryCut)
 	}
 }
 
