@@ -1,0 +1,6 @@
+Spec: specs/013-web-ui-redesign (manual check 013-web-ui.md step 13)
+Results on the seeded 2,000-call session: fixed build, active with --live: first card
+141-188 ms, settled 478-626 ms, 3 rebuilds (a cold first run waits ~2.8 s on the server
+build). Old build, idle session: first card 114-163 ms, settled 1.6-1.9 s, 7 rebuilds;
+old build on an active session never shows a card within 30 s (exits 1).
+Trade-off: kills Chrome by process group (google-chrome is a wrapper script).
