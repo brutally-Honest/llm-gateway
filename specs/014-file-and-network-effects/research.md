@@ -111,6 +111,10 @@ Build decisions (2026-11-08, made during the build outside the kit; say if you w
   and parallel tests collided; the tests' assertions are unchanged.
 - B8 (T009) — The proxy listeners are started only when capture is on: network effects need
   the store. With capture off, `effects.network` binds nothing.
+- B9 (T011) — The 010 `hooks print` tests describe the hooks-only document, which AC12 now
+  prints with network effects off. Their helper sets `GATEWAY_EFFECTS_NETWORK_ENABLED=false`
+  unless a test sets it; every 010 assertion is unchanged. `ANTHROPIC_BASE_URL` is
+  `listen_addr` plus the Anthropic adapter's prefix (`/anthropic`).
 
 Karthik's answers (2026-11-08):
 - K1 → changed: snapshots saved in SQLite with batched, per-checkpoint transactions (D14).

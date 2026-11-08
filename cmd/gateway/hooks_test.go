@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"strings"
 	"testing"
@@ -9,6 +10,12 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/clients/claudecode"
 )
 
+// networkKey turns the network sensor on or off for hooks print (spec 014).
+const networkKey = "GATEWAY_EFFECTS_NETWORK_ENABLED"
+
+// hooksPrint runs `gateway hooks print`. The 010 tests read the hooks-only document,
+// which spec 014 prints with network effects off, so the network sensor is off unless
+// env sets it.
 func hooksPrint(t *testing.T, env map[string]string, args ...string) (int, string) {
 	t.Helper()
 	var out syncBuffer
@@ -16,6 +23,9 @@ func hooksPrint(t *testing.T, env map[string]string, args ...string) (int, strin
 		args: append([]string{"hooks", "print"}, args...),
 		lookupEnv: func(n string) (string, bool) {
 			v, ok := env[n]
+			if !ok && n == networkKey {
+				return "false", true
+			}
 			return v, ok
 		},
 		stdout: &out,
@@ -103,5 +113,69 @@ func TestHooksPrint_WritesNoFileExitsZero(t *testing.T) {
 	entries, _ := os.ReadDir(dir)
 	if len(entries) != 0 {
 		t.Errorf("files written: %v", entries)
+	}
+}
+
+// AC12: with network effects off, hooks print is byte for byte the hooks document of
+// 010; with them on it adds the env block and, unless sandbox is false, a sandbox block
+// pointing at the proxy ports, without socksProxyPort when SOCKS5 is off.
+func TestHooksPrint_SettingsDoc(t *testing.T) {
+	_, off := hooksPrint(t, nil)
+	if want := string(claudecode.HookSnippet("127.0.0.1:7197")); off != want {
+		t.Errorf("network off: output differs from the 010 hooks document\n%s", off)
+	}
+
+	type doc struct {
+		Hooks   map[string]any    `json:"hooks"`
+		Env     map[string]string `json:"env"`
+		Sandbox *struct {
+			Enabled bool           `json:"enabled"`
+			Network map[string]int `json:"network"`
+		} `json:"sandbox"`
+	}
+	parse := func(env map[string]string) doc {
+		t.Helper()
+		env[networkKey] = "true"
+		code, out := hooksPrint(t, env)
+		if code != 0 {
+			t.Fatalf("exit %d", code)
+		}
+		var d doc
+		if err := json.Unmarshal([]byte(out), &d); err != nil {
+			t.Fatalf("not valid JSON: %v\n%s", err, out)
+		}
+		return d
+	}
+	on := parse(map[string]string{})
+	wantEnv := map[string]string{
+		"ANTHROPIC_BASE_URL": "http://127.0.0.1:7197/anthropic",
+		"HTTPS_PROXY":        "http://127.0.0.1:7198",
+		"HTTP_PROXY":         "http://127.0.0.1:7198",
+		"NO_PROXY":           "127.0.0.1,localhost",
+	}
+	if len(on.Hooks) == 0 || !maps.Equal(on.Env, wantEnv) {
+		t.Errorf("network on: hooks %d, env %v; want the hooks and %v", len(on.Hooks), on.Env, wantEnv)
+	}
+	if on.Sandbox == nil || !on.Sandbox.Enabled || !maps.Equal(on.Sandbox.Network, map[string]int{"httpProxyPort": 7198, "socksProxyPort": 7195}) {
+		t.Errorf("network on: sandbox = %+v", on.Sandbox)
+	}
+
+	if d := parse(map[string]string{"GATEWAY_EFFECTS_NETWORK_SANDBOX": "false"}); d.Sandbox != nil || len(d.Env) != 4 {
+		t.Errorf("sandbox off: sandbox %+v, env %v; want no sandbox block and the env block", d.Sandbox, d.Env)
+	}
+
+	dir := t.TempDir()
+	path := dir + "/config.yaml"
+	if err := os.WriteFile(path, []byte("effects:\n  network:\n    socks_proxy_addr: \"\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{networkKey: "true"}
+	code, out := hooksPrint(t, env, "-config", path)
+	var d doc
+	if code != 0 || json.Unmarshal([]byte(out), &d) != nil {
+		t.Fatalf("SOCKS5 off: exit %d\n%s", code, out)
+	}
+	if d.Sandbox == nil || !maps.Equal(d.Sandbox.Network, map[string]int{"httpProxyPort": 7198}) {
+		t.Errorf("SOCKS5 off: sandbox = %+v, want httpProxyPort only", d.Sandbox)
 	}
 }
