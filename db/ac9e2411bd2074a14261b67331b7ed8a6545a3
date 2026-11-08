@@ -1,0 +1,5 @@
+Manual check 013 F4 (steps 2 and 3). Red first: all four tests failed on the old code
+(box kept its text on Esc; rows/turns stayed filtered after a search event).
+Tests: escInSessionFilterRestoresTheList, chromeSearchEventRestoresTheSessionList,
+escInTurnFilterRestoresTurnsAndKeepsCurrentInView, chromeSearchEventRestoresTheTurns.
+dom-stub fire() now passes an optional event object. make verify green.
