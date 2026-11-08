@@ -18,26 +18,43 @@ function rule(sel) {
   return out;
 }
 
-// The turn rail sits below the header and above the key bar at any window height, and
-// scrolls on its own: it used to stop at 80% of the window with dead space below
-// (013 manual check, F7). The header stays at the top so "below the header" holds while
-// the page scrolls.
-test("railStaysBetweenHeaderAndKeyBarAtAnyHeight", () => {
+// The turn rail is fixed from the header's bottom to the key bar's top, using their
+// measured heights, and scrolls on its own; the content is offset by its width. A sticky
+// rail misfit at the page's top and end (013 manual check, F7 then F7b). Below 760 px
+// wide the rail returns to normal flow, above the turns.
+test("railIsFixedBetweenHeaderAndKeyBar", () => {
   const rail = rule(".rail");
-  assert.equal(rail.position, "sticky");
+  assert.equal(rail.position, "fixed");
   assert.equal(rail.top, "var(--head-h)");
-  assert.equal(rail["max-height"], "calc(100vh - var(--head-h) - var(--keybar-h))");
+  assert.equal(rail.bottom, "var(--keybar-h)");
+  assert.equal(rail.width, "var(--rail-w)");
   assert.equal(rail["overflow-y"], "auto");
+  assert.equal(rail["max-height"], undefined, "no computed height: top and bottom set it");
+  assert.equal(rule(".timeline-layout")["padding-left"], "calc(var(--rail-w) + 1rem)", "the content clears the rail");
   const head = rule("header");
   assert.equal(head.position, "sticky");
   assert.equal(head.top, "0");
   const root = rule(":root");
   assert.match(root["--head-h"] || "", /^\d/, "a fallback header height before the shell measures it");
   assert.match(root["--keybar-h"] || "", /^\d/, "a fallback key bar height");
+  assert.match(root["--rail-w"] || "", /^\d/, "the rail's width");
+});
+
+test("narrowWindowPutsTheRailBackInFlow", () => {
+  const m = css.match(/@media \(max-width: 760px\) \{([\s\S]*?)\n\}/);
+  assert.ok(m, "style.css has a 760px media block");
+  const inner = (sel) => {
+    const r = m[1].match(new RegExp(`${sel.replace(".", "\\.")}\\s*\\{([^}]*)\\}`));
+    assert.ok(r, `the media block styles ${sel}`);
+    return r[1];
+  };
+  assert.match(inner(".rail"), /position:\s*static/);
+  assert.match(inner(".rail"), /order:\s*-1/, "the rail comes before the turns");
+  assert.match(inner(".timeline-layout"), /padding-left:\s*0/);
 });
 
 // The header and the key bar can wrap to two lines, so the shell measures them and
-// publishes their heights for the rail's sticky offset and height.
+// publishes their heights, which place the fixed rail between them.
 test("shellPublishesHeaderAndKeyBarHeights", async () => {
   installDom();
   const watched = new Map();
