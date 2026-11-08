@@ -18,6 +18,9 @@ export class StubElement {
   append(...nodes) {
     this.children.push(...nodes);
   }
+  prepend(...nodes) {
+    this.children.unshift(...nodes);
+  }
   replaceChildren(...nodes) {
     this.children = [...nodes];
   }

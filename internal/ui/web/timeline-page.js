@@ -25,6 +25,13 @@ function button(label, onClick) {
   return b;
 }
 
+// bucketSig names what an effects bucket holds; effects only ever append, so the count and
+// the last id tell a changed bucket from an unchanged one.
+function bucketSig(b) {
+  const n = b.items.length;
+  return `${n}:${n ? b.items[n - 1].id : 0}`;
+}
+
 function contextText(c) {
   if (!c || c.value === null) return "—";
   return `${c.partial ? "~" : ""}${c.value}`;
@@ -92,6 +99,8 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
   const headEls = new Map(); // turn number -> its heading, where focus falls back to
 
   const open = new Set(); // section keys and hook toggles that stay open across redraws
+  const fxRows = new Map(); // effects key -> { sig, update(bucket) } of each drawn effects row
+  let drawnCards = []; // { card, node } of each card in the list, in order
   let data = { summary: null, entries: [], effects: [], error: "", snapshotError: "" };
   let tool = "";
   let built = null;
@@ -310,20 +319,30 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
   }
 
   // effectsRow is one folded row of a turn's effects, with its counts; it expands to the
-  // files, then the connections (AC14). Only its own box redraws on a toggle.
+  // files, then the connections (AC14). Only its own box redraws on a toggle, and on a live
+  // effects update that changes its bucket (fxRows).
   function effectsRow(key, b) {
     const box = el("div", "effects");
+    let bucket = b;
     const draw = () => {
       box.replaceChildren();
       const shown = open.has(key);
-      const t = button(`${shown ? "▾" : "▸"} ${countsText(b)}`, () => { toggle(key, !open.has(key)); draw(); });
+      const t = button(`${shown ? "▾" : "▸"} ${countsText(bucket)}`, () => { toggle(key, !open.has(key)); draw(); });
       t.className = "effects-toggle";
       t.title = COVERAGE;
       t.setAttribute("aria-expanded", String(shown));
       box.append(t);
-      if (shown) box.append(effectsListNode(b.items, { isOpen: (k) => open.has(k), setOpen: toggle, getJSON, redraw: draw }));
+      if (shown) box.append(effectsListNode(bucket.items, { isOpen: (k) => open.has(k), setOpen: toggle, getJSON, redraw: draw }));
     };
     draw();
+    fxRows.set(key, {
+      sig: bucketSig(b),
+      update(next) {
+        bucket = next;
+        this.sig = bucketSig(next);
+        draw();
+      },
+    });
     return box;
   }
 
@@ -348,9 +367,11 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
     }
     if (card.hooksOnly && hooksOnlyNote) box.append(el("p", "muted", hooksOnlyNote));
     if (card.hooks.length > 0) box.append(hooksNode(card));
-    if (card.effects && card.effects.items.length > 0) box.append(effectsRow(`effects:${card.kind}:${card.number}`, card.effects));
+    if (card.effects && card.effects.items.length > 0) box.append(effectsRow(effectsKey(card), card.effects));
     return box;
   }
+
+  const effectsKey = (card) => `effects:${card.kind}:${card.number}`;
 
   // placed puts the session's effects in its turns; effects before the first prompt go to
   // the "before" card, or to a row of their own when the session has none.
@@ -366,6 +387,8 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
 
   function drawList() {
     list.replaceChildren();
+    fxRows.clear();
+    drawnCards = [];
     if (data.entries.length === 0) {
       const early = placeEffects([], data.effects || []).before;
       if (early.items.length > 0) list.append(effectsRow("effects:before", early));
@@ -383,10 +406,33 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
     for (const card of shown) {
       const node = cardNode(card, sessionId, hooksNote);
       if (card.kind === "turn") cardEls.set(card.number, node);
+      drawnCards.push({ card, node });
       list.append(node);
     }
     markCurrent(false);
     if (shown.length === 0) list.append(note("empty", "No entries match the filter."));
+  }
+
+  // patchEffects places the effects again and redraws only the effects rows whose bucket
+  // changed; a turn that gains its first effect gets a row appended. Every other element
+  // of the list stays as it is, and an expanded row stays open (AC14).
+  function patchEffects() {
+    if (data.entries.length === 0) {
+      drawList(); // no turns to keep
+      return;
+    }
+    const { cards } = turns();
+    const early = placed(cards);
+    // the drawn cards may be filtered copies; the buckets were placed on the turns' own cards
+    const buckets = new Map(cards.map((c) => [effectsKey(c), c.effects]));
+    const rows = drawnCards.map(({ card, node }) => [effectsKey(card), buckets.get(effectsKey(card)), (row) => node.append(row)]);
+    if (early) rows.unshift(["effects:before", early, (row) => list.prepend(row)]);
+    for (const [key, b, insert] of rows) {
+      if (!b || b.items.length === 0) continue;
+      const row = fxRows.get(key);
+      if (!row) insert(effectsRow(key, b));
+      else if (row.sig !== bucketSig(b)) row.update(b);
+    }
   }
 
   return {
@@ -406,10 +452,10 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
       drawn = drawer.sync({ sessionId: data.summary ? data.summary.id : "", callId: data.callId || null, entries: data.entries, loaded: Boolean(data.loaded) });
       if (drawn.missing) status.append(note("error", "No such call in this session."));
     },
-    // setEffects redraws the list with the session's effects; the turns are not rebuilt.
+    // setEffects shows the session's effects; only the effects rows that changed redraw.
     setEffects(effects) {
       data = { ...data, effects };
-      drawList();
+      patchEffects();
     },
     drawerOpen: () => drawer.isOpen(),
     stepCall: (delta) => drawer.step(delta),
