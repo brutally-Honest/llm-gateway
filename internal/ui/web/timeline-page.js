@@ -27,6 +27,13 @@ function contextText(c) {
   return `${c.partial ? "~" : ""}${c.value}`;
 }
 
+// callContextText is the context beside a call link: its own part after a separator,
+// with digit grouping, so it never runs into the duration (F8).
+function callContextText(c) {
+  if (!c || c.value === null) return " · ctx —";
+  return ` · ctx ${c.partial ? "~" : ""}${c.value.toLocaleString("en-US")}`;
+}
+
 // createTimelinePage builds the session page once; render(data) redraws it from
 // data = { summary, entries, error, snapshotError }. The toolbar is built once so typing
 // keeps focus across live re-renders. All text goes in through textContent.
@@ -272,7 +279,7 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
     const box = el("span", "call");
     a.addEventListener("click", () => drawer.noteOpener(a));
     box.append(a);
-    if (opts.context) box.append(el("span", "muted call-context", `context ${contextText(c.context)}`));
+    if (opts.context) box.append(el("span", "muted call-context", callContextText(c.context)));
     if (c.agent) box.append(el("span", "badge harness", c.agent));
     if (c.errored) box.append(el("span", "badge err", `✗ ${c.errorWord}`));
     return box;

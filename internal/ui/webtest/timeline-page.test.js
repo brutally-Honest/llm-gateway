@@ -138,3 +138,13 @@ test("errorCallLinkNameSaysError", () => {
   assert.match(bad.attrs["aria-label"] || "", /^#2 .*✗ error$/, "the errored link's name keeps its label and says error");
   assert.equal(good.attrs["aria-label"], undefined, "a call without an error keeps its text as its name");
 });
+
+// A call link's duration and its context read as separate parts, not "0mscontext 1040"
+// (013 manual check, F8): the rendered text of the call box, as a reader sees it.
+test("callLinkSeparatesDurationAndContext", () => {
+  const usage = { has_usage: true, partial: false, input: 540, output: 5, cache_write: 0, cache_read: 500 };
+  const p = page([call("a", 1, { ms: 0, usage }), prompt("a", "go")]);
+  const box = withClass(p.el, "call")[0];
+  const rendered = all(box).filter((e) => e.children.length === 0).map((e) => e.textContent).join("");
+  assert.equal(rendered, "#1 · 0ms · ctx 1,040");
+});
