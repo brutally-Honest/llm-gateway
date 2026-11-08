@@ -362,6 +362,8 @@ type captureRun struct {
 	timelines *ui.TimelineCache
 	// digests is the one digest cache they share, for the same reason.
 	digests *ui.DigestCache
+	// effects is the effect sensors; nil when effects are off (spec 014, E15).
+	effects *effectsRun
 }
 
 // hookSink is the hook sink, or nil with capture off or a store that cannot save hooks.
@@ -448,6 +450,7 @@ func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, wit
 	}
 	sink := capture.NewSink(cfg, st, log)
 	var hookSink *hooks.Sink
+	var eff *effectsRun
 	if hs, ok := st.(hooks.Store); ok {
 		hcfg := hookConfig(h, profiles)
 		var onStored []func(hooks.HookStored)
@@ -455,7 +458,8 @@ func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, wit
 			// A stored hook event reaches the open web UI streams (AC26).
 			onStored = append(onStored, func(s hooks.HookStored) { hub.PublishHook(s.Principal, s.Client, s.SessionKey) })
 		}
-		onStored = append(onStored, startEffects(e, st, hub, profiles, log)...)
+		eff = startEffects(e, st, hub, profiles, log)
+		onStored = append(onStored, eff.callbacks()...)
 		if len(onStored) > 0 {
 			hcfg.OnStored = func(s hooks.HookStored) {
 				for _, f := range onStored {
@@ -467,14 +471,27 @@ func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, wit
 	}
 	return &captureRun{
 		store: st, sink: sink, hooks: hookSink, budget: core.NewBudget(c.MemoryLimit), maxBodyBytes: c.MaxBodyBytes,
-		reader: reader, hub: hub, timelines: timelines, digests: digests,
+		reader: reader, hub: hub, timelines: timelines, digests: digests, effects: eff,
 	}, exitOK
 }
 
-// startEffects starts the effect sensors that hang off stored hook events (spec 014) and
-// returns their callbacks; none when effects are off (E15) or the store cannot hold them.
-func startEffects(e config.Effects, st capture.Store, hub *ui.Hub, profiles []core.Profile, log *zap.Logger) []func(hooks.HookStored) {
-	es, ok := st.(effects.EffectStore)
+// effectsStore is what the effect sensors save through.
+type effectsStore interface {
+	effects.EffectStore
+	effects.CheckpointStore
+}
+
+// effectsRun is the effect sensors while the gateway runs. A nil *effectsRun is effects
+// off, and every method is a no-op on it.
+type effectsRun struct {
+	reads  *effects.Reads
+	runner *effects.Runner
+}
+
+// startEffects starts the effect sensors that hang off stored hook events (spec 014); nil
+// when effects are off (E15) or the store cannot hold them.
+func startEffects(e config.Effects, st capture.Store, hub *ui.Hub, profiles []core.Profile, log *zap.Logger) *effectsRun {
+	es, ok := st.(effectsStore)
 	if !e.Enabled || !ok {
 		return nil
 	}
@@ -483,8 +500,36 @@ func startEffects(e config.Effects, st capture.Store, hub *ui.Hub, profiles []co
 			hub.PublishEffects(principal, client, key)
 		}
 	}
-	reads := effects.NewReads(es, effectRules(profiles), saved, log)
-	return []func(hooks.HookStored){reads.OnStored}
+	rules := effectRules(profiles)
+	run := &effectsRun{
+		reads:  effects.NewReads(es, rules, saved, log),
+		runner: effects.NewRunner(e, es, rules, saved, log),
+	}
+	run.runner.Start()
+	return run
+}
+
+// callbacks are the sensors' hook callbacks.
+func (e *effectsRun) callbacks() []func(hooks.HookStored) {
+	if e == nil {
+		return nil
+	}
+	return []func(hooks.HookStored){e.reads.OnStored, e.runner.OnStored}
+}
+
+// close stops the checkpoint runner, waiting for running checkpoints until ctx ends.
+func (e *effectsRun) close(ctx context.Context) {
+	if e != nil {
+		e.runner.Close(ctx)
+	}
+}
+
+// counts are the sensors' counters for the shutdown line.
+func (e *effectsRun) counts() effects.Counts {
+	if e == nil {
+		return effects.Counts{}
+	}
+	return e.runner.Counts()
 }
 
 // effectRules finds a client's effect rules through its profile.
@@ -542,6 +587,8 @@ func (c *captureRun) close(ctx context.Context) (undrained int, err error) {
 	if c.hooks != nil {
 		c.hooks.Close(ctx)
 	}
+	// After the hook sink: its last events may still signal a checkpoint.
+	c.effects.close(ctx)
 	undrained = c.sink.Close(ctx)
 	err = c.store.Close()
 	if c.reader != nil {
@@ -566,7 +613,11 @@ func (c *captureRun) stop(ctx context.Context, log *zap.Logger) {
 	if c.hooks != nil {
 		hc = c.hooks.Counts()
 	}
+	ec := c.effects.counts()
 	log.Info("capture stopped",
+		zap.Int64("effects_checkpoints", ec.Checkpoints),
+		zap.Int64("effects_stored", ec.EffectsStored),
+		zap.Int64("effects_git_failures", ec.GitFailures),
 		zap.Int64("hooks_queue_full", hc.QueueFull),
 		zap.Int64("hooks_oversize", hc.Oversize),
 		zap.Int64("hooks_capture_off", hc.CaptureOff),
