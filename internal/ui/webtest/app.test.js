@@ -53,7 +53,7 @@ Object.assign(globalThis, {
     asked.push(String(url));
     const status = plans[path]?.shift() ?? 200;
     if (status !== 200) return { ok: false, status, statusText: "Gateway Timeout", json: async () => ({ error: { message: "store timed out" } }) };
-    const body = replies[path];
+    const body = typeof replies[path] === "function" ? replies[path](String(url)) : replies[path];
     return { ok: Boolean(body), status: body ? 200 : 404, statusText: "not stubbed", json: async () => body };
   },
 });
@@ -153,4 +153,51 @@ test("laterPage504IsNotRetried", async () => {
   assert.deepEqual(r.delays, []);
   assert.equal(asked.filter((u) => u.startsWith(`${path}/timeline`)).length, 2, "page 2 asked once");
   assert.match(r.text(), /store timed out/);
+});
+
+// The page renders a bounded number of times however many timeline pages a session has,
+// not once per page: each render rebuilds the whole list, so per-page renders grow
+// quadratically with the session (the 2,000-call cold open, 013 manual check step 13).
+test("sixPageLoadRendersABoundedNumberOfTimes", async () => {
+  const pages = 6;
+  const pageEntries = (i) => [call(`m${i}a`, 2 * i + 1), item(`m${i}a`, "user_prompt", { role: "user", text: `prompt ${i}` }), call(`m${i}b`, 2 * i + 2, { prev: `m${i}a` })];
+  const path = "/api/sessions/many";
+  replies[`${path}/timeline`] = (url) => {
+    const after = new URL(url, "http://x").searchParams.get("after");
+    const i = after ? Number(after.slice(1)) : 0;
+    return { entries: pageEntries(i), next_after: i + 1 < pages ? `p${i + 1}` : null };
+  };
+  const proto = Object.getPrototypeOf(byId("app"));
+  const replace = proto.replaceChildren;
+  let rebuilds = 0;
+  proto.replaceChildren = function (...nodes) {
+    if (this.className === "timeline") rebuilds++;
+    return replace.apply(this, nodes);
+  };
+  try {
+    const r = await openSession("many", () => ({}));
+    for (let i = 0; i < pages * 2; i++) await settle();
+    assert.equal(asked.filter((u) => u.startsWith(`${path}/timeline`)).length, pages, "every page is fetched");
+    assert.equal(withClass(byId("app"), "call-link").length, pages * 2, "every call shows");
+    assert.match(r.text(), /prompt 0/);
+    assert.match(r.text(), /prompt 5/);
+    // before data, with the summary, the first page, then everything: not one per page
+    assert.ok(rebuilds <= 4, `the list is rebuilt ${rebuilds} times for ${pages} pages; want at most 4`);
+  } finally {
+    proto.replaceChildren = replace;
+  }
+});
+
+test("pagesBeforeAFailingPageStillShow", async () => {
+  const path = "/api/sessions/r5";
+  replies[`${path}/timeline`] = (url) => {
+    const after = new URL(url, "http://x").searchParams.get("after");
+    if (!after) return { entries: [call("f1", 1), item("f1", "user_prompt", { role: "user", text: "first page" })], next_after: "p1" };
+    return { entries: [call("f2", 2, { prev: "f1" }), item("f2", "user_prompt", { role: "user", text: "held page" })], next_after: "p2" };
+  };
+  const r = await openSession("r5", (p) => ({ [`${p}/timeline`]: [200, 200, 504] }));
+  for (let i = 0; i < 6; i++) await settle();
+  assert.match(r.text(), /store timed out/);
+  assert.match(r.text(), /first page/);
+  assert.match(r.text(), /held page/, "a page fetched before the failure is drawn");
 });

@@ -148,6 +148,7 @@ async function showSession(id) {
     Object.assign(st, patch);
     draw();
   };
+  let held = []; // timeline pages fetched but not yet drawn
   try {
     const waiting = () => set({ building: true });
     const summary = await retryOn504(() => getJSON(`sessions/${encodeURIComponent(id)}`), waiting);
@@ -156,6 +157,10 @@ async function showSession(id) {
     if (mine === seq) shell.setRoute(parseRoute(location.hash), summary.title || id);
     const fetchPage = (after) => getJSON(`sessions/${encodeURIComponent(id)}/timeline`, { after, limit: 2000 });
     let first = true;
+    // Each render rebuilds the whole list, so the first page shows at once and the later
+    // pages are held and drawn together with the last one: a bounded number of renders
+    // however many pages a session has, not one per page.
+    let shown = false;
     await loadAllPages(
       (after) => {
         if (!first) return fetchPage(after); // later pages are not retried
@@ -164,15 +169,20 @@ async function showSession(id) {
       },
       (p) => {
         if (mine !== seq) return false;
-        set({ entries: st.entries.concat(p.entries), building: false });
+        held.push(...p.entries);
+        if (shown && p.next_after) return true;
+        shown = true;
+        const more = held;
+        held = [];
+        set({ entries: st.entries.concat(more), building: false, loaded: !p.next_after });
         return true;
       },
     );
     if (mine !== seq) return;
-    set({ loaded: true });
     if (!summary.active) return;
   } catch (e) {
-    set({ error: e.message, building: false });
+    // pages fetched before the failing one still show
+    set({ error: e.message, building: false, entries: held.length ? st.entries.concat(held) : st.entries });
     return;
   }
   // follow new entries only when the page is already at the bottom (AC45)
