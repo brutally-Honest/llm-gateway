@@ -1,0 +1,13 @@
+Manual check 013 F7.
+Cause: .rail was sticky at top 0 with max-height 80vh, so it left 20% of the
+viewport empty and did not account for the header or the fixed key bar.
+Fix: header sticky (top 0, z-index 4, below the drawer's 5); :root fallbacks
+--head-h 2.6rem / --keybar-h 2.2rem; shell.js publishes measured heights via
+ResizeObserver (both can wrap); .rail top var(--head-h), max-height
+calc(100vh - var(--head-h) - var(--keybar-h)). max-height, not height, so a short
+rail does not draw an empty box.
+Red first: railStaysBetweenHeaderAndKeyBarAtAnyHeight and
+shellPublishesHeaderAndKeyBarHeights failed on the old code.
+Headless Chrome, page scrolled 4000 px, scratch gateway with working-tree css/js:
+1400x700 rail 51..670 (header bottom..key bar top), last item visible after scrolling
+the rail; 1400x1100 rail 51..1070, same. make verify green.
