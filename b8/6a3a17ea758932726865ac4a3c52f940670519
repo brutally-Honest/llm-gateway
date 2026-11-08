@@ -1,0 +1,4 @@
+Manual check 013 F9 (browser part). showSession passes createTimelinePage a
+loadDetail that wraps GET /api/exchanges/{id} in retryOn504 (same 1 s delay, injectable
+through globalThis.__retryDelay). Red first: callDetailRetriesOnceAfter504 and
+callDetailSecond504ShowsTheReason both failed on the old code (no retry). make verify green.
