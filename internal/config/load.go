@@ -26,6 +26,7 @@ type fileConfig struct {
 	Hooks     hooksFile               `yaml:"hooks"`
 	RateLimit ratelimitFile           `yaml:"ratelimit"`
 	UI        uiFile                  `yaml:"ui"`
+	Effects   effectsFile             `yaml:"effects"`
 }
 
 // upstreamFile is one upstreams.<name> block. Like fileConfig, its tags are the known
@@ -87,6 +88,7 @@ func fileValues(f *fileConfig) map[string]*string {
 	for field, p := range stringFields(&f.UI) {
 		values[uiKey(field)] = p
 	}
+	effectsValues(&f.Effects, values)
 	return values
 }
 
@@ -153,6 +155,9 @@ func Load(opts Options) (Config, Source, error) {
 		return Config{}, Source{}, err
 	}
 	if err := validateRateLimit(&cfg, src.File); err != nil {
+		return Config{}, Source{}, err
+	}
+	if err := validateEffects(&cfg, origin); err != nil {
 		return Config{}, Source{}, err
 	}
 	return cfg, src, nil
@@ -352,12 +357,23 @@ func parseFile(path string, data []byte, specs []UpstreamSpec) (map[string]*stri
 		}
 		return walkFields(v, uiKey, stringFields(&uiFile{}))
 	}
+	// walkEffects checks the block under `effects`: enabled, then files and network.
+	walkEffects := func(k, v *yaml.Node) error {
+		if isNull(v) {
+			return nil
+		}
+		if v.Kind != yaml.MappingNode {
+			return fail(k.Value, reasonInvalidType, k.Line)
+		}
+		return walkEffectsBlock(v, entry, fail, lines)
+	}
 	blocks := map[string]func(k, v *yaml.Node) error{
 		"upstreams": walkUpstreams,
 		"capture":   walkCapture,
 		"hooks":     walkHooks,
 		"ratelimit": walkRateLimit,
 		"ui":        walkUI,
+		"effects":   walkEffects,
 	}
 	if root := documentRoot(&doc); root != nil {
 		if root.Kind != yaml.MappingNode {
