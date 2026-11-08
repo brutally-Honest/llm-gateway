@@ -75,6 +75,9 @@ type sessionSummary struct {
 	Active     bool           `json:"active"`
 	// HooksOnly marks a session known only from hook events (AC25).
 	HooksOnly bool `json:"hooks_only"`
+	// Effects are the session's effect counts (spec 014); absent for an ungrouped
+	// exchange. They are read fresh with every summary, never memoised with the digest.
+	Effects *effectCountsJSON `json:"effects,omitempty"`
 	// Version and EventPosition are the store version the summary's digest was read at
 	// and how far into the store it reaches; absent for an ungrouped exchange.
 	Version       *versionJSON       `json:"version,omitempty"`
@@ -84,6 +87,9 @@ type sessionSummary struct {
 type listPage struct {
 	Items     []sessionSummary `json:"items"`
 	NextAfter *string          `json:"next_after"`
+	// UnassignedConnections counts network effects linked to no session (sessions list
+	// only); absent means none.
+	UnassignedConnections int `json:"unassigned_connections,omitempty"`
 }
 
 func usageToJSON(s timeline.Summary) usageJSON {
@@ -262,6 +268,10 @@ func (d Deps) summarizeRows(ctx context.Context, c *store.CtxReader, ids []strin
 	if err != nil {
 		return nil, nil, err
 	}
+	counts, err := c.EffectCounts(idents)
+	if err != nil {
+		return nil, nil, err
+	}
 	out := make([]sessionSummary, 0, len(rows))
 	var stale []store.SessionIdent
 	for i, row := range rows {
@@ -283,6 +293,8 @@ func (d Deps) summarizeRows(ctx context.Context, c *store.CtxReader, ids []strin
 		sum := buildSummary(ids[i], row, memo.stats, memo.digest, now)
 		vj, pj := versionToJSON(ver), positionOf(ver)
 		sum.Version, sum.EventPosition = &vj, &pj
+		n := counts[idents[i]]
+		sum.Effects = &effectCountsJSON{Changed: n.Changed, Read: n.Read, Sites: n.Sites}
 		out = append(out, sum)
 	}
 	return out, stale, nil
@@ -360,7 +372,12 @@ func (d Deps) listSessions(w http.ResponseWriter, r *http.Request) {
 		writeStoreErr(w, err)
 		return
 	}
-	page := listPage{Items: items}
+	unassigned, err := c.UnassignedConnections()
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	page := listPage{Items: items, UnassignedConnections: unassigned}
 	if more {
 		last := rows[len(rows)-1]
 		n := encodeAfter(afterToken{List: listSessions, At: last.Last, Principal: last.PrincipalID, Client: last.Client, Key: last.SessionKey})

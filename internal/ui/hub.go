@@ -28,6 +28,8 @@ const (
 	heartbeatEvery = 15 * time.Second
 	// hookRefreshEvery is the longest a session's hook events wait before one re-read (AC26).
 	hookRefreshEvery = 250 * time.Millisecond
+	// effectsEvery is the shortest gap between two effects events of one session (spec 014).
+	effectsEvery = 500 * time.Millisecond
 	// hooksExchange is the request id of the pseudo-exchange that carries a session's hook
 	// lines. Its entries have no exchange id.
 	hooksExchange = "hooks"
@@ -62,6 +64,8 @@ type liveMsg struct {
 	All       []liveExchange // every exchange of the session, in timeline order
 	Inactive  bool           // the session's last exchange started over ActiveWindow ago (E21)
 	Refresh   bool           // a hook refresh: send every exchange in All that differs from what was sent
+	// Effects, when set, is an effects event and the message carries nothing else.
+	Effects *effectsEventJSON
 	// Position is how far into the store the build behind Exchanges and All reaches.
 	// A stream drops a message built from less than its snapshot saw.
 	Position eventPositionJSON
@@ -115,8 +119,10 @@ type Hub struct {
 	read      readFn
 	snap      snapFn
 	fresh     freshFn
+	effRead   effReadFn
 	heartbeat time.Duration
 	hookEvery time.Duration
+	effEvery  time.Duration
 
 	// sendMu orders a session's read and send: an exchange commit and a hook refresh never
 	// interleave, so no stream gets an older read after a newer one.
@@ -135,6 +141,9 @@ type Hub struct {
 	pending map[sessIdent]*pendingRefresh
 	// catching holds the sessions with a catch-up waiting on a rebuild.
 	catching map[sessIdent]*pendingCatch
+	// effPending holds one armed effects event per session; the unassigned effects use
+	// the session with an empty name.
+	effPending map[sessIdent]*time.Timer
 }
 
 // NewHub returns a running hub that reads from d.Reader.
@@ -164,6 +173,7 @@ func newHub(d Deps, queue int) *Hub {
 	}
 	h := &Hub{
 		log: log, timelines: d.Timelines, digests: d.Digests, heartbeat: heartbeatEvery, hookEvery: hookRefreshEvery,
+		effEvery: effectsEvery, effPending: map[sessIdent]*time.Timer{},
 		pending: map[sessIdent]*pendingRefresh{}, catching: map[sessIdent]*pendingCatch{},
 		q: make(chan capture.Committed, queue), done: make(chan struct{}),
 		subs: map[*subscriber]struct{}{},
@@ -177,6 +187,9 @@ func newHub(d Deps, queue int) *Hub {
 	}
 	h.fresh = func(ctx context.Context, who sessIdent, entries bool) error {
 		return waitFresh(ctx, d, who, entries)
+	}
+	h.effRead = func(ctx context.Context, who sessIdent) (effectsEventJSON, error) {
+		return readEffectsEvent(ctx, d, who)
 	}
 	return h
 }
@@ -271,6 +284,10 @@ func (h *Hub) Close() {
 		for who, p := range h.pending {
 			p.timer.Stop()
 			delete(h.pending, who)
+		}
+		for who, t := range h.effPending {
+			t.Stop()
+			delete(h.effPending, who)
 		}
 		h.mu.Unlock()
 	})

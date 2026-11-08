@@ -164,6 +164,14 @@ func exchangeEvent(x liveExchange) string {
 // drops it (E21). A message built from less of the store than from, the snapshot's
 // position, is dropped whole.
 func writeLive(w http.ResponseWriter, m liveMsg, sent map[string]string, from eventPositionJSON) error {
+	if m.Effects != nil {
+		b, err := json.Marshal(m.Effects)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(w, "event: effects\ndata: %s\n\n", b)
+		return err
+	}
 	if m.Summary != nil {
 		b, err := json.Marshal(m.Summary)
 		if err != nil {

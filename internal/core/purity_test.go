@@ -53,6 +53,7 @@ func TestCore_NoProviderOrClientIdentifiers(t *testing.T) {
 		{"../contentcoding", names},
 		{"../timeline", full},
 		{"../ui", full},                       // the web UI: Go files and the embedded web/ files
+		{"../effects", full},                  // the file and read effect sensors (spec 014)
 		{"../../cmd/gateway/viewer.go", full}, // the viewer commands; a single file, as run.go names a profile
 	}
 	for _, d := range dirs {
