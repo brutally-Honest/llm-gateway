@@ -3,6 +3,7 @@
 export class StubElement {
   constructor(tag) {
     this.tagName = tag;
+    this.parentNode = null;
     this.className = "";
     this.textContent = "";
     this.children = [];
@@ -15,14 +16,40 @@ export class StubElement {
     this.classes = new Set();
     this.classList = { add: (c) => this.classes.add(c), contains: (c) => this.classes.has(c), remove: (c) => this.classes.delete(c) };
   }
+  // adopt moves nodes here as the DOM does: out of any parent they had.
+  adopt(nodes) {
+    for (const n of nodes) {
+      if (n && n.parentNode) n.remove();
+      if (n && typeof n === "object") n.parentNode = this;
+    }
+  }
   append(...nodes) {
+    this.adopt(nodes);
     this.children.push(...nodes);
   }
   prepend(...nodes) {
+    this.adopt(nodes);
     this.children.unshift(...nodes);
   }
   replaceChildren(...nodes) {
+    for (const c of this.children) if (c && typeof c === "object") c.parentNode = null;
+    this.children = [];
+    this.adopt(nodes);
     this.children = [...nodes];
+  }
+  insertBefore(node, ref) {
+    this.adopt([node]);
+    const i = ref ? this.children.indexOf(ref) : -1;
+    if (i < 0) this.children.push(node);
+    else this.children.splice(i, 0, node);
+    return node;
+  }
+  remove() {
+    const p = this.parentNode;
+    if (!p) return;
+    const i = p.children.indexOf(this);
+    if (i >= 0) p.children.splice(i, 1);
+    this.parentNode = null;
   }
   setAttribute(k, v) {
     this.attrs[k] = String(v);

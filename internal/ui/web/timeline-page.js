@@ -32,6 +32,23 @@ function bucketSig(b) {
   return `${n}:${n ? b.items[n - 1].id : 0}`;
 }
 
+// cardSig names everything a card shows except its effects, which redraw on their own
+// (patchEffects): two cards with the same signature draw the same element.
+function cardSig(card) {
+  return JSON.stringify({ ...card, effects: undefined });
+}
+
+// reconcile makes parent's children exactly `want`, in order, touching only what differs:
+// a child not wanted is removed, a wanted one missing or out of place is inserted, and a
+// child already in place is left alone.
+function reconcile(parent, want) {
+  const keep = new Set(want);
+  for (const c of [...parent.children]) if (!keep.has(c)) c.remove();
+  want.forEach((node, i) => {
+    if (parent.children[i] !== node) parent.insertBefore(node, parent.children[i] || null);
+  });
+}
+
 function contextText(c) {
   if (!c || c.value === null) return "—";
   return `${c.partial ? "~" : ""}${c.value}`;
@@ -101,6 +118,10 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
   const open = new Set(); // section keys and hook toggles that stay open across redraws
   const fxRows = new Map(); // effects key -> { sig, update(bucket) } of each drawn effects row
   let drawnCards = []; // { card, node } of each card in the list, in order
+  let keyed = new Map(); // "kind:number" -> { sig, node, head } of each card in the list
+  const heads = new WeakMap(); // card element -> its heading
+  let noMatchNode = null;
+  const noMatch = () => (noMatchNode ||= note("empty", "No entries match the filter."));
   let data = { summary: null, entries: [], effects: [], error: "", snapshotError: "" };
   let tool = "";
   let built = null;
@@ -336,6 +357,7 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
     };
     draw();
     fxRows.set(key, {
+      box,
       sig: bucketSig(b),
       update(next) {
         bucket = next;
@@ -350,7 +372,7 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
     const box = el("section", `turn card-${card.kind}${card.errored ? " is-error" : ""}`);
     const head = el("h2", "turn-head", card.heading);
     head.setAttribute("tabindex", "-1");
-    if (card.kind === "turn") headEls.set(card.number, head);
+    heads.set(box, head);
     if (card.errored) head.append(el("span", "badge err", "✗ error"));
     box.append(head);
     if (card.prompt) box.append(promptNode(card));
@@ -385,32 +407,56 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
     return before ? null : p.before;
   }
 
+  // drawList brings the list up to date with keyed updates: each card is keyed by its kind
+  // and number and carries a signature of what it shows. A card whose signature is unchanged
+  // keeps its element (and so its expanded rows, focus and scroll); a new card is added and
+  // a changed one replaced; then only the effects rows whose effects changed redraw (AC14).
   function drawList() {
-    list.replaceChildren();
-    fxRows.clear();
     drawnCards = [];
+    cardEls.clear();
+    headEls.clear();
     if (data.entries.length === 0) {
+      keyed.clear();
+      fxRows.clear();
       const early = placeEffects([], data.effects || []).before;
-      if (early.items.length > 0) list.append(effectsRow("effects:before", early));
-      else if (!data.error && !data.building) list.append(note("empty", "No entries yet."));
+      if (early.items.length > 0) list.replaceChildren(effectsRow("effects:before", early));
+      else if (!data.error && !data.building) list.replaceChildren(note("empty", "No entries yet."));
+      else list.replaceChildren();
       return;
     }
     const { cards, note: hooksNote } = turns();
     const early = placed(cards);
-    if (early && early.items.length > 0) list.append(effectsRow("effects:before", early));
     let shown = filterTurns(cards, { text: input.value, tool });
     if (opts.errorsOnly) shown = shown.filter((c) => c.errored);
     const sessionId = data.summary ? data.summary.id : "";
-    cardEls.clear();
-    headEls.clear();
-    for (const card of shown) {
-      const node = cardNode(card, sessionId, hooksNote);
-      if (card.kind === "turn") cardEls.set(card.number, node);
-      drawnCards.push({ card, node });
-      list.append(node);
+    const ctxSig = JSON.stringify([opts.hooks, opts.reminders, opts.context, sessionId, hooksNote]);
+    const want = [];
+    if (early && early.items.length > 0) {
+      const row = fxRows.get("effects:before");
+      want.push(row && row.box.parentNode === list ? row.box : effectsRow("effects:before", early));
     }
+    const next = new Map();
+    for (const card of shown) {
+      const key = `${card.kind}:${card.number}`;
+      const sig = `${ctxSig}|${cardSig(card)}`;
+      let k = keyed.get(key);
+      if (!k || k.sig !== sig) {
+        const node = cardNode(card, sessionId, hooksNote);
+        k = { sig, node, head: heads.get(node) };
+      }
+      next.set(key, k);
+      if (card.kind === "turn") {
+        cardEls.set(card.number, k.node);
+        headEls.set(card.number, k.head);
+      }
+      drawnCards.push({ card, node: k.node });
+      want.push(k.node);
+    }
+    keyed = next;
+    if (shown.length === 0) want.push(noMatch());
+    reconcile(list, want);
+    patchEffects();
     markCurrent(false);
-    if (shown.length === 0) list.append(note("empty", "No entries match the filter."));
   }
 
   // patchEffects places the effects again and redraws only the effects rows whose bucket
@@ -425,12 +471,13 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
     const early = placed(cards);
     // the drawn cards may be filtered copies; the buckets were placed on the turns' own cards
     const buckets = new Map(cards.map((c) => [effectsKey(c), c.effects]));
-    const rows = drawnCards.map(({ card, node }) => [effectsKey(card), buckets.get(effectsKey(card)), (row) => node.append(row)]);
-    if (early) rows.unshift(["effects:before", early, (row) => list.prepend(row)]);
-    for (const [key, b, insert] of rows) {
+    const rows = drawnCards.map(({ card, node }) => [effectsKey(card), buckets.get(effectsKey(card)), node, (row) => node.append(row)]);
+    if (early) rows.unshift(["effects:before", early, list, (row) => list.prepend(row)]);
+    for (const [key, b, parent, insert] of rows) {
       if (!b || b.items.length === 0) continue;
       const row = fxRows.get(key);
-      if (!row) insert(effectsRow(key, b));
+      // a row left in a replaced card's old element is not this card's row
+      if (!row || row.box.parentNode !== parent) insert(effectsRow(key, b));
       else if (row.sig !== bucketSig(b)) row.update(b);
     }
   }

@@ -200,6 +200,13 @@ Karthik's answers (2026-11-08):
   "no timeline rebuild". A second seed run in the same gateway put its turn 2 connections
   under unassigned: the first run's session still counted as active (AC10 working), so
   the seed only gives the documented counts once per data folder.
+- 2026-11-08 — Step 4 re-check at f61cc46 (fresh data folder, one seed run with
+  `--pause 5000`, turn sections tagged at page load): effects updates pass — at 17.23 s and
+  22.26 s only the changed turn's effects row redrew and no turn was replaced. New hook
+  events still fail: at 17.03 s (turn 2 arrives), 22.05 s (turn 3 arrives) and 27.08 s (the
+  final Stop and SessionEnd) every turn section was replaced although its effects had not
+  changed, because `render()` rebuilds the whole list. An expanded effects row stayed open
+  across the rebuild, as a new element.
 
 ### Sources (2026-11-08)
 - Claude Code honours `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`, does not support SOCKS

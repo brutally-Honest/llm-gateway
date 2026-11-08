@@ -137,3 +137,50 @@ test("liveEffectsRedrawOnlyTheChangedRows", async () => {
   assert.match(withClass(row2, "effects-toggle")[0].textContent, /2 changed/);
   assert.match(withClass(rows()[2], "effects-toggle")[0].textContent, /1 changed/);
 });
+
+// AC14: a new hook event for turn N redraws turn N only; every element of turns 1..N-1 is
+// the same element as before (not a copy with the same content), and their expanded rows
+// stay open.
+test("newHookEventKeepsEarlierTurnsElements", async () => {
+  const { installDom, withClass, all } = await import("./dom-stub.js");
+  installDom();
+  const { createTimelinePage } = await import("../web/timeline-page.js");
+  const summary = { id: "s1", client: "c", models: [], first_at: "", last_at: "", exchange_count: 0, model_calls: 0, main_errors: 0, active: true, usage: {}, tool_states: {} };
+  const at = (s) => new Date(Date.UTC(2026, 0, 1, 0, 0, s)).toISOString();
+  const h = (n, phase, s, extra = {}) => ({ id: `hook:${n}`, kind: "hook_event", phase, start: at(s), ...extra });
+  const tool = (n, s, id, name) => h(n, "pre_tool", s, { tool_call_id: id, name, chip: "unmatched", state: "ran-not-asked-or-not-captured" });
+  const effects = [{ id: 1, kind: "file_change", at: at(2), path: "/w/a", change: "created", size: 1 }];
+  const p = createTimelinePage();
+  const show = (entries) => p.render({ summary, entries, effects, error: "", snapshotError: "", loaded: true });
+  p.setEffects(effects);
+  const turn1and2 = [h(1, "prompt", 1, { text: "one" }), tool(2, 2, "t1", "Read"), h(3, "prompt", 5, { text: "two" }), tool(4, 6, "t2", "Bash")];
+  show(turn1and2);
+  const sections = () => withClass(p.el, "turn");
+  // open turn 1's effects row and its hooks list
+  withClass(sections()[0], "effects-toggle")[0].fire("click");
+  withClass(sections()[0], "hooks")[0].children[0].fire("click");
+  const snap = (secs) => secs.map((s) => all(s));
+  const kept = (before, after, n) => {
+    for (let i = 0; i < n; i++) {
+      assert.equal(after[i].length, before[i].length, `turn ${i + 1} changed shape`);
+      after[i].forEach((node, j) => assert.equal(node, before[i][j], `turn ${i + 1}: element ${j} replaced`));
+    }
+  };
+
+  // a new hook event in turn 2: turn 1 untouched, turn 2 redrawn
+  let before = snap(sections());
+  show([...turn1and2, tool(5, 7, "t3", "Grep")]);
+  let after = snap(sections());
+  kept(before, after, 1);
+  assert.notEqual(after[1][0], before[1][0], "turn 2 shows its new tool");
+  assert.match(withClass(sections()[1], "turn-head")[0].textContent, /2 tools/);
+
+  // a new prompt starts turn 3: turns 1 and 2 untouched
+  before = snap(sections());
+  show([...turn1and2, tool(5, 7, "t3", "Grep"), h(6, "prompt", 9, { text: "three" })]);
+  after = snap(sections());
+  assert.equal(after.length, 3);
+  kept(before, after, 2);
+  assert.equal(withClass(sections()[0], "effects-toggle")[0].attrs["aria-expanded"], "true");
+  assert.equal(withClass(sections()[0], "hooks")[0].children[0].attrs["aria-expanded"], "true");
+});
