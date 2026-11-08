@@ -14,6 +14,9 @@ type HarnessEvent struct {
 	// SourceName is the event's name as the client sent it. It is kept for display and
 	// for an unknown phase only; nothing downstream branches on it.
 	SourceName string
+	// WorkDir is the folder the harness says the session is working in; "" when the
+	// event does not say.
+	WorkDir string
 }
 
 // HarnessPhase is what a harness event means, in words no client owns.
