@@ -243,3 +243,35 @@ test("aStreamBurstIsDrawnOnceNotPerEvent", async (t) => {
     proto.replaceChildren = replace;
   }
 });
+
+// A call's detail gets the same single retry on 504 as the session summary: the server
+// answers 504 while a build runs past its store timeout, and a second later the cached
+// build serves it (013 manual check, F9).
+async function openCall(sid, plan) {
+  const delays = [];
+  globalThis.__retryDelay = async (ms) => void delays.push(ms);
+  const path = `/api/sessions/${sid}`;
+  replies[path] = { ...session, id: sid, active: false };
+  replies[`${path}/timeline`] = { entries, next_after: null };
+  plans["/api/exchanges/b"] = plan;
+  asked.length = 0;
+  location.hash = `#/sessions/${sid}/call/b`;
+  for (const fn of listeners.hashchange) fn();
+  for (let i = 0; i < 8; i++) await settle();
+  const drawer = withClass(byId("app"), "drawer")[0];
+  return { delays, text: () => textOf(drawer), detailAsks: () => asked.filter((u) => u.startsWith("/api/exchanges/b")).length };
+}
+
+test("callDetailRetriesOnceAfter504", async () => {
+  const r = await openCall("d1", [504]);
+  assert.deepEqual(r.delays, [1000]);
+  assert.equal(r.detailAsks(), 2, "the detail is asked twice");
+  assert.doesNotMatch(r.text(), /detail unavailable/);
+});
+
+test("callDetailSecond504ShowsTheReason", async () => {
+  const r = await openCall("d2", [504, 504]);
+  assert.deepEqual(r.delays, [1000]);
+  assert.equal(r.detailAsks(), 2, "one retry only");
+  assert.match(r.text(), /detail unavailable: store timed out/);
+});

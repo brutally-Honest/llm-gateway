@@ -136,6 +136,9 @@ async function showSession(id) {
       replace: (r) => location.replace(buildRoute(r)),
       back: () => history.back(),
     },
+    // a call's detail gets the summary's single retry on 504; the drawer shows "loading…"
+    // meanwhile (F9)
+    loadDetail: (callId) => retryOn504(() => getJSON(`exchanges/${encodeURIComponent(callId)}`), () => {}),
   });
   app.replaceChildren(tl.el);
   const st = { summary: null, entries: [], error: "", snapshotError: "", callId: parseRoute(location.hash).call || null, loaded: false };
