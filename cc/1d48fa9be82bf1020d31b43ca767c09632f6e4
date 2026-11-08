@@ -1,0 +1,14 @@
+Manual check 013 F9 (server part).
+Cause: fillDrawer called buildSession directly for every GET /api/exchanges/{id},
+bypassing the timeline cache; measured 3.6-4.6 s per request on the live 2,000-call
+session, so some answered 504 (store timeout 5 s).
+Fix: drawerBuild uses Timelines.latest (cached build at once, rebuild started if stale);
+it waits (Timelines.get at the store's version) only when nothing is cached or the call
+is not in the cached build and that build is older than the store, since such a call has
+no thread facts there. Without a cache (Deps.Timelines nil) it builds as before.
+Seam: buildSessionFn, a package variable all four build sites call, so a test can gate
+builds; behaviour unchanged.
+Red first: TestAPI_ExchangeDetailAnswersFromCachedBuildWithoutWaiting timed out on the
+old logic (the detail ran the gated build itself); green 3/3, and the cached build's
+prev_id/carried/new_count equal an up-to-date build's. go test -race ./internal/ui and
+make verify green.
