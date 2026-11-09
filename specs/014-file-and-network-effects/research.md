@@ -63,6 +63,14 @@ feature: 014-file-and-network-effects
   a hook and reloaded from SQLite when needed; a session's saved snapshot is deleted at session
   end or after `effects.files.snapshot_retention` (default 7 days) without a hook — follows
   from D14.
+- D17 (2026-11-09) — Replaces the "sandbox on by default" part of D10: the sandbox is off by
+  default (`effects.network.sandbox: false`) and optional. On Linux, Claude Code's sandbox
+  needs both bubblewrap and socat and quietly runs commands unsandboxed if either is missing;
+  on Ubuntu 24.04 and later it currently fails every Bash command with "apply-seccomp: write
+  /proc/self/setgroups (nested userns is capability-restricted)", a known Claude Code bug
+  (github.com/anthropics/claude-code/issues/43454). An untested workaround is
+  `sandbox.network.allowAllUnixSockets: true`. The rest of D10 (the settings `env` block)
+  stands; with the sandbox off, KI8 applies.
 
 ## Decisions for Karthik
 Choices made while writing the spec that touch a repo rule or were not asked about. Each has
@@ -191,6 +199,15 @@ Karthik's answers (2026-11-08):
 - V6 — The PostToolUse payload of Read carries the file content in `tool_response`.
 - V7 — Hook `cwd` stays the starting folder after Claude runs `cd` in Bash.
 
+Answers (2026-11-09, Linux, step 9, sandbox off):
+- V1 (2026-11-09) — Pass for `env`: 11 model calls went through `ANTHROPIC_BASE_URL` from the
+  `--settings` file (plus the 429 quota probe before the first prompt, below), and the proxy
+  was used. The sandbox part is untested on Linux (D17) and moves to the Mac (step 11).
+- V2 (2026-11-09) — Pass: with the sandbox off, `curl` in Bash went through the proxy
+  ("200 Connection Established" and an `example.com` row).
+- V3 (2026-11-09) — Not answerable on Linux: the sandbox could not run (D17). Test on the Mac.
+- V4 (2026-11-09) — Not answerable on Linux, same reason. Test on the Mac.
+
 ### Manual check results
 - 2026-11-08 — 014-effects.md steps 3–8 at f48bd50 (Linux, Chrome, fresh data folder, seed
   with `--pause 5000`): steps 3, 5, 6, 7 and 8 pass; step 4 fails. The counts, the live
@@ -207,6 +224,25 @@ Karthik's answers (2026-11-08):
   final Stop and SessionEnd) every turn section was replaced although its effects had not
   changed, because `render()` rebuilds the whole list. An expanded effects row stayed open
   across the rebuild, as a new element.
+- 2026-11-09 — Step 4 re-check at d044c9d passed (run 2026-11-08): turns 1 and 2 were never
+  replaced, and turn 3 was replaced only when its own hooks changed.
+- 2026-11-09 — Steps 1–2 (setup): done.
+- 2026-11-09 — Step 9 on Linux with a real Claude session, sandbox off. Files: `notes.txt`
+  modified with a correct diff; `make3.sh`, `a.txt`, `b.txt`, `c.txt` and `fetch.mjs` created;
+  one read of `notes.txt`. Connections: `example.com` and `github.com`, plus Claude Code's own
+  `downloads.claude.ai` and `http-intake.logs.us5.datadoghq.com`. Node's `fetch` was not seen
+  with the sandbox off, as expected (KI8).
+- 2026-11-09 — Sandbox on Linux: the first try ran unsandboxed because socat was missing.
+  After installing socat, every Bash command failed with the apply-seccomp error (D17). An
+  AppArmor profile for bwrap was tried and then removed.
+- 2026-11-09 — Step 10 passed: with the gateway stopped, the `claude` function printed
+  "llm-gateway is not running: starting plain Claude Code" and plain Claude worked.
+- 2026-11-09 — Step 11 (Mac): still to do.
+- 2026-11-09 — The `claude` function was first added only to `~/.bashrc` while the shell was
+  zsh, so the first real run wasn't captured. Fixed by adding it to `~/.zshrc`;
+  docs/clients/claude-code.md §6 now says to use the startup file of the shell in use.
+- 2026-11-09 — Follow-up idea, not for now: show the effect counts in the turn header and the
+  left rail, because the folded row at the bottom of a turn is easy to miss.
 
 ### Sources (2026-11-08)
 - Claude Code honours `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`, does not support SOCKS
