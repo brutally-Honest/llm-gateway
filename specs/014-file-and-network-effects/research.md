@@ -272,6 +272,16 @@ Answers (2026-11-09, Linux, step 9, sandbox off):
   (~/.local/share/llm-gateway, 2026-10-12 to 2026-11-02, claude-cli 2.1.314 and 2.1.316)
   holds 11 quota probes from 2026-10-31 on, and every one is a 429; 014 does not touch the
   model-call path. Nothing to fix in the gateway.
+- 2026-11-09 — Step 11 (Mac) is deferred by Karthik to after the merge. V3, V4 and the
+  sandbox part of V1 stay open until then.
+
+### Follow-ups after merge (2026-11-09)
+- The Mac check: step 11 of 014-effects.md, including the optional sandbox-on run, V1's
+  sandbox part, V3 and V4.
+- Test `sandbox.network.allowAllUnixSockets: true` as a workaround for the Ubuntu 24.04+
+  sandbox bug (D17).
+- Show the effect counts in the turn header and the left rail (the folded row at the bottom
+  of a turn is easy to miss).
 
 ### Sources (2026-11-08)
 - Claude Code honours `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`, does not support SOCKS
