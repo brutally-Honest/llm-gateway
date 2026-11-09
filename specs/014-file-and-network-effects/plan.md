@@ -116,7 +116,8 @@ effects:
     sandbox: false
     active_window: 10m
 ```
-The sandbox is optional and off by default (D17 in research.md, 2026-11-09: Claude Code's Linux sandbox fails every Bash command on Ubuntu 24.04 and later).
+The sandbox is optional and off by default (D17 in research.md, 2026-11-09: Claude Code's
+Linux sandbox fails every Bash command on Ubuntu 24.04 and later).
 Validation: proxy addresses are loopback, distinct from each other, from `listen_addr` and from
 `ui.listen_addr`; an empty `socks_proxy_addr` turns SOCKS5 off; `sandbox: true` with SOCKS5 off
 prints a sandbox block with the HTTP port only; `max_copy_bytes` > 0; `extra_dirs` are absolute;
