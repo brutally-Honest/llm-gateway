@@ -261,6 +261,17 @@ Answers (2026-11-09, Linux, step 9, sandbox off):
   docs/clients/claude-code.md §6 now says to use the startup file of the shell in use.
 - 2026-11-09 — Follow-up idea, not for now: show the effect counts in the turn header and the
   left rail, because the folded row at the bottom of a turn is easy to miss.
+- 2026-11-09 — The error on call #1 under "Before first prompt" in the step-9 sessions is a
+  **429** from Anthropic itself on Claude Code's **quota probe**: a non-streaming
+  `POST /v1/messages` with `max_tokens: 1` and one user message `"quota"`, sent at start-up
+  before the first prompt. The body is `{"type":"error","error":{"type":"rate_limit_error",
+  "message":"Error"}}` with a real Anthropic `request_id`, Cloudflare and `Anthropic-*`
+  response headers and `X-Should-Retry: true`; the gateway passed it through verbatim (no
+  `gateway_error`). All four sessions in /tmp/fx014-data start with it (779fbcb7, b1d5372d,
+  f0ca71eb, 1d34c01d). **It predates 014 and is not caused by it:** the pre-014 store
+  (~/.local/share/llm-gateway, 2026-10-12 to 2026-11-02, claude-cli 2.1.314 and 2.1.316)
+  holds 11 quota probes from 2026-10-31 on, and every one is a 429; 014 does not touch the
+  model-call path. Nothing to fix in the gateway.
 
 ### Sources (2026-11-08)
 - Claude Code honours `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`, does not support SOCKS
