@@ -104,9 +104,9 @@ This changes earlier features:
   URL that points at one of the gateway's proxy listeners, the system shall connect directly.
 - **AC12** — When `gateway hooks print` runs with `effects.network.enabled` true, the system
   shall print one Claude Code settings document holding the hooks, an `env` block
-  (`ANTHROPIC_BASE_URL`, `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`) and, unless
-  `effects.network.sandbox` is false, a `sandbox` block pointing at the proxy ports; with
-  network effects disabled the output is the hooks document of today.
+  (`ANTHROPIC_BASE_URL`, `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`) and, only when
+  `effects.network.sandbox` is true (off by default), a `sandbox` block pointing at the proxy
+  ports; with network effects disabled the output is the hooks document of today.
 
 ### Storage, API and web UI
 - **AC13** — When effects are stored for a session, the system shall leave that session's

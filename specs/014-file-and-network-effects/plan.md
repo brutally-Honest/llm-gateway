@@ -14,10 +14,11 @@ spec-fingerprint:
 Two sensors feed one new kind, `effect`, stored in its own table. Files are checked at
 **checkpoints**: each stored hook event asks "what changed since last time?" with git (or a
 folder walk when there is no git). The network goes through a **forward proxy** (HTTP CONNECT
-plus optional SOCKS5) that Claude Code is pointed at by a settings file the gateway prints,
-with Claude Code's sandbox forcing Bash traffic through it. Claude's own Read/Grep/Glob calls
-become read effects straight from the stored hooks. Each session's file snapshot is saved in
-SQLite in the same transaction as the checkpoint's effects, so a gateway restart loses nothing.
+plus optional SOCKS5) that Claude Code is pointed at by a settings file the gateway prints.
+Claude Code's sandbox is optional and off by default (D17); when turned on, it forces Bash
+traffic through the proxy. Claude's own Read/Grep/Glob calls become read effects straight from
+the stored hooks. Each session's file snapshot is saved in SQLite in the same transaction as
+the checkpoint's effects, so a gateway restart loses nothing.
 Effects have their own version, API and live event, and show as one folded row per turn, so
 they never trigger a timeline rebuild.
 Built in this order (Option B): foundation (store, API, UI), then files, then network, then one
@@ -55,9 +56,10 @@ end-to-end check. Functional tests only (research.md D1).
 - **Network:** two loopback listeners in the same process. CONNECT and SOCKS5 tunnels are
   piped and counted; plain HTTP is forwarded with a transport that never uses a proxy. Each
   closed connection becomes one effect linked to the single active session, or unassigned.
-- **Settings:** `gateway hooks print` prints the full Claude Code settings document (hooks + env
-  + sandbox). The user saves it as a separate file loaded by a `claude` shell function
-  (docs), so a stopped gateway means plain Claude, not a broken one.
+- **Settings:** `gateway hooks print` prints the full Claude Code settings document (hooks +
+  env, plus a sandbox block only when the optional sandbox is turned on). The user saves it as
+  a separate file loaded by a `claude` shell function (docs), so a stopped gateway means plain
+  Claude, not a broken one.
 - **UI:** a flat, time-ordered effects API with its own version; the browser places effects in
   the turns it already builds and renders one folded row per turn.
 
@@ -66,7 +68,8 @@ end-to-end check. Functional tests only (research.md D1).
 - Pros: one pure-Go path on Linux and macOS; costs nothing while Claude is idle; uses git for
   cheap change lists and a ready "before" version.
 - Cons: sees results between checkpoints, not each write; network coverage depends on programs
-  honouring the proxy settings (sandbox closes this for Bash); depends on Claude Code hooks.
+  honouring the proxy settings (the optional sandbox closes this for Bash when turned on);
+  depends on Claude Code hooks.
 ### A2 — OS file watchers (inotify on Linux, FSEvents on macOS) + the same proxy
 - Pros: every write with an exact time; would see changes made while Claude is idle.
 - Cons: two code paths; FSEvents needs cgo, which breaks the `CGO_ENABLED=0` build; inotify
@@ -233,7 +236,8 @@ In the same callback: on a post-tool event whose `ReadTarget` answers ok, store 
 
 ### Settings document (AC12)
 `claudecode.SettingsDoc(hooksAddr string, net *NetSettings)` keeps `HookSnippet`'s hooks and
-adds:
+adds the `env` block and, only with `effects.network.sandbox: true` (off by default, D17), the
+`sandbox` block:
 ```json
 {
   "env": {
@@ -346,11 +350,11 @@ git is missing) and loopback servers; no mocks of the code under test.
   8. Every effects list has the coverage line; no status is colour-only.
   9. Real Claude Code session through the `claude` function on Linux: edit a file, run a script
      writing three files, `curl https://example.com`,
-     `git ls-remote https://github.com/brutally-Honest/llm-gateway`, a Node `fetch` script;
-     sandbox on, then off (`effects.network.sandbox: false`, reprint); two sessions at once
-     leave connections unassigned.
+     `git ls-remote https://github.com/brutally-Honest/llm-gateway`, a Node `fetch` script,
+     with the default settings (sandbox off); two sessions at once leave connections
+     unassigned. A separate sandbox-on run is optional and moved to the Mac check (step 11).
   10. Gateway stopped: `claude` prints the fallback line and plain Claude works; restart.
-  11. Steps 9 and 10 on the work Mac.
+  11. Steps 9 and 10 on the work Mac, plus the optional sandbox-on run of step 9.
 
 ## Risks
 - **`git status` on a huge repo is slow** → checkpoints lag but never block Claude (one running,
@@ -358,8 +362,9 @@ git is missing) and loopback servers; no mocks of the code under test.
 - **Clash with Claude's own git** → `--no-optional-locks` on every git call; no writing command.
 - **A proxy bug breaks Claude's network** → `effects.network.enabled: false`, reprint the
   settings file; the `claude` function falls back to plain Claude only when the gateway is down.
-- **Sandbox breaks some Bash commands** (writes outside the project, tools that need local
-  sockets) → `effects.network.sandbox: false`, reprint.
+- **Turning the sandbox on can break every Bash command** on Ubuntu 24.04 and later (a known
+  Claude Code bug, D17) → it ships off (`effects.network.sandbox: false`); the way out is to
+  leave it off.
 - **Memory** → only active sessions are cached (about 150 bytes per file in scan mode), evicted
   after 1 h without a hook and reloaded from SQLite when needed.
 - **Snapshot writes** → a session's first checkpoint in a folder without git writes one row per
