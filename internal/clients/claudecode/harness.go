@@ -50,6 +50,7 @@ func (Profile) MapHarness(body []byte) core.HarnessEvent {
 	ev.ToolName = str("tool_name")
 	ev.AgentID = str("agent_id")
 	ev.AgentType = str("agent_type")
+	ev.WorkDir = str("cwd")
 	if raw, ok := m["tool_input"]; ok {
 		var buf bytes.Buffer
 		if json.Compact(&buf, raw) == nil && buf.String() != "null" {

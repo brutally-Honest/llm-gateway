@@ -1,0 +1,1 @@
+{"hook_event_name":"PostToolUse","session_id":"s1","cwd":"/work/app","tool_use_id":"t4","tool_name":"Glob","tool_input":{"pattern":"**/*.go","path":"/work/lib"},"tool_response":{"filenames":["/work/lib/a.go","/work/lib/b.go"],"durationMs":3,"numFiles":2,"truncated":false}}

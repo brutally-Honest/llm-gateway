@@ -125,3 +125,156 @@ including open streams, finish. This can take **up to 10 minutes** (the default
 Optional: Claude Code can also report its tool calls and permission checks to the gateway,
 so the timeline shows which asked-for tools ran. Install, coexistence with project hooks,
 removal and the match states are in [claude-code-hooks.md](claude-code-hooks.md).
+
+## 6. Files and network (014)
+
+The gateway can also show what a session did beside its model calls: the files that changed
+in its folders, the files Claude's own Read, Grep and Glob tools looked at, and the network
+connections it made. Files are checked at **checkpoints** run on each stored hook event (git,
+or a folder walk without git); connections go through the gateway's **forward proxy** (HTTP
+on `127.0.0.1:7198`, SOCKS5 on `127.0.0.1:7195`). Everything is configured under `effects`
+in `config.example.yaml`; why it works this way is in
+[ADR 0014](../decisions/0014-effect-kind-and-no-root-sensors.md).
+
+This needs the gateway **on the host**, not in Docker: a container cannot see your project
+folders or your programs. Docker keeps working for API capture alone.
+
+### Build and configure
+
+```sh
+make build
+install -m 0755 bin/gateway ~/.local/bin/gateway      # any folder on your PATH
+mkdir -p ~/.config/llm-gateway
+cp config.example.yaml ~/.config/llm-gateway/config.yaml   # edit as needed
+```
+
+### Save the printed settings file
+
+`gateway hooks print` prints one Claude Code settings document: the hooks, an `env` block
+(`ANTHROPIC_BASE_URL`, `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`) and, with
+`effects.network.sandbox: true`, a `sandbox` block (see [The sandbox](#the-sandbox-optional)).
+It writes no file; save it as a file of its own, not in `~/.claude/settings.json`:
+
+```sh
+gateway hooks print -config ~/.config/llm-gateway/config.yaml \
+  > ~/.config/llm-gateway/claude-settings.json
+```
+
+Print it again whenever `listen_addr`, a proxy address or `effects.network.sandbox` changes.
+With `effects.network.enabled: false` the output is the hooks alone, as in 010.
+
+### The sandbox (optional)
+
+`effects.network.sandbox` is `false` by default. Set it to `true` and reprint the settings
+file to add a `sandbox` block that turns on Claude Code's Bash sandbox and points it at the
+proxy ports, so every Bash command's traffic goes through the gateway, including programs
+that ignore `HTTPS_PROXY` (Node's built-in `fetch`, ssh, database clients). Without it,
+only programs that honour `HTTPS_PROXY` / `HTTP_PROXY` are seen.
+
+- **Linux needs both `bubblewrap` and `socat`.** If either is missing, Claude Code quietly
+  runs commands without the sandbox: nothing fails, and traffic from programs that ignore
+  `HTTPS_PROXY` is not seen.
+- **Ubuntu 24.04 and later:** Claude Code's sandbox currently fails every Bash command with
+  `apply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted)`. This
+  is a known Claude Code bug
+  ([anthropics/claude-code#43454](https://github.com/anthropics/claude-code/issues/43454)).
+  An untested workaround is adding `"allowAllUnixSockets": true` under `sandbox.network` in
+  the saved settings file (`sandbox.network.allowAllUnixSockets`); otherwise leave the
+  sandbox off.
+
+### Run the gateway as a login service
+
+So it is up whenever you are, and comes back by itself if it dies.
+
+**Linux (systemd, user unit)** — `~/.config/systemd/user/llm-gateway.service`:
+
+```ini
+[Unit]
+Description=LLM gateway
+
+[Service]
+ExecStart=%h/.local/bin/gateway -config %h/.config/llm-gateway/config.yaml
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now llm-gateway
+journalctl --user -u llm-gateway -f      # its JSON log
+```
+
+**macOS (launchd)** — `~/Library/LaunchAgents/dev.llm-gateway.plist`, with your user name in
+the paths:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>dev.llm-gateway</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/you/.local/bin/gateway</string>
+    <string>-config</string>
+    <string>/Users/you/.config/llm-gateway/config.yaml</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>/Users/you/Library/Logs/llm-gateway.log</string>
+  <key>StandardErrorPath</key><string>/Users/you/Library/Logs/llm-gateway.log</string>
+</dict>
+</plist>
+```
+
+```sh
+launchctl load -w ~/Library/LaunchAgents/dev.llm-gateway.plist
+```
+
+### The `claude` shell function
+
+Put this in the startup file of the shell you actually use: `~/.zshrc` for zsh, `~/.bashrc`
+for bash (`echo $SHELL` tells you which). In the wrong file it is never defined, `claude`
+runs plain Claude Code, and nothing is captured. It loads the gateway settings only when the
+gateway answers, so a stopped gateway means plain Claude Code, never a broken one:
+
+```sh
+claude() {
+  if curl -fsS --max-time 1 http://127.0.0.1:7197/healthz >/dev/null 2>&1; then
+    command claude --settings "$HOME/.config/llm-gateway/claude-settings.json" "$@"
+  else
+    echo "llm-gateway is not running: starting plain Claude Code" >&2
+    command claude "$@"
+  fi
+}
+```
+
+Change the address if `listen_addr` is not the default. Claude Code started from an IDE
+extension or the Claude app does not run this function, so those sessions are not captured.
+
+### Remove the old setup
+
+The settings file now carries everything the shell exports and user-scope hooks used to:
+
+- Remove `export ANTHROPIC_BASE_URL=…` (and any `HTTPS_PROXY` you set for the gateway) from
+  your shell profile.
+- Remove the gateway's hooks from `~/.claude/settings.json`: every entry whose `url` is
+  `http://127.0.0.1:7197/_gateway/hooks/claude-code`. Leave your own hooks as they are.
+  Keeping both would send every event twice.
+
+### What is and is not seen
+
+- Files: the result at each checkpoint, not every write; the session's starting folder, the
+  `additionalDirectories` of Claude Code's settings, folders learned from Claude's write and
+  read paths, and `effects.files.extra_dirs`. Never `/tmp`, the home folder or `/`.
+- Reads: Claude's own Read, Grep and Glob only, not `cat` or scripts.
+- Network: traffic through the gateway's proxy only. HTTPS shows host, port, bytes, timing
+  and outcome; it is never decrypted. With the sandbox on, all Bash commands; MCP servers
+  only if they use the proxy setting.
+- A connection is linked to the one session active in the last 10 minutes; with two at
+  once it is listed under "unassigned connections" on the Sessions page.
+- Copies of changed text files, `.env` included, are stored as-is (ADR 0005).
+
+The full list of accepted limits is in `specs/014-file-and-network-effects/research.md`.

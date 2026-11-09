@@ -62,7 +62,7 @@ var defaultUIWant = UI{Enabled: true, ListenAddr: "127.0.0.1:7199"}
 
 // AC5: with no config, the listen address is loopback on 7197.
 func TestDefaults(t *testing.T) {
-	want := Config{ListenAddr: "127.0.0.1:7197", LogLevel: "info", ShutdownTimeout: 10 * time.Minute, Capture: defaultCaptureWant, Hooks: defaultHooksWant, RateLimit: defaultRateLimitWant, UI: defaultUIWant}
+	want := Config{ListenAddr: "127.0.0.1:7197", LogLevel: "info", ShutdownTimeout: 10 * time.Minute, Capture: defaultCaptureWant, Hooks: defaultHooksWant, RateLimit: defaultRateLimitWant, UI: defaultUIWant, Effects: defaultEffects()}
 	if got := Defaults(); !reflect.DeepEqual(got, want) {
 		t.Errorf("Defaults() = %+v, want %+v", got, want)
 	}
@@ -138,7 +138,7 @@ func TestLoad_Precedence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Config{ListenAddr: "127.0.0.1:2", LogLevel: "warn", ShutdownTimeout: 7 * time.Second, Capture: defaultCaptureWant, Hooks: defaultHooksWant, RateLimit: defaultRateLimitWant, UI: defaultUIWant}
+	want := Config{ListenAddr: "127.0.0.1:2", LogLevel: "warn", ShutdownTimeout: 7 * time.Second, Capture: defaultCaptureWant, Hooks: defaultHooksWant, RateLimit: defaultRateLimitWant, UI: defaultUIWant, Effects: defaultEffects()}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("Load() = %+v, want %+v", cfg, want)
 	}

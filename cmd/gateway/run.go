@@ -18,8 +18,10 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/clients/claudecode"
 	"github.com/brutally-honest/llm-gateway/internal/config"
 	"github.com/brutally-honest/llm-gateway/internal/core"
+	"github.com/brutally-honest/llm-gateway/internal/effects"
 	"github.com/brutally-honest/llm-gateway/internal/hooks"
 	"github.com/brutally-honest/llm-gateway/internal/logging"
+	"github.com/brutally-honest/llm-gateway/internal/netproxy"
 	"github.com/brutally-honest/llm-gateway/internal/protocols/anthropic"
 	"github.com/brutally-honest/llm-gateway/internal/ratelimit"
 	"github.com/brutally-honest/llm-gateway/internal/server"
@@ -161,7 +163,7 @@ func run(ctx context.Context, d deps) int {
 	var capt *captureRun
 	if cfg.Capture.Enabled {
 		var code int
-		if capt, code = startCapture(ctx, cfg.Capture, cfg.Hooks, cfg.UI.Enabled, profiles, d, log); capt == nil {
+		if capt, code = startCaptureWith(ctx, cfg.Capture, cfg.Hooks, cfg.UI.Enabled, cfg.Effects, profiles, d, log); capt == nil {
 			return code
 		}
 	} else if cfg.UI.Enabled {
@@ -210,6 +212,16 @@ func run(ctx context.Context, d deps) int {
 			return exitRuntime
 		}
 	}
+	// The proxy listeners bind before anything serves too, so a taken port stops the
+	// gateway with one line (spec 014, E14).
+	if code := capt.startProxy(cfg.Effects, d.listen, log); code != exitOK {
+		_, _ = capt.close(context.Background())
+		_ = ln.Close()
+		if uiLn != nil {
+			_ = uiLn.Close()
+		}
+		return code
+	}
 	// The hook route is always mounted; with capture off it answers and counts only.
 	hookSink, hookOn := capt.hookSink(), true
 	stopHooks := func() {} // capture on: the sink stops with capture
@@ -232,6 +244,10 @@ func run(ctx context.Context, d deps) int {
 		defer hookSink.Close(context.Background()) // the early returns; Close is idempotent
 	}
 	hookHandler := hooks.NewHandler(hookSink, log, cfg.Capture.MaxBodyBytes, hookOn)
+	if capt.proxyOn() {
+		// Upstream calls never loop back through the gateway's own proxy (spec 014 AC11).
+		opts = append(opts, core.WithOwnProxies(cfg.Effects.Network.HTTPProxyAddr, cfg.Effects.Network.SocksProxyAddr))
+	}
 	registry := core.NewRegistry(log, opts...)
 	for _, p := range profiles {
 		registry.AddProfile(p)
@@ -361,6 +377,8 @@ type captureRun struct {
 	timelines *ui.TimelineCache
 	// digests is the one digest cache they share, for the same reason.
 	digests *ui.DigestCache
+	// effects is the effect sensors; nil when effects are off (spec 014, E15).
+	effects *effectsRun
 }
 
 // hookSink is the hook sink, or nil with capture off or a store that cannot save hooks.
@@ -402,6 +420,11 @@ func (c *captureRun) uiDeps(ctx context.Context, addr string, log *zap.Logger) u
 // startCapture resolves capture.dir, opens the store and starts the sink. On failure
 // it logs one line and returns nil and the exit code.
 func startCapture(ctx context.Context, c config.Capture, h config.Hooks, withUI bool, profiles []core.Profile, d deps, log *zap.Logger) (*captureRun, int) {
+	return startCaptureWith(ctx, c, h, withUI, config.Effects{}, profiles, d, log)
+}
+
+// startCaptureWith is startCapture with the effect sensors of e hanging off the hook sink.
+func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, withUI bool, e config.Effects, profiles []core.Profile, d deps, log *zap.Logger) (*captureRun, int) {
 	dir, ok := captureDir(c, d.lookupEnv, log)
 	if !ok {
 		return nil, exitConfig
@@ -442,18 +465,173 @@ func startCapture(ctx context.Context, c config.Capture, h config.Hooks, withUI 
 	}
 	sink := capture.NewSink(cfg, st, log)
 	var hookSink *hooks.Sink
+	var eff *effectsRun
 	if hs, ok := st.(hooks.Store); ok {
 		hcfg := hookConfig(h, profiles)
+		var onStored []func(hooks.HookStored)
 		if hub != nil {
 			// A stored hook event reaches the open web UI streams (AC26).
-			hcfg.OnStored = func(s hooks.HookStored) { hub.PublishHook(s.Principal, s.Client, s.SessionKey) }
+			onStored = append(onStored, func(s hooks.HookStored) { hub.PublishHook(s.Principal, s.Client, s.SessionKey) })
+		}
+		eff = startEffects(e, st, hub, profiles, log)
+		onStored = append(onStored, eff.callbacks()...)
+		if len(onStored) > 0 {
+			hcfg.OnStored = func(s hooks.HookStored) {
+				for _, f := range onStored {
+					f(s)
+				}
+			}
 		}
 		hookSink = hooks.NewSink(hcfg, hs, log)
 	}
 	return &captureRun{
 		store: st, sink: sink, hooks: hookSink, budget: core.NewBudget(c.MemoryLimit), maxBodyBytes: c.MaxBodyBytes,
-		reader: reader, hub: hub, timelines: timelines, digests: digests,
+		reader: reader, hub: hub, timelines: timelines, digests: digests, effects: eff,
 	}, exitOK
+}
+
+// effectsStore is what the effect sensors save through.
+type effectsStore interface {
+	effects.EffectStore
+	effects.CheckpointStore
+}
+
+// effectsRun is the effect sensors while the gateway runs. A nil *effectsRun is effects
+// off, and every method is a no-op on it.
+type effectsRun struct {
+	reads  *effects.Reads
+	runner *effects.Runner
+	saved  effects.Saved
+	store  effectsStore
+	// proxy and rec are set once the proxy listeners are bound; nil with the network
+	// sensor off.
+	proxy *netproxy.Proxy
+	rec   *netproxy.Recorder
+}
+
+// startEffects starts the effect sensors that hang off stored hook events (spec 014); nil
+// when effects are off (E15) or the store cannot hold them.
+func startEffects(e config.Effects, st capture.Store, hub *ui.Hub, profiles []core.Profile, log *zap.Logger) *effectsRun {
+	es, ok := st.(effectsStore)
+	if !e.Enabled || !ok {
+		return nil
+	}
+	saved := func(principal, client, key string) {
+		if hub != nil {
+			hub.PublishEffects(principal, client, key)
+		}
+	}
+	rules := effectRules(profiles)
+	run := &effectsRun{
+		reads:  effects.NewReads(es, rules, saved, log),
+		runner: effects.NewRunner(e, es, rules, saved, log),
+		saved:  saved,
+		store:  es,
+	}
+	run.runner.Start()
+	return run
+}
+
+// callbacks are the sensors' hook callbacks.
+func (e *effectsRun) callbacks() []func(hooks.HookStored) {
+	if e == nil {
+		return nil
+	}
+	return []func(hooks.HookStored){e.reads.OnStored, e.runner.OnStored}
+}
+
+// startProxy binds the HTTP proxy listener and, when set, the SOCKS5 one, then serves
+// them; it links each connection to the runner's one active session (AC10). With effects
+// or the network sensor off it does nothing. A bind failure logs one line and closes
+// what was bound.
+func (c *captureRun) startProxy(e config.Effects, listen func(network, addr string) (net.Listener, error), log *zap.Logger) int {
+	if c == nil || c.effects == nil || !e.Network.Enabled {
+		return exitOK
+	}
+	type bound struct {
+		key string
+		ln  net.Listener
+	}
+	var lns []bound
+	for _, l := range []struct{ key, addr string }{
+		{"effects.network.http_proxy_addr", e.Network.HTTPProxyAddr},
+		{"effects.network.socks_proxy_addr", e.Network.SocksProxyAddr},
+	} {
+		if l.addr == "" {
+			continue
+		}
+		ln, err := listen("tcp", l.addr)
+		if err != nil {
+			for _, b := range lns {
+				_ = b.ln.Close()
+			}
+			reason := "bind failed"
+			if errors.Is(err, syscall.EADDRINUSE) {
+				reason = "address in use"
+			}
+			log.Error("cannot bind", zap.String("key", l.key), zap.String("reason", reason))
+			return exitRuntime
+		}
+		lns = append(lns, bound{l.key, ln})
+	}
+	run := c.effects
+	run.rec = netproxy.NewRecorder(run.store, run.runner.ActiveSession, netproxy.Saved(run.saved), log)
+	run.proxy = netproxy.New(run.rec, log)
+	for _, b := range lns {
+		if b.key == "effects.network.http_proxy_addr" {
+			run.proxy.ListenHTTP(b.ln)
+		} else {
+			run.proxy.ListenSOCKS(b.ln)
+		}
+		log.Info("proxy listener started", zap.String("key", b.key), zap.String("addr", b.ln.Addr().String()))
+	}
+	return exitOK
+}
+
+// close stops the proxy listeners (open tunnels are stored as closed early once ctx
+// ends), drains the network recorder, then stops the checkpoint runner.
+func (e *effectsRun) close(ctx context.Context) {
+	if e == nil {
+		return
+	}
+	if e.proxy != nil {
+		e.proxy.Shutdown(ctx)
+		e.rec.Close(ctx)
+	}
+	e.runner.Close(ctx)
+}
+
+// proxyOn reports whether the gateway's own proxy listeners are serving.
+func (c *captureRun) proxyOn() bool { return c != nil && c.effects != nil && c.effects.proxy != nil }
+
+// proxyCounts are the network recorder's counters, zero with the sensor off.
+func (e *effectsRun) proxyCounts() netproxy.Counts {
+	if e == nil || e.rec == nil {
+		return netproxy.Counts{}
+	}
+	return e.rec.Counts()
+}
+
+// counts are the sensors' counters for the shutdown line.
+func (e *effectsRun) counts() effects.Counts {
+	if e == nil {
+		return effects.Counts{}
+	}
+	return e.runner.Counts()
+}
+
+// effectRules finds a client's effect rules through its profile.
+func effectRules(profiles []core.Profile) effects.Rules {
+	return func(client string) core.EffectRules {
+		for _, p := range profiles {
+			if p.Name() == client {
+				if r, ok := p.(core.EffectRules); ok {
+					return r
+				}
+			}
+		}
+		return nil
+	}
 }
 
 // storeOpenReason is a fixed reason for a failed store open.
@@ -497,6 +675,8 @@ func (c *captureRun) close(ctx context.Context) (undrained int, err error) {
 	if c.hooks != nil {
 		c.hooks.Close(ctx)
 	}
+	// After the hook sink: its last events may still signal a checkpoint.
+	c.effects.close(ctx)
 	undrained = c.sink.Close(ctx)
 	err = c.store.Close()
 	if c.reader != nil {
@@ -521,7 +701,13 @@ func (c *captureRun) stop(ctx context.Context, log *zap.Logger) {
 	if c.hooks != nil {
 		hc = c.hooks.Counts()
 	}
+	ec, pc := c.effects.counts(), c.effects.proxyCounts()
 	log.Info("capture stopped",
+		zap.Int64("effects_checkpoints", ec.Checkpoints),
+		zap.Int64("effects_stored", ec.EffectsStored+pc.Stored),
+		zap.Int64("effects_git_failures", ec.GitFailures),
+		zap.Int64("effects_proxy_dropped", pc.Dropped),
+		zap.Int64("effects_proxy_store_failed", pc.Failed),
 		zap.Int64("hooks_queue_full", hc.QueueFull),
 		zap.Int64("hooks_oversize", hc.Oversize),
 		zap.Int64("hooks_capture_off", hc.CaptureOff),

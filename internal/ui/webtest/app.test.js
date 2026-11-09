@@ -176,8 +176,9 @@ test("sixPageLoadRendersABoundedNumberOfTimes", async () => {
   const proto = Object.getPrototypeOf(byId("app"));
   const replace = proto.replaceChildren;
   let rebuilds = 0;
+  // each draw redraws the rail once; the timeline list is updated by key, never replaced
   proto.replaceChildren = function (...nodes) {
-    if (this.className === "timeline") rebuilds++;
+    if (this.className === "rail-list") rebuilds++;
     return replace.apply(this, nodes);
   };
   try {
@@ -224,8 +225,9 @@ test("aStreamBurstIsDrawnOnceNotPerEvent", async (t) => {
   const proto = Object.getPrototypeOf(byId("app"));
   const replace = proto.replaceChildren;
   let rebuilds = 0;
+  // each draw redraws the rail once; the timeline list is updated by key, never replaced
   proto.replaceChildren = function (...nodes) {
-    if (this.className === "timeline") rebuilds++;
+    if (this.className === "rail-list") rebuilds++;
     return replace.apply(this, nodes);
   };
   try {

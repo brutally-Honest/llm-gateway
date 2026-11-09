@@ -20,6 +20,8 @@ type HookRecord struct {
 	ReceivedAt time.Time
 	Payload    []byte // the body, byte-for-byte
 	Event      core.HarnessEvent
+	// ID is the stored row id, set by SaveHook once the row is written.
+	ID int64
 }
 
 // SaveHook stores one hook event: the payload (and the tool input, when there is
@@ -35,7 +37,7 @@ func (s *Store) SaveHook(ctx context.Context, h *HookRecord) error {
 	}
 	e := h.Event
 	return s.write(ctx, items, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `INSERT INTO hook_events (
+		res, err := tx.ExecContext(ctx, `INSERT INTO hook_events (
 			seq, principal_id, client, session_key, tool_use_id, phase, source_name,
 			tool_name, agent_id, agent_type, input_hash, payload_hash, received_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -43,6 +45,9 @@ func (s *Store) SaveHook(ctx context.Context, h *HookRecord) error {
 			string(e.Phase), e.SourceName, e.ToolName, e.AgentID, e.AgentType,
 			input, payloadHash, h.ReceivedAt.UnixNano())
 		if err != nil {
+			return fmt.Errorf("insert hook event: %w", err)
+		}
+		if h.ID, err = res.LastInsertId(); err != nil {
 			return fmt.Errorf("insert hook event: %w", err)
 		}
 		return nil

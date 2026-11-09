@@ -104,6 +104,7 @@ func newRouter(d Deps, extra ...func(chi.Router)) chi.Router {
 			mountSessions(api, d)
 			mountToday(api, d)
 			mountExchanges(api, d)
+			mountEffects(api, d)
 		}
 		if d.Hub != nil {
 			mountStreams(api, d)

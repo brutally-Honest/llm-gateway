@@ -250,8 +250,11 @@ func TestSink_OnStoredCalledAfterSave(t *testing.T) {
 	s := hooks.NewSink(c, st, log)
 	s.Submit("c", 0, time.Time{}, []byte(`{}`))
 	closeSink(t, s)
-	want := hooks.HookStored{Principal: core.PrincipalLocal, Client: "c", SessionKey: "s1"}
-	if got != want || !sawRecord {
+	// HookStored also carries the mapped event (spec 014), which holds a slice: the
+	// identity is compared field by field, and the event by its session key.
+	want := [3]string{core.PrincipalLocal, "c", "s1"}
+	ident := [3]string{got.Principal, got.Client, got.SessionKey}
+	if ident != want || got.Event.SessionKey != "s1" || !sawRecord {
 		t.Fatalf("got %+v sawRecord=%v", got, sawRecord)
 	}
 }

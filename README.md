@@ -10,7 +10,9 @@ is not tied to one vendor.
 
 Status: **Phases 0–5**, the **web UI** (spec 009) and its **redesign** (spec 013) are done.
 Claude Code proxies through the gateway to Anthropic with capture, session timelines, token
-usage, per-key rate limiting and a live browser view (see `specs/`).
+usage, per-key rate limiting and a live browser view (see `specs/`). **File and network
+effects** (spec 014: changed and read files, connections through a forward proxy) are built
+and awaiting their manual check.
 
 - `PLAN.md` — the one-page source of intent: goals, phases, stack rationale, open
   questions, commit conventions.

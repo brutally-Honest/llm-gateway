@@ -122,3 +122,70 @@ ratelimit:
   #   alice:
   #     rpm: 60
   #     tpm: 100000
+
+# Effects (spec 014): what a session did beside the model calls. Files that changed in the
+# session's folders, seen at checkpoints run on each stored hook event; files Claude's own
+# read tools looked at; and network connections made through the gateway's forward proxy.
+# They need the gateway on the host, not in Docker (ADR 0014).
+effects:
+  # false means no checkpoints, no read effects and no proxy listeners.
+  # Env: GATEWAY_EFFECTS_ENABLED
+  enabled: true
+
+  files:
+    # false turns file checkpoints off; read effects stay on.
+    # Env: GATEWAY_EFFECTS_FILES_ENABLED
+    enabled: true
+
+    # Absolute folders watched for every session, beside the session's own starting
+    # folder, the extra folders its client's settings list and the folders learned from
+    # its tools. The home folder, / and temp folders are never watched.
+    # Env: GATEWAY_EFFECTS_FILES_EXTRA_DIRS (comma-separated)
+    extra_dirs: []
+
+    # Names matched against each part of a path (folders and file names); a match is
+    # skipped. .env is left out on purpose so changes to .env files are tracked; add it
+    # here to stop that.
+    # Env: GATEWAY_EFFECTS_FILES_IGNORE (comma-separated)
+    ignore: [.git, node_modules, dist, build, target, .venv, venv, __pycache__, .next, .cache]
+
+    # A changed text file up to this size (256 KiB) gets a copy of its new content, so a
+    # diff can be shown. Copies are stored as-is, secrets included (ADR 0005).
+    # Env: GATEWAY_EFFECTS_FILES_MAX_COPY_BYTES
+    max_copy_bytes: 262144
+
+    # How long each git call of a checkpoint may take. Go duration syntax; must be > 0.
+    # Env: GATEWAY_EFFECTS_FILES_GIT_TIMEOUT
+    git_timeout: 10s
+
+    # A session's saved snapshot is deleted at session end or after this long without a
+    # hook event (7 days); a later checkpoint then starts a new baseline.
+    # Env: GATEWAY_EFFECTS_FILES_SNAPSHOT_RETENTION
+    snapshot_retention: 168h
+
+  network:
+    # false means no proxy listeners; `gateway hooks print` then prints the hooks only.
+    # Env: GATEWAY_EFFECTS_NETWORK_ENABLED
+    enabled: true
+
+    # The HTTP forward proxy (CONNECT and plain http://). Loopback only, and distinct
+    # from every other listener. HTTPS is never decrypted: host, port, bytes and timing.
+    # Env: GATEWAY_EFFECTS_NETWORK_HTTP_PROXY_ADDR
+    http_proxy_addr: 127.0.0.1:7198
+
+    # The SOCKS5 proxy (no auth, CONNECT only). Loopback only; "" in this file turns it
+    # off.
+    # Env: GATEWAY_EFFECTS_NETWORK_SOCKS_PROXY_ADDR
+    socks_proxy_addr: 127.0.0.1:7195
+
+    # true: `gateway hooks print` adds a sandbox block pointing Claude Code's sandbox at
+    # the proxy ports, so every Bash command's traffic goes through them. Off by default:
+    # the sandbox is optional and Claude Code's Linux sandbox is broken on some systems
+    # (docs/clients/claude-code.md §6).
+    # Env: GATEWAY_EFFECTS_NETWORK_SANDBOX
+    sandbox: false
+
+    # A connection is linked to the one session with a hook event this recent and no
+    # session end; with none or more than one it is stored unassigned.
+    # Env: GATEWAY_EFFECTS_NETWORK_ACTIVE_WINDOW
+    active_window: 10m
