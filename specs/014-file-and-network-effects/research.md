@@ -283,6 +283,13 @@ Answers (2026-11-09, Linux, step 9, sandbox off):
 - Show the effect counts in the turn header and the left rail (the folded row at the bottom
   of a turn is easy to miss).
 
+### Close-out (2026-11-09)
+- spec.md, plan.md and tasks.md are set to `status: done`, as 013 was closed (349c7e3, status
+  line only). Their approval fields (`approved`, `approved-by`, `sha256`, `fingerprint` and the
+  linked fingerprints) are left empty: 014 was built outside the kit (D1), so no approval was
+  ever recorded, and only the human-run approve step may fill them. No check needs them: the
+  kit reads `done` as a plain state and checks approvals only for `approved`.
+
 ### Sources (2026-11-08)
 - Claude Code honours `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`, does not support SOCKS
   itself, and every env var on that page can be set in settings.json:

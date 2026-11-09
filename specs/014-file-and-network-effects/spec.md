@@ -1,7 +1,7 @@
 ---
 feature: 014-file-and-network-effects
 kind: feat
-status: draft
+status: done
 version: 1
 created: 2026-11-08
 supersedes:
