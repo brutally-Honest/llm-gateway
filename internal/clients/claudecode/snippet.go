@@ -45,7 +45,7 @@ type NetSettings struct {
 
 // SettingsDoc is the Claude Code settings document the gateway prints: the hooks of
 // HookSnippet and, with net set, an env block pointing Claude Code at the gateway and its
-// proxy, plus a sandbox block unless net.Sandbox is false. A nil net prints exactly
+// proxy, plus a sandbox block when net.Sandbox is true. A nil net prints exactly
 // HookSnippet (AC12). It is saved as its own file and loaded with --settings; nothing
 // here writes a settings file.
 func SettingsDoc(hooksAddr string, net *NetSettings) []byte {

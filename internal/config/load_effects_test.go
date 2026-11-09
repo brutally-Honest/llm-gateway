@@ -26,7 +26,7 @@ func TestLoad_EffectsDefaults(t *testing.T) {
 			Enabled:        true,
 			HTTPProxyAddr:  "127.0.0.1:7198",
 			SocksProxyAddr: "127.0.0.1:7195",
-			Sandbox:        true,
+			Sandbox:        false,
 			ActiveWindow:   10 * time.Minute,
 		},
 	}
@@ -39,7 +39,7 @@ func TestLoad_EffectsDefaults(t *testing.T) {
 	}
 
 	path := writeFile(t, "effects:\n  files:\n    extra_dirs: [/srv/a, /srv/b]\n    ignore: [.git, .env]\n  network:\n    socks_proxy_addr: \"\"\n")
-	cfg, src, err := config.Load(config.Options{Path: path, Upstreams: specs, LookupEnv: envOf("GATEWAY_EFFECTS_NETWORK_SANDBOX", "false")})
+	cfg, src, err := config.Load(config.Options{Path: path, Upstreams: specs, LookupEnv: envOf("GATEWAY_EFFECTS_NETWORK_SANDBOX", "true")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,8 +49,8 @@ func TestLoad_EffectsDefaults(t *testing.T) {
 	if got := cfg.Effects.Files.Ignore; !reflect.DeepEqual(got, []string{".git", ".env"}) {
 		t.Errorf("Ignore = %v; adding .env must be allowed", got)
 	}
-	if cfg.Effects.Network.SocksProxyAddr != "" || cfg.Effects.Network.Sandbox {
-		t.Errorf("Network = %+v, want SOCKS5 off and sandbox off", cfg.Effects.Network)
+	if cfg.Effects.Network.SocksProxyAddr != "" || !cfg.Effects.Network.Sandbox {
+		t.Errorf("Network = %+v, want SOCKS5 off and sandbox on", cfg.Effects.Network)
 	}
 	if !reflect.DeepEqual(src.EnvOverrides, []string{"effects.network.sandbox"}) {
 		t.Errorf("EnvOverrides = %v", src.EnvOverrides)

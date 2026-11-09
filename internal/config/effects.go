@@ -99,7 +99,7 @@ func defaultEffects() Effects {
 			Enabled:        true,
 			HTTPProxyAddr:  "127.0.0.1:7198",
 			SocksProxyAddr: "127.0.0.1:7195",
-			Sandbox:        true,
+			Sandbox:        false,
 			ActiveWindow:   10 * time.Minute,
 		},
 	}

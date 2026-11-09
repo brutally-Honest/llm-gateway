@@ -117,8 +117,8 @@ func TestHooksPrint_WritesNoFileExitsZero(t *testing.T) {
 }
 
 // AC12: with network effects off, hooks print is byte for byte the hooks document of
-// 010; with them on it adds the env block and, unless sandbox is false, a sandbox block
-// pointing at the proxy ports, without socksProxyPort when SOCKS5 is off.
+// 010; with them on it adds the env block and, only when sandbox is true (off by default),
+// a sandbox block pointing at the proxy ports, without socksProxyPort when SOCKS5 is off.
 func TestHooksPrint_SettingsDoc(t *testing.T) {
 	_, off := hooksPrint(t, nil)
 	if want := string(claudecode.HookSnippet("127.0.0.1:7197")); off != want {
@@ -156,12 +156,13 @@ func TestHooksPrint_SettingsDoc(t *testing.T) {
 	if len(on.Hooks) == 0 || !maps.Equal(on.Env, wantEnv) {
 		t.Errorf("network on: hooks %d, env %v; want the hooks and %v", len(on.Hooks), on.Env, wantEnv)
 	}
-	if on.Sandbox == nil || !on.Sandbox.Enabled || !maps.Equal(on.Sandbox.Network, map[string]int{"httpProxyPort": 7198, "socksProxyPort": 7195}) {
-		t.Errorf("network on: sandbox = %+v", on.Sandbox)
+	if on.Sandbox != nil {
+		t.Errorf("network on, sandbox default: sandbox = %+v, want no sandbox block", on.Sandbox)
 	}
 
-	if d := parse(map[string]string{"GATEWAY_EFFECTS_NETWORK_SANDBOX": "false"}); d.Sandbox != nil || len(d.Env) != 4 {
-		t.Errorf("sandbox off: sandbox %+v, env %v; want no sandbox block and the env block", d.Sandbox, d.Env)
+	sb := parse(map[string]string{"GATEWAY_EFFECTS_NETWORK_SANDBOX": "true"})
+	if sb.Sandbox == nil || !sb.Sandbox.Enabled || !maps.Equal(sb.Sandbox.Network, map[string]int{"httpProxyPort": 7198, "socksProxyPort": 7195}) || !maps.Equal(sb.Env, wantEnv) {
+		t.Errorf("sandbox on: sandbox %+v, env %v; want the sandbox block with both ports and the env block", sb.Sandbox, sb.Env)
 	}
 
 	dir := t.TempDir()
@@ -169,7 +170,7 @@ func TestHooksPrint_SettingsDoc(t *testing.T) {
 	if err := os.WriteFile(path, []byte("effects:\n  network:\n    socks_proxy_addr: \"\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	env := map[string]string{networkKey: "true"}
+	env := map[string]string{networkKey: "true", "GATEWAY_EFFECTS_NETWORK_SANDBOX": "true"}
 	code, out := hooksPrint(t, env, "-config", path)
 	var d doc
 	if code != 0 || json.Unmarshal([]byte(out), &d) != nil {

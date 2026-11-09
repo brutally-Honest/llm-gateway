@@ -20,7 +20,8 @@ gateway hooks print            # from a checkout: go run ./cmd/gateway hooks pri
 ```
 
 With network effects on (`effects.network.enabled`, the default), the printed document also
-holds an `env` and a `sandbox` block and is saved as its own settings file instead: see
+holds an `env` block (and a `sandbox` block with `effects.network.sandbox: true`) and is
+saved as its own settings file instead: see
 [claude-code.md §6](claude-code.md#6-files-and-network-014). To print the hooks alone, run it
 with `GATEWAY_EFFECTS_NETWORK_ENABLED=false`.
 

@@ -179,9 +179,11 @@ effects:
     socks_proxy_addr: 127.0.0.1:7195
 
     # true: `gateway hooks print` adds a sandbox block pointing Claude Code's sandbox at
-    # the proxy ports, so every Bash command's traffic goes through them.
+    # the proxy ports, so every Bash command's traffic goes through them. Off by default:
+    # the sandbox is optional and Claude Code's Linux sandbox is broken on some systems
+    # (docs/clients/claude-code.md §6).
     # Env: GATEWAY_EFFECTS_NETWORK_SANDBOX
-    sandbox: true
+    sandbox: false
 
     # A connection is linked to the one session with a hook event this recent and no
     # session end; with none or more than one it is stored unassigned.

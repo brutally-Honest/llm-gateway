@@ -151,9 +151,9 @@ cp config.example.yaml ~/.config/llm-gateway/config.yaml   # edit as needed
 ### Save the printed settings file
 
 `gateway hooks print` prints one Claude Code settings document: the hooks, an `env` block
-(`ANTHROPIC_BASE_URL`, `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`) and a `sandbox` block that
-points Claude Code's Bash sandbox at the proxy ports, so every Bash command's traffic goes
-through it. It writes no file; save it as a file of its own, not in `~/.claude/settings.json`:
+(`ANTHROPIC_BASE_URL`, `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`) and, with
+`effects.network.sandbox: true`, a `sandbox` block (see [The sandbox](#the-sandbox-optional)).
+It writes no file; save it as a file of its own, not in `~/.claude/settings.json`:
 
 ```sh
 gateway hooks print -config ~/.config/llm-gateway/config.yaml \
@@ -161,8 +161,26 @@ gateway hooks print -config ~/.config/llm-gateway/config.yaml \
 ```
 
 Print it again whenever `listen_addr`, a proxy address or `effects.network.sandbox` changes.
-With `effects.network.sandbox: false` the `sandbox` block is left out; with
-`effects.network.enabled: false` the output is the hooks alone, as in 010.
+With `effects.network.enabled: false` the output is the hooks alone, as in 010.
+
+### The sandbox (optional)
+
+`effects.network.sandbox` is `false` by default. Set it to `true` and reprint the settings
+file to add a `sandbox` block that turns on Claude Code's Bash sandbox and points it at the
+proxy ports, so every Bash command's traffic goes through the gateway, including programs
+that ignore `HTTPS_PROXY` (Node's built-in `fetch`, ssh, database clients). Without it,
+only programs that honour `HTTPS_PROXY` / `HTTP_PROXY` are seen.
+
+- **Linux needs both `bubblewrap` and `socat`.** If either is missing, Claude Code quietly
+  runs commands without the sandbox: nothing fails, and traffic from programs that ignore
+  `HTTPS_PROXY` is not seen.
+- **Ubuntu 24.04 and later:** Claude Code's sandbox currently fails every Bash command with
+  `apply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted)`. This
+  is a known Claude Code bug
+  ([anthropics/claude-code#43454](https://github.com/anthropics/claude-code/issues/43454)).
+  An untested workaround is adding `"allowAllUnixSockets": true` under `sandbox.network` in
+  the saved settings file (`sandbox.network.allowAllUnixSockets`); otherwise leave the
+  sandbox off.
 
 ### Run the gateway as a login service
 
@@ -217,8 +235,10 @@ launchctl load -w ~/Library/LaunchAgents/dev.llm-gateway.plist
 
 ### The `claude` shell function
 
-Put this in `~/.bashrc` or `~/.zshrc`. It loads the gateway settings only when the gateway
-answers, so a stopped gateway means plain Claude Code, never a broken one:
+Put this in the startup file of the shell you actually use: `~/.zshrc` for zsh, `~/.bashrc`
+for bash (`echo $SHELL` tells you which). In the wrong file it is never defined, `claude`
+runs plain Claude Code, and nothing is captured. It loads the gateway settings only when the
+gateway answers, so a stopped gateway means plain Claude Code, never a broken one:
 
 ```sh
 claude() {
