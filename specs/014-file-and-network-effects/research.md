@@ -207,6 +207,24 @@ Answers (2026-11-09, Linux, step 9, sandbox off):
   ("200 Connection Established" and an `example.com` row).
 - V3 (2026-11-09) — Not answerable on Linux: the sandbox could not run (D17). Test on the Mac.
 - V4 (2026-11-09) — Not answerable on Linux, same reason. Test on the Mac.
+- V5 (2026-11-09) — Checkpoints are fast and do not lag. The checkpoint's two git calls
+  (`--no-optional-locks status --porcelain=v2 -z --untracked-files=all`, then `ls-files -z -o
+  -i --exclude-standard --directory`), timed by hand: ~/fx014-step9 (1 tracked file) status
+  5–7 ms, ls-files 5–8 ms; this repo (467 tracked files) status 8–10 ms, ls-files 6–8 ms, so
+  about 11–18 ms of git per checkpoint. Lag, from the stored data of session 779fbcb7: a file
+  effect's `at` is the checkpoint's start time, and every one of the 6 file effects started
+  0–1 ms after the PostToolUse hook that triggered it (e.g. `a.txt`, `b.txt`, `c.txt` at
+  01:09:22.848 against the hook at 01:09:22.847 UTC). The PostToolBatch that follows each
+  PostToolUse arrived 14–17 ms later (157 ms after the Write) and found nothing new, so no
+  change was split across checkpoints. Not measured: how long the save takes, and a busier turn than step 9.
+- V6 (2026-11-09) — Pass: the Read PostToolUse payload carries the file in
+  `tool_response.file.content` ("hello world\n" for `notes.txt`, hook 26). The read effect
+  (effect 24, `hook_id` 26) stores no copy (`after_hash` null), and
+  `GET /api/effects/24/content` on the step-9 data returned
+  `{"path":"/home/zoro/fx014-step9/notes.txt","content":"hello world\n","utf8":true}`.
+- V7 (2026-11-09) — Pass: for the Bash call `cd /tmp && pwd` (stdout `/tmp`), the hook `cwd`
+  was `/home/zoro/fx014-step9` on its PreToolUse (hook 27), its PostToolUse (28), and on the
+  PostToolBatch (29) and Stop (30) after it.
 
 ### Manual check results
 - 2026-11-08 — 014-effects.md steps 3–8 at f48bd50 (Linux, Chrome, fresh data folder, seed
