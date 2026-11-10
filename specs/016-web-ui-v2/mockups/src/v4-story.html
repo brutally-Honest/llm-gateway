@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>016 mockup 4 · Story</title>
+<style>
+/*CORE_CSS*/
+/* ---- variant 4: each turn told as a short changelog entry; diffs one click away in place ---- */
+.layout { display: grid; grid-template-columns: 15rem minmax(0, 52rem); gap: 0 32px; justify-content: center; padding: 0 16px; }
+.toc { position: sticky; top: 45px; align-self: start; max-height: calc(100vh - 45px); overflow: auto; padding: 18px 0; }
+.toc h2 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.toc ol { list-style: none; margin: 0; padding: 0; border-left: 2px solid var(--line); }
+.toc a { display: block; padding: 5px 10px; margin-left: -2px; border-left: 2px solid transparent; color: var(--text); text-decoration: none; }
+.toc a:hover { background: var(--panel); }
+.toc a[aria-current=true] { border-left-color: var(--accent); }
+.toc .p { color: var(--hi); font-size: 12.5px; }
+.toc .m { font-size: 11px; color: var(--muted); display: block; }
+.toc .err { color: var(--bad); font-weight: 600; }
+.toc .btw { font-size: 11px; color: var(--muted); padding: 2px 10px 2px 22px; }
+main { padding: 18px 0 60px; display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+.entry { scroll-margin-top: 60px; display: flex; flex-direction: column; gap: 8px; }
+.entry > header { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.entry h2 { margin: 0; font-size: 16px; color: var(--hi); }
+.entry .when { font-size: 12px; color: var(--muted); }
+.entry .cnt { margin-left: auto; font-size: 12px; color: var(--muted); }
+.ask { margin: 0; padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--panel); border-radius: 0 6px 6px 0; color: var(--hi); }
+.ask .who { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.timebar { font-size: 12.5px; color: var(--text); display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.timebar b { color: var(--hi); }
+ol.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.step { display: flex; flex-direction: column; gap: 3px; }
+.say { font-size: 12.5px; color: var(--muted); display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.say .linkish { font-size: 12.5px; }
+ul.tools { list-style: none; margin: 0 0 0 14px; padding: 0 0 0 12px; border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 3px; }
+.tl { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.tl .nm { color: var(--hi); font-weight: 600; }
+.tl code { font-size: 12.5px; overflow-wrap: anywhere; }
+.tl .tm { color: var(--muted); font-size: 12px; }
+.tl.failed { border-left: 3px solid var(--bad); padding-left: 6px; margin-left: -9px; }
+.why { font-size: 12px; color: var(--bad); margin-left: 22px; }
+ul.effs { list-style: none; margin: 2px 0 4px 22px; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; }
+ul.effs > li > .eh { display: grid; grid-template-columns: 11.5rem minmax(0, 1fr) auto; gap: 8px; align-items: baseline; }
+ul.effs details > summary { cursor: pointer; color: var(--accent); font-size: 12px; list-style: none; }
+ul.effs details > summary::before { content: "▸ "; }
+ul.effs details[open] > summary::before { content: "▾ "; }
+ul.effs details > .diff, ul.effs details > pre, ul.effs details > p { margin: 4px 0 6px; }
+.sub { margin: 4px 0 2px 14px; padding: 6px 10px; border: 1px dashed var(--toolc); border-radius: 6px; display: flex; flex-direction: column; gap: 4px; }
+.sub .say { color: var(--toolc); }
+.grp { font-size: 12px; color: var(--muted); font-style: italic; margin: 4px 0 0 22px; }
+.answer { margin: 0; padding: 8px 12px; border-left: 3px solid var(--line); color: var(--text); }
+.answer .who { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.btwentry { border: 1px dashed var(--warn); border-radius: 8px; padding: 8px 12px; display: flex; flex-direction: column; gap: 4px; }
+.btwentry h2 { margin: 0; font-size: 13px; color: var(--hi); }
+.btwentry ul.effs { margin-left: 0; }
+dialog { width: min(42rem, 94vw); max-height: 88vh; padding: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); }
+dialog::backdrop { background: var(--scrim); }
+.dbar { position: sticky; top: 0; display: flex; justify-content: flex-end; padding: 6px 10px; background: var(--panel2); border-bottom: 1px solid var(--line); }
+.dbar button { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 2px 10px; cursor: pointer; }
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+  .toc { position: static; max-height: none; }
+  ul.effs > li > .eh { grid-template-columns: 1fr; gap: 0; }
+}
+</style>
+</head>
+<body>
+<div id="top"></div>
+<div class="layout">
+  <nav class="toc" aria-label="Turns" id="toc"></nav>
+  <main id="main"></main>
+</div>
+<dialog id="dlg" aria-label="Details"><div class="dbar"><button type="button" id="dclose">Close <kbd>Esc</kbd></button></div><div id="dbody"></div></dialog>
+<script>/*CORE_JS*/</script>
+<script>
+"use strict";
+const { S, turns, tools, esc, dur, clock, plural } = G;
+document.getElementById("top").innerHTML = G.topbar("mockup 4 · story");
+
+document.getElementById("toc").innerHTML = `<h2>Turns</h2><ol>` + turns.map((t) => {
+  const fails = t.tools.filter((x) => !x.ok).length;
+  const b = S.between.find((x) => x.after === t.n);
+  return `<li><a href="#turn-${t.n}" data-turn="${t.n}" title="${esc(t.prompt)}"><span class="p clamp">${t.n}. ${esc(t.prompt)}</span><span class="m">${esc(G.railMeta(t))}${fails ? ` · <span class="err">✗ ${fails} failed</span>` : ""}</span></a></li>`
+    + (b ? `<li class="btw">○ you edited ${esc(b.effects.map((e) => e.path).join(", "))}</li>` : "");
+}).join("") + `</ol>`;
+
+function effLi(e) {
+  const w = G.effectWhat(e);
+  const hint = e.label === "harness" || e.label === "outside" ? G.during(e) : "";
+  const body = e.kind === "change" ? G.diffHTML(e) : "";
+  return `<li><div class="eh">${G.labelBadge(e)}<span>${w.g} ${esc(w.w)} <button type="button" class="linkish" data-open="effect:${e.id}"><code title="${esc(e.kind === "net" ? "" : G.full(e.path))}">${esc(G.effectTarget(e))}</code></button></span><span class="muted small">${esc(G.effectStat(e))}${hint ? ` · ${esc(hint)}` : ""}</span></div>${body ? `<details><summary>${e.diff ? "show diff" : e.binary ? "about this file" : "show content"}</summary>${body}</details>` : ""}</li>`;
+}
+function toolLi(x) {
+  const s = G.STATUS(x);
+  return `<li><div class="tl${x.ok ? "" : " failed"}"><span class="st st-${s.w}">${s.g}${x.ok ? "" : " failed"}</span><button type="button" class="linkish nm" data-open="tool:${x.id}">${esc(x.name)}</button><code>${esc(G.toolArg(x))}</code>${G.lineStat(x) ? `<span class="mono small">${G.lineStat(x)}</span>` : ""}<span class="tm">· ${dur(x.dur)}</span></div>${x.ok ? "" : `<div class="why">${esc(x.result.split("\n")[0])}</div>`}${x.effects.length ? `<ul class="effs">${x.effects.map(effLi).join("")}</ul>` : ""}${x.spawns ? subAgent(x) : ""}</li>`;
+}
+function subAgent(x) {
+  const t = G.turns[x.turn - 1];
+  const cs = t.calls.filter((c) => c.agent === x.spawns);
+  return `<div class="sub" role="group" aria-label="Sub-agent ${esc(x.spawns)}"><div class="say">Sub-agent ${esc(x.spawns)} worked for ${dur(x.dur)} in ${plural(cs.length, "model call")}:</div><ol class="steps">${cs.map((c) => step(c, t)).join("")}</ol></div>`;
+}
+function step(c, t) {
+  const mine = t.tools.filter((x) => x.call === c.n);
+  const sev = t.several.filter((e) => e.cands.every((id) => tools.get(id).call === c.n));
+  const verb = mine.length === 0 ? "answered" : mine.length === 1 ? "then" : `then, ${mine.length} in parallel`;
+  return `<li class="step"><div class="say"><button type="button" class="linkish" data-open="call:${c.n}">#${c.n}</button><span>${c.thinking ? "thought and wrote" : "wrote"} for ${dur(c.dur)}${c.thinking ? ` · <button type="button" class="linkish" data-open="call:${c.n}">read the thinking</button>` : ""}${mine.length ? ` · ${verb}:` : ""}</span></div>${mine.length ? `<ul class="tools">${mine.map(toolLi).join("")}</ul>` : ""}${sev.length ? `<p class="grp">◌ not pinned to one tool: ${esc(sev[0].cands.map((id) => G.toolShort(tools.get(id))).join(" and "))} were both running</p><ul class="effs">${sev.map(effLi).join("")}</ul>` : ""}</li>`;
+}
+function entry(t) {
+  const tt = G.turnTime(t);
+  const time = t.hooksOnly
+    ? `<div class="timebar"><span>no model calls captured</span><span>tool time <b>${dur(tt.tool)}</b></span></div>`
+    : `<div class="timebar"><span>prompt to answer <b>${dur(tt.clock)}</b></span><span>model <b>${dur(tt.model)}</b></span><span>tools <b>${dur(tt.tool)}</b></span><span>waiting <b>${dur(tt.wait)}</b></span></div>`;
+  const steps = t.hooksOnly
+    ? `<ol class="steps"><li class="step"><div class="say">The hooks saw (no #n, no model call to open):</div><ul class="tools">${t.tools.map(toolLi).join("")}</ul></li></ol>`
+    : `<ol class="steps">${t.calls.filter((c) => !c.agent).map((c) => step(c, t)).join("")}</ol>`;
+  const loose = t.unpinned.length ? `<p class="grp">○ not caused by a tool call</p><ul class="effs">${t.unpinned.map(effLi).join("")}</ul>` : "";
+  return `<article class="entry" id="turn-${t.n}" aria-labelledby="h-${t.n}"><header><h2 id="h-${t.n}"><button type="button" class="linkish" data-open="turn:${t.n}" style="font-size:16px;font-weight:600">Turn ${t.n}</button></h2><span class="when">${clock(t.at)}</span><span class="cnt">${plural(t.tools.length, "tool call")} · ${esc(G.countsText(G.counts(t.effects)))}</span></header>
+    <p class="ask"><span class="who">You asked</span>${esc(t.prompt)}</p>${time}${steps}${loose}
+    ${t.answer ? `<p class="answer"><span class="who">Claude answered</span>${esc(t.answer)}</p>` : ""}</article>`;
+}
+const main = document.getElementById("main");
+main.innerHTML = `<section class="shead" aria-label="Session"><h1>${esc(S.title)}</h1>${G.sessionMeta()}${G.headerFacts(true)}<div>${G.sideToggle()}</div>${G.unassignedNote()}</section>`
+  + turns.map((t) => {
+    const b = S.between.find((x) => x.after === t.n);
+    return entry(t) + (b ? `<section class="btwentry" aria-label="Between turns"><h2>Between turns ${t.n} and ${t.n + 1} · ${clock(b.effects[0].at)}</h2><p class="muted small" style="margin:0">A change while no tool call was running: most likely your own edit.</p><ul class="effs">${b.effects.map(effLi).join("")}</ul></section>` : "");
+  }).join("");
+
+const dlg = document.getElementById("dlg");
+let opener = null;
+document.body.addEventListener("click", (ev) => {
+  const o = ev.target.closest("[data-open]");
+  if (o && !o.closest("dialog")) {
+    opener = o;
+    const [k, id] = o.dataset.open.split(":");
+    document.getElementById("dbody").innerHTML = G.detail(k, id);
+    dlg.showModal();
+  }
+});
+document.getElementById("dclose").addEventListener("click", () => dlg.close());
+dlg.addEventListener("close", () => { if (opener && opener.isConnected) opener.focus(); });
+// the TOC marks the entry in view
+const io = new IntersectionObserver((xs) => {
+  for (const x of xs) if (x.isIntersecting) document.querySelectorAll(".toc a").forEach((a) => a.setAttribute("aria-current", String(a.getAttribute("href") === `#${x.target.id}`)));
+}, { rootMargin: "-20% 0px -70% 0px" });
+document.querySelectorAll(".entry").forEach((e) => io.observe(e));
+G.themeInit();
+</script>
+</body>
+</html>
