@@ -1,0 +1,5 @@
+Spec: specs/015-effect-attribution/spec.md (AC3-AC11)
+ADR: docs/decisions/0015-effect-attribution-at-read-time.md
+Why this approach: labels computed per request from hook rows and candidate inputs only
+Alternatives rejected: labelling at write time (plan.md A2)
+Trade-off / known limit: spans over 10 minutes or never ended are checked against every effect
