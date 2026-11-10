@@ -148,6 +148,8 @@ mkdir -p ~/.config/llm-gateway
 cp config.example.yaml ~/.config/llm-gateway/config.yaml   # edit as needed
 ```
 
+To pick up new gateway changes later, see [Updating the service](#updating-the-service).
+
 ### Save the printed settings file
 
 `gateway hooks print` prints one Claude Code settings document: the hooks, an `env` block
@@ -231,6 +233,32 @@ the paths:
 
 ```sh
 launchctl load -w ~/Library/LaunchAgents/dev.llm-gateway.plist
+```
+
+### Updating the service
+
+The service keeps running the binary it started with. After you pull new gateway changes,
+it runs the old one until you rebuild it, copy it into place and restart the service. Copy
+with `install`, not `cp`: `cp` fails with `Text file busy` while the old binary is running.
+
+Run these from the root of your clone of the repo.
+
+**Linux:**
+
+```sh
+git switch main && git pull
+make build
+install -m 0755 bin/gateway ~/.local/bin/gateway
+systemctl --user restart llm-gateway
+```
+
+**macOS:**
+
+```sh
+git switch main && git pull
+make build
+install -m 0755 bin/gateway ~/.local/bin/gateway
+launchctl kickstart -k gui/$(id -u)/dev.llm-gateway
 ```
 
 ### The `claude` shell function
