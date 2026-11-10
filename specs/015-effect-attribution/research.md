@@ -82,6 +82,23 @@ Karthik's answers (2026-11-10):
 
 ## Notes
 
+### Leaks found during the build
+- L1 (2026-11-10) — T007: widening a span's end by the skew made the previous sequential
+  tool a candidate of the next change (the seed's `out/gen.txt` read `several` instead of
+  `only_one`): the next checkpoint's window starts within milliseconds of that tool's
+  PostToolUse. An end hook is only sent once the tool has finished, so its receive time is
+  already after the real end. Fixed: only the start moves back by the skew; spec AC3 and
+  plan.md say so.
+- L2 (2026-11-10) — T006: Grep and Glob "named" every file under their folder, so a
+  sub-agent's change while a main-thread Glob ran read `named Glob` instead of `several`.
+  Read, Grep and Glob cannot change a file, and a read effect is already linked by its hook
+  id. Fixed: they name nothing in `NamesTarget`; plan.md says so.
+- L3 (2026-11-10) — T002: the seed's "several" step wrote `build/out.bin`, and `build` is on
+  the default ignore list, so no effect was seen. Fixed: `artifacts/out.bin`.
+- 2026-11-10 — The seed against a throwaway gateway (temp data folder, ports 1719x) after
+  L1–L3: every turn-4 effect got the label the seed prints. Turns 1–3 send each tool's Pre
+  and Post back to back, so their changes read `several` or `only_one` by timing; expected.
+
 ### Brief facts, checked (2026-11-10)
 - F1 — Holds. `Runner.OnStored` signals a checkpoint for every stored hook with a session and
   a `WorkDir` (Pre and Post tool hooks included); `signalLocked` coalesces to one running and

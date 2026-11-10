@@ -327,10 +327,10 @@ async function attributionTurn() {
   // several running: two parallel calls, neither names the file.
   const a = await pre("Bash", { command: "make a" });
   const b = await pre("Bash", { command: "make b" });
-  write("build/out.bin", "built\n");
+  write("artifacts/out.bin", "built\n");
   await post(a, { stdout: "", stderr: "", interrupted: false });
   await post(b, { stdout: "", stderr: "", interrupted: false });
-  expect("build/out.bin created", "◌ several · Bash, Bash");
+  expect("artifacts/out.bin created", "◌ several · Bash, Bash");
   await gap();
 
   // named among several: two parallel calls, one names the file as a whole word.
