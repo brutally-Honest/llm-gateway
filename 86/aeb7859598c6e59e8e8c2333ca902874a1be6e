@@ -1,0 +1,4 @@
+Spec: specs/015-effect-attribution/spec.md (AC1, E6, E7)
+Research: specs/015-effect-attribution/research.md (K1, K2, K12)
+Why this approach: window ends at scan end so a tool starting mid-scan is a candidate, never missed
+Trade-off / known limit: a folder skipped by a git failure holds the window start back, widening later windows
