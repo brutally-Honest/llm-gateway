@@ -1,0 +1,2 @@
+Spec: specs/015-effect-attribution/spec.md (AC1-AC12)
+Verified by: TestCheckpoint_StoresWindow, TestAttribute_Labels, TestClaudeCode_NamesTarget, TestEffectsAPI_Attribution, effects.test.js attributionText; mutation of the several rule caught
