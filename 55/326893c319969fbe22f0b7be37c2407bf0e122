@@ -1,0 +1,4 @@
+Spec: specs/015-effect-attribution/spec.md (draft, AC1-AC12)
+Why this approach: labels at read time, because hooks are async and the rules are new (research D2)
+Alternatives rejected: labels at write time (plan.md A2)
+Trade-off / known limit: per-request labelling cost; live labels can settle on the next fetch (KI3)
