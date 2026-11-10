@@ -1,0 +1,1 @@
+Source: Karthik, 2026-11-10. Stop: a gateway stop waits the full shutdown timeout (90 s) for open proxy tunnels and ends in SIGKILL. Flake: TestProxy_GoldenAnthropicStreamReplay failed once in a worktree verify of b71e18b (research.md 2026-11-10), passed 3/3 alone.
