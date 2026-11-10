@@ -38,6 +38,7 @@ type fileState struct {
 // saved one (E17).
 func (r *Runner) checkpoint(ctx context.Context, s *session) error {
 	now := r.now()
+	failed := false
 	cp := store.Checkpoint{}
 	// next holds the rows of each root as they will be after this checkpoint.
 	next := map[string]map[string]fileState{}
@@ -54,6 +55,7 @@ func (r *Runner) checkpoint(ctx context.Context, s *session) error {
 				return ctx.Err()
 			}
 			r.gitFailures.Add(1)
+			failed = true
 			r.log.Warn("effects: folder skipped for this checkpoint", zap.String("root", root), zap.Error(err))
 			next[root] = s.snap[root]
 			if baseline {
@@ -74,10 +76,22 @@ func (r *Runner) checkpoint(ctx context.Context, s *session) error {
 			cp.Deletes = append(cp.Deletes, store.SnapshotRow{Root: root, Path: p})
 		}
 	}
+	// Each change happened after the previous checkpoint started looking and before this
+	// one finished: that is its window (spec 015 AC1).
+	end := r.now()
 	for i := range cp.Effects {
 		cp.Effects[i].Principal, cp.Effects[i].Client, cp.Effects[i].SessionKey = s.ident.Principal, s.ident.Client, s.ident.Key
+		cp.Effects[i].WindowFrom, cp.Effects[i].WindowTo = s.prevStart, end
+	}
+	// A folder skipped for this checkpoint keeps its changes for a later one, so the next
+	// window must still start at the last complete checkpoint.
+	advance := func() {
+		if !failed {
+			s.prevStart = now
+		}
 	}
 	if len(cp.Effects) == 0 && len(cp.Upserts) == 0 && len(cp.Deletes) == 0 {
+		advance()
 		return nil
 	}
 	if err := r.store.SaveCheckpoint(ctx, s.ident, cp); err != nil {
@@ -89,6 +103,7 @@ func (r *Runner) checkpoint(ctx context.Context, s *session) error {
 			s.snap[root] = rows
 		}
 	}
+	advance()
 	r.effectsStored.Add(int64(len(cp.Effects)))
 	if len(cp.Effects) > 0 && r.onSaved != nil {
 		r.onSaved(s.ident.Principal, s.ident.Client, s.ident.Key)

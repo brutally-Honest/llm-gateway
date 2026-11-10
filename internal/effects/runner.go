@@ -31,6 +31,7 @@ type CheckpointStore interface {
 	DeleteSnapshot(ctx context.Context, session store.SessionIdent) error
 	SweepSnapshots(ctx context.Context, cutoff time.Time) (int64, error)
 	ActiveSessions(ctx context.Context, since time.Time) ([]store.ActiveSession, error)
+	LastHookBefore(ctx context.Context, session store.SessionIdent, beforeID int64) (time.Time, error)
 }
 
 // Counts are the runner's counters, for the shutdown line.
@@ -50,6 +51,12 @@ type session struct {
 	ended    bool
 	running  bool
 	dirty    bool
+
+	// firstHookID is the hook that created this memory entry; prevStart is the start of
+	// the last checkpoint that saved, or zero before one has run in this entry. Both are
+	// touched only by the running checkpoint, except firstHookID, set once under mu.
+	firstHookID int64
+	prevStart   time.Time
 
 	loaded bool
 	seeded bool
@@ -209,7 +216,7 @@ func (r *Runner) OnStored(h hooks.HookStored) {
 	}
 	s := r.sessions[id]
 	if s == nil {
-		s = &session{ident: id, tops: map[string]string{}}
+		s = &session{ident: id, tops: map[string]string{}, firstHookID: h.ID}
 		r.sessions[id] = s
 	}
 	s.lastHook = at
@@ -317,6 +324,18 @@ func (r *Runner) runCheckpoint(ctx context.Context, s *session) error {
 			}
 		}
 		s.loaded = true
+		// No checkpoint in this memory entry yet (a restart or an eviction): the window of
+		// the first one starts at the session's last hook before the one that made it
+		// (spec 015 E7).
+		if s.firstHookID > 0 {
+			lctx, cancel := context.WithTimeout(ctx, storeTimeout)
+			at, err := r.store.LastHookBefore(lctx, s.ident, s.firstHookID)
+			cancel()
+			if err != nil {
+				return err
+			}
+			s.prevStart = at
+		}
 	}
 	r.mu.Lock()
 	workDir, learn := s.workDir, s.learn
