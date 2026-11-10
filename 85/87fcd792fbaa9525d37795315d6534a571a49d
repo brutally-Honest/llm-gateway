@@ -1,0 +1,3 @@
+Spec: specs/015-effect-attribution/spec.md (AC1, AC2, AC3)
+Why this approach: evidence columns, labels computed when served (ADR 0015)
+Trade-off / known limit: TestLoad_EffectsDefaults expectation gains the new attribution default; no assertion removed
