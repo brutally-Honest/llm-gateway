@@ -1,0 +1,5 @@
+Spec: none yet (016 mockups)
+Why this approach: reads like a code review of the turn: the question 'what did it change and why' answered top to bottom without opening anything; diffs one click away in place.
+Kept: rail as a table of contents (marks the entry in view). Dropped: duration strip, key bar, rail Show options, model-call rows as rows (they become '#n wrote for 4.8s, then, 4 in parallel:').
+Trade-off / known limit: the longest page of the four; dense sessions (hundreds of tool calls) need folding per turn, which this mockup does not show. Details in a <dialog>, so the timeline is covered while one is open.
+Verified by: headless Chrome screenshots, dark and light; make verify green.
