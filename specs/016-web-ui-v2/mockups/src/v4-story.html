@@ -9,29 +9,7 @@
 /* ==== variant 4: turns left, the story in the middle, what the session touched on the
    right (files, commands, sites). One modal shape for every detail. Own neutral theme;
    every text pair is ≥ 4.5:1. ==== */
-:root, :root[data-theme=dark] {
-  --bg: #09090b; --card: #111114; --panel: #18181b; --panel2: #1f1f23; --border: #2a2a30; --line: #222227;
-  --text: #e4e4e7; --hi: #fafafa; --muted: #a1a1aa; --accent: #a5b4fc; --accent-strong: #818cf8; --accent-bg: #1e1b4b; --on-accent: #0b0b1a;
-  --ok: #4ade80; --ok-bg: #0d2818; --bad: #f87171; --bad-bg: #2a1215; --warn: #fbbf24; --warn-bg: #2a1f06;
-  --add: #4ade80; --add-bg: #0f2a1a; --del: #fca5a5; --del-bg: #2d1215; --model: #93c5fd; --toolc: #c4b5fd; --tool-bg: #1e1830;
-  --scrim: #000000b8; --shadow: 0 1px 2px #0006, 0 0 0 1px #ffffff08;
-}
-:root[data-theme=light] {
-  --bg: #fafafa; --card: #ffffff; --panel: #f4f4f5; --panel2: #ededf0; --border: #e4e4e7; --line: #efeff1;
-  --text: #27272a; --hi: #09090b; --muted: #52525b; --accent: #4338ca; --accent-strong: #4f46e5; --accent-bg: #eef2ff; --on-accent: #ffffff;
-  --ok: #15803d; --ok-bg: #ecfdf3; --bad: #b91c1c; --bad-bg: #fef2f2; --warn: #a16207; --warn-bg: #fefce8;
-  --add: #15803d; --add-bg: #ecfdf3; --del: #b91c1c; --del-bg: #fef2f2; --model: #1d4ed8; --toolc: #6d28d9; --tool-bg: #f5f3ff;
-  --scrim: #09090b66; --shadow: 0 1px 2px #0000000d, 0 1px 3px #00000012;
-}
-html, body { font: 14px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
-code, pre, .mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-.top { height: 56px; padding: 0 24px; background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
-.brand { font-weight: 700; letter-spacing: -.01em; }
-.crumb b { font-weight: 600; }
-.vname { border-style: solid; border-color: var(--border); border-radius: 6px; padding: 1px 8px; }
-.seg { border-radius: 8px; background: var(--panel); border-color: var(--border); padding: 2px; gap: 2px; }
-.seg button { border-radius: 6px; color: var(--muted); font-weight: 500; }
-.seg button[aria-pressed=true] { background: var(--card); color: var(--hi); box-shadow: var(--shadow); }
+.top { height: 56px; padding-top: 0; padding-bottom: 0; }
 .btn { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--hi); white-space: nowrap; }
 .btn:hover { background: var(--panel); }
 .btn.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--on-accent); }
@@ -39,12 +17,13 @@ code, pre, .mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, 
 .btn.sm { font-size: 12px; padding: 3px 9px; border-radius: 6px; }
 .btn:focus-visible, .row:focus-visible, .tab:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
 
-/* ---- three columns: two equal side cards, same top, same height ---- */
-.cols { display: grid; grid-template-columns: 20rem minmax(0, 1fr) 20rem; grid-template-areas: "toc story side"; gap: 24px; max-width: 1480px; margin: 0 auto; padding: 24px; align-items: start; }
+/* ---- app shell: the header on top, three columns filling the rest of the window. Only
+   the story scrolls; the side cards share width, top and bottom. ---- */
+body { height: 100vh; overflow: hidden; }
+.cols { display: grid; grid-template-columns: 23rem minmax(0, 1fr) 23rem; grid-template-rows: minmax(0, 1fr); grid-template-areas: "toc story side"; gap: 24px; max-width: 1640px; height: calc(100vh - 56px); margin: 0 auto; padding: 20px 24px; }
 .toc { grid-area: toc; } main { grid-area: story; } .sidebar { grid-area: side; }
-.toc, .sidebar { position: sticky; top: 80px; height: calc(100vh - 104px); display: flex; flex-direction: column; overflow: hidden; }
-.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
-.colhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+.toc, .sidebar { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.colhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 18px 12px; border-bottom: 1px solid var(--line); }
 .colhead h2 { margin: 0; font-size: 14px; font-weight: 700; color: var(--hi); }
 .colhead .sub { font-size: 12px; color: var(--muted); }
 .scroll { overflow: auto; flex: 1; scrollbar-width: thin; }
@@ -64,10 +43,19 @@ code, pre, .mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, 
 .toc .btw .p { color: var(--warn); font-size: 12px; font-weight: 600; }
 
 /* right: what the session touched */
-.tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; margin: 10px 12px 0; padding: 3px; border-radius: 10px; background: var(--panel); border: 1px solid var(--border); }
-.tab { all: unset; cursor: pointer; text-align: center; padding: 6px 4px; border-radius: 7px; font-size: 13px; font-weight: 600; color: var(--muted); }
-.tab b { font-weight: 700; margin-left: 4px; color: inherit; }
-.tab[aria-selected=true] { background: var(--card); color: var(--hi); box-shadow: var(--shadow); }
+.tabs { display: flex; justify-content: space-between; gap: 12px; padding: 0 18px; border-bottom: 1px solid var(--line); }
+.tab { all: unset; cursor: pointer; padding: 13px 0 10px; margin-bottom: -1px; border-bottom: 2px solid transparent; font-size: 14px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.tab:hover { color: var(--text); }
+.tab b { font-weight: 500; margin-left: 5px; font-variant-numeric: tabular-nums; }
+.tab[aria-selected=true] { color: var(--hi); border-bottom-color: var(--accent-strong); }
+/* context tab */
+.ctxfacts { margin: 4px 10px 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ctxchart { display: flex; gap: 6px; margin: 4px 10px 0; }
+.ctxchart .ct { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ctxchart .bars { display: flex; align-items: flex-end; gap: 2px; height: 104px; border-bottom: 1px solid var(--border); }
+.ctxchart .bars button { all: unset; cursor: pointer; flex: 1; min-width: 4px; background: color-mix(in srgb, var(--model) 70%, transparent); border-radius: 2px 2px 0 0; }
+.ctxchart .bars button:hover, .ctxchart .bars button:focus-visible { background: var(--accent-strong); outline: none; }
+.ctxchart .tl2 { font-size: 11px; font-weight: 600; color: var(--muted); text-align: center; }
 .tabp { padding: 4px 6px 10px; }
 .tabp .lead { margin: 8px 10px 6px; font-size: 12px; color: var(--muted); }
 .tabp h3 { margin: 12px 10px 4px; font-size: 12px; font-weight: 700; color: var(--hi); text-transform: uppercase; letter-spacing: .04em; }
@@ -86,13 +74,16 @@ code, pre, .mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, 
 .tabfoot { margin: 8px 10px 0; padding-top: 8px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
 
 /* centre */
-main { display: flex; flex-direction: column; gap: 20px; min-width: 0; padding-bottom: 60vh; }
+main { display: flex; flex-direction: column; gap: 20px; min-width: 0; min-height: 0; overflow: auto; padding-right: 4px; scrollbar-width: thin; }
+main > * { flex: none; }
+/* room under the last turn, so any turn can scroll to the top */
+main::after { content: ""; flex: 0 0 55vh; }
 .hero { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
 .hero .status { display: inline-flex; align-self: flex-start; gap: 6px; align-items: center; font-size: 12px; font-weight: 600; color: var(--muted); background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 1px 10px; }
 .hero h1 { margin: 0; font-size: 26px; line-height: 1.25; font-weight: 700; letter-spacing: -.02em; color: var(--hi); }
 .hero .meta { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
 .hero .meta span + span::before { content: "·"; margin-right: 14px; }
-.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
 .kpi { all: unset; box-sizing: border-box; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; background: var(--card); }
 button.kpi { cursor: pointer; } button.kpi:hover { background: var(--panel); } button.kpi:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
 .kpi .l { font-size: 12px; font-weight: 600; color: var(--muted); display: flex; justify-content: space-between; }
@@ -114,7 +105,7 @@ button.kpi { cursor: pointer; } button.kpi:hover { background: var(--panel); } b
 .foot { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }
 details.side summary { border-color: var(--border); }
 
-.turn { scroll-margin-top: 80px; overflow: hidden; }
+.turn { scroll-margin-top: 0; overflow: hidden; }
 .th { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 16px 20px 14px; border-bottom: 1px solid var(--line); }
 .th .k { font-size: 12px; font-weight: 600; color: var(--muted); display: flex; gap: 10px; align-items: center; }
 .th .k b { font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; }
@@ -148,20 +139,12 @@ ul.effs .linkish code { color: var(--accent); }
 .grp { font-size: 12.5px; color: var(--muted); margin: 8px 0 0 22px; font-weight: 600; border-radius: 8px; }
 .answer { margin: 4px 0 0; padding: 12px 14px; border-radius: 10px; background: var(--panel); color: var(--text); }
 .answer .who { display: block; font-size: 12px; font-weight: 700; color: var(--hi); margin-bottom: 2px; }
-.btwentry { border: 1px dashed color-mix(in srgb, var(--warn) 60%, transparent); background: var(--warn-bg); padding: 14px 20px; display: flex; flex-direction: column; gap: 6px; scroll-margin-top: 80px; }
+.btwentry { border: 1px dashed color-mix(in srgb, var(--warn) 60%, transparent); background: var(--warn-bg); padding: 14px 20px; display: flex; flex-direction: column; gap: 6px; scroll-margin-top: 0; }
 .btwentry h2 { margin: 0; font-size: 14px; font-weight: 700; color: var(--hi); }
 .btwentry ul.effs { margin-left: 0; }
 .agent { font-size: 11px; font-weight: 600; color: var(--toolc); border: 1px solid currentColor; border-radius: 6px; padding: 0 5px; }
 
 /* labels and diffs */
-.lbl { font-weight: 600; border-radius: 6px; padding: 0 7px; background: var(--panel); border-color: var(--border); }
-.lbl-named { background: var(--ok-bg); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
-.lbl-only_one { background: var(--accent-bg); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
-.lbl-outside { background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
-.lbl-harness { color: var(--text); }
-.diff { border-radius: 8px; border-color: var(--border); font-size: 12.5px; }
-.diff div { padding: 2px 12px; }
-pre { border-radius: 8px; border-color: var(--border); }
 
 /* jump highlight */
 .flash { animation: flash 2.4s ease-out; }
@@ -197,10 +180,14 @@ dialog::backdrop { background: var(--scrim); }
 .mf .grow { flex: 1; }
 .muted-note { font-size: 12.5px; color: var(--muted); margin: 0; }
 
-@media (max-width: 1280px) { .cols { grid-template-columns: 17rem minmax(0, 1fr) 17rem; gap: 18px; padding: 18px; } }
+@media (max-width: 1360px) { .cols { grid-template-columns: 20rem minmax(0, 1fr) 20rem; gap: 18px; padding: 18px; } .tabs { padding: 0 14px; } .tab { font-size: 13px; } }
+/* narrower: back to one scrolling page, the turn list sticky on the left */
 @media (max-width: 1080px) {
-  .cols { grid-template-columns: 16rem minmax(0, 1fr); grid-template-areas: "toc story" "toc side"; }
-  .sidebar { position: static; height: auto; }
+  body { height: auto; overflow: auto; }
+  .cols { height: auto; grid-template-columns: 17rem minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: "toc story" "toc side"; }
+  .toc { position: sticky; top: 76px; max-height: calc(100vh - 92px); align-self: start; }
+  main { overflow: visible; }
+  main::after { display: none; }
 }
 @media (max-width: 760px) {
   .cols { grid-template-columns: 1fr; grid-template-areas: "story" "side"; padding: 12px; }
@@ -236,7 +223,9 @@ const several = allEff.filter((e) => e.label === "several");
 const hooksOnly = turns.filter((t) => t.hooksOnly);
 const groupBy = (list, key) => { const m = new Map(); for (const e of list) { const k = key(e); if (!m.has(k)) m.set(k, []); m.get(k).push(e); } return m; };
 const files = groupBy(changes, (e) => e.path);           // path → its changes, in time order
-const readsBy = groupBy(reads, (e) => e.path);
+const fileReads = reads.filter((e) => !e.search), searches = reads.filter((e) => e.search);
+const readsBy = groupBy(fileReads, (e) => e.path);
+const searchBy = groupBy(searches, (e) => `${e.path}|${e.detail}`);
 const sites = groupBy(conns, (e) => e.host);
 const where = (e) => (e.turn ? `turn ${e.turn}` : `between turns ${e.between} and ${e.between + 1}`);
 const split = (p) => { const i = p.replace(/\/$/, "").lastIndexOf("/"); return i < 0 ? ["", p] : [p.slice(0, i + 1), p.slice(i + 1)]; };
@@ -270,6 +259,8 @@ function whySentence(e) {
 }
 const whyBlock = (e) => `<div class="why2">${G.labelBadge(e)}<span>${esc(whySentence(e))}</span></div>`;
 
+const fact = (l, v) => `<div class="mfact"><span class="l">${esc(l)}</span><span class="v">${v}</span></div>`;
+
 // ---------- left: turns ----------
 document.getElementById("toc").innerHTML = `<div class="colhead"><h2>Turns</h2><span class="sub">${plural(turns.length, "prompt")}</span></div><div class="scroll"><ol>` + turns.map((t) => {
   const f = t.tools.filter((x) => !x.ok).length;
@@ -302,19 +293,42 @@ function siteRow(host) {
 }
 const u = S.unassigned[0];
 const readFiles = [...readsBy.keys()];
+// context: input + cache write + cache read of a call, per thread
+const ctxOf = (c) => c.in + c.cw + c.cr;
+const thread = (agent) => [...calls.values()].filter((c) => !c.side && (c.agent || null) === agent).sort((a, b) => a.n - b.n);
+const mains = thread(null);
+const toolNames = (list) => { const m = new Map(); for (const t of list) m.set(t.name, (m.get(t.name) || 0) + 1); return [...m].map(([n, k]) => (k > 1 ? `${n} ×${k}` : n)).join(", "); };
+function growth(c) {
+  const th = thread(c.agent || null), i = th.indexOf(c);
+  if (i <= 0) return { delta: null, why: c.agent ? "first call of the sub-agent: its instructions and task" : "first call: system prompt, tool definitions and your prompt" };
+  const p = th[i - 1], res = [...tools.values()].filter((t) => t.call === p.n);
+  const parts = [`#${p.n}'s reply`];
+  if (res.length) parts.push(`${plural(res.length, "tool result")} (${toolNames(res)})`);
+  if (p.turn !== c.turn) parts.push("your next prompt");
+  return { delta: ctxOf(c) - ctxOf(p), why: `added ${parts.join(", ")}` };
+}
+const signed = (n) => (n == null ? "—" : `+${num(n)}`);
+const peak = mains.reduce((a, c) => Math.max(a, ctxOf(c)), 0);
+const subAgents = [...new Set([...calls.values()].filter((c) => c.agent).map((c) => c.agent))];
+function ctxRow(c) {
+  const g = growth(c);
+  return `<li><button type="button" class="row" data-modal="call:${c.n}"><span class="ic" aria-hidden="true">◆</span><span class="t1">#${c.n} · ${num(ctxOf(c))} tokens</span><span class="r">${signed(g.delta)}</span><span class="t2">${c.agent ? "sub-agent" : `turn ${c.turn}`} · ${esc(g.why)}</span></button></li>`;
+}
 document.getElementById("side").innerHTML = `
-  <div class="colhead"><h2>What this session touched</h2></div>
-  <div class="tabs" role="tablist" aria-label="Files, commands and sites">
+  <div class="tabs" role="tablist" aria-label="Files, commands, sites and context">
     <button type="button" class="tab" role="tab" id="tab-files" aria-controls="tp-files" aria-selected="true">Files<b>${files.size}</b></button>
     <button type="button" class="tab" role="tab" id="tab-cmds" aria-controls="tp-cmds" aria-selected="false" tabindex="-1">Commands<b>${commands.length}</b></button>
     <button type="button" class="tab" role="tab" id="tab-sites" aria-controls="tp-sites" aria-selected="false" tabindex="-1">Sites<b>${sites.size}</b></button>
+    <button type="button" class="tab" role="tab" id="tab-ctx" aria-controls="tp-ctx" aria-selected="false" tabindex="-1">Context</button>
   </div>
   <div class="scroll">
     <div class="tabp" role="tabpanel" id="tp-files" aria-labelledby="tab-files">
       <p class="lead">Every file that changed on disk. Open one to see its diff and who changed it.</p>
       <ul class="rows">${[...files.keys()].map(fileRow).join("")}</ul>
       <h3>Read by Claude · ${readFiles.length}</h3>
-      <ul class="rows">${readFiles.map((p) => { const l = readsBy.get(p); const [dir, name] = split(p); return `<li><button type="button" class="row" data-modal="file:${esc(p)}"><span class="ic" aria-hidden="true">→</span><span class="t1">${esc(name)}</span><span class="r">${l.length > 1 ? `${l.length}×` : ""}</span><span class="t2">${esc(dirText(dir))} · ${esc(l.map((e) => where(e)).filter((v, i, a) => a.indexOf(v) === i).join(", "))}</span></button></li>`; }).join("")}</ul>
+      <ul class="rows">${readFiles.map((p) => { const l = readsBy.get(p); const [dir, name] = split(p); return `<li><button type="button" class="row" data-modal="file:${esc(p)}"><span class="ic" aria-hidden="true">→</span><span class="t1">${esc(name)}</span><span class="r">${l.length > 1 ? `${l.length}×` : ""}</span><span class="t2">${esc(dirText(dir))} · ${esc([...new Set(l.map(where))].join(", "))}</span></button></li>`; }).join("")}</ul>
+      <h3>Searched · ${searchBy.size}</h3>
+      <ul class="rows">${[...searchBy.values()].map(([e]) => { const t = tools.get(e.tool); return `<li><button type="button" class="row" data-modal="tool:${t.id}"><span class="ic" aria-hidden="true">⌕</span><span class="t1"><code>${esc(G.toolArg(t))}</code></span><span class="r">${esc(t.name)}</span><span class="t2">${esc(where(e))}${t.agent ? ` · sub-agent ${esc(t.agent)}` : ""}</span></button></li>`; }).join("")}</ul>
     </div>
     <div class="tabp" role="tabpanel" id="tp-cmds" aria-labelledby="tab-cmds" hidden>
       <p class="lead">Every shell command, in the order it ran. Open one for its output and what it changed.</p>
@@ -325,6 +339,15 @@ document.getElementById("side").innerHTML = `
       <p class="lead">Every host contacted through the gateway's proxy. HTTPS shows host, bytes and timing only.</p>
       <ul class="rows">${[...sites.keys()].map(siteRow).join("")}</ul>
       <p class="tabfoot">Not in this session: <a href="sessions.html#unassigned">1 unassigned connection</a> to ${esc(u.host)} at ${clock(u.at)}, by Claude Code itself.</p>
+    </div>
+    <div class="tabp" role="tabpanel" id="tp-ctx" aria-labelledby="tab-ctx" hidden>
+      <p class="lead">How much each model call sent: input + cache write + cache read tokens. It grows as replies, tool results and prompts pile up.</p>
+      <div class="mfacts ctxfacts">${fact("Now", num(ctxOf(mains[mains.length - 1])))}${fact("First call", num(ctxOf(mains[0])))}${fact("Grew by", signed(ctxOf(mains[mains.length - 1]) - ctxOf(mains[0])))}</div>
+      <div class="ctxchart" role="group" aria-label="Context per main-thread call, by turn">${turns.filter((t) => t.calls.some((c) => !c.agent)).map((t) => { const cs = mains.filter((c) => c.turn === t.n); return `<div class="ct" style="flex:${cs.length}"><div class="bars">${cs.map((c) => `<button type="button" data-modal="call:${c.n}" style="height:${(ctxOf(c) / peak) * 100}%" title="#${c.n} · ${num(ctxOf(c))} tokens" aria-label="call #${c.n}, ${num(ctxOf(c))} tokens"></button>`).join("")}</div><span class="tl2">T${t.n}</span></div>`; }).join("")}</div>
+      <h3>Main thread · ${plural(mains.length, "call")}</h3>
+      <ul class="rows">${mains.map(ctxRow).join("")}</ul>
+      ${subAgents.map((a) => `<h3>Sub-agent ${esc(a)} · its own context</h3><ul class="rows">${thread(a).map(ctxRow).join("")}</ul>`).join("")}
+      <p class="tabfoot">Side calls (quota probe, title) are separate requests and are left out. Turn 8 has no model calls captured.</p>
     </div>
   </div>`;
 function showTab(id, focus) {
@@ -337,7 +360,7 @@ function overview() {
   const items = [];
   for (const t of failed) items.push(["bad", "✗", `${t.name} failed on ${G.toolArg(t)}`, `turn ${t.turn} · ${t.result.split("\n")[0]}`, `tool:${t.id}`, "Open"]);
   for (const [p, l] of files) if (l.some((e) => e.label === "outside")) items.push(["warn", "○", `${p} changed with no tool running`, `${where(l[0])} · most likely your own edit`, `file:${p}`, "Open"]);
-  if (several.length) items.push(["info", "◌", `${plural(several.length, "change")} can't be pinned to one command`, `turn ${several[0].turn}: two commands ran together`, `jump:sev-${several[0].turn}`, `Show in turn ${several[0].turn}`]);
+  if (several.length) items.push(["info", "◌", `${[several.filter((e) => e.kind === "change").length && plural(several.filter((e) => e.kind === "change").length, "file change"), several.filter((e) => e.kind === "net").length && plural(several.filter((e) => e.kind === "net").length, "connection")].filter(Boolean).join(" and ")} can't be pinned to one command`, `turn ${several[0].turn}: two commands ran together`, `jump:sev-${several[0].turn}`, `Show in turn ${several[0].turn}`]);
   for (const t of hooksOnly) items.push(["info", "◇", `Turn ${t.n} has no model calls captured`, "only the hooks saw it: its tool calls show, the conversation does not", `jump:turn-${t.n}`, `Show turn ${t.n}`]);
   const longest = commands.reduce((a, t) => (t.dur > a.dur ? t : a));
   const sum = (k) => [...calls.values()].reduce((a, x) => a + (x[k] || 0), 0);
@@ -351,6 +374,7 @@ function overview() {
       <button type="button" class="kpi" data-tab="tab-files"><span class="l">Files changed <i aria-hidden="true">→</i></span><span class="v">${files.size}</span><span class="s"><span class="a">+${added}</span> <span class="d">−${removed}</span> lines · ${readFiles.length} read</span></button>
       <button type="button" class="kpi" data-tab="tab-cmds"><span class="l">Commands <i aria-hidden="true">→</i></span><span class="v">${commands.length}</span><span class="s">longest ${esc(longest.input.command.split(" ").slice(0, 2).join(" "))}, ${dur(longest.dur)}</span></button>
       <button type="button" class="kpi" data-tab="tab-sites"><span class="l">Sites <i aria-hidden="true">→</i></span><span class="v">${sites.size}</span><span class="s">${plural(conns.length, "connection")}</span></button>
+      <button type="button" class="kpi" data-tab="tab-ctx"><span class="l">Context <i aria-hidden="true">→</i></span><span class="v">${num(ctxOf(mains[mains.length - 1]))}</span><span class="s">tokens in the last call</span></button>
     </div>
     ${items.length ? `<div class="attn"><h2>Needs a look</h2><ul>${items.map(([k, ic, t, s, to, go]) => `<li class="${k}"><button type="button" data-${to.startsWith("jump:") ? "jump" : "modal"}="${esc(to.replace(/^jump:/, ""))}"><span class="ic" aria-hidden="true">${ic}</span><span><span class="t">${esc(t)}</span><span class="s">${esc(s)}</span></span><span class="go">${esc(go)} →</span></button></li>`).join("")}</ul></div>` : ""}
     <div class="foot"><span>Tokens: ${num(sum("in"))} input · ${num(sum("out"))} output · ${num(sum("cw"))} cache write · ${num(sum("cr"))} cache read</span>${G.sideToggle()}</div>
@@ -360,7 +384,7 @@ function overview() {
 // ---------- centre: turns ----------
 function effLi(e) {
   const w = G.effectWhat(e);
-  const key = e.kind === "net" ? `site:${e.host}` : `file:${e.path}`;
+  const key = e.kind === "net" ? `site:${e.host}` : e.search ? `tool:${e.tool}` : `file:${e.path}`;
   const hasView = e.kind === "change" && (e.diff || e.content);
   return `<li id="eff-${e.id}">${G.labelBadge(e)}<span>${w.g} ${esc(w.w)} <button type="button" class="linkish" data-modal="${esc(key)}"><code title="${esc(e.kind === "net" ? "" : G.full(e.path))}">${esc(G.effectTarget(e))}</code></button></span><span class="muted small">${esc(G.effectStat(e))}</span>${hasView ? `<button type="button" class="btn sm" data-modal="${esc(key)}">${e.diff ? "Diff" : "View"}</button>` : "<span></span>"}</li>`;
 }
@@ -377,7 +401,7 @@ function step(c, t) {
   const mine = t.tools.filter((x) => x.call === c.n);
   const sev = t.several.filter((e) => e.cands.every((id) => tools.get(id).call === c.n));
   const then = mine.length === 0 ? "" : mine.length === 1 ? ", then ran:" : `, then ran ${mine.length} at once:`;
-  return `<li class="step"><div class="say"><button type="button" class="linkish cn" data-modal="call:${c.n}">#${c.n}</button><span>${c.thinking ? "Thought and wrote" : mine.length ? "Wrote" : "Wrote the answer"} for ${dur(c.dur)}${then}</span>${c.thinking ? `<button type="button" class="linkish" data-modal="call:${c.n}">Read the thinking</button>` : ""}</div>${mine.length ? `<ul class="tools">${mine.map(toolLi).join("")}</ul>` : ""}${sev.length ? `<p class="grp" id="sev-${t.n}">◌ Not pinned to one command: ${esc(sev[0].cands.map((id) => short(tools.get(id))).join(" and "))} ran together</p><ul class="effs">${sev.map(effLi).join("")}</ul>` : ""}</li>`;
+  return `<li class="step"><div class="say"><button type="button" class="linkish cn" data-modal="call:${c.n}">#${c.n}</button><span>${c.thinking ? "Thought and wrote" : mine.length ? "Wrote" : c.agent ? "Reported back to the main agent" : "Wrote the answer"} for ${dur(c.dur)}${then}</span>${c.thinking ? `<button type="button" class="linkish" data-modal="call:${c.n}">Read the thinking</button>` : ""}</div>${mine.length ? `<ul class="tools">${mine.map(toolLi).join("")}</ul>` : ""}${sev.length ? `<p class="grp" id="sev-${t.n}">◌ Not pinned to one command: ${esc(sev[0].cands.map((id) => short(tools.get(id))).join(" and "))} ran together</p><ul class="effs">${sev.map(effLi).join("")}</ul>` : ""}</li>`;
 }
 function turnCard(t) {
   const tt = G.turnTime(t), c = G.counts(t.effects), f = t.tools.filter((x) => !x.ok).length;
@@ -399,7 +423,6 @@ document.getElementById("main").innerHTML = overview() + turns.map((t) => {
 }).join("");
 
 // ---------- modals: one shape for everything ----------
-const fact = (l, v) => `<div class="mfact"><span class="l">${esc(l)}</span><span class="v">${v}</span></div>`;
 const msec = (title, body, sub = "") => `<section class="ms"><h3>${title}${sub ? `<span class="sub">${sub}</span>` : ""}</h3>${body}</section>`;
 const goBtn = (target, label) => `<button type="button" class="btn sm" data-goto="${esc(target)}">${esc(label)} →</button>`;
 const shell = (kick, title, subt, body, goto) => ({ kick, title, subt, body, goto });
@@ -442,6 +465,7 @@ function callModal(n) {
   const ctx = c.in + c.cw + c.cr;
   const asked = [...tools.values()].filter((t) => t.call === c.n);
   const body = `<div class="ms"><div class="mfacts">${fact("Took", dur(c.dur))}${fact("Started", clock(c.at))}${fact("Stop reason", esc(c.stop || c.statusText || "—"))}${fact("Context size", num(ctx))}</div></div>`
+    + msec("Context", `<div class="mfacts">${fact("This call", num(ctx))}${fact("Change", signed(growth(c).delta))}</div><p class="muted-note">${esc(growth(c).why[0].toUpperCase() + growth(c).why.slice(1))}.</p>`)
     + msec("Tokens", `<div class="mfacts">${fact("Input", num(c.in))}${fact("Output", num(c.out))}${fact("Cache write", num(c.cw))}${fact("Cache read", num(c.cr))}</div>`)
     + (c.thinking ? msec("Thinking", G.pre(c.thinking)) : "")
     + (asked.length ? msec("Then ran", `<ul class="mlist">${asked.map((t) => `<li>${t.ok ? "✓" : "✗"} <button type="button" class="linkish" data-modal="tool:${t.id}"><b>${esc(t.name)}</b></button><code>${esc(G.toolArg(t))}</code><span class="muted">${dur(t.dur)}</span></li>`).join("")}</ul>`) : "")
@@ -494,12 +518,16 @@ function jump(id) {
 // turn pins it until the user scrolls by hand, so the last turns can be selected even when
 // the page cannot scroll them to the top.
 const sections = [...document.querySelectorAll(".turn, .btwentry")];
+const story = document.getElementById("main");
 function onScroll() {
   if (lockUntilUserScrolls) return;
+  const own = story.scrollHeight > story.clientHeight + 1;  // the story scrolls itself on wide screens
+  const box = own ? story.getBoundingClientRect() : { top: 0, height: innerHeight };
   let cur = sections[0];
-  for (const s of sections) if (s.getBoundingClientRect().top <= innerHeight * 0.3) cur = s;
+  for (const s of sections) if (s.getBoundingClientRect().top <= box.top + box.height * 0.3) cur = s;
   setCurrent(cur.id);
 }
+story.addEventListener("scroll", onScroll, { passive: true });
 for (const ev of ["wheel", "touchmove", "keydown"]) addEventListener(ev, (e) => { if (ev !== "keydown" || ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(e.key)) lockUntilUserScrolls = false; }, { passive: true });
 addEventListener("scroll", onScroll, { passive: true });
 onScroll();
