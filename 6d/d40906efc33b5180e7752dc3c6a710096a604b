@@ -1,0 +1,5 @@
+Spec: specs/015-effect-attribution/spec.md (AC3), research.md T003 lines
+Why this approach: T003 measured no late PreToolUse (smallest lead 476ms to the connection) and a 143ms gap from Write's window end to the next Bash Pre; a replay on a store copy gives the same labels at 0/50/100ms and gen.sh turns several at 150/250ms.
+Alternatives rejected: 0ms (no slack for a slow hook); 100ms (only ~40ms below the measured gap).
+Trade-off / known limit: one session of data; raise it if a connection reads outside/only_one while its tool ran.
+Verified by: make verify; TestLoad effects default; replay of session 63999a51 at five skews.
