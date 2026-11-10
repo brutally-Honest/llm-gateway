@@ -75,9 +75,9 @@ const [r1, r2, g1, , , , r3, gl, r4] = turns[1].tools;
 turns[1].effects = [
   eff({ kind: "read", path: "src/checkout.js", detail: "lines 1–212", at: 245.5, label: "named", tool: r1.id }),
   eff({ kind: "read", path: "test/checkout.test.js", detail: "lines 1–148", at: 245.5, label: "named", tool: r2.id }),
-  eff({ kind: "read", path: "src/", detail: "pattern “retry”", at: 245.8, label: "named", tool: g1.id }),
+  eff({ kind: "read", search: true, path: "src/", detail: "pattern “retry”", at: 245.8, label: "named", tool: g1.id }),
   eff({ kind: "read", path: "src/payment/client.js", detail: "lines 1–96", at: 249.4, label: "named", tool: r3.id }),
-  eff({ kind: "read", path: "src/payment/", detail: "pattern src/payment/**", at: 249.4, label: "named", tool: gl.id }),
+  eff({ kind: "read", search: true, path: "src/payment/", detail: "pattern src/payment/**", at: 249.4, label: "named", tool: gl.id }),
   eff({ kind: "read", path: "src/payment/retry.js", detail: "lines 1–41", at: 253.9, label: "named", tool: r4.id }),
 ];
 
@@ -190,6 +190,14 @@ turns[7].tools = [tool({ call: null, name: "Bash", at: 1003.0, dur: 0.4, input: 
 turns[7].effects = [];
 
 S.turns = turns;
+
+// context only grows within a thread: a call's cache read is the previous call's whole
+// context, so each call's context = input + cache write + the previous context
+{
+  const threads = new Map();
+  for (const t of turns) for (const c of t.calls) { const k = c.agent || "main"; if (!threads.has(k)) threads.set(k, []); threads.get(k).push(c); }
+  for (const list of threads.values()) { let prev = 0; for (const c of list.sort((a, b) => a.n - b.n)) { c.cr = prev; prev = c.in + c.cw + c.cr; } }
+}
 S.end = 1003.6;
 
 // ---------- indexes ----------
@@ -263,15 +271,16 @@ function sessionTime() {
 
 // effect counts: distinct changed files, read files, sites
 function counts(list) {
-  const ch = new Set(), rd = new Set(), st = new Set();
-  for (const e of list) (e.kind === "change" ? ch : e.kind === "read" ? rd : st).add(e.kind === "net" ? e.host : e.path);
-  return { changed: ch.size, read: rd.size, sites: st.size };
+  const ch = new Set(), rd = new Set(), sr = new Set(), st = new Set();
+  for (const e of list) (e.kind === "change" ? ch : e.kind === "read" ? (e.search ? sr : rd) : st).add(e.kind === "net" ? e.host : e.path + (e.search ? e.detail : ""));
+  return { changed: ch.size, read: rd.size, searched: sr.size, sites: st.size };
 }
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 function countsText(c, empty = "no effects") {
   const parts = [];
   if (c.changed) parts.push(`${c.changed} changed`);
   if (c.read) parts.push(`${c.read} read`);
+  if (c.searched) parts.push(plural(c.searched, "search", "searches"));
   if (c.sites) parts.push(plural(c.sites, "site"));
   return parts.length ? parts.join(" · ") : empty;
 }
@@ -315,7 +324,7 @@ function labelTools(e) {
 function effectTarget(e) { return e.kind === "net" ? `${e.host}:${e.port}` : e.path; }
 function effectWhat(e) {
   if (e.kind === "net") return { g: e.outcome === "ok" ? "⇄" : "✕", w: e.outcome === "ok" ? "connected" : e.outcome };
-  if (e.kind === "read") return { g: "→", w: "read" };
+  if (e.kind === "read") return e.search ? { g: "⌕", w: "searched" } : { g: "→", w: "read" };
   return { g: CHANGE[e.change][0], w: e.change };
 }
 function effectStat(e) {
