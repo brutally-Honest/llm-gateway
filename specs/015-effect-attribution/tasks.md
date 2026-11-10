@@ -1,6 +1,6 @@
 ---
 feature: 015-effect-attribution
-status: draft
+status: done
 version: 1
 approved:
 approved-by:

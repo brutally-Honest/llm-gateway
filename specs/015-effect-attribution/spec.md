@@ -1,7 +1,7 @@
 ---
 feature: 015-effect-attribution
 kind: feat
-status: draft
+status: done
 version: 1
 created: 2026-11-10
 supersedes:
