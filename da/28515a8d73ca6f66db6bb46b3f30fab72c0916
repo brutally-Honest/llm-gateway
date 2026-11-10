@@ -1,0 +1,4 @@
+Spec: none yet (016 mockups; feedback 2026-11-10: 'this theme across the project')
+Scope: the mockup pages only. internal/ui/web/style.css is untouched; the real UI takes the theme when 016 is specced and built.
+Bug fixed: .top was sticky inside #top, a wrapper as tall as the header, so the header scrolled away; #top itself is now sticky.
+Verified by: headless Chrome screenshots of v1, v3 and sessions; click test on v1-v3 (tool, effect, call, turn details open, no script errors); make verify green.
