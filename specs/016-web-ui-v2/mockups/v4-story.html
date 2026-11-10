@@ -686,7 +686,7 @@ function sessionMeta() {
 }
 function unassignedNote() {
   const u = S.unassigned[0];
-  return `<p class="muted small">Not in this session: <a href="sessions.html#unassigned">1 unassigned connection</a> while it ran (⚙ harness · ${esc(u.client)} · ${esc(u.host)}).</p>`;
+  return `<p class="muted small">Not in this session: <a href="sessions.html#unassigned">1 unassigned connection</a> at ${clock(u.at)}, after it ended (⚙ harness · ${esc(u.client)} · ${esc(u.host)}).</p>`;
 }
 function turnTimeText(t) {
   if (t.hooksOnly) return "no model calls captured";
