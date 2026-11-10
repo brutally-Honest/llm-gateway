@@ -1,0 +1,4 @@
+Spec: specs/015-effect-attribution/spec.md (AC6, AC9); research.md D10
+Why: seen unassigned on the login store after /chrome (one connection, 75 min); per-tool attribution cannot apply to a connection shared by every browser action.
+Trade-off: a Bash command that names the host still reads named (D6).
+Verified by: TestClaudeCode_NamesTarget (HarnessHost cases); make verify.
