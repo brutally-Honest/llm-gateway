@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>016 mockup 2 · Two panes</title>
+<style>
+/*CORE_CSS*/
+/* ---- variant 2: timeline left, details always open on the right ---- */
+.layout { display: grid; grid-template-columns: 14rem minmax(0, 1fr) minmax(24rem, 34rem); height: calc(100vh - 45px - 32px); }
+.layout > * { overflow: auto; min-width: 0; }
+.rail { padding: 12px 8px 12px 12px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+.rail h2, .pane-empty h2 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.ritem { width: 100%; text-align: left; background: none; border: 0; border-left: 3px solid transparent; padding: 5px 8px; cursor: pointer; color: var(--text); display: flex; flex-direction: column; gap: 2px; }
+.ritem:hover { background: var(--panel); }
+.ritem[aria-current=true] { border-left-color: var(--accent); background: var(--panel); }
+.ritem .p { color: var(--hi); font-size: 12.5px; }
+.ritem .m { font-size: 11px; color: var(--muted); }
+.ritem .err { color: var(--bad); font-weight: 600; }
+.timeline { padding: 14px 18px 30px; display: flex; flex-direction: column; gap: 12px; }
+.timeline > * { flex: none; }
+.pane { border-left: 1px solid var(--border); background: var(--panel); }
+.pane-empty { padding: 18px; color: var(--muted); }
+.strip { display: flex; gap: 2px; align-items: flex-end; height: 34px; padding: 2px 0; overflow-x: auto; }
+.strip button { display: block; align-self: flex-end; box-sizing: border-box; flex: none; border: 0; padding: 0; cursor: pointer; background: var(--model); border-radius: 2px; min-width: 6px; }
+.strip button.side { background: var(--border); }
+.strip button.ag { background: var(--toolc); }
+.strip button.ts { margin-left: 8px; }
+.strip button[aria-pressed=true] { outline: 2px solid var(--hi); outline-offset: 1px; }
+.stripcap { font-size: 11.5px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
+.sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
+.turn { border-top: 2px solid var(--line); padding-top: 8px; scroll-margin-top: 10px; }
+.turn[aria-current=true] { border-top-color: var(--accent); }
+.th { display: flex; flex-wrap: wrap; gap: 2px 12px; align-items: baseline; font-size: 12px; color: var(--muted); }
+.th .tn { font-weight: 600; font-size: 13px; }
+.th .cnt { margin-left: auto; color: var(--text); }
+.prompt { margin: 6px 0; color: var(--hi); font-size: 14px; }
+.calls { display: flex; flex-wrap: wrap; gap: 4px 6px; font-size: 12px; color: var(--muted); align-items: center; margin-bottom: 4px; }
+.cchip { border: 1px solid var(--line); border-radius: 4px; background: none; padding: 0 6px; cursor: pointer; color: var(--model); font-size: 12px; }
+.cchip.ag { color: var(--toolc); }
+[aria-selected=true].cchip, .sel[aria-selected=true] { background: var(--accent-bg); border-color: var(--accent); }
+.grid { display: grid; grid-template-columns: 2.6rem 11.5rem minmax(0, 1fr) auto; font-size: 13px; }
+.grid > .r { display: contents; }
+.sel { all: unset; display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; gap: 0 10px; align-items: baseline; padding: 3px 6px; border-radius: 4px; cursor: pointer; border: 1px solid transparent; }
+.sel:hover { background: var(--panel); }
+.sel:focus-visible { outline: 2px solid var(--accent); }
+.sel .no { color: var(--muted); font-size: 11.5px; text-align: right; font-variant-numeric: tabular-nums; }
+.tool .what { display: flex; gap: 8px; align-items: baseline; }
+.tool .nm { color: var(--hi); font-weight: 600; }
+.tool .arg { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tool .tm { font-size: 12px; color: var(--muted); text-align: right; white-space: nowrap; }
+.tool.failed .no::after { content: " ✗"; color: var(--bad); }
+.eff { font-size: 12.5px; }
+.eff .lblcell { grid-column: 2; }
+.eff .tgt { display: flex; gap: 8px; min-width: 0; }
+.eff code { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.eff .st2 { font-size: 11.5px; color: var(--muted); text-align: right; white-space: nowrap; }
+.ind1 .what, .ind1 .tgt { padding-left: 18px; }
+.ind2 .tgt, .ind2 .what { padding-left: 36px; }
+.grp { grid-column: 2 / -1; font-size: 12px; color: var(--muted); padding: 4px 6px 0; font-style: italic; }
+.agent { font-size: 11px; color: var(--toolc); border: 1px solid var(--toolc); border-radius: 4px; padding: 0 4px; }
+.ans { margin: 6px 0 0 3.2rem; font-size: 13px; color: var(--text); border-left: 2px solid var(--line); padding-left: 10px; }
+.ans .clamp { -webkit-line-clamp: 2; }
+.hooksonly { font-size: 12px; color: var(--muted); margin: 2px 0 4px; }
+.between { border: 1px dashed var(--warn); border-radius: 6px; padding: 6px 8px; }
+.between p { margin: 0 0 4px; font-size: 12px; color: var(--muted); }
+.keys { position: fixed; left: 0; right: 0; bottom: 0; height: 32px; display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; padding: 0 16px; background: var(--panel2); border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+.keys b { color: var(--hi); }
+kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--hi); }
+@media (max-width: 1100px) {
+  .layout { grid-template-columns: minmax(0, 1fr) minmax(20rem, 28rem); }
+  .rail { display: none; }
+}
+@media (max-width: 760px) {
+  .layout { display: block; height: auto; }
+  .pane { border-left: 0; border-top: 2px solid var(--accent); }
+  .grid { grid-template-columns: 2.2rem minmax(0, 1fr) auto; }
+  .eff .lblcell { grid-column: 2 / -1; }
+}
+</style>
+</head>
+<body>
+<div id="top"></div>
+<div class="layout">
+  <nav class="rail" aria-label="Turns" id="rail"></nav>
+  <main class="timeline" id="main"></main>
+  <aside class="pane" id="pane" aria-label="Details" aria-live="polite" tabindex="-1"></aside>
+</div>
+<footer class="keys" aria-label="Keyboard shortcuts"><b>SESSION</b><span id="pos"></span><span><kbd>↑</kbd>/<kbd>↓</kbd> select row</span><span><kbd>j</kbd>/<kbd>k</kbd> turn</span><span><kbd>→</kbd> into details</span><span><kbd>e</kbd> next error</span></footer>
+<script>/*CORE_JS*/</script>
+<script>
+"use strict";
+const { S, turns, calls, esc, dur, clock, plural } = G;
+document.getElementById("top").innerHTML = G.topbar("mockup 2 · two panes");
+
+document.getElementById("rail").innerHTML = `<h2>Turns</h2>` + turns.map((t) => {
+  const fails = t.tools.filter((x) => !x.ok).length;
+  return `<button type="button" class="ritem" data-turn="${t.n}" title="${esc(t.prompt)}"><span class="p clamp clamp2">${t.n}. ${esc(t.prompt)}</span><span class="m">${esc(G.railMeta(t))}${fails ? ` · <span class="err">✗ ${fails} failed</span>` : ""}</span></button>`;
+}).join("");
+
+// the call strip: one bar per model call, width by duration, turns marked by a gap
+function strip() {
+  const all = [...calls.values()].sort((a, b) => a.at - b.at);
+  let lastTurn = null;
+  return `<div class="strip" role="group" aria-label="Model calls by duration">${all.map((c) => {
+    const w = Math.max(6, Math.round(Math.sqrt(c.dur) * 9));
+    const ts = c.turn && c.turn !== lastTurn; if (c.turn) lastTurn = c.turn;
+    const name = c.side ? `#${c.n} side call: ${c.kind}, ${dur(c.dur)}, ${c.statusText}` : `#${c.n}${c.agent ? ` (${c.agent})` : ""} · turn ${c.turn} · ${dur(c.dur)}`;
+    return `<button type="button" class="${c.side ? "side" : c.agent ? "ag" : ""}${ts ? " ts" : ""}" style="width:${w}px;height:${c.side ? 14 : 28}px" data-sel="call:${c.n}" title="${esc(name)}" aria-label="${esc(name)}"></button>`;
+  }).join("")}</div><div class="stripcap"><span><i class="sw" style="background:var(--model)"></i>main thread</span><span><i class="sw" style="background:var(--toolc)"></i>sub-agent</span><span><i class="sw" style="background:var(--border)"></i>side call (short bar)</span><span>gap = new turn · width = duration</span></div>`;
+}
+
+function effRow(e, d) {
+  const w = G.effectWhat(e);
+  const hint = e.label === "harness" || e.label === "outside" ? G.during(e) : "";
+  return `<button type="button" class="sel eff ind${d}" data-sel="effect:${e.id}" aria-selected="false"><span></span><span class="lblcell">${G.labelBadge(e)}</span><span class="tgt"><span>${w.g} ${esc(w.w)}</span><code title="${esc(e.kind === "net" ? "" : G.full(e.path))}">${esc(G.effectTarget(e))}</code></span><span class="st2">${esc(G.effectStat(e))}${hint ? ` · ${esc(hint)}` : ""}</span></button>`;
+}
+function rows(t) {
+  // tools carry their own #n; model calls sit in the chip line above
+  return G.walk(t).map((it) => {
+    const d = Math.min(2, it.depth);
+    if (it.type === "tool") {
+      const x = it.t, s = G.STATUS(x);
+      return `<button type="button" class="sel tool ind${d}${x.ok ? "" : " failed"}" data-sel="tool:${x.id}" aria-selected="false"><span class="no">${esc(G.toolNo(x))}</span><span class="what" style="grid-column:2/4"><span class="st st-${s.w}">${s.g}${x.ok ? "" : " failed"}</span><span class="nm">${esc(x.name)}</span>${x.agent ? `<span class="agent">${esc(x.agent)}</span>` : ""}<span class="arg">${esc(G.toolArg(x))}</span>${G.lineStat(x) ? `<span class="mono small">${G.lineStat(x)}</span>` : ""}</span><span class="tm">${dur(x.dur)}</span></button>`;
+    }
+    if (it.type === "effect") return effRow(it.e, d);
+    if (it.type === "group") return `<div class="grp">${it.kind === "several" ? "◌" : "○"} ${esc(it.title)}</div>`;
+    return "";
+  }).join("");
+}
+function turnHTML(t) {
+  const c = G.counts(t.effects);
+  const callChips = t.calls.map((x) => `<button type="button" class="cchip${x.agent ? " ag" : ""}" data-sel="call:${x.n}" aria-selected="false" title="model call #${x.n}${x.agent ? ` in sub-agent ${x.agent}` : ""}">#${x.n} ${dur(x.dur)}${x.thinking ? " · thinking" : ""}</button>`).join("");
+  return `<section class="turn" id="turn-${t.n}" aria-labelledby="th-${t.n}">
+    <div class="th"><button type="button" class="linkish tn" id="th-${t.n}" data-sel="turn:${t.n}">Turn ${t.n}</button><span>${clock(t.at)}</span><span>${esc(G.turnTimeText(t))}</span><span class="cnt">${plural(t.tools.length, "tool call")} · ${esc(G.countsText(c))}</span></div>
+    <p class="prompt">${esc(t.prompt)}</p>
+    ${t.hooksOnly ? `<p class="hooksonly">no model calls captured · tools seen by hooks only, no #n</p>` : `<div class="calls"><span>model calls</span>${callChips}</div>`}
+    <div class="grid">${rows(t)}</div>
+    ${t.answer ? `<button type="button" class="linkish ans" data-sel="turn:${t.n}" style="color:var(--text)"><span class="clamp">${esc(t.answer)}</span></button>` : ""}
+  </section>`;
+}
+const main = document.getElementById("main");
+main.innerHTML = `<section class="shead" aria-label="Session"><h1>${esc(S.title)}</h1>${G.sessionMeta()}${G.headerFacts(true)}<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">${G.sideToggle()}</div>${G.unassignedNote()}</section>${strip()}`
+  + turns.map((t) => {
+    const b = S.between.find((x) => x.after === t.n);
+    return turnHTML(t) + (b ? `<section class="between" aria-label="Between turns"><p>Between turns ${t.n} and ${t.n + 1}: no tool call was running</p><div class="grid">${b.effects.map((e) => effRow(e, 0)).join("")}</div></section>` : "");
+  }).join("");
+
+// selection drives the details pane
+const pane = document.getElementById("pane");
+let selKey = null;
+function select(key, focus = false) {
+  selKey = key;
+  document.querySelectorAll("[aria-selected]").forEach((n) => n.setAttribute("aria-selected", String(n.dataset.sel === key)));
+  document.querySelectorAll(".strip button").forEach((n) => n.setAttribute("aria-pressed", String(n.dataset.sel === key)));
+  const [k, id] = key.split(":");
+  pane.innerHTML = G.detail(k, id);
+  pane.scrollTop = 0;
+  const node = main.querySelector(`[data-sel="${CSS.escape(key)}"]`);
+  const t = node && node.closest(".turn");
+  if (t) markTurn(+t.id.slice(5), false);
+  if (focus && node) { node.focus(); node.scrollIntoView({ block: "nearest" }); }
+  document.getElementById("pos").textContent = `${k} ${id.replace(/^t/, "")}`;
+}
+document.body.addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-sel]");
+  if (b && !b.closest(".pane")) select(b.dataset.sel);
+  const r = ev.target.closest("[data-turn]");
+  if (r) { markTurn(+r.dataset.turn, true); }
+  const o = ev.target.closest("[data-open]");
+  if (o) select(o.dataset.open);
+});
+let cur = 1;
+function markTurn(n, scroll) {
+  cur = Math.max(1, Math.min(turns.length, n));
+  document.querySelectorAll(".ritem").forEach((b) => b.setAttribute("aria-current", String(+b.dataset.turn === cur)));
+  document.querySelectorAll(".turn").forEach((s) => s.setAttribute("aria-current", String(s.id === `turn-${cur}`)));
+  if (scroll) document.getElementById(`turn-${cur}`).scrollIntoView({ behavior: "smooth", block: "start" });
+}
+const order = () => [...main.querySelectorAll(".sel[data-sel]")];
+document.addEventListener("keydown", (ev) => {
+  if (ev.target.closest("input, textarea") || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+    const list = order(), i = list.findIndex((n) => n.dataset.sel === selKey);
+    const n = list[Math.max(0, Math.min(list.length - 1, i + (ev.key === "ArrowDown" ? 1 : -1)))];
+    if (n) { ev.preventDefault(); select(n.dataset.sel, true); }
+  } else if (ev.key === "ArrowRight") { pane.focus(); }
+  else if (ev.key === "j" || ev.key === "k") { markTurn(cur + (ev.key === "j" ? 1 : -1), true); }
+  else if (ev.key === "e") { const f = [...G.tools.values()].find((x) => !x.ok); if (f) select(`tool:${f.id}`, true); }
+});
+markTurn(1, false);
+select(`tool:${turns[0].tools[0].id}`);
+G.themeInit();
+</script>
+</body>
+</html>
