@@ -6,7 +6,7 @@
 <title>016 mockup · Sessions</title>
 <style>
 /*CORE_CSS*/
-/* ---- sessions list, in the compact style of variant 1 ---- */
+/* ---- sessions list ---- */
 main { padding: 16px 22px 60px; display: flex; flex-direction: column; gap: 14px; max-width: 92rem; }
 h1 { margin: 0; font-size: 20px; color: var(--hi); }
 .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
@@ -38,7 +38,7 @@ tbody tr:hover td { background: var(--panel); }
 </style>
 </head>
 <body>
-<header class="top"><a class="brand" href="index.html">Gateway</a><nav class="crumb" aria-label="Breadcrumb"><b>Sessions</b></nav><span class="vname">sessions list · compact style</span><span class="spacer"></span><div id="theme"></div></header>
+<header class="top"><a class="brand" href="index.html">Gateway</a><nav class="crumb" aria-label="Breadcrumb"><b>Sessions</b></nav><span class="vname">sessions list</span><span class="spacer"></span><div id="theme"></div></header>
 <main id="main"></main>
 <script>/*CORE_JS*/</script>
 <script>
@@ -52,7 +52,7 @@ const sum = (k) => [...G.calls.values()].reduce((a, x) => a + (x[k] || 0), 0);
 const rows = [
   { started: "10:31", title: "Upgrade eslint to v9", sub: "~/code/shop-api · opus-5-5 · first prompt (no generated title yet)", key: "a0e4…", api: true, hooks: true, status: "active",
     turns: 2, calls: 7, side: 1, tools: { ok: 5, failed: 0 }, errors: 0, eff: { changed: 3, read: 4, sites: 1 }, clock: "4m 10s", in: 6_210, out: 1_904, cr: 88_100 },
-  { started: "10:01", title: G.S.title, sub: "~/code/shop-api · opus-5-5 · generated title", key: G.S.id.slice(0, 8), api: true, hooks: true, status: "ended", href: "v1-compact.html",
+  { started: "10:01", title: G.S.title, sub: "~/code/shop-api · opus-5-5 · generated title", key: G.S.id.slice(0, 8), api: true, hooks: true, status: "ended", href: "v4-story.html",
     turns: G.turns.length, calls: [...G.calls.values()].filter((x) => !x.side).length, side: G.S.side.length, tools: { ok: [...G.tools.values()].filter((t) => t.ok).length, failed: [...G.tools.values()].filter((t) => !t.ok).length }, errors: 0, eff: c, clock: dur(st.clock), in: sum("in"), out: sum("out"), cr: sum("cr") },
   { started: "09:40", title: "Hooks only · ~/code/infra", sub: "no prompt captured · no model calls captured (API not routed through the gateway)", noprompt: true, key: "5d21…", api: false, hooks: true, status: "hooks only",
     turns: 1, calls: 0, side: 0, tools: { ok: 3, failed: 0 }, errors: 0, eff: { changed: 1, read: 2, sites: 0 }, clock: "1m 02s", in: null, out: null, cr: null },

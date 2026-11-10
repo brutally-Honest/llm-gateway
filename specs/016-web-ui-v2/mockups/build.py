@@ -8,9 +8,6 @@ src = here / "src"
 css = (src / "core.css").read_text()
 js = (src / "core.js").read_text()
 pages = {
-    "v1-compact.html": "v1-compact.html",
-    "v2-two-panes.html": "v2-two-panes.html",
-    "v3-spans.html": "v3-spans.html",
     "v4-story.html": "v4-story.html",
     "sessions.html": "sessions.html",
 }

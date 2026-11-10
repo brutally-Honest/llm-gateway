@@ -35,40 +35,25 @@ code { font: 13px ui-monospace, Menlo, monospace; }
 <body>
 <main>
   <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center">
-    <h1>016 web UI v2 · session page mockups</h1>
+    <h1>016 web UI v2 · mockups</h1>
     <div class="seg" role="group" aria-label="Theme"><button type="button" data-theme-btn="dark">☾ Dark</button><button type="button" data-theme-btn="light">☀ Light</button></div>
   </div>
-  <p class="muted">Four layouts of one made-up session (<code>~/code/shop-api</code>, 8 turns), same data, same colours. Pick one, then write the spec. The theme choice is remembered across pages where the browser allows storage for local files.</p>
+  <p class="muted">The chosen session page (variant 4 of the four drawn on 2026-11-10; the others are in git history) and the sessions list, on one made-up session (<code>~/code/shop-api</code>, 8 turns). The spec in <code>specs/016-web-ui-v2/</code> wins where it differs from these pages.</p>
 
   <div class="cards">
-    <section class="card"><h3><a href="v1-compact.html">1 · Compact list</a></h3>
-      <p class="stance">One dense column: every call, tool and effect is one line, and any line opens its details in place, right under itself.</p>
-      <p class="stance">Closest to today's page, so the cheapest to build; the reader never leaves the timeline.</p>
-      <p class="drop"><b>Dropped:</b> duration strip, rail Show options. <b>Kept:</b> rail, key bar.</p></section>
-    <section class="card"><h3><a href="v2-two-panes.html">2 · Two panes</a></h3>
-      <p class="stance">Rail, timeline and a details pane that is always open: arrow keys walk the rows, the pane follows.</p>
-      <p class="stance">Nothing ever covers the turn you are reading; best for going through a session row by row.</p>
-      <p class="drop"><b>Dropped:</b> rail Show options, model-call rows (calls become chips above each turn). <b>Kept:</b> call strip, key bar. Needs ~1100px for three columns.</p></section>
-    <section class="card"><h3><a href="v3-spans.html">3 · Spans</a></h3>
-      <p class="stance">Time is the main axis: model lanes per thread, a bar per tool call, each effect marked where it was seen.</p>
-      <p class="stance">Answers "what was running when this file changed" by position, which is what the attribution labels guess at.</p>
-      <p class="drop"><b>Dropped:</b> key bar, rail Show options. <b>Replaced:</b> the strip, by a session overview axis with idle time hatched. One long tool squeezes the rest of its turn.</p></section>
-    <section class="card"><h3><a href="v4-story.html">4 · Story</a> <span class="muted" style="font-size:12px;font-weight:400">· revised</span></h3>
-      <p class="stance">Two equal side cards: turns on the left, "What this session touched" on the right (Files, Commands, Sites tabs); each turn in the middle is a card with your prompt as its heading.</p>
-      <p class="stance">Every click opens one modal shape (facts, why it is attributed, diff or output, "Show in turn N"); "Needs a look" lists what deserves a second glance. Own neutral theme.</p>
-      <p class="drop"><b>Dropped:</b> duration strip, key bar, rail Show options, the stat groups (now four cards), model calls as rows, inline diffs.</p></section>
+    <section class="card"><h3><a href="v4-story.html">Session page · story</a></h3>
+      <p class="stance">Turns on the left, the story in the middle, Files, Commands, Sites and Context tabs on the right; only the middle scrolls. Each turn is a card with your prompt as its heading.</p>
+      <p class="stance">Every click opens one modal shape (facts, why it is attributed, diff or output, "Show in turn N"); "Needs a look" lists what deserves a second glance.</p></section>
+    <section class="card"><h3><a href="sessions.html">Sessions list</a></h3>
+      <p class="stance">A table with readable titles for sessions with no prompt, labelled counts, effect counts per session, and the unassigned connection with its ⚙ harness label.</p></section>
   </div>
 
-  <h2>Sessions list</h2>
-  <p><a href="sessions.html">sessions.html</a> <span class="muted">— in variant 1's compact style, which suits a table best. Readable titles for sessions with no prompt, labelled counts, the unassigned connection listed with its ⚙ harness label.</span></p>
-
-  <h2>Shared by all four</h2>
+  <h2>Kept from the variant round</h2>
   <ul>
     <li>Tool lines like <code>✓ Bash npm test · 2m 14s</code>, <code>✓ Edit src/app.js +3 −1</code>, <code>✓ Skill pdf</code>, each with its run time; a failed tool says <code>✗ failed</code> in words.</li>
-    <li>Effects under the tool call that caused them; the 015 label as glyph + word in a badge before the path, never at the end of the line. "Several running" effects sit after the parallel calls they name; harness and outside effects in their own group.</li>
-    <li>Turn time from prompt to final answer, split into model time and tool time. Tool time leaves out the Agent call's span, whose sub-agent calls already count as model time.</li>
-    <li>Session header: every number labelled, in four groups (activity, time, effects, tokens). Side calls folded behind "2 side calls", grey, the 429 explained as the probe's expected answer.</li>
-    <li>Thinking only in the call's details, context size only there too. Rail prompts clamped to 2–3 lines, full text on hover or focus.</li>
+    <li>Effects under the tool call that caused them; the 015 label as glyph + word in a badge before the path. "Several running" effects sit once, after the parallel calls they name; harness and outside effects in their own group.</li>
+    <li>Turn time from prompt to final answer, split into model, tool and waiting time. Tool time leaves out the Agent call's span, whose sub-agent calls already count as model time.</li>
+    <li>Side calls folded behind "2 side calls", never red. Thinking and context size only in a call's details.</li>
     <li>Paths relative to the session folder, full path on hover and in details. Turn 8 is hooks-only: "no model calls captured".</li>
     <li>Dark by default with a light toggle, glyph + word for every status, every control a real button or link.</li>
   </ul>
