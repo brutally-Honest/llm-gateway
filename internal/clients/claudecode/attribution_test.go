@@ -36,7 +36,7 @@ func TestClaudeCode_NamesTarget(t *testing.T) {
 		}
 	}
 	for host, want := range map[string]bool{"downloads.claude.ai": true, "API.anthropic.com": true,
-		"mcp-proxy.anthropic.com": true, "http-intake.logs.us5.datadoghq.com": true,
+		"mcp-proxy.anthropic.com": true, "http-intake.logs.us5.datadoghq.com": true, "bridge.claudeusercontent.com": true,
 		"registry.npmjs.org": false, "anthropic.com": false} {
 		if got := p.HarnessHost(host); got != want {
 			t.Errorf("HarnessHost(%q) = %v, want %v", host, got, want)

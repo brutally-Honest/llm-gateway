@@ -10,7 +10,8 @@ import (
 )
 
 // harnessHosts are the hosts Claude Code connects to on its own behalf: update downloads,
-// telemetry, its API side checks and the claude.ai MCP proxy (spec 015 research D5). An
+// telemetry, its API side checks, the claude.ai MCP proxy (spec 015 research D5) and its
+// Chrome extension bridge, one long-lived connection for every browser action (D10). An
 // entry starting with "." matches that domain's subdomains. A tool call whose input names
 // one of these hosts still wins (named beats harness, D6).
 var harnessHosts = []string{
@@ -18,6 +19,7 @@ var harnessHosts = []string{
 	"http-intake.logs.us5.datadoghq.com",
 	"api.anthropic.com",
 	"mcp-proxy.anthropic.com",
+	"bridge.claudeusercontent.com",
 }
 
 // HarnessHost reports whether host is Claude Code's own traffic.

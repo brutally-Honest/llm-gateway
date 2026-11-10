@@ -51,6 +51,10 @@ feature: 015-effect-attribution
   `HarnessLookup` that `internal/ui` builds from every registered profile's
   `core.AttributionRules.HarnessHost` (the row's own client first, then by name); a match
   is `harness` with `client` set; AC10 covers sessions only — answer Q5.
+- D10 (2026-11-10) — `bridge.claudeusercontent.com` joins the Claude Code harness host list:
+  it is Claude Code's own long-lived Chrome extension bridge, and one connection carries
+  every browser action, so per-tool attribution does not apply. Seen unassigned on the
+  login store (one connection, 75 min) — Karthik's decision.
 
 ## Decisions for Karthik
 Choices made while drafting that you were not asked about. Each has a recommendation; say if
