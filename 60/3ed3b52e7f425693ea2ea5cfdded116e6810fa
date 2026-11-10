@@ -1,0 +1,4 @@
+Plan: specs/016-web-ui-v2/plan.md (A1 server-built view chosen over A2 browser-built and A3 server HTML)
+Tasks: specs/016-web-ui-v2/tasks.md (T001-T016, AC coverage table)
+Trade-off / known limit: the view must stay within 1.2x of today's timeline request at 2,000 calls; measured in T006 before any web work, flip to paging turns (Q3 B) if not.
+Tests retired with the code they test, listed in research.md (Decisions for Karthik 15).
