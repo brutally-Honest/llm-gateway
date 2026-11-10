@@ -127,6 +127,18 @@ Karthik's answers (2026-11-10):
   extension was not connected. The same labels were read from the API of the throwaway
   gateway (see the L1–L3 line above); the browser rendering is still unchecked. Step 7 (real
   session) is by hand.
+- 2026-11-10 — T010 `/ui-check` rerun in Chrome at 7d1cb9f (skew 50ms), throwaway gateway
+  on a fresh data folder, seed as written. Steps 3–6 match: turn 4 shows every label the
+  seed printed as glyph + word with its tool (`● named: Edit`, `◐ only one running: Bash`,
+  `◌ several running: Bash, Bash`, `◌ several running: Bash (agent), Glob`, `⚙ harness`,
+  `○ outside any tool call`); turn 5's `notes/manual.txt` reads outside; no `#n` (no model
+  calls, E11); the diff link opens inline as in 014; the unassigned page lists the seed's
+  `127.0.0.1` connection with no label; no console errors. Step 7 is T003 (above). GIF:
+  `~/Downloads/015-attribution-2026-11-10.gif`. Not a pass record; Karthik decides.
+- 2026-11-10 — After the Q5 fix (02d0fef), the unassigned page of a scratch copy of the
+  login store shows `⚙ harness: claude-code` on every `api.anthropic.com`,
+  `mcp-proxy.anthropic.com`, Datadog and `downloads.claude.ai` row; `api.github.com`,
+  `registry.npmjs.org` and `bridge.claudeusercontent.com` stay unlabelled.
 
 ### T003 — fresh Claude Code session (2026-11-10)
 - 2026-11-10 — Session `63999a51…` (working folder `~/fx015-t003`), run by Karthik on the
