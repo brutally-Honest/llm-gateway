@@ -40,6 +40,9 @@ type Deps struct {
 	// Timelines memoises whole-session timeline builds; nil gets a fresh cache from
 	// Handler and NewHub. The server passes one instance to both.
 	Timelines *TimelineCache
+	// AttributionSkew widens each tool call's span when effects are labelled
+	// (effects.attribution.skew, spec 015).
+	AttributionSkew time.Duration
 	// Ctx is the server's lifetime: digest and timeline builds started by a request run
 	// on it, so they finish after the request times out. Nil is context.Background.
 	Ctx context.Context
