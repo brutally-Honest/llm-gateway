@@ -1,0 +1,5 @@
+Spec: none yet (016 mockups precede the spec; docs/roadmap.md item 2)
+Why this approach: one dataset in src/core.js, inlined by build.py, so variants differ only in layout and each output file stays self-contained.
+Dataset: 8 turns (2m14s Bash with harness traffic, parallel reads + Explore sub-agent, failed Edit, Edit +3 -1, Bash writing 3 files, parallel Bash -> several running, WebFetch, Skill pdf, hooks-only turn), user's README edit between turns 3 and 4, 2 side calls (quota 429, title), thinking on #2 and #10, 1 unassigned harness connection.
+Turn time: clock from prompt to final answer; model time = union of model-call spans; tool time = union of tool spans without the Agent span (its sub-agent's calls count as model time).
+Verified by: headless Chrome screenshot of v1-compact.html; make verify green.
