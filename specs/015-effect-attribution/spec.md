@@ -82,20 +82,23 @@ This changes earlier features:
   system shall label it `only_one` with that tool call.
 - **AC8** — When neither AC5 nor AC6 applies and there are two or more candidates,
   the system shall label it `several` with every candidate listed and no tool picked.
-- **AC9** — When there is no candidate, the system shall label it `outside`; an unassigned
-  connection is `harness` (AC6) or carries no label.
-- **AC10** — When a client's profile has no attribution rules (an unknown client), the system
-  shall label its effects from timing only (`only_one`, `several`, `outside`), never `named`
-  or `harness`.
+- **AC9** — When there is no candidate, the system shall label it `outside`. An unassigned
+  connection is never `outside`: when the harness host list of any registered client profile
+  holds its host (the connection's own client first, then the rest by name), the system
+  shall label it `harness` naming that client; otherwise it carries no label. AC10 does not
+  apply to it, although the proxy stores it under client `unknown`.
+- **AC10** — When a session's client has no attribution rules (an unknown client), the system
+  shall label that session's effects from timing only (`only_one`, `several`, `outside`),
+  never `named` or `harness`.
 
 ### API and web UI
 - **AC11** — When `GET /api/sessions/{id}/effects` or `GET /api/effects/unassigned` returns
   effects, the system shall give each one an `attribution` field holding the label, the
-  picked tool call (id, name, agent id) and the candidates, computed on that request and
-  never stored.
+  picked tool call (id, name, agent id), the candidates and, for an unassigned harness
+  connection, the client (AC9), computed on that request and never stored.
 - **AC12** — When the web UI shows an effects row, the system shall show the label as glyph +
-  word and its tool as text (`#n Bash`, every candidate for `several`), with no other change
-  to the row or the page layout.
+  word and its tool as text (`#n Bash`, every candidate for `several`, the client for an
+  unassigned harness connection), with no other change to the row or the page layout.
 
 ## Edge cases
 - **E1** — Post-tool hook received before its pre-tool hook (async delivery) → paired by id;
@@ -154,3 +157,6 @@ This changes earlier features:
   window (research.md, answers 2026-11-10)
 - v1 (2026-11-10) — AC3: only a span's start is widened by the skew, not its end
   (research.md L1, found by the seed during the build)
+- v1 (2026-11-10) — AC9–AC12: an unassigned connection is `harness` when any registered
+  profile lists its host, naming that client; AC10 covers sessions only (research.md Q5,
+  answered by Karthik)

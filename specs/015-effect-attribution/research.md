@@ -8,7 +8,7 @@ feature: 015-effect-attribution
      Answer by changing "(open)" to "(answered)" and writing the answer underneath:
 - **Q1** (open) T003 — <question> — options: A) … B) …
 -->
-- **Q5** (open) T003 — Unassigned connections never read `harness`: the proxy stores them
+- **Q5** (answered) T003 — Unassigned connections never read `harness`: the proxy stores them
   under client `unknown`, which has no rules, so AC10 (no rules → never `harness`) wins
   over AC9 (unassigned → `harness` or nothing). Around T003, 19 unassigned connections
   to `api.anthropic.com`, `mcp-proxy.anthropic.com` and the Datadog host carry no label.
@@ -16,6 +16,11 @@ feature: 015-effect-attribution
   test client. — options: A) unassigned connections ask every profile's `HarnessHost` and
   read `harness` if any says yes (the label names no client); B) keep them unlabelled and
   change AC9 to say so (via /al-change).
+  - Answer (Karthik, 2026-11-10): A, but name the client. For an unassigned connection, ask
+    every registered client profile through one interface whether the host is on its
+    harness list; on a match, label it `harness` and name that client. No client name in
+    `core/`. The attribution test covers it with the real Claude Code profile and a row
+    under client `unknown`, red without the fix. AC9/AC10 amended to say which rule applies.
 
 ## Decisions
 - D1 (2026-11-10) — Built outside the agent-loop kit, like 014: one branch, feature tasks
@@ -42,6 +47,10 @@ feature: 015-effect-attribution
   labels — answer 4 (refines K6).
 - D8 (2026-11-10) — T003's fresh session is run by Karthik from a prompt and commands
   given to him; the skew is set from its measurements — answer 2.
+- D9 (2026-11-10) — Unassigned connections are labelled by `effects.Unassigned` through a
+  `HarnessLookup` that `internal/ui` builds from every registered profile's
+  `core.AttributionRules.HarnessHost` (the row's own client first, then by name); a match
+  is `harness` with `client` set; AC10 covers sessions only — answer Q5.
 
 ## Decisions for Karthik
 Choices made while drafting that you were not asked about. Each has a recommendation; say if

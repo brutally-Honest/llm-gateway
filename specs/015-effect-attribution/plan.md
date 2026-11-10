@@ -45,7 +45,7 @@ given. Built outside the agent-loop kit like 014 (research.md D1).
 - **Labels at read time.** `internal/effects/attribute.go` is a pure function:
   `Attribute(hooks []store.HookRow, effects []store.EffectRow, rules core.AttributionRules,
   inputs InputFn, skew time.Duration) []Attribution`. The API calls it on every effects
-  page and on the unassigned list.
+  page; the unassigned list uses `Unassigned(e, HarnessLookup)` (Q5).
 - **Rules in the profile.** A new optional `core.AttributionRules` interface; Claude Code
   implements it in `internal/clients/claudecode/attribution.go`.
 
@@ -176,9 +176,12 @@ Validation: 0 ≤ skew ≤ 5s.
   "candidates": [{"id": "toolu_…", "name": "Bash"}, {"id": "toolu_…", "name": "Read"}]
 }
 ```
-`tool` only for `named` and `only_one`; `candidates` only for `several`; the field is absent
-when there is no label. `listEffects` reads `HookEvents` for the session once per request;
-`listUnassigned` needs no hooks (harness or nothing).
+`tool` only for `named` and `only_one`; `candidates` only for `several`; `client` only for
+an unassigned `harness`; the field is absent when there is no label. `listEffects` reads
+`HookEvents` for the session once per request. `listUnassigned` needs no hooks: it calls
+`effects.Unassigned` with `Deps.harnessLookup`, which asks every registered profile's
+`core.AttributionRules.HarnessHost`, the row's own client first, then the rest by name
+(Q5: unassigned rows are stored under client `unknown`, which has no rules).
 
 ### Web UI (AC12)
 - `effects.js`: `attributionText(a, callNo)` → glyph + word, then the tool text. Glyphs:
@@ -251,3 +254,5 @@ Functional tests only, one or two per part (D1), written together near the end:
 - v1 (2026-11-10) — Karthik's answers folded in: named beats harness, four start hosts,
   Bash paths named only as whole words inside the call's window
 - v1 (2026-11-10) — skew default 50ms, start only, from the T003 measurements (research.md)
+- v1 (2026-11-10) — unassigned connections: `Unassigned` over every registered profile's
+  harness list, naming the client (research.md Q5)
