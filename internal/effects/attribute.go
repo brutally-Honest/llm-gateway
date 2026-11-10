@@ -32,7 +32,8 @@ const longSpan = int64(10 * time.Minute)
 
 const openEnd = int64(math.MaxInt64)
 
-// toolSpan is one tool call's running time, from its hook events, widened by the skew.
+// toolSpan is one tool call's running time, from its hook events, its start moved back by
+// the skew.
 type toolSpan struct {
 	ref        ToolRef
 	start, end int64 // unix ns; end is openEnd while it never ended
@@ -140,10 +141,10 @@ func buildSpans(hooks []store.HookRow, rules core.AttributionRules, skew int64) 
 				s.end = closers[j]
 			}
 		}
+		// Hooks are sent asynchronously: a pre-tool hook can arrive after its tool started,
+		// so the start moves back by the skew. A post-tool hook is only sent once the tool
+		// has finished, so the end needs no widening.
 		s.start -= skew
-		if s.end != openEnd {
-			s.end += skew
-		}
 		out = append(out, s)
 	}
 	return out, byHook

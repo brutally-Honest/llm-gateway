@@ -124,8 +124,8 @@ else in `effects` or `hook_events` changes.
    id: `start` = earliest receive time of any of its rows, `end` = receive time of its
    post-tool, failed or denied row; `agent` = its agent id. Calls with no end: closed by the
    next prompt, turn end, turn failure or session end received after `start`, or for a call
-   with an agent id by that agent's agent-end row; else open. Widen: `start − skew`,
-   `end + skew`. Drop calls whose tool `IsAgentTool`.
+   with an agent id by that agent's agent-end row; else open. Widen: `start − skew` only
+   (an end hook is sent after the tool finished; L1). Drop calls whose tool `IsAgentTool`.
 2. **Candidates.** Sort spans by start; for each effect, a binary search plus a scan of spans
    that started before the effect's upper bound. File change: overlap with
    `[window_from, window_to]`. Connection: span holds `at`. Read: the call of `hook_id`.
@@ -144,8 +144,8 @@ else in `effects` or `hook_events` changes.
 - `NamesTarget`:
   - Write, Edit, MultiEdit, NotebookEdit: `WritePaths` made absolute against `workDir`,
     equal to target.
-  - Read, Grep, Glob: `ReadTarget`'s path (empty = `workDir`), equal to target, or for
-    Grep/Glob the target is under it.
+  - Read, Grep, Glob: name nothing (they cannot change a file; a read effect already
+    points at its hook; L2).
   - WebFetch: the `url` input's host equals target.
   - Bash: the `command` holds the target as a whole token: the absolute path, the path
     relative to `workDir`, or the host (also inside a URL). Plain substring checks on token

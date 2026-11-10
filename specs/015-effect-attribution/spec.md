@@ -61,8 +61,10 @@ This changes earlier features:
   from its hook events paired by tool-call id: from its pre-tool event to its post-tool or
   failed event; a denied call ends at its denial; a call with no end event ends at the
   session's next prompt, turn end, turn failure or session end, or for a sub-agent call at its
-  agent's end; with none of those it is still running. Both ends are widened by
-  `effects.attribution.skew` because hooks are sent asynchronously.
+  agent's end; with none of those it is still running. Its start is moved back by
+  `effects.attribution.skew`, because hooks are sent asynchronously and a pre-tool hook can
+  arrive after its tool started; its end is not widened, because an end hook is only sent
+  once the tool has finished.
 - **AC4** — When it picks candidates, the system shall use, for a file change, every tool call
   whose span overlaps the change's window; for a connection, every tool call whose span holds
   the connection's start; for a read, the tool call of the hook event it came from. A tool
@@ -150,3 +152,5 @@ This changes earlier features:
 - v1 (2026-11-10) — approved by Karthik with his answers folded in: `named` beats `harness`
   (AC5/AC6 swapped), Bash paths count as `named` only as whole words inside the call's
   window (research.md, answers 2026-11-10)
+- v1 (2026-11-10) — AC3: only a span's start is widened by the skew, not its end
+  (research.md L1, found by the seed during the build)
