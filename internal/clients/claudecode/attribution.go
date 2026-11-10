@@ -32,10 +32,11 @@ func (Profile) HarnessHost(host string) bool {
 }
 
 // NamesTarget reports whether a Claude Code tool call's input names target, an absolute
-// path or a host. Write, Edit, MultiEdit and NotebookEdit name their file; Read its file;
-// Grep and Glob their folder and everything under it (the working folder when they give
-// none); WebFetch its URL's host; Bash any path or host appearing as a whole word in its
-// command, a path also relative to workDir. No shell parsing (spec 015 AC5, D7).
+// path or a host. Write, Edit, MultiEdit and NotebookEdit name their file; WebFetch its
+// URL's host; Bash any path or host appearing as a whole word in its command, a path also
+// relative to workDir. No shell parsing (spec 015 AC5, D7). Read, Grep and Glob name
+// nothing here: they cannot change a file, and a read effect already points at its own
+// hook.
 func (p Profile) NamesTarget(tool string, input []byte, workDir, target string) bool {
 	if target == "" {
 		return false
@@ -51,25 +52,6 @@ func (p Profile) NamesTarget(tool string, input []byte, workDir, target string) 
 				return true
 			}
 		}
-	case "Read", "Grep", "Glob":
-		if !isPath {
-			return false
-		}
-		path, _, ok := p.ReadTarget(tool, input)
-		if !ok {
-			return false
-		}
-		if path == "" {
-			path = workDir
-		}
-		if path == "" {
-			return false
-		}
-		path = absIn(path, workDir)
-		if tool == "Read" {
-			return path == target
-		}
-		return path == target || strings.HasPrefix(target, strings.TrimSuffix(path, "/")+"/")
 	case "WebFetch":
 		var in struct {
 			URL string `json:"url"`
