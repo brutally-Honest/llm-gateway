@@ -1,4 +1,4 @@
-import { COVERAGE, changeGlyph, formatBytes, outcomeGlyph } from "./effects.js";
+import { COVERAGE, attributionText, changeGlyph, formatBytes, outcomeGlyph } from "./effects.js";
 import { agentLabel, callNumbers, contextOf, contextPlot, deltaFor, formatDuration } from "./model.js";
 import { fitContextPlot } from "./plot.js";
 
@@ -196,9 +196,17 @@ export function effectSection(effect, getJSON) {
   return box;
 }
 
+// attribution appends an effect's label and tool as one more text cell; nothing when the
+// server sent none.
+function attribution(li, e, ctx) {
+  const t = attributionText(e.attribution, ctx.toolNos);
+  if (t) li.append(el("span", `effect-attribution attribution-${e.attribution.label}`, ` · ${t}`));
+}
+
 // effectsListNode is an expanded effects list: the coverage line, then the files, then the
-// connections. ctx = { isOpen(key), setOpen(key, on), getJSON, redraw }: a diff or content
-// link opens that effect's section below its row, and stays open across redraws.
+// connections. ctx = { isOpen(key), setOpen(key, on), getJSON, redraw, toolNos }: a diff or
+// content link opens that effect's section below its row, and stays open across redraws.
+// toolNos maps a tool call id to its model call's #n for the attribution text (spec 015).
 export function effectsListNode(items, ctx) {
   const box = el("div", "effects-list");
   box.append(el("p", "muted effects-coverage", COVERAGE));
@@ -212,6 +220,7 @@ export function effectsListNode(items, ctx) {
       li.append(el("span", `effect-change change-${change}`, changeGlyph(change)), el("span", "effect-path", ` ${e.path}`));
       if (e.kind === "file_change") li.append(el("span", "muted", ` ${formatBytes(e.size)}`));
       if (e.detail) li.append(el("span", "muted", ` ${e.detail}`));
+      attribution(li, e, ctx);
       if (e.has_diff || e.has_copy) {
         const key = `effect:${e.id}`;
         const b = el("button", "link-button", e.has_diff ? "diff" : "content");
@@ -235,6 +244,7 @@ export function effectsListNode(items, ctx) {
       li.append(el("span", "effect-outcome", outcomeGlyph(e.outcome)), el("span", "effect-host", ` ${e.host}:${e.port}`));
       li.append(el("span", "muted", ` ↑ ${formatBytes(e.bytes_up)} ↓ ${formatBytes(e.bytes_down)} · ${formatDuration(e.duration_ms ?? null)} · ${e.via}`));
       if (e.detail) li.append(el("span", "muted", ` ${e.detail}`));
+      attribution(li, e, ctx);
       list.append(li);
     }
     box.append(list);
