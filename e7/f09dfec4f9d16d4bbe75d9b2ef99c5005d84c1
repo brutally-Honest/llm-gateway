@@ -1,0 +1,5 @@
+Spec: none yet (016 mockups)
+Why this approach: details beside the timeline instead of over it (013's drawer covered the turn you were reading); arrow keys walk every row and the pane follows.
+Kept: call strip (model calls only, side calls short and grey, sub-agent purple), key bar. Dropped: rail Show options; model-call rows (calls are chips above each turn's tools).
+Trade-off / known limit: three columns need ~1100px; below that the rail hides, below 760px the pane stacks under the timeline. The strip shows model time only, so the 2m14s Bash is invisible in it.
+Verified by: headless Chrome screenshot at 1600x1000; make verify green.
