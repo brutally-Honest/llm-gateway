@@ -8,6 +8,14 @@ feature: 015-effect-attribution
      Answer by changing "(open)" to "(answered)" and writing the answer underneath:
 - **Q1** (open) T003 — <question> — options: A) … B) …
 -->
+- **Q5** (open) T003 — Unassigned connections never read `harness`: the proxy stores them
+  under client `unknown`, which has no rules, so AC10 (no rules → never `harness`) wins
+  over AC9 (unassigned → `harness` or nothing). Around T003, 19 unassigned connections
+  to `api.anthropic.com`, `mcp-proxy.anthropic.com` and the Datadog host carry no label.
+  `TestEffectsAPI_Attribution` misses it because it saves its unassigned row under the
+  test client. — options: A) unassigned connections ask every profile's `HarnessHost` and
+  read `harness` if any says yes (the label names no client); B) keep them unlabelled and
+  change AC9 to say so (via /al-change).
 
 ## Decisions
 - D1 (2026-11-10) — Built outside the agent-loop kit, like 014: one branch, feature tasks
@@ -110,6 +118,47 @@ Karthik's answers (2026-11-10):
   extension was not connected. The same labels were read from the API of the throwaway
   gateway (see the L1–L3 line above); the browser rendering is still unchecked. Step 7 (real
   session) is by hand.
+
+### T003 — fresh Claude Code session (2026-11-10)
+- 2026-11-10 — Session `63999a51…` (working folder `~/fx015-t003`), run by Karthik on the
+  login service at d24c8b8 (skew 250ms). All hook rows carry `work_dir`.
+- 2026-11-10 — Skew. Gap from the tool's PreToolUse receive time to its connection start:
+  Bash `curl -sI https://example.com` +593ms; WebFetch `https://example.org` +782ms (its
+  `api.anthropic.com` check first, +498ms); sub-agent Bash `curl -sI https://github.com`
+  +476ms. Connection end to PostToolUse: +0.5ms, +1827ms (WebFetch summarises after the
+  fetch), −18ms (the Post landed before the proxy logged the close; ends are not used for
+  connections). No PreToolUse arrived after its tool started.
+- 2026-11-10 — Skew, the other side. Smallest gap between one tool's PostToolUse and the next
+  tool's PreToolUse in one batch: Write → Bash 148ms (window end to Bash Pre 143ms); the two
+  "parallel" Reads ran one after another, 268ms apart. A replay of the stored session on a
+  copy of the store gives the same labels at 0, 50 and 100ms; at 150 and 250ms `gen.sh`
+  turns from `named Write` into `several Write, Bash` (Bash's `bash gen.sh` names it).
+- 2026-11-10 — Skew set to 50ms (was 250ms): a late Pre has not been seen (smallest lead
+  476ms, spawn and DNS come first), while a skew above ~143ms already gave a wrong label in
+  the first real session. 50ms keeps ~90ms below that gap and some slack for a slow hook.
+  Flip to a larger value if a connection reads `outside` or `only_one` while its tool ran
+  (a Pre received late), e.g. under load or a remote gateway.
+- 2026-11-10 — Hosts in the session: `downloads.claude.ai` harness; Datadog
+  (`http-intake.logs.us5.datadoghq.com`) ×4 harness; `api.anthropic.com` harness (during
+  the WebFetch: Claude Code's domain check, no candidate names it); `example.com` named
+  Bash; `example.org` named WebFetch; `github.com` named sub-agent Bash;
+  `registry.npmjs.org` outside (opened 5s before the first prompt, open 64s, Claude Code's
+  start-up). Unassigned from 12:37:56 to 12:39:13: `api.anthropic.com` ×13,
+  `mcp-proxy.anthropic.com` ×4, Datadog ×2, `api.github.com` ×1, all unlabelled (Q5).
+- 2026-11-10 — Harness list unchanged. `registry.npmjs.org` stays off it (D5): listing it
+  would turn a Bash `npm install` that does not name the host into `harness`; the start-up
+  check reads `outside`, which is true. `api.github.com` (after the session ended,
+  unassigned) is not Claude Code's own as far as this data shows.
+- 2026-11-10 — Labels against the expectation. Matches: notes.txt named Edit; example.com
+  named Bash; example.org named WebFetch; agent.txt and github.com named sub-agent Bash;
+  reads named by their hooks. Differences: (1) gen.sh read `several Write, Bash` at 250ms,
+  fixed by the skew above; (2) a.txt and b.txt read `named Bash`, not `only one running`:
+  the command Claude wrote was `bash gen.sh && ls a.txt b.txt`, which names them; correct
+  under D7; (3) a third read, notes.txt before the Edit, named Read: Claude Code requires a
+  Read before an Edit; (4) a `SubagentStop` for another agent id (`ae47008b…`, no Start)
+  landed mid-turn; it closes nothing of ours. Expected limit (KI2): a Bash that runs a
+  script by name names that script, so a script changed in the same window as it ran reads
+  `several`.
 
 ### Brief facts, checked (2026-11-10)
 - F1 — Holds. `Runner.OnStored` signals a checkpoint for every stored hook with a session and
