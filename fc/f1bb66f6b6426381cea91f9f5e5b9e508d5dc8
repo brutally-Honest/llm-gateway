@@ -1,0 +1,4 @@
+Spec: none yet (016 mockups; Karthik chose variant 4, 2026-11-10)
+Removed: v1-compact, v2-two-panes, v3-spans (pages and src). Recoverable from 36233f6.
+Kept: v4-story.html, sessions.html, src/core.js and core.css (shared dataset and theme), build.py.
+Verified by: build.py rebuilds both pages; make verify green.
