@@ -1,0 +1,3 @@
+Spec: specs/015-effect-attribution/tasks.md T003; research.md Q5 (open)
+Source: session 63999a51 in ~/fx015-t003, read from the UI API and the store read-only; replay on a scratch copy of the store.
+Known limit: one session; harness list left unchanged (registry.npmjs.org stays off, D5).
