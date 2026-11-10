@@ -1,0 +1,5 @@
+Spec: specs/016-web-ui-v2/spec.md (draft, AC1-AC15)
+Research: specs/016-web-ui-v2/research.md (D1-D13, Decisions for Karthik 1-15, Q1-Q5 open)
+Why this approach: every fact computed on the server once, shown by the page and printed by the CLI, so they cannot disagree (Karthik's rule).
+Split: the session page fills the 15-AC budget, so the sessions list and the drawer replacement go to 017 (D3).
+Replaces: 013 AC7-AC19, AC30-AC32, AC34, AC37, AC39; 014 AC14 and part of AC15; 015 AC12; folds in the 014 follow-up (effect counts in turn header and rail).
