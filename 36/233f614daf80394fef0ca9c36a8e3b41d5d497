@@ -1,0 +1,6 @@
+Spec: none yet (016 mockups; feedback 2026-11-10)
+Asked for: theme everywhere; wider side section, no pill tabs, no 'What this session touched' title; Context as a 4th section; fix accuracy bugs; middle column scrolling past the fixed side cards.
+Layout: an app shell on wide screens (>1080px): body does not scroll, the three columns fill the window under the header, only the story column scrolls, so all three share a top and bottom edge. Narrower, the page scrolls as before with a sticky turn list. Turn tracking reads the story column's own scroll.
+Context tab: per thread (main, sub-agent), context = input + cache write + cache read; each row says what was added since the previous call (reply, tool results by name, next prompt). Side calls left out. No percentage of a context window (013 AC35).
+Accuracy fixes in this view: searches (Grep, Glob) listed apart from reads and opened as their tool call; the sub-agent's last call 'reported back to the main agent'; 'Needs a look' names 2 file changes and 1 connection instead of '3 changes'.
+Verified by: headless Chrome: clicking turns 8, 2, 5 marks each; body never scrolls; context tab (18 bars), call, search and file modals; screenshots dark (story scrolled) and light (context tab); no script errors; make verify green. The Chrome extension was disconnected, so no live-browser check this round.
