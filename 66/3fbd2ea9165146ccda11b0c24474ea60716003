@@ -1,0 +1,6 @@
+Spec: none yet (016 mockups; second round of feedback on variant 4, 2026-11-10)
+Asked for: meaningful placement of diffs, commands and network; meaningful clicks; diffs in a modal, not inline; symmetry; fix the turn list not selecting turn 8.
+Bug: the turn list marked the turn crossing a band at 25-35% of the window (IntersectionObserver); the page could not scroll turn 8 that far, so turn 6 stayed marked. Fix: a click marks its turn and holds it until the user scrolls by hand (wheel, touch, scroll keys); scrolling marks the last section whose top passed 30% of the window; 60vh space under the story lets any turn reach the top.
+Why this approach: entities, not effects: one row per file (all its changes and reads), per command, per site; the modal is the one place for detail, the story the one place for order, and 'Show in turn N' joins them. Side cards share width, top and height.
+Alternatives rejected: three stacked panels on the right (cramped, unequal to the turn list); diffs inline in the panel (cramped, per the feedback).
+Verified by: in Chrome: clicking turns 8, 1, 7, 3 marks each; command, file, site, failed-tool and nested modals open, Back works, 'Show in turn' closes and highlights; dark and light; no script errors; make verify green.
