@@ -340,3 +340,58 @@ func TestRunner_BurstRunsOneFollowUp(t *testing.T) {
 		t.Fatalf("checkpoints run = %d, want 2", n)
 	}
 }
+
+// spec 015 AC1, E7: a file change carries its window, from the previous checkpoint's
+// start to the end of the scan that found it; a runner with no previous checkpoint in
+// memory starts the window at the session's last hook before the one that made it.
+func TestCheckpoint_StoresWindow(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "f.txt"), "one\n")
+	ts := openStore(t)
+	clock := time.Unix(1_800_000_000, 0)
+	var calls []time.Time
+	tick := func() time.Time {
+		clock = clock.Add(time.Second)
+		calls = append(calls, clock)
+		return clock
+	}
+	r := newTestRunner(t, ts.st)
+	r.now = tick
+	checkpointIn(t, r, dir)
+	firstStart := calls[0]
+	write(t, filepath.Join(dir, "f.txt"), "two\n")
+	checkpointIn(t, r, dir)
+	rows := ts.effects(t)
+	if len(rows) != 1 {
+		t.Fatalf("effects = %+v, want one", rows)
+	}
+	if got, want := rows[0].WindowFrom, firstStart.UnixNano(); got != want {
+		t.Errorf("window_from = %d, want the first checkpoint's start %d", got, want)
+	}
+	if got, want := rows[0].WindowTo, calls[len(calls)-1].UnixNano(); got != want {
+		t.Errorf("window_to = %d, want the second scan's end %d", got, want)
+	}
+	r.Close(context.Background())
+
+	// After a restart: two hooks were stored, the second one makes the memory entry.
+	var ids []int64
+	for i, at := range []time.Time{clock.Add(time.Second), clock.Add(2 * time.Second)} {
+		rec := &store.HookRecord{PrincipalID: testSession.Principal, Client: testSession.Client, Seq: int64(i + 1),
+			ReceivedAt: at, Payload: []byte(`{}`), Event: core.HarnessEvent{Phase: core.PhasePrompt, SessionKey: testSession.Key, WorkDir: dir}}
+		if err := ts.st.SaveHook(t.Context(), rec); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, rec.ID)
+	}
+	second := newTestRunner(t, ts.st)
+	second.sessions[testSession] = &session{ident: testSession, tops: map[string]string{}, workDir: dir, firstHookID: ids[1]}
+	write(t, filepath.Join(dir, "f.txt"), "three\n")
+	checkpointIn(t, second, dir)
+	rows = ts.effects(t)
+	if len(rows) != 2 {
+		t.Fatalf("effects = %+v, want two", rows)
+	}
+	if got, want := rows[1].WindowFrom, clock.Add(time.Second).UnixNano(); got != want {
+		t.Errorf("after a restart window_from = %d, want the earlier hook's time %d", got, want)
+	}
+}

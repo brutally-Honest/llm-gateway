@@ -379,6 +379,8 @@ type captureRun struct {
 	digests *ui.DigestCache
 	// effects is the effect sensors; nil when effects are off (spec 014, E15).
 	effects *effectsRun
+	// skew is effects.attribution.skew, for labelling effects in the UI (spec 015).
+	skew time.Duration
 }
 
 // hookSink is the hook sink, or nil with capture off or a store that cannot save hooks.
@@ -414,6 +416,7 @@ func (c *captureRun) uiDeps(ctx context.Context, addr string, log *zap.Logger) u
 	return ui.Deps{
 		Addr: addr, Log: log, Reader: c.reader, Hub: c.hub,
 		Rules: uiRules(), Ctx: ctx, Timelines: c.timelines, Digests: c.digests,
+		AttributionSkew: c.skew,
 	}
 }
 
@@ -487,6 +490,7 @@ func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, wit
 	return &captureRun{
 		store: st, sink: sink, hooks: hookSink, budget: core.NewBudget(c.MemoryLimit), maxBodyBytes: c.MaxBodyBytes,
 		reader: reader, hub: hub, timelines: timelines, digests: digests, effects: eff,
+		skew: e.Attribution.Skew,
 	}, exitOK
 }
 

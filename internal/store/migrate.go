@@ -125,6 +125,13 @@ CREATE TABLE effect_snapshots (
   PRIMARY KEY (principal_id, client, session_key, root, path)
 ) WITHOUT ROWID;
 `,
+	// 5: effect attribution evidence (feature 015, ADR 0015): a file change's checkpoint
+	// window, and the folder each hook event says its harness works in.
+	`
+ALTER TABLE effects ADD COLUMN window_from INTEGER;
+ALTER TABLE effects ADD COLUMN window_to INTEGER;
+ALTER TABLE hook_events ADD COLUMN work_dir TEXT;
+`,
 }
 
 // migrate brings the database to len(migrations) inside one BEGIN IMMEDIATE, so

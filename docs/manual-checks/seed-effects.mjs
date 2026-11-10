@@ -1,10 +1,12 @@
 // Seeds one Claude Code-shaped session with file, read and network effects for the 014
-// manual check. It makes a scratch git repo, posts hook events to a running gateway as
+// manual check, and a fourth turn that yields every 015 attribution label (--attribution,
+// on by default; it CONNECTs to downloads.claude.ai:443, so it needs the internet). It makes a scratch git repo, posts hook events to a running gateway as
 // Claude Code would, changes files between them (a .env and a 500-file burst included) and
 // makes connections through both proxy listeners. See 014-effects.md. Node only, no packages.
 //
 //   node docs/manual-checks/seed-effects.mjs [--dir PATH] [--pause MS] [--gateway URL] [--ui URL]
 //                                            [--http-proxy HOST:PORT] [--socks-proxy HOST:PORT]
+//                                            [--no-attribution]
 //
 // The scratch repo must not be under a temp folder or be the home folder: the gateway never
 // watches those. The default is ~/llmgw-seed-effects/<time>.
@@ -25,7 +27,9 @@ const { values: args } = parseArgs({
     "http-proxy": { type: "string", default: "127.0.0.1:7198" },
     "socks-proxy": { type: "string", default: "127.0.0.1:7195" },
     ui: { type: "string", default: "http://127.0.0.1:7199" },
+    attribution: { type: "boolean", default: true },
   },
+  allowNegative: true,
 });
 const dir = args.dir;
 const pause = Number(args.pause);
@@ -72,6 +76,19 @@ async function tool(name, input, response) {
   const id = `toolu_seed_${++toolN}`;
   await hook({ ...base("PreToolUse"), tool_use_id: id, tool_name: name, tool_input: input });
   await hook({ ...base("PostToolUse"), tool_use_id: id, tool_name: name, tool_input: input, tool_response: response });
+}
+
+// pre and post send one tool call's hooks separately, so effects can happen while it runs.
+// agent is the sub-agent id the call runs in; "" for the main thread.
+async function pre(name, input, agent = "") {
+  const id = `toolu_seed_${++toolN}`;
+  const a = agent ? { agent_id: agent, agent_type: "general-purpose" } : {};
+  await hook({ ...base("PreToolUse"), ...a, tool_use_id: id, tool_name: name, tool_input: input });
+  return { id, name, input, a };
+}
+
+async function post(call, response = {}) {
+  await hook({ ...base("PostToolUse"), ...call.a, tool_use_id: call.id, tool_name: call.name, tool_input: call.input, tool_response: response });
 }
 
 async function stop() {
@@ -179,6 +196,16 @@ async function connectTo(port) {
   return getThrough(c, r, `127.0.0.1:${port}`);
 }
 
+// connectHost opens a CONNECT tunnel to host:port and closes it at once; any answer is fine.
+async function connectHost(host, port) {
+  const c = await dial(httpProxy);
+  const r = reader(c);
+  c.write(`CONNECT ${host}:${port} HTTP/1.1\r\nHost: ${host}:${port}\r\n\r\n`);
+  const head = await r.until("\r\n\r\n");
+  c.destroy();
+  return head.split("\r\n")[0];
+}
+
 // socksTo opens a SOCKS5 tunnel to localhost:port, by name, through the SOCKS5 proxy.
 async function socksTo(port) {
   const c = await dial(socksProxy);
@@ -258,8 +285,89 @@ try {
   await tool("Bash", { command: "node gen-fixtures.js && rm README.md" }, { stdout: "500 files", stderr: "", interrupted: false });
   await stop();
   await sleep(pause);
+
+  if (args.attribution) await attributionTurn();
 } finally {
   target.close();
   await endAll();
 }
-console.log("seeded: 3 turns, sessions ended; expect the counts in 014-effects.md");
+console.log(`seeded: ${args.attribution ? 4 : 3} turns, sessions ended; expect the counts in 014-effects.md`);
+
+// attributionTurn yields every 015 label. Each step leaves the checkpoint time to land
+// before the next one starts, so each change falls in its own window. The expected label
+// of each effect is printed; 015-attribution.md checks them in the browser.
+async function attributionTurn() {
+  const gap = () => sleep(Math.max(400, Math.min(pause, 1500)));
+  const expect = (what, label) => console.log(`  expect ${label.padEnd(24)} ${what}`);
+  console.log("turn 4 (attribution):");
+  await prompt("Attribution: one of each label.");
+  await gap();
+
+  // named: an Edit whose input names the file it changes.
+  let c = await pre("Edit", { file_path: join(dir, "src/app.js"), old_string: "hi", new_string: "hey" });
+  write("src/app.js", "export function greet(name) {\n  return `hey ${name}`;\n}\n");
+  await post(c, { filePath: join(dir, "src/app.js") });
+  expect("src/app.js modified", "● named · Edit");
+  await gap();
+
+  // named: a Bash curl whose command names the host it connects to.
+  c = await pre("Bash", { command: `curl -s http://127.0.0.1:${targetPort}/named` });
+  await plainHTTP("/named");
+  await post(c, { stdout: "", stderr: "", interrupted: false });
+  expect("127.0.0.1 GET /named", "● named · Bash");
+  await gap();
+
+  // only one running: a Bash whose command does not name the file it writes.
+  c = await pre("Bash", { command: "node gen.js" });
+  write("out/gen.txt", "generated\n");
+  await post(c, { stdout: "", stderr: "", interrupted: false });
+  expect("out/gen.txt created", "◐ only one · Bash");
+  await gap();
+
+  // several running: two parallel calls, neither names the file.
+  const a = await pre("Bash", { command: "make a" });
+  const b = await pre("Bash", { command: "make b" });
+  write("artifacts/out.bin", "built\n");
+  await post(a, { stdout: "", stderr: "", interrupted: false });
+  await post(b, { stdout: "", stderr: "", interrupted: false });
+  expect("artifacts/out.bin created", "◌ several · Bash, Bash");
+  await gap();
+
+  // named among several: two parallel calls, one names the file as a whole word.
+  const t = await pre("Bash", { command: "touch notes/todo.md" });
+  const g = await pre("Grep", { pattern: "TODO", path: join(dir, "src") });
+  write("notes/todo.md", "- todo\n");
+  await post(t, { stdout: "", stderr: "", interrupted: false });
+  await post(g, { mode: "files_with_matches", numFiles: 0, filenames: [] });
+  expect("notes/todo.md created", "● named · Bash");
+  expect("src read by Grep", "● named · Grep");
+  await gap();
+
+  // several running with a sub-agent: the Agent call is never a candidate; the
+  // sub-agent's Bash and a main-thread Glob overlap.
+  const agent = await pre("Agent", { description: "write a report", prompt: "…", subagent_type: "general-purpose" });
+  await hook({ ...base("SubagentStart"), agent_id: "agent_seed_1", agent_type: "general-purpose" });
+  const sb = await pre("Bash", { command: "python3 report.py" }, "agent_seed_1");
+  const gl = await pre("Glob", { pattern: "**/*.md" });
+  write("agent/report.txt", "report\n");
+  await post(sb, { stdout: "", stderr: "", interrupted: false });
+  await post(gl, { filenames: [], numFiles: 0 });
+  await hook({ ...base("SubagentStop"), agent_id: "agent_seed_1", agent_type: "general-purpose", stop_hook_active: false });
+  await post(agent, { content: [{ type: "text", text: "done" }] });
+  expect("agent/report.txt created", "◌ several · Bash (agent), Glob");
+  await gap();
+
+  // harness: Claude Code's own host, with no tool naming it.
+  expect(`downloads.claude.ai:443 (${await connectHost("downloads.claude.ai", 443)})`, "⚙ harness");
+  await stop();
+  await gap();
+
+  // outside any tool call: an edit and a connection between Stop and the next prompt.
+  write("notes/manual.txt", "my own edit\n");
+  await plainHTTP("/outside");
+  await prompt("Done.");
+  expect("notes/manual.txt created", "○ outside");
+  expect("127.0.0.1 GET /outside", "○ outside");
+  await stop();
+  await gap();
+}

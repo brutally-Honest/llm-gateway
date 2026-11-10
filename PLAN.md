@@ -128,7 +128,7 @@ Each phase maps to one or more features, and each feature gets its own spec fold
 
 The former Phase 3 (a second wire protocol and its client profile, gateway token auth, a public tunnel) was removed and the later phases moved up by one ([ADR 0006](docs/decisions/0006-drop-cursor-from-v1.md)).
 
-The v1 order is now A (web UI) → 6 (ground truth) → C (file system and network) → 9 (cost). Routing (old Phase 7) and real auth are removed from v1 ([ADR 0010](docs/decisions/0010-remove-routing-and-auth-from-v1.md)). Self-observability (Phase 8) is unchanged.
+The v1 order is now A → 6 → C → C v2 (effect attribution) → web UI v2 → 9. Routing (old Phase 7) and real auth are removed from v1 ([ADR 0010](docs/decisions/0010-remove-routing-and-auth-from-v1.md)). Self-observability (Phase 8) is unchanged.
 
 Later, each as a new adapter or profile: OpenAI Responses (Codex), OpenAI Chat Completions (Cursor and others), Gemini (Gemini CLI, Antigravity), Bedrock/Vertex formats, cross-protocol translation, eBPF-level fs/network tracing. Each new protocol's decoder must map its provider usage to the four Phase 4 counters with the meaning defined in `specs/005-session-token-usage/spec.md` (Terms): input is uncached input only, so input + cache write + cache read is the full prompt.
 

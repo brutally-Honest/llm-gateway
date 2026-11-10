@@ -1,11 +1,11 @@
 import { getJSON } from "./api.js";
 import { effectsListNode } from "./drawer-sections.js";
-import { COVERAGE, countsText, placeEffects } from "./effects.js";
+import { COVERAGE, countsText, placeEffects, toolNumbers } from "./effects.js";
 import { countText, hookLabel, timeElement } from "./entries.js";
 import { filterTurns, toolNames } from "./filters.js";
 import { createDrawer } from "./drawer.js";
 import { turnTarget } from "./keys.js";
-import { agentLabel, buildStats, buildTurns, contextPlot, formatDuration, hooksLabel, railItems, stripBars } from "./model.js";
+import { agentLabel, buildStats, buildTurns, callNumbers, contextPlot, formatDuration, hooksLabel, railItems, stripBars } from "./model.js";
 import { fitContextPlot } from "./plot.js";
 import { buildRoute } from "./route.js";
 import { countedChips, note } from "./sessions-page.js";
@@ -339,6 +339,18 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
     return box;
   }
 
+  // toolNos maps each tool call id to its model call's #n, rebuilt when the entries change
+  // (spec 015: the attribution text names "#n Bash").
+  let nosFor = null;
+  let nos = new Map();
+  const toolNos = () => {
+    if (nosFor !== data.entries) {
+      nos = toolNumbers(data.entries, callNumbers(data.entries));
+      nosFor = data.entries;
+    }
+    return nos;
+  };
+
   // effectsRow is one folded row of a turn's effects, with its counts; it expands to the
   // files, then the connections (AC14). Only its own box redraws on a toggle, and on a live
   // effects update that changes its bucket (fxRows).
@@ -353,7 +365,7 @@ export function createTimelinePage({ nav, loadDetail } = {}) {
       t.title = COVERAGE;
       t.setAttribute("aria-expanded", String(shown));
       box.append(t);
-      if (shown) box.append(effectsListNode(bucket.items, { isOpen: (k) => open.has(k), setOpen: toggle, getJSON, redraw: draw }));
+      if (shown) box.append(effectsListNode(bucket.items, { isOpen: (k) => open.has(k), setOpen: toggle, getJSON, redraw: draw, toolNos: toolNos() }));
     };
     draw();
     fxRows.set(key, {

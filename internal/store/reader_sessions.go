@@ -162,6 +162,8 @@ type HookRow struct {
 	InputHash   string `json:"input_hash"`
 	PayloadHash string `json:"payload_hash"`
 	ReceivedAt  int64  `json:"received_at"`
+	// WorkDir is the folder the hook event says its harness works in; "" when none.
+	WorkDir string `json:"-"`
 }
 
 // HookKey is the order of hook lines: receive time, then seq, then stored row id. Seq
@@ -188,7 +190,8 @@ func (k HookKey) Less(o HookKey) bool {
 }
 
 const hookColumns = `id, seq, principal_id, client, COALESCE(session_key, ''), COALESCE(tool_use_id, ''),
-	phase, source_name, tool_name, agent_id, agent_type, COALESCE(input_hash, ''), payload_hash, received_at`
+	phase, source_name, tool_name, agent_id, agent_type, COALESCE(input_hash, ''), payload_hash, received_at,
+	COALESCE(work_dir, '')`
 
 // HookEvents reads one session's hook events by receive time, then seq, then row id. Principal
 // and client are part of the session's identity.
@@ -208,7 +211,7 @@ func (r *Reader) hookEventsCtx(ctx context.Context, principal, client, key strin
 	for rows.Next() {
 		var h HookRow
 		if err := rows.Scan(&h.ID, &h.Seq, &h.PrincipalID, &h.Client, &h.SessionKey, &h.ToolUseID, &h.Phase,
-			&h.SourceName, &h.ToolName, &h.AgentID, &h.AgentType, &h.InputHash, &h.PayloadHash, &h.ReceivedAt); err != nil {
+			&h.SourceName, &h.ToolName, &h.AgentID, &h.AgentType, &h.InputHash, &h.PayloadHash, &h.ReceivedAt, &h.WorkDir); err != nil {
 			return nil, fmt.Errorf("store %s: hook events: %w", r.path, err)
 		}
 		out = append(out, h)

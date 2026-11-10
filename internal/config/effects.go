@@ -12,9 +12,10 @@ import (
 
 // Effects is the file and network effect sensors' settings (spec 014, Config).
 type Effects struct {
-	Enabled bool
-	Files   EffectFiles
-	Network EffectNetwork
+	Enabled     bool
+	Files       EffectFiles
+	Network     EffectNetwork
+	Attribution EffectAttribution
 }
 
 // EffectFiles is effects.files: the checkpoint sensor.
@@ -39,11 +40,28 @@ type EffectNetwork struct {
 	ActiveWindow   time.Duration
 }
 
+// EffectAttribution is effects.attribution: how effects are linked to tool calls (spec 015).
+type EffectAttribution struct {
+	// Skew moves each tool call's span start back: hooks are sent asynchronously, so a
+	// pre-tool hook can reach the gateway after its tool started. An end hook is only sent
+	// once the tool has finished, so the end is not widened. 0 to 5s.
+	Skew time.Duration
+}
+
+// maxSkew is the largest effects.attribution.skew.
+const maxSkew = 5 * time.Second
+
 // effectsFile is the effects block. Like fileConfig, its tags are the known keys.
 type effectsFile struct {
-	Enabled *string            `yaml:"enabled"`
-	Files   effectsFilesFile   `yaml:"files"`
-	Network effectsNetworkFile `yaml:"network"`
+	Enabled     *string                `yaml:"enabled"`
+	Files       effectsFilesFile       `yaml:"files"`
+	Network     effectsNetworkFile     `yaml:"network"`
+	Attribution effectsAttributionFile `yaml:"attribution"`
+}
+
+// effectsAttributionFile is effects.attribution.
+type effectsAttributionFile struct {
+	Skew *string `yaml:"skew"`
 }
 
 // effectsFilesFile is effects.files. The two lists are sequences in the file.
@@ -102,12 +120,16 @@ func defaultEffects() Effects {
 			Sandbox:        false,
 			ActiveWindow:   10 * time.Minute,
 		},
+		Attribution: EffectAttribution{Skew: 50 * time.Millisecond},
 	}
 }
 
 func effectsKey(field string) string        { return "effects." + field }
 func effectsFilesKey(field string) string   { return "effects.files." + field }
 func effectsNetworkKey(field string) string { return "effects.network." + field }
+func effectsAttributionKey(field string) string {
+	return "effects.attribution." + field
+}
 
 // effectsValues adds the effects block's values to values, by dotted key. A list is
 // joined with listSep.
@@ -118,6 +140,9 @@ func effectsValues(f *effectsFile, values map[string]*string) {
 	}
 	for field, p := range stringFields(&f.Network) {
 		values[effectsNetworkKey(field)] = p
+	}
+	for field, p := range stringFields(&f.Attribution) {
+		values[effectsAttributionKey(field)] = p
 	}
 	join := func(field string, l *[]string) {
 		var v *string // nil: the file does not set it
@@ -196,6 +221,13 @@ func walkEffectsBlock(v *yaml.Node, entry func(string, *yaml.Node, bool) error,
 				return err
 			}
 			if err := block(k, n, dotted, effectsNetworkKey, stringFields(&effectsNetworkFile{}), nil); err != nil {
+				return err
+			}
+		case "attribution":
+			if err := entry(dotted, k, true); err != nil {
+				return err
+			}
+			if err := block(k, n, dotted, effectsAttributionKey, stringFields(&effectsAttributionFile{}), nil); err != nil {
 				return err
 			}
 		default:
@@ -283,6 +315,17 @@ func effectsSettings() []setting {
 		address(effectsSocksProxyKey, true, func(e *Effects, v string) { e.Network.SocksProxyAddr = v }),
 		boolean(effectsNetworkKey("sandbox"), func(e *Effects, b bool) { e.Network.Sandbox = b }),
 		duration(effectsNetworkKey("active_window"), func(e *Effects, d time.Duration) { e.Network.ActiveWindow = d }),
+		{effectsAttributionKey("skew"), func(c *Config, v string) string {
+			d, err := time.ParseDuration(v)
+			if err != nil {
+				return reasonInvalidDuration
+			}
+			if d < 0 || d > maxSkew {
+				return reasonInvalidValue
+			}
+			c.Effects.Attribution.Skew = d
+			return ""
+		}},
 	}
 }
 

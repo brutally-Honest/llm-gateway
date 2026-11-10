@@ -70,6 +70,45 @@ export function formatBytes(n) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+const ATTRIBUTION = {
+  named: "● named",
+  only_one: "◐ only one running",
+  several: "◌ several running",
+  outside: "○ outside any tool call",
+  harness: "⚙ harness",
+};
+
+// toolNumbers maps each tool call id to the #n of the model call that asked for it, from
+// the timeline entries the page holds; callNos is callNumbers(entries).
+export function toolNumbers(entries, callNos) {
+  const out = new Map();
+  for (const e of entries || []) {
+    if (e.kind === "tool_call" && e.tool_call_id && callNos.has(e.exchange_id) && !out.has(e.tool_call_id)) {
+      out.set(e.tool_call_id, callNos.get(e.exchange_id));
+    }
+  }
+  return out;
+}
+
+// toolText is one tool call as text: "#n Name", or the name alone when no captured model
+// call asked for it; a sub-agent's call adds "(agent)".
+export function toolText(t, toolNos) {
+  const n = toolNos && toolNos.get(t.id);
+  return `${n ? `#${n} ` : ""}${t.name || "tool"}${t.agent_id ? " (agent)" : ""}`;
+}
+
+// attributionText is an effect's label as glyph and word, then its tool or candidates
+// (spec 015 AC12), or for an unassigned harness connection the client whose harness list
+// holds the host; "" when the server sent no label. The browser never derives a label.
+export function attributionText(a, toolNos) {
+  if (!a || !a.label) return "";
+  const word = ATTRIBUTION[a.label] || `? ${a.label}`;
+  if (a.tool) return `${word}: ${toolText(a.tool, toolNos)}`;
+  if (a.candidates && a.candidates.length) return `${word}: ${a.candidates.map((t) => toolText(t, toolNos)).join(", ")}`;
+  if (a.client) return `${word}: ${a.client}`;
+  return word;
+}
+
 // lastID is the highest effect id held, 0 for none.
 export function lastID(effects) {
   let n = 0;
