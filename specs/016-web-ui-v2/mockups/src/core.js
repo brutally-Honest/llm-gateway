@@ -1,0 +1,519 @@
+// 016 mockups: the shared made-up dataset and helpers. build.py inlines this file into
+// every variant, so all of them show the same session. Times are seconds from T0.
+"use strict";
+const G = (() => {
+const T0 = new Date(2026, 10, 10, 10, 2, 0).getTime();
+const FOLDER = "/home/dev/code/shop-api";
+
+// ---------- the session ----------
+const S = {
+  id: "7f3c91e2-5b0a-4d1e-9c55-2a8e61f0b7d4",
+  client: "claude-code", model: "claude-opus-5-5", folder: FOLDER,
+  title: "Fix flaky checkout tests", titleFrom: "generated title (#3)",
+  ended: true,
+  unassigned: [{ host: "downloads.claude.ai", port: 443, at: 1180, dur: 2.1, up: 1200, down: 4_812_000, outcome: "ok", label: "harness", client: "claude-code" }],
+};
+
+// side calls: the client's own calls, never a turn, never red by default
+S.side = [
+  { n: 1, kind: "quota probe", at: -4, dur: 0.3, status: 429, statusText: "429 rate limited — expected answer to a quota probe", in: 8, out: 0, cr: 0, cw: 0 },
+  { n: 3, kind: "title generation", at: 0.6, dur: 1.4, status: 200, statusText: "200 ok", in: 212, out: 9, cr: 0, cw: 0, response: "Fix flaky checkout tests" },
+];
+
+const turns = [];
+let tid = 0, eid = 0;
+const call = (n, at, dur, tok, extra = {}) => ({ n, at, dur, ...tok, ...extra });
+const tok = (inp, out, cw, cr) => ({ in: inp, out, cw, cr });
+const tool = (t) => ({ id: `t${++tid}`, ok: true, ...t });
+const eff = (e) => ({ id: ++eid, ...e });
+
+// Turn 1: a 2+ minute Bash with harness traffic during it, reasoning on #2
+turns.push({
+  n: 1, at: 0, end: 152.9,
+  prompt: "Run the test suite and tell me what's failing. The checkout tests have been flaky all week and I'd like to know whether it's the retry logic or the fixtures before I touch anything.",
+  calls: [
+    call(2, 0.5, 6.2, tok(1820, 312, 16400, 0), { stop: "tool_use", thinking: "The user wants the failing tests first. Running the whole suite is slow (about two minutes on this repo, judging by the jest config with --runInBand) but it's the only way to see the flaky ones together. I'll run npm test and read the summary rather than guessing from the file names." }),
+    call(4, 141.6, 11.3, tok(2410, 486, 3100, 16400), { stop: "end_turn" }),
+  ],
+  tools: [
+    tool({ call: 2, name: "Bash", at: 7.0, dur: 134.2, input: { command: "npm test", description: "Run the full test suite" },
+      result: "> shop-api@2.4.0 test\n> jest --runInBand\n\nPASS test/cart.test.js\nPASS test/users.test.js\nFAIL test/checkout.test.js\n  ● checkout › retries a declined card once\n    expected charge count 1, got 2\nFAIL test/payment.test.js (2 failed)\n\nTests: 3 failed, 118 passed, 121 total\nTime: 133.8 s" }),
+  ],
+  answer: "3 tests fail, all on retries: the payment client sends a second charge when the first times out, because the retry builds a new idempotency key. The fixtures look fine.",
+});
+turns[0].effects = [
+  eff({ kind: "net", host: "registry.npmjs.org", port: 443, at: 9.2, dur: 0.8, up: 2100, down: 18_400, outcome: "ok", label: "only_one", tool: "t1" }),
+  eff({ kind: "net", host: "statsig.anthropic.com", port: 443, at: 41.0, dur: 0.4, up: 3800, down: 600, outcome: "ok", label: "harness" }),
+  eff({ kind: "change", path: "test-results.xml", change: "created", size: 14_820, at: 141.4, label: "only_one", tool: "t1", content: "<?xml version=\"1.0\"?>\n<testsuites tests=\"121\" failures=\"3\" time=\"133.8\">\n  <testsuite name=\"checkout\" failures=\"1\">…" }),
+];
+
+// Turn 2: parallel reads plus a sub-agent
+turns.push({
+  n: 2, at: 240, end: 302.5,
+  prompt: "Read the checkout test and the payment client and find out why a retry double-charges.",
+  calls: [
+    call(5, 240.4, 4.8, tok(980, 274, 2900, 19500), { stop: "tool_use" }),
+    call(6, 246.0, 3.1, tok(1400, 120, 6200, 0), { stop: "tool_use", agent: "Explore" }),
+    call(7, 249.6, 4.0, tok(820, 96, 2100, 6200), { stop: "tool_use", agent: "Explore" }),
+    call(8, 254.1, 29.0, tok(640, 1210, 1800, 8300), { stop: "end_turn", agent: "Explore" }),
+    call(9, 284.0, 18.5, tok(3100, 702, 4800, 22400), { stop: "end_turn" }),
+  ],
+  answer: "Found it: retry.js calls makeKey() inside the retry loop, so each attempt gets a fresh idempotency key and Stripe treats it as a new charge. The test is right; the client is wrong.",
+});
+turns[1].tools = [
+  tool({ call: 5, name: "Read", at: 245.4, dur: 0.1, input: { file_path: `${FOLDER}/src/checkout.js` }, result: "1  import { charge } from './payment/client.js'\n2  …\n(212 lines)" }),
+  tool({ call: 5, name: "Read", at: 245.4, dur: 0.1, input: { file_path: `${FOLDER}/test/checkout.test.js` }, result: "1  import { checkout } from '../src/checkout.js'\n…\n(148 lines)" }),
+  tool({ call: 5, name: "Grep", at: 245.5, dur: 0.3, input: { pattern: "retry", path: "src/" }, result: "src/payment/client.js:41\nsrc/payment/retry.js:3\nsrc/payment/retry.js:18\nsrc/checkout.js:77" }),
+  tool({ call: 5, name: "Agent", at: 245.4, dur: 38.2, input: { description: "Explore payment client", subagent_type: "Explore", prompt: "Map how src/payment builds and reuses idempotency keys." }, result: "client.js builds a key per charge(); retry.js wraps charge() and calls makeKey() on every attempt (line 18)." , spawns: "Explore" }),
+  tool({ call: 6, agent: "Explore", name: "Read", at: 249.3, dur: 0.1, input: { file_path: `${FOLDER}/src/payment/client.js` }, result: "(96 lines)" }),
+  tool({ call: 6, agent: "Explore", name: "Glob", at: 249.3, dur: 0.1, input: { pattern: "src/payment/**" }, result: "src/payment/client.js\nsrc/payment/retry.js\nsrc/payment/keys.js" }),
+  tool({ call: 7, agent: "Explore", name: "Read", at: 253.8, dur: 0.1, input: { file_path: `${FOLDER}/src/payment/retry.js` }, result: "(41 lines)" }),
+];
+const [r1, r2, g1, , r3, gl, r4] = turns[1].tools;
+turns[1].effects = [
+  eff({ kind: "read", path: "src/checkout.js", detail: "lines 1–212", at: 245.5, label: "named", tool: r1.id }),
+  eff({ kind: "read", path: "test/checkout.test.js", detail: "lines 1–148", at: 245.5, label: "named", tool: r2.id }),
+  eff({ kind: "read", path: "src/", detail: "pattern “retry”", at: 245.8, label: "named", tool: g1.id }),
+  eff({ kind: "read", path: "src/payment/client.js", detail: "lines 1–96", at: 249.4, label: "named", tool: r3.id }),
+  eff({ kind: "read", path: "src/payment/", detail: "pattern src/payment/**", at: 249.4, label: "named", tool: gl.id }),
+  eff({ kind: "read", path: "src/payment/retry.js", detail: "lines 1–41", at: 253.9, label: "named", tool: r4.id }),
+];
+
+// Turn 3: an errored Edit, then two Edits in parallel
+turns.push({
+  n: 3, at: 400, end: 431.5,
+  prompt: "Fix the retry so it reuses the idempotency key from the first attempt.",
+  calls: [
+    call(10, 400.3, 9.2, tok(1210, 388, 5200, 27200), { stop: "tool_use", thinking: "makeKey() must move out of the loop. The Edit needs the exact old line; I'll try the version I remember from the sub-agent's summary." }),
+    call(11, 409.9, 5.5, tok(420, 96, 600, 32400), { stop: "tool_use" }),
+    call(12, 415.8, 8.0, tok(910, 544, 1900, 33000), { stop: "tool_use" }),
+    call(13, 424.4, 7.1, tok(700, 310, 1200, 34900), { stop: "end_turn" }),
+  ],
+  answer: "Moved makeKey() above the retry loop so every attempt sends the same key, and made app.js pass the order id through. Edit #1 failed because my old_string was out of date; I re-read the file and retried.",
+});
+turns[2].tools = [
+  tool({ call: 10, name: "Edit", ok: false, at: 409.6, dur: 0.1, input: { file_path: `${FOLDER}/src/payment/retry.js`, old_string: "const key = makeKey()\n  for (", new_string: "…" }, result: "Error: String to replace not found in file.\nString: const key = makeKey()\n  for (", add: 0, del: 0 }),
+  tool({ call: 11, name: "Read", at: 415.5, dur: 0.1, input: { file_path: `${FOLDER}/src/payment/retry.js` }, result: "(41 lines)" }),
+  tool({ call: 12, name: "Edit", at: 423.9, dur: 0.2, add: 6, del: 2, input: { file_path: `${FOLDER}/src/payment/retry.js`, old_string: "for (let i = 0; i < tries; i++) {\n    const key = makeKey(order)", new_string: "const key = makeKey(order)\n  for (let i = 0; i < tries; i++) {" }, result: "The file src/payment/retry.js has been updated." }),
+  tool({ call: 12, name: "Edit", at: 423.9, dur: 0.1, add: 3, del: 1, input: { file_path: `${FOLDER}/src/app.js`, old_string: "checkout(cart)", new_string: "checkout(cart, { orderId })" }, result: "The file src/app.js has been updated." }),
+];
+const [, rr, e1, e2] = turns[2].tools;
+turns[2].effects = [
+  eff({ kind: "read", path: "src/payment/retry.js", detail: "lines 1–41", at: 415.6, label: "named", tool: rr.id }),
+  eff({ kind: "change", path: "src/payment/retry.js", change: "modified", size: 1_384, add: 6, del: 2, at: 424.3, label: "named", tool: e1.id,
+    diff: [" export async function withRetry(order, tries, send) {", "-  for (let i = 0; i < tries; i++) {", "-    const key = makeKey(order)", "+  // one key for every attempt: Stripe dedupes on it", "+  const key = makeKey(order)", "+  for (let i = 0; i < tries; i++) {", "     try {", "       return await send({ ...order, idempotencyKey: key })", "+    } catch (err) {", "+      if (!isRetryable(err)) throw err", "+    }"] }),
+  eff({ kind: "change", path: "src/app.js", change: "modified", size: 2_210, add: 3, del: 1, at: 424.3, label: "named", tool: e2.id,
+    diff: [" app.post('/checkout', async (req, res) => {", "-  const result = await checkout(cart)", "+  const { orderId } = req.body", "+  // the order id seeds the idempotency key", "+  const result = await checkout(cart, { orderId })", "   res.json(result)"] }),
+];
+
+// between turns 3 and 4: the user's own edit in their editor
+S.between = [{ after: 3, effects: [
+  eff({ kind: "change", path: "README.md", change: "modified", size: 4_102, add: 4, del: 0, at: 520, label: "outside",
+    diff: [" ## Payments", "+", "+Retries reuse the first attempt's idempotency key,", "+so a retried charge is never billed twice.", "+"] }),
+] }];
+
+// Turn 4: one Bash that writes 3 files it does not name
+turns.push({
+  n: 4, at: 600, end: 612.8,
+  prompt: "Regenerate the fixtures with seed 42.",
+  calls: [call(14, 600.4, 4.2, tok(380, 140, 900, 36100), { stop: "tool_use" }), call(15, 608.9, 3.9, tok(520, 180, 700, 37000), { stop: "end_turn" })],
+  answer: "Regenerated: orders.json and users.json are new, payments.json changed (seed 42).",
+});
+turns[3].tools = [tool({ call: 14, name: "Bash", at: 604.8, dur: 3.8, input: { command: "node scripts/gen-fixtures.js --seed 42", description: "Regenerate test fixtures" }, result: "wrote 3 fixture files (seed 42)" })];
+turns[3].effects = ["orders.json", "users.json", "payments.json"].map((f, i) => eff({
+  kind: "change", path: `test/fixtures/${f}`, change: i < 2 ? "created" : "modified", size: [2150, 940, 3310][i], add: [62, 28, 9][i], del: [0, 0, 9][i], at: 608.7, label: "only_one", tool: turns[3].tools[0].id,
+  diff: i < 2 ? undefined : ["   {", "-    \"id\": \"pay_8c1\",", "+    \"id\": \"pay_42a\",", "     \"amount\": 1999,"],
+  content: i < 2 ? `[\n  { "id": "${f.slice(0, 3)}_42a", "seed": 42 },\n  …\n]` : undefined,
+}));
+
+// Turn 5: two Bash calls in parallel, so the changes are "several running"
+turns.push({
+  n: 5, at: 700, end: 722.0,
+  prompt: "Add stripe-mock as a dev dependency and rerun the checkout tests.",
+  calls: [call(16, 700.3, 5.0, tok(610, 210, 800, 37700), { stop: "tool_use" }), call(17, 715.2, 6.8, tok(880, 260, 1100, 38500), { stop: "end_turn" })],
+  answer: "stripe-mock 0.188.0 is installed and the checkout tests pass (14/14).",
+});
+turns[4].tools = [
+  tool({ call: 16, name: "Bash", at: 705.5, dur: 9.4, input: { command: "npm install -D stripe-mock" }, result: "added 1 package, audited 412 packages in 9s" }),
+  tool({ call: 16, name: "Bash", at: 705.5, dur: 6.1, input: { command: "npm test -- checkout" }, result: "PASS test/checkout.test.js\nTests: 14 passed, 14 total" }),
+];
+const both = turns[4].tools.map((t) => t.id);
+turns[4].effects = [
+  eff({ kind: "change", path: "package.json", change: "modified", size: 1_920, add: 1, del: 0, at: 715.0, label: "several", cands: both, diff: ["   \"devDependencies\": {", "+    \"stripe-mock\": \"^0.188.0\",", "     \"jest\": \"^29.7.0\""] }),
+  eff({ kind: "change", path: "package-lock.json", change: "modified", size: 312_400, add: 18, del: 2, at: 715.0, label: "several", cands: both, diff: ["   \"node_modules/stripe-mock\": {", "+    \"version\": \"0.188.0\",", "+    \"dev\": true,", "…16 more lines"] }),
+  eff({ kind: "net", host: "registry.npmjs.org", port: 443, at: 706.2, dur: 3.1, up: 9_800, down: 1_240_000, outcome: "ok", label: "several", cands: both }),
+];
+
+// Turn 6: WebFetch
+turns.push({
+  n: 6, at: 800, end: 815.5,
+  prompt: "Check Stripe's docs on how long an idempotency key stays valid.",
+  calls: [call(18, 800.3, 3.5, tok(410, 120, 700, 39500), { stop: "tool_use" }), call(19, 806.1, 9.4, tok(2900, 420, 3600, 40200), { stop: "end_turn" })],
+  answer: "Keys are kept for at least 24 hours, so reusing one across retries a few seconds apart is safe.",
+});
+turns[5].tools = [tool({ call: 18, name: "WebFetch", at: 804.0, dur: 1.9, input: { url: "https://docs.stripe.com/api/idempotent_requests", prompt: "How long is a key valid?" }, result: "Keys are eligible to be removed from the system automatically after they're at least 24 hours old…" })];
+turns[5].effects = [eff({ kind: "net", host: "docs.stripe.com", port: 443, at: 804.1, dur: 1.6, up: 1_900, down: 88_200, outcome: "ok", label: "named", tool: turns[5].tools[0].id })];
+
+// Turn 7: a skill, a Write and a Bash that names its output
+turns.push({
+  n: 7, at: 900, end: 926.2,
+  prompt: "Write the change up as a PDF for review.",
+  calls: [
+    call(20, 900.3, 2.8, tok(330, 90, 600, 43800), { stop: "tool_use" }),
+    call(21, 903.6, 12.4, tok(4200, 1650, 5100, 44400), { stop: "tool_use" }),
+    call(22, 916.3, 3.0, tok(300, 140, 1800, 49500), { stop: "tool_use" }),
+    call(23, 922.2, 4.0, tok(260, 120, 400, 51300), { stop: "end_turn" }),
+  ],
+  answer: "Wrote docs/checkout-fix.md and rendered it to docs/checkout-fix.pdf (2 pages).",
+});
+turns[6].tools = [
+  tool({ call: 20, name: "Skill", at: 903.2, dur: 0.3, input: { skill: "pdf" }, result: "Launching skill: pdf" }),
+  tool({ call: 21, name: "Write", at: 916.1, dur: 0.1, add: 38, del: 0, input: { file_path: `${FOLDER}/docs/checkout-fix.md`, content: "# Checkout retry fix\n\n…" }, result: "File created successfully at: docs/checkout-fix.md" }),
+  tool({ call: 22, name: "Bash", at: 919.4, dur: 2.7, input: { command: "python3 scripts/md2pdf.py docs/checkout-fix.md -o docs/checkout-fix.pdf" }, result: "wrote docs/checkout-fix.pdf (2 pages)" }),
+];
+turns[6].effects = [
+  eff({ kind: "change", path: "docs/checkout-fix.md", change: "created", size: 1_640, add: 38, del: 0, at: 916.2, label: "named", tool: turns[6].tools[1].id, content: "# Checkout retry fix\n\n## What was wrong\nEach retry built a new idempotency key…" }),
+  eff({ kind: "read", path: "docs/checkout-fix.md", detail: "via Bash, not seen", at: 919.6, label: "named", tool: turns[6].tools[2].id, hidden: true }),
+  eff({ kind: "change", path: "docs/checkout-fix.pdf", change: "created", size: 48_310, binary: true, at: 922.1, label: "named", tool: turns[6].tools[2].id }),
+].filter((e) => !e.hidden);
+
+// Turn 8: hooks only, no model calls captured
+turns.push({
+  n: 8, at: 1000, end: 1003.6, hooksOnly: true,
+  prompt: "commit it",
+  calls: [],
+  answer: null,
+});
+turns[7].tools = [tool({ call: null, name: "Bash", at: 1003.0, dur: 0.4, input: { command: "git commit -am \"fix(payment): reuse idempotency key on retry\"" }, result: "[main 4e1c2a9] fix(payment): reuse idempotency key on retry\n 6 files changed, 71 insertions(+), 12 deletions(-)" })];
+turns[7].effects = [];
+
+S.turns = turns;
+S.end = 1003.6;
+
+// ---------- indexes ----------
+const tools = new Map(), calls = new Map(), effects = new Map();
+for (const t of turns) {
+  for (const x of t.tools) { x.turn = t.n; tools.set(x.id, x); }
+  for (const c of t.calls) { c.turn = t.n; calls.set(c.n, c); }
+  for (const e of t.effects) { e.turn = t.n; effects.set(e.id, e); }
+  t.label = t.prompt; // what the rail shows
+}
+for (const s of S.side) calls.set(s.n, { ...s, side: true });
+for (const b of S.between) for (const e of b.effects) { e.turn = null; e.between = b.after; effects.set(e.id, e); }
+for (const t of tools.values()) t.effects = [...effects.values()].filter((e) => e.tool === t.id);
+for (const t of turns) t.several = t.effects.filter((e) => e.label === "several");
+for (const t of turns) t.unpinned = t.effects.filter((e) => !e.tool && e.label !== "several");
+
+// ---------- formatting ----------
+const pad = (n) => String(n).padStart(2, "0");
+function clock(sec, withSeconds = true) {
+  const d = new Date(T0 + sec * 1000);
+  const base = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return withSeconds ? `${base}:${pad(d.getSeconds())}` : base;
+}
+function dur(sec) {
+  if (sec == null) return "—";
+  if (sec < 10) return `${sec.toFixed(1)}s`;
+  if (sec < 60) return `${Math.round(sec)}s`;
+  const m = Math.floor(sec / 60), s = Math.round(sec % 60);
+  if (m < 60) return `${m}m ${pad(s)}s`;
+  return `${Math.floor(m / 60)}h ${pad(m % 60)}m`;
+}
+const num = (n) => (n == null ? "—" : n.toLocaleString("en-US"));
+function bytes(n) {
+  if (n == null) return "—";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const rel = (abs) => (abs.startsWith(FOLDER + "/") ? abs.slice(FOLDER.length + 1) : abs);
+const full = (p) => (p.startsWith("/") ? p : `${FOLDER}/${p}`);
+
+// union length of [start, end] spans
+function union(spans) {
+  const s = spans.filter((x) => x[1] > x[0]).sort((a, b) => a[0] - b[0]);
+  let total = 0, cur = null;
+  for (const [a, b] of s) {
+    if (!cur || a > cur[1]) { if (cur) total += cur[1] - cur[0]; cur = [a, b]; } else cur[1] = Math.max(cur[1], b);
+  }
+  if (cur) total += cur[1] - cur[0];
+  return total;
+}
+
+// turn time: clock from prompt to final answer, split into model time and tool time.
+// A sub-agent's Agent call is not tool time: its model calls already count as model time.
+function turnTime(t) {
+  const m = t.calls.map((c) => [c.at, c.at + c.dur]);
+  const k = t.tools.filter((x) => !x.spawns).map((x) => [x.at, x.at + x.dur]);
+  const clock = t.end - t.at;
+  const model = union(m), tool = union(k);
+  return { clock, model, tool, wait: Math.max(0, clock - union([...m, ...k])) };
+}
+function sessionTime() {
+  const ts = turns.map(turnTime);
+  return {
+    clock: S.end - S.side[0].at,
+    model: ts.reduce((a, x) => a + x.model, 0),
+    tool: ts.reduce((a, x) => a + x.tool, 0),
+  };
+}
+
+// effect counts: distinct changed files, read files, sites
+function counts(list) {
+  const ch = new Set(), rd = new Set(), st = new Set();
+  for (const e of list) (e.kind === "change" ? ch : e.kind === "read" ? rd : st).add(e.kind === "net" ? e.host : e.path);
+  return { changed: ch.size, read: rd.size, sites: st.size };
+}
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+function countsText(c, empty = "no effects") {
+  const parts = [];
+  if (c.changed) parts.push(`${c.changed} changed`);
+  if (c.read) parts.push(`${c.read} read`);
+  if (c.sites) parts.push(plural(c.sites, "site"));
+  return parts.length ? parts.join(" · ") : empty;
+}
+
+const LABELS = {
+  named: { g: "●", w: "named", why: "the tool's input names this target" },
+  only_one: { g: "◐", w: "only one running", why: "the only tool call running in the effect's window; its input does not name the target" },
+  several: { g: "◌", w: "several running", why: "two or more tool calls were running and none names the target; none is picked" },
+  outside: { g: "○", w: "outside any tool call", why: "no tool call was running — usually your own edit, or a background process" },
+  harness: { g: "⚙", w: "harness", why: "the host is on Claude Code's own host list (telemetry, updates)" },
+};
+const CHANGE = { created: "+ created", modified: "~ modified", deleted: "− deleted" };
+const STATUS = (t) => (t.ok ? { g: "✓", w: "ok" } : { g: "✗", w: "failed" });
+
+// what a tool line says after the name
+function toolArg(t) {
+  const i = t.input || {};
+  switch (t.name) {
+    case "Bash": return i.command;
+    case "Read": return rel(i.file_path);
+    case "Edit": case "Write": return rel(i.file_path);
+    case "Grep": return `“${i.pattern}” in ${i.path || "."}`;
+    case "Glob": return i.pattern;
+    case "WebFetch": return i.url.replace(/^https?:\/\//, "");
+    case "Skill": return i.skill;
+    case "Agent": return `${i.subagent_type} · ${i.description}`;
+    default: return "";
+  }
+}
+const lineStat = (t) => (t.add != null && (t.name === "Edit" || t.name === "Write") && t.ok ? `+${t.add} −${t.del}` : "");
+const toolNo = (t) => (t.call ? `#${t.call}` : "");
+const toolRef = (t) => `${t.call ? `#${t.call} ` : ""}${t.name}${t.agent ? ` (${t.agent})` : ""}`;
+function labelTools(e) {
+  if (e.tool) return toolRef(tools.get(e.tool));
+  if (e.cands) return e.cands.map((id) => toolRef(tools.get(id))).join(", ");
+  if (e.client) return e.client;
+  return "";
+}
+function effectTarget(e) { return e.kind === "net" ? `${e.host}:${e.port}` : e.path; }
+function effectWhat(e) {
+  if (e.kind === "net") return { g: e.outcome === "ok" ? "⇄" : "✕", w: e.outcome === "ok" ? "connected" : e.outcome };
+  if (e.kind === "read") return { g: "→", w: "read" };
+  return { g: CHANGE[e.change][0], w: e.change };
+}
+function effectStat(e) {
+  if (e.kind === "net") return `↑ ${bytes(e.up)} ↓ ${bytes(e.down)} · ${dur(e.dur)}`;
+  if (e.kind === "read") return e.detail;
+  if (e.binary) return `${bytes(e.size)} · binary`;
+  return e.add != null ? `+${e.add} −${e.del} · ${bytes(e.size)}` : bytes(e.size);
+}
+
+// ---------- session header facts: every number has a label ----------
+function sessionFacts() {
+  const all = [...effects.values()];
+  const c = counts(all);
+  const st = sessionTime();
+  const main = [...calls.values()].filter((x) => !x.side);
+  const sum = (k) => [...calls.values()].reduce((a, x) => a + (x[k] || 0), 0);
+  const allTools = [...tools.values()];
+  return {
+    groups: [
+      ["Activity", [["turns", turns.length], ["model calls", main.length], ["tool calls", allTools.length], ["tool errors", allTools.filter((t) => !t.ok).length]]],
+      ["Time", [["wall clock", dur(st.clock)], ["model time", dur(st.model)], ["tool time", dur(st.tool)]]],
+      ["Effects", [["files changed", c.changed], ["files read", c.read], ["sites", c.sites]]],
+      ["Tokens", [["input", num(sum("in"))], ["output", num(sum("out"))], ["cache write", num(sum("cw"))], ["cache read", num(sum("cr"))]]],
+    ],
+    started: clock(S.side[0].at), ended: clock(S.end),
+  };
+}
+
+// ---------- the details view: same content in every variant, placed differently ----------
+function pre(text) { return `<pre>${esc(text)}</pre>`; }
+function json(o) { return pre(JSON.stringify(o, null, 2)); }
+function dl(rows) { return `<dl class="facts">${rows.filter(Boolean).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")}</dl>`; }
+function sec(title, body, open = true) { return `<section class="dsec"><h3>${esc(title)}</h3>${body}</section>`; }
+function diffHTML(e) {
+  if (e.binary) return `<p class="muted">Binary file, ${bytes(e.size)}: no copy, no diff.</p>`;
+  if (e.diff) return `<div class="diff" role="group" aria-label="diff of ${esc(e.path)}">${e.diff.map((l) => {
+    const k = l[0] === "+" ? "add" : l[0] === "-" ? "del" : "ctx";
+    const g = k === "add" ? "+" : k === "del" ? "−" : " ";
+    return `<div class="${k}"><span class="dg" aria-hidden="true">${g}</span>${esc(l.slice(1))}</div>`;
+  }).join("")}</div>`;
+  if (e.content) return `<p class="muted">New file: full content.</p>${pre(e.content)}`;
+  return "";
+}
+function labelBadge(e) {
+  if (!e.label) return `<span class="lbl lbl-none">— no label</span>`;
+  const L = LABELS[e.label];
+  return `<span class="lbl lbl-${e.label}" title="${esc(L.why)}"><span aria-hidden="true">${L.g}</span> ${L.w}</span>`;
+}
+function effectRowFacts(e) {
+  return dl([
+    ["what", `${effectWhat(e).g} ${esc(effectWhat(e).w)}`],
+    [e.kind === "net" ? "host" : "path", `<span title="${esc(e.kind === "net" ? "" : full(e.path))}">${esc(effectTarget(e))}</span>`],
+    e.kind !== "net" && ["full path", `<code>${esc(full(e.path))}</code>`],
+    ["seen at", clock(e.at)],
+    e.kind === "net" && ["bytes", `↑ ${bytes(e.up)} sent · ↓ ${bytes(e.down)} received`],
+    e.kind === "net" && ["open for", dur(e.dur)],
+    e.kind === "net" && ["outcome", esc(e.outcome)],
+    e.kind === "change" && ["size", bytes(e.size)],
+    e.kind === "read" && ["range", esc(e.detail)],
+    ["attribution", `${labelBadge(e)} <span class="muted">${esc(LABELS[e.label] ? LABELS[e.label].why : "")}</span>`],
+    (e.tool || e.cands || e.client) && [e.cands ? "candidates" : e.client ? "client" : "tool", esc(labelTools(e))],
+  ]);
+}
+function detailEffect(e) {
+  return `<header class="dhead"><p class="kicker">${e.kind === "net" ? "Connection" : e.kind === "read" ? "File read" : "File change"}</p><h2>${labelBadge(e)} ${esc(effectTarget(e))}</h2></header>`
+    + sec("Facts", effectRowFacts(e))
+    + (e.kind === "change" ? sec(e.diff ? "Diff" : "Content", diffHTML(e)) : "")
+    + (e.kind === "net" ? sec("Note", `<p class="muted">HTTPS: host, port, bytes, timing and outcome only. Nothing is decrypted.</p>`) : "");
+}
+function effList(list) {
+  if (!list.length) return `<p class="muted">No files or connections.</p>`;
+  return `<ul class="elist">${list.map((e) => `<li><span class="elbl">${labelBadge(e)}</span><span>${effectWhat(e).g} ${esc(effectWhat(e).w)}</span><code title="${esc(e.kind === "net" ? "" : full(e.path))}">${esc(effectTarget(e))}</code><span class="muted">${esc(effectStat(e))}</span></li>`).join("")}</ul>`;
+}
+function detailTool(t) {
+  const s = STATUS(t);
+  const c = t.call ? calls.get(t.call) : null;
+  const files = t.effects.filter((e) => e.kind !== "net"), nets = t.effects.filter((e) => e.kind === "net");
+  return `<header class="dhead"><p class="kicker">Tool call · turn ${t.turn}${t.agent ? ` · sub-agent ${esc(t.agent)}` : ""}</p><h2><span class="st st-${s.w}">${s.g} ${s.w}</span> ${esc(t.name)} <span class="muted">${esc(toolArg(t))}</span></h2></header>`
+    + sec("Timings", dl([["asked by", c ? `model call #${c.n}${c.agent ? ` (${esc(c.agent)})` : ""}` : "no model call captured (seen by hooks only)"], ["started", clock(t.at)], ["ended", clock(t.at + t.dur)], ["run time", dur(t.dur)], t.spawns && ["note", "spawns a sub-agent: never an effect's candidate, and its span is not counted as tool time"]]))
+    + sec("Input", json(t.input))
+    + sec("Result", `<div class="${t.ok ? "" : "errbox"}">${t.ok ? "" : `<p class="st st-failed">✗ failed</p>`}${pre(t.result)}</div>`)
+    + sec(`Files (${files.length})`, files.length ? files.map((e) => `<div class="fileblock"><p>${labelBadge(e)} ${effectWhat(e).g} ${esc(effectWhat(e).w)} <code title="${esc(full(e.path))}">${esc(e.path)}</code> <span class="muted">${esc(effectStat(e))}</span></p>${e.kind === "change" ? diffHTML(e) : ""}</div>`).join("") : `<p class="muted">No file changes or reads attributed to this call.</p>`)
+    + sec(`Connections (${nets.length})`, nets.length ? effList(nets) : `<p class="muted">No connections attributed to this call.</p>`);
+}
+function detailCall(c) {
+  const ctx = c.in + c.cw + c.cr;
+  const prev = [...calls.values()].filter((x) => !x.side && !x.agent === !c.agent && x.n < c.n).pop();
+  const prevCtx = prev ? prev.in + prev.cw + prev.cr : null;
+  const asked = [...tools.values()].filter((t) => t.call === c.n);
+  return `<header class="dhead"><p class="kicker">Model call${c.side ? " · side call" : ""}${c.agent ? ` · sub-agent ${esc(c.agent)}` : ""}${c.turn ? ` · turn ${c.turn}` : ""}</p><h2>#${c.n} <span class="muted">${esc(S.model)}</span></h2></header>`
+    + sec("Timings", dl([["started", clock(c.at)], ["duration", dur(c.dur)], ["stop reason", esc(c.stop || (c.side ? c.statusText : "—"))]]))
+    + sec("Tokens", dl([["input", num(c.in)], ["output", num(c.out)], ["cache write", num(c.cw)], ["cache read", num(c.cr)], ["context size", `${num(ctx)} <span class="muted">(input + cache write + cache read)</span>`], ["change since previous call", prevCtx == null ? "first call of its thread" : `${ctx >= prevCtx ? "+" : "−"}${num(Math.abs(ctx - prevCtx))}`]]))
+    + (c.thinking ? sec("Thinking", `<details class="think"><summary>Show thinking (${num(Math.round(c.thinking.length / 4))} tokens)</summary>${pre(c.thinking)}</details>`) : "")
+    + (asked.length ? sec(`Tools asked (${asked.length})`, `<ul class="plain">${asked.map((t) => `<li>${STATUS(t).g} ${esc(t.name)} <span class="muted">${esc(toolArg(t))}</span></li>`).join("")}</ul>`) : "")
+    + (c.response ? sec("Response", pre(c.response)) : "")
+    + sec("Raw", `<p><a href="#" onclick="return false">request</a> · <a href="#" onclick="return false">response stream</a> · <a href="#" onclick="return false">headers</a> <span class="muted">(mock links)</span></p>`);
+}
+function detailTurn(t) {
+  const tt = turnTime(t), c = counts(t.effects);
+  return `<header class="dhead"><p class="kicker">Turn ${t.n} · ${clock(t.at)}</p><h2>${esc(t.prompt)}</h2></header>`
+    + sec("Time", t.hooksOnly ? `<p>No model calls captured. Tool time ${dur(tt.tool)}.</p>` : dl([["prompt to final answer", dur(tt.clock)], ["model time", dur(tt.model)], ["tool time", dur(tt.tool)], ["waiting", dur(tt.wait)]]))
+    + sec("Calls", t.calls.length ? `<p>${t.calls.map((x) => `#${x.n}${x.agent ? ` (${esc(x.agent)})` : ""} ${dur(x.dur)}`).join(" · ")}</p>` : `<p class="muted">no model calls captured</p>`)
+    + sec(`Effects · ${countsText(c)}`, effList(t.effects))
+    + (t.answer ? sec("Final answer", pre(t.answer)) : "");
+}
+function detailSide(s) {
+  return detailCall(calls.get(s.n));
+}
+function detail(kind, id) {
+  if (kind === "tool") return detailTool(tools.get(id));
+  if (kind === "call") return detailCall(calls.get(+id));
+  if (kind === "effect") return detailEffect(effects.get(+id));
+  if (kind === "turn") return detailTurn(turns[+id - 1]);
+  return "";
+}
+
+// walk is a turn's rows in reading order: each model call, the tools it asked for with
+// their effects beneath, a sub-agent's calls under its Agent tool, a "several running"
+// group after the parallel tools it names, effects no tool caused, then the answer.
+// A call and its tools share a depth; effects and sub-agent rows are one deeper.
+function walk(t) {
+  const out = [];
+  const asked = (c) => t.tools.filter((x) => x.call === c.n);
+  const emitTool = (x, d) => {
+    out.push({ type: "tool", t: x, depth: d });
+    for (const e of x.effects) out.push({ type: "effect", e, depth: d + 1 });
+    if (x.spawns) for (const c of t.calls.filter((c) => c.agent === x.spawns)) emitCall(c, d + 1);
+  };
+  const emitCall = (c, d) => {
+    out.push({ type: "call", c, depth: d });
+    const mine = asked(c);
+    for (const x of mine) emitTool(x, d);
+    const sev = t.several.filter((e) => e.cands.every((id) => tools.get(id).call === c.n));
+    if (sev.length) {
+      out.push({ type: "group", kind: "several", depth: d, effects: sev, title: `not pinned to one tool: ${sev[0].cands.map((id) => toolRef(tools.get(id))).join(" and ")} were running` });
+      for (const e of sev) out.push({ type: "effect", e, depth: d + 1 });
+    }
+  };
+  if (t.hooksOnly) {
+    out.push({ type: "note", text: "no model calls captured", depth: 0 });
+    for (const x of t.tools) emitTool(x, 0);
+  }
+  for (const c of t.calls.filter((c) => !c.agent)) emitCall(c, 0);
+  if (t.unpinned.length) {
+    out.push({ type: "group", kind: "loose", depth: 0, effects: t.unpinned, title: "not caused by a tool call" });
+    for (const e of t.unpinned) out.push({ type: "effect", e, depth: 1 });
+  }
+  if (t.answer) out.push({ type: "answer", text: t.answer, depth: 0 });
+  return out;
+}
+// during says which tool was running when an effect happened, for loose effects
+function during(e) {
+  const run = [...tools.values()].filter((x) => !x.spawns && x.at <= e.at && e.at <= x.at + x.dur);
+  return run.length ? `during ${run.map(toolRef).join(", ")}` : "";
+}
+
+// ---------- shared chrome ----------
+function themeInit() {
+  let t = "dark";
+  try { t = localStorage.getItem("gw016-theme") || "dark"; } catch {}
+  document.documentElement.dataset.theme = t;
+  document.querySelectorAll("[data-theme-btn]").forEach((b) => {
+    b.setAttribute("aria-pressed", String(b.dataset.themeBtn === t));
+    b.addEventListener("click", () => {
+      document.documentElement.dataset.theme = b.dataset.themeBtn;
+      try { localStorage.setItem("gw016-theme", b.dataset.themeBtn); } catch {}
+      document.querySelectorAll("[data-theme-btn]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    });
+  });
+}
+function themeButtons() {
+  return `<div class="seg" role="group" aria-label="Theme"><button type="button" data-theme-btn="dark">☾ Dark</button><button type="button" data-theme-btn="light">☀ Light</button></div>`;
+}
+function topbar(variantName) {
+  return `<header class="top"><a class="brand" href="index.html">Gateway</a><nav class="crumb" aria-label="Breadcrumb"><a href="sessions.html">Sessions</a><span aria-hidden="true">/</span><b title="${esc(S.title)}">${esc(S.title)}</b></nav><span class="vname">${esc(variantName)}</span><span class="spacer"></span>${themeButtons()}</header>`;
+}
+function sideToggle() {
+  return `<details class="side"><summary>${plural(S.side.length, "side call")}</summary><ul class="plain">${S.side.map((s) => `<li><button type="button" class="linkish" data-open="call:${s.n}">#${s.n} ${esc(s.kind)}</button> <span class="muted">${clock(s.at)} · ${dur(s.dur)} · ${esc(s.statusText)}</span></li>`).join("")}</ul><p class="muted small">The client's own calls. Never a turn, never counted as an error.</p></details>`;
+}
+function headerFacts(compact = false) {
+  const f = sessionFacts();
+  return `<div class="facts-groups${compact ? " compact" : ""}">${f.groups.map(([g, rows]) => `<div class="fg"><span class="fgname">${esc(g)}</span>${rows.map(([k, v]) => `<span class="fact"><b>${esc(v)}</b> ${esc(k)}</span>`).join("")}</div>`).join("")}</div>`;
+}
+function sessionMeta() {
+  const f = sessionFacts();
+  return `<p class="meta"><span title="${esc(S.id)}">claude-code</span> · ${esc(S.model)} · <span title="${esc(S.folder)}">~/code/shop-api</span> · ${f.started}–${f.ended} · ended · title from ${esc(S.titleFrom)}</p>`;
+}
+function unassignedNote() {
+  const u = S.unassigned[0];
+  return `<p class="muted small">Not in this session: <a href="sessions.html#unassigned">1 unassigned connection</a> while it ran (⚙ harness · ${esc(u.client)} · ${esc(u.host)}).</p>`;
+}
+function turnTimeText(t) {
+  if (t.hooksOnly) return "no model calls captured";
+  const x = turnTime(t);
+  return `${dur(x.clock)} · model ${dur(x.model)} · tools ${dur(x.tool)}`;
+}
+function railMeta(t) {
+  const c = counts(t.effects);
+  return `${t.hooksOnly ? "hooks only" : dur(t.end - t.at)} · ${plural(t.tools.length, "tool")} · ${countsText(c)}`;
+}
+
+return { S, T0, FOLDER, turns, tools, calls, effects, clock, dur, num, bytes, esc, rel, full, union, turnTime, sessionTime, counts, countsText, plural,
+  LABELS, CHANGE, STATUS, toolArg, lineStat, toolNo, toolRef, labelTools, effectTarget, effectWhat, effectStat, labelBadge, diffHTML,
+  walk, during, detail, detailTurn, detailTool, detailCall, detailEffect, effList, sessionFacts, themeInit, themeButtons, topbar, sideToggle, headerFacts, sessionMeta, unassignedNote, turnTimeText, railMeta, pre, dl };
+})();

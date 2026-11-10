@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>016 mockup 1 · Compact list</title>
+<style>
+/*CORE_CSS*/
+/* ---- variant 1: one column of dense rows that open in place ---- */
+.layout { display: grid; grid-template-columns: 17rem minmax(0, 1fr); min-height: calc(100vh - 44px); padding-bottom: 36px; }
+.rail { position: sticky; top: 45px; align-self: start; max-height: calc(100vh - 45px - 34px); overflow: auto; padding: 14px 10px 14px 14px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.rail h2 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.ritem { display: grid; grid-template-columns: 1.6rem 1fr; gap: 2px 6px; width: 100%; text-align: left; background: none; border: 1px solid transparent; border-radius: 6px; padding: 6px; cursor: pointer; color: var(--text); }
+.ritem:hover, .ritem[aria-current=true] { background: var(--panel); border-color: var(--border); }
+.ritem .no { color: var(--muted); font-variant-numeric: tabular-nums; grid-row: span 2; }
+.ritem .p { color: var(--hi); font-size: 13px; }
+.ritem .m { font-size: 11.5px; color: var(--muted); }
+.ritem .err { color: var(--bad); font-weight: 600; }
+.rbetween { font-size: 11.5px; color: var(--muted); padding: 2px 6px 2px 2.2rem; }
+main { padding: 16px 22px 40px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.turn { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; scroll-margin-top: 60px; }
+.turn[aria-current=true] { border-color: var(--accent); }
+.th { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; padding: 8px 12px; background: var(--panel); font-size: 12px; color: var(--muted); }
+.th .tn { color: var(--hi); font-weight: 600; font-size: 13px; }
+.th .grow { flex: 1; }
+.prompt { padding: 8px 12px; border-top: 1px solid var(--line); color: var(--hi); display: flex; gap: 8px; }
+.prompt .who { color: var(--muted); font-size: 12px; flex: none; width: 4.5rem; }
+ol.rows { list-style: none; margin: 0; padding: 0; }
+ol.rows > li { border-top: 1px solid var(--line); }
+.rb { display: grid; grid-template-columns: 1.3rem 5.2rem minmax(0, 1fr) auto auto; gap: 10px; align-items: baseline; width: 100%; text-align: left; background: none; border: 0; padding: 5px 12px; cursor: pointer; color: var(--text); }
+.rb:hover { background: var(--panel); }
+.rb[aria-expanded=true] { background: var(--panel2); }
+.rb .nm { color: var(--hi); font-weight: 600; }
+.rb .arg { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rb .ls { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+.rb .tm { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 4.5rem; text-align: right; }
+.call .rb { grid-template-columns: 1.3rem minmax(0, 1fr) auto; color: var(--muted); font-size: 12px; padding: 3px 12px; }
+.call .rb .tag { color: var(--model); }
+.eff .rb { grid-template-columns: 11.5rem 6.5rem minmax(0, 1fr) auto; font-size: 12.5px; padding: 3px 12px; }
+.eff code { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.grp { padding: 4px 12px; font-size: 12px; color: var(--muted); font-style: italic; }
+.note { padding: 6px 12px; font-size: 12px; color: var(--muted); }
+.ans .rb { grid-template-columns: 4.5rem minmax(0, 1fr); color: var(--text); }
+.ans .who { color: var(--muted); font-size: 12px; }
+.failed .rb { box-shadow: inset 3px 0 0 var(--bad); }
+.d1 .rb, .d1.grp { padding-left: 34px; }
+.d2 .rb, .d2.grp { padding-left: 56px; }
+.agent { font-size: 11px; color: var(--toolc); border: 1px solid var(--toolc); border-radius: 4px; padding: 0 4px; margin-left: 6px; font-weight: 500; }
+.inl { border-top: 1px dashed var(--border); background: var(--panel); margin: 0 0 0 12px; border-left: 2px solid var(--accent); }
+.between { border: 1px dashed var(--warn); border-radius: 8px; padding: 6px 12px; font-size: 12.5px; display: flex; flex-direction: column; gap: 4px; }
+.between .rb { padding: 3px 0; grid-template-columns: 11.5rem 6.5rem minmax(0, 1fr) auto; }
+.keys { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 6px 16px; background: var(--panel2); border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+.keys b { color: var(--hi); }
+kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--hi); }
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; }
+  .rail { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--line); }
+  .rb { grid-template-columns: 1.3rem 4.5rem minmax(0, 1fr) auto; }
+  .rb .ls { display: none; }
+  .eff .rb, .between .rb { grid-template-columns: 1fr; gap: 0; }
+}
+</style>
+</head>
+<body>
+<div id="top"></div>
+<div class="layout">
+  <nav class="rail" aria-label="Turns" id="rail"></nav>
+  <main id="main"></main>
+</div>
+<footer class="keys" aria-label="Keyboard shortcuts"><b>TURNS</b><span id="pos">turn 1/8</span><span><kbd>j</kbd>/<kbd>k</kbd> turn</span><span><kbd>Tab</kbd> rows</span><span><kbd>Enter</kbd> open or close a row</span><span><kbd>e</kbd> next error</span></footer>
+<script>/*CORE_JS*/</script>
+<script>
+"use strict";
+const { S, turns, esc, dur, clock, plural } = G;
+
+document.getElementById("top").innerHTML = G.topbar("mockup 1 · compact list");
+
+// rail: prompt clamped to 3 lines, full text on hover and focus
+const rail = document.getElementById("rail");
+rail.innerHTML = `<h2>Turns</h2>` + turns.map((t) => {
+  const fails = t.tools.filter((x) => !x.ok).length;
+  const between = S.between.find((b) => b.after === t.n);
+  return `<button type="button" class="ritem" data-turn="${t.n}" title="${esc(t.prompt)}"><span class="no">${t.n}</span><span class="p clamp">${esc(t.prompt)}</span><span class="m">${esc(G.railMeta(t))}${fails ? ` · <span class="err">✗ ${fails} failed</span>` : ""}</span></button>`
+    + (between ? `<div class="rbetween">○ your edit · ${esc(between.effects.map((e) => e.path).join(", "))}</div>` : "");
+}).join("");
+
+function effRow(e, d) {
+  const w = G.effectWhat(e);
+  const hint = e.label === "harness" || e.label === "outside" ? G.during(e) : "";
+  return `<li class="eff d${d}"><button type="button" class="rb" aria-expanded="false" data-open="effect:${e.id}">${G.labelBadge(e)}<span>${w.g} ${esc(w.w)}</span><code title="${esc(e.kind === "net" ? "" : G.full(e.path))}">${esc(G.effectTarget(e))}</code><span class="muted small">${esc(G.effectStat(e))}${hint ? ` · ${esc(hint)}` : ""}</span></button></li>`;
+}
+function row(it) {
+  const d = it.depth;
+  if (it.type === "call") {
+    const c = it.c;
+    return `<li class="call d${d}"><button type="button" class="rb" aria-expanded="false" data-open="call:${c.n}"><span class="tag" aria-hidden="true">◆</span><span>model call <span class="tag">#${c.n}</span>${c.agent ? ` <span class="agent">${esc(c.agent)}</span>` : ""}${c.thinking ? " · thinking (open to read)" : ""}</span><span class="tm">${dur(c.dur)}</span></button></li>`;
+  }
+  if (it.type === "tool") {
+    const t = it.t, s = G.STATUS(t);
+    return `<li class="tool d${d}${t.ok ? "" : " failed"}"><button type="button" class="rb" aria-expanded="false" data-open="tool:${t.id}"><span class="st st-${s.w}" title="${s.w}">${s.g}<span hidden> ${s.w}</span></span><span class="nm">${esc(t.name)}</span><span class="arg" title="${esc(G.toolArg(t))}">${t.agent ? `<span class="agent" style="margin:0 6px 0 0">${esc(t.agent)}</span>` : ""}${esc(G.toolArg(t))}${t.ok ? "" : ` <span class="st st-failed">✗ failed</span>`}</span><span class="ls">${esc(G.lineStat(t))}</span><span class="tm">${dur(t.dur)}</span></button></li>`;
+  }
+  if (it.type === "effect") return effRow(it.e, d);
+  if (it.type === "group") return `<li class="grp d${d}">${it.kind === "several" ? "◌" : "○"} ${esc(it.title)}</li>`;
+  if (it.type === "note") return `<li class="note">${esc(it.text)}</li>`;
+  if (it.type === "answer") return `<li class="ans"><button type="button" class="rb" aria-expanded="false" data-open="turn:${it.turn}"><span class="who">answer</span><span class="clamp clamp2">${esc(it.text)}</span></button></li>`;
+  return "";
+}
+const main = document.getElementById("main");
+main.innerHTML = `<section class="shead" aria-label="Session"><h1>${esc(S.title)}</h1>${G.sessionMeta()}${G.headerFacts()}<div>${G.sideToggle()}</div>${G.unassignedNote()}
+  <p class="legend" aria-label="Attribution labels">Effect labels: ${Object.keys(G.LABELS).map((k) => G.labelBadge({ label: k })).join("")}</p></section>`
+  + turns.map((t) => {
+    const items = G.walk(t).map((x) => ({ ...x, turn: t.n }));
+    const between = S.between.find((b) => b.after === t.n);
+    return `<section class="turn" id="turn-${t.n}" aria-labelledby="th-${t.n}">
+      <div class="th"><button type="button" class="linkish tn" id="th-${t.n}" data-open="turn:${t.n}" aria-expanded="false">Turn ${t.n}</button><span>${clock(t.at)}</span><span>${esc(G.turnTimeText(t))}</span><span class="grow"></span><span>${plural(t.tools.length, "tool call")}</span><span>${esc(G.countsText(G.counts(t.effects)))}</span></div>
+      <div class="prompt"><span class="who">you</span><span>${esc(t.prompt)}</span></div>
+      <ol class="rows">${items.map(row).join("")}</ol>
+    </section>`
+    + (between ? `<section class="between" aria-label="Between turns ${t.n} and ${t.n + 1}"><span class="muted">Between turns ${t.n} and ${t.n + 1}: a change no tool call made</span><ol class="rows" style="list-style:none;margin:0;padding:0">${between.effects.map((e) => effRow(e, 0)).join("")}</ol></section>` : "");
+  }).join("");
+
+// open a row in place: its details go right under it
+main.addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-open]");
+  if (!b) return;
+  const host = b.closest("li") || b.closest(".th") || b;
+  const open = b.getAttribute("aria-expanded") === "true";
+  const next = host.nextElementSibling;
+  if (next && next.classList.contains("inl")) next.remove();
+  b.setAttribute("aria-expanded", String(!open));
+  if (open) return;
+  const [k, id] = b.dataset.open.split(":");
+  const box = document.createElement(host.tagName === "LI" ? "li" : "div");
+  box.className = "inl";
+  box.innerHTML = G.detail(k, id);
+  host.after(box);
+});
+
+// rail and keys
+let cur = 1;
+function go(n, scroll = true) {
+  cur = Math.max(1, Math.min(turns.length, n));
+  document.querySelectorAll(".ritem").forEach((b) => b.setAttribute("aria-current", String(+b.dataset.turn === cur)));
+  document.querySelectorAll(".turn").forEach((s) => s.setAttribute("aria-current", String(s.id === `turn-${cur}`)));
+  document.getElementById("pos").textContent = `turn ${cur}/${turns.length}`;
+  if (scroll) document.getElementById(`turn-${cur}`).scrollIntoView({ behavior: "smooth", block: "start" });
+}
+rail.addEventListener("click", (ev) => { const b = ev.target.closest("[data-turn]"); if (b) go(+b.dataset.turn); });
+document.addEventListener("keydown", (ev) => {
+  if (ev.target.closest("input, textarea") || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if (ev.key === "j") go(cur + 1);
+  else if (ev.key === "k") go(cur - 1);
+  else if (ev.key === "e") { const t = turns.find((x) => x.n > cur && x.tools.some((y) => !y.ok)) || turns.find((x) => x.tools.some((y) => !y.ok)); if (t) go(t.n); }
+});
+go(1, false);
+G.themeInit();
+</script>
+</body>
+</html>
