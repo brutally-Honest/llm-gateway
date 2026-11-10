@@ -1,0 +1,5 @@
+Spec: none yet (016 mockups)
+Why this approach: time is the question behind most attribution doubts (what was running when this file changed); the chart answers it by position instead of by label alone.
+Kept: rail. Replaced: the duration strip, by a session overview axis with idle gaps hatched and the user's edit marked. Dropped: key bar (j/k and Esc still work), rail Show options.
+Trade-off / known limit: one long tool squeezes the rest of its turn (turn 1: 2m14s Bash); sub-second tools become 3px slivers, so the left label column carries the facts. Needs ~900px; narrower, the rail turns into a horizontal strip.
+Verified by: headless Chrome screenshots at 1500 wide; make verify green.
