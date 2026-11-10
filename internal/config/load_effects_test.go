@@ -29,6 +29,7 @@ func TestLoad_EffectsDefaults(t *testing.T) {
 			Sandbox:        false,
 			ActiveWindow:   10 * time.Minute,
 		},
+		Attribution: config.EffectAttribution{Skew: 250 * time.Millisecond},
 	}
 	cfg, _, err := config.Load(config.Options{Upstreams: specs, LookupEnv: envOf()})
 	if err != nil {

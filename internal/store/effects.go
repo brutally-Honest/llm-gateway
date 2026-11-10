@@ -83,7 +83,13 @@ func insertEffects(ctx context.Context, tx *sql.Tx, effects []core.Effect) error
 		if e.Port != 0 {
 			port = sql.NullInt64{Int64: int64(e.Port), Valid: true}
 		}
-		var size, up, down sql.NullInt64
+		var size, up, down, from, to sql.NullInt64
+		if !e.WindowFrom.IsZero() {
+			from = sql.NullInt64{Int64: e.WindowFrom.UnixNano(), Valid: true}
+		}
+		if !e.WindowTo.IsZero() {
+			to = sql.NullInt64{Int64: e.WindowTo.UnixNano(), Valid: true}
+		}
 		switch e.Kind {
 		case core.EffectFileChange:
 			size = sql.NullInt64{Int64: e.Size, Valid: true}
@@ -94,12 +100,13 @@ func insertEffects(ctx context.Context, tx *sql.Tx, effects []core.Effect) error
 		_, err := tx.ExecContext(ctx, `INSERT INTO effects (
 			principal_id, client, session_key, kind, at, root, path, change, size, mode,
 			after_hash, before_hash, hook_id, detail, host, port, via, bytes_up, bytes_down,
-			ended_at, outcome
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			ended_at, outcome, window_from, window_to
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			e.Principal, e.Client, nullString(e.SessionKey), string(e.Kind), e.At.UnixNano(),
 			nullString(e.Root), nullString(e.Path), nullString(string(e.Change)), size, nullString(e.Mode),
 			nullString(e.AfterHash), nullString(e.BeforeHash), hookID, nullString(e.Detail),
-			nullString(e.Host), port, nullString(e.Via), up, down, ended, nullString(string(e.Outcome)))
+			nullString(e.Host), port, nullString(e.Via), up, down, ended, nullString(string(e.Outcome)),
+			from, to)
 		if err != nil {
 			return fmt.Errorf("insert effect: %w", err)
 		}
@@ -157,6 +164,23 @@ func (s *Store) SweepSnapshots(ctx context.Context, cutoff time.Time) (int64, er
 		return err
 	})
 	return n, err
+}
+
+// LastHookBefore is the receive time of the session's latest hook event stored before
+// the row id beforeID; zero when there is none. The checkpoint runner uses it as a
+// window's start when it holds no previous checkpoint (spec 015 AC1, E7).
+func (s *Store) LastHookBefore(ctx context.Context, session SessionIdent, beforeID int64) (time.Time, error) {
+	var at sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `SELECT MAX(received_at) FROM hook_events
+		WHERE principal_id = ? AND client = ? AND session_key = ? AND id < ?`,
+		session.Principal, session.Client, session.Key, beforeID).Scan(&at)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("store %s: last hook before: %w", s.path, err)
+	}
+	if !at.Valid {
+		return time.Time{}, nil
+	}
+	return time.Unix(0, at.Int64), nil
 }
 
 // ActiveSession is a session with a recent hook event and no session end since.
@@ -218,6 +242,8 @@ type EffectRow struct {
 	BytesDown   int64
 	EndedAt     int64
 	Outcome     string
+	WindowFrom  int64 // unix ns; 0 when the file change has no window
+	WindowTo    int64
 }
 
 const effectSelect = `SELECT e.id, e.principal_id, e.client, COALESCE(e.session_key, ''), e.kind, e.at,
@@ -225,7 +251,8 @@ const effectSelect = `SELECT e.id, e.principal_id, e.client, COALESCE(e.session_
 	COALESCE(e.mode, ''), COALESCE(e.after_hash, ''), COALESCE(e.before_hash, ''),
 	COALESCE(e.hook_id, 0), COALESCE(h.payload_hash, ''), COALESCE(e.detail, ''),
 	COALESCE(e.host, ''), COALESCE(e.port, 0), COALESCE(e.via, ''), COALESCE(e.bytes_up, 0),
-	COALESCE(e.bytes_down, 0), COALESCE(e.ended_at, 0), COALESCE(e.outcome, '')
+	COALESCE(e.bytes_down, 0), COALESCE(e.ended_at, 0), COALESCE(e.outcome, ''),
+	COALESCE(e.window_from, 0), COALESCE(e.window_to, 0)
 FROM effects e LEFT JOIN hook_events h ON h.id = e.hook_id`
 
 func (r *Reader) effects(ctx context.Context, q string, args ...any) ([]EffectRow, error) {
@@ -239,7 +266,8 @@ func (r *Reader) effects(ctx context.Context, q string, args ...any) ([]EffectRo
 		var e EffectRow
 		if err := rows.Scan(&e.ID, &e.Principal, &e.Client, &e.SessionKey, &e.Kind, &e.At, &e.Root, &e.Path,
 			&e.Change, &e.Size, &e.Mode, &e.AfterHash, &e.BeforeHash, &e.HookID, &e.HookPayload, &e.Detail,
-			&e.Host, &e.Port, &e.Via, &e.BytesUp, &e.BytesDown, &e.EndedAt, &e.Outcome); err != nil {
+			&e.Host, &e.Port, &e.Via, &e.BytesUp, &e.BytesDown, &e.EndedAt, &e.Outcome,
+			&e.WindowFrom, &e.WindowTo); err != nil {
 			return nil, fmt.Errorf("store %s: effects: %w", r.path, err)
 		}
 		out = append(out, e)

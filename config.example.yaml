@@ -189,3 +189,11 @@ effects:
     # session end; with none or more than one it is stored unassigned.
     # Env: GATEWAY_EFFECTS_NETWORK_ACTIVE_WINDOW
     active_window: 10m
+
+  # How each effect is linked to the tool call that most likely caused it (spec 015).
+  attribution:
+    # How far each tool call's span is widened at both ends. Claude Code sends its hooks
+    # asynchronously, so a hook can reach the gateway after its tool started or ended.
+    # 0 to 5s.
+    # Env: GATEWAY_EFFECTS_ATTRIBUTION_SKEW
+    skew: 250ms
