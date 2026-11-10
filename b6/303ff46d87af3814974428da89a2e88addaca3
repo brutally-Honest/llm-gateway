@@ -1,0 +1,3 @@
+Spec: specs/015-effect-attribution/spec.md (AC9, AC10, AC11, AC12); research.md Q5, D9
+Why: the proxy stores unassigned connections under client unknown, so AC10 (no rules, never harness) silently beat AC9; 19 unassigned Claude Code connections around T003 had no label.
+Alternatives rejected: keep them unlabelled and narrow AC9 (option B).
