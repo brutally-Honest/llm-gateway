@@ -42,8 +42,9 @@ type EffectNetwork struct {
 
 // EffectAttribution is effects.attribution: how effects are linked to tool calls (spec 015).
 type EffectAttribution struct {
-	// Skew widens each tool call's span at both ends: hooks are sent asynchronously, so
-	// one can reach the gateway after the tool started or ended. 0 to 5s.
+	// Skew moves each tool call's span start back: hooks are sent asynchronously, so a
+	// pre-tool hook can reach the gateway after its tool started. An end hook is only sent
+	// once the tool has finished, so the end is not widened. 0 to 5s.
 	Skew time.Duration
 }
 
@@ -119,7 +120,7 @@ func defaultEffects() Effects {
 			Sandbox:        false,
 			ActiveWindow:   10 * time.Minute,
 		},
-		Attribution: EffectAttribution{Skew: 250 * time.Millisecond},
+		Attribution: EffectAttribution{Skew: 50 * time.Millisecond},
 	}
 }
 

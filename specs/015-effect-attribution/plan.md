@@ -160,10 +160,10 @@ else in `effects` or `hook_events` changes.
 ```yaml
 effects:
   attribution:
-    # How far a tool call's span is widened at each end: hooks are sent asynchronously,
-    # so a hook can reach the gateway after the tool started or ended.
+    # How far a tool call's span start is moved back: hooks are sent asynchronously,
+    # so a pre-tool hook can reach the gateway after the tool started (L1: end not widened).
     # Env: GATEWAY_EFFECTS_ATTRIBUTION_SKEW
-    skew: 250ms
+    skew: 50ms
 ```
 Validation: 0 ≤ skew ≤ 5s.
 
@@ -250,3 +250,4 @@ Functional tests only, one or two per part (D1), written together near the end:
 - v1 (2026-11-10) — first draft
 - v1 (2026-11-10) — Karthik's answers folded in: named beats harness, four start hosts,
   Bash paths named only as whole words inside the call's window
+- v1 (2026-11-10) — skew default 50ms, start only, from the T003 measurements (research.md)
