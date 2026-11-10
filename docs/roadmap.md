@@ -14,6 +14,13 @@ features. Update it when the order changes.
 - On Ubuntu, test `sandbox.network.allowAllUnixSockets: true` as the workaround for the
   sandbox bug (014 D17).
 - The speed follow-ups, re-measured after 016.
+- Gateway stop takes 90 s and ends in SIGKILL: open proxy tunnels are only closed after
+  the shutdown timeout runs out. Close them as soon as shutdown starts, and set
+  `TimeoutStopSec` in the systemd unit in `docs/clients/claude-code.md` (and the launchd
+  equivalent, `ExitTimeOut`, in the plist there).
+- Watch `TestProxy_GoldenAnthropicStreamReplay` (`internal/protocols/anthropic`): it failed
+  once on an unrelated commit with "unexpected EOF" and passed on rerun; possible flake
+  (`specs/015-effect-attribution/research.md`, 2026-11-10).
 
 ## Not now
 - Cost (Phase 9)
