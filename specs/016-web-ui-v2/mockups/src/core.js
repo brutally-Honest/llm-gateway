@@ -302,9 +302,11 @@ function toolArg(t) {
 const lineStat = (t) => (t.add != null && (t.name === "Edit" || t.name === "Write") && t.ok ? `+${t.add} −${t.del}` : "");
 const toolNo = (t) => (t.call ? `#${t.call}` : "");
 const toolRef = (t) => `${t.call ? `#${t.call} ` : ""}${t.name}${t.agent ? ` (${t.agent})` : ""}`;
+// toolShort tells parallel calls of one tool apart: "#16 Bash npm install"
+const toolShort = (t) => `${toolRef(t)} ${String(toolArg(t)).split(/\s+/).slice(0, 2).join(" ")}`;
 function labelTools(e) {
   if (e.tool) return toolRef(tools.get(e.tool));
-  if (e.cands) return e.cands.map((id) => toolRef(tools.get(id))).join(", ");
+  if (e.cands) return e.cands.map((id) => toolShort(tools.get(id))).join(", ");
   if (e.client) return e.client;
   return "";
 }
@@ -446,7 +448,7 @@ function walk(t) {
     for (const x of mine) emitTool(x, d);
     const sev = t.several.filter((e) => e.cands.every((id) => tools.get(id).call === c.n));
     if (sev.length) {
-      out.push({ type: "group", kind: "several", depth: d, effects: sev, title: `not pinned to one tool: ${sev[0].cands.map((id) => toolRef(tools.get(id))).join(" and ")} were running` });
+      out.push({ type: "group", kind: "several", depth: d, effects: sev, title: `not pinned to one tool: ${sev[0].cands.map((id) => toolShort(tools.get(id))).join(" and ")} were running` });
       for (const e of sev) out.push({ type: "effect", e, depth: d + 1 });
     }
   };
@@ -514,6 +516,6 @@ function railMeta(t) {
 }
 
 return { S, T0, FOLDER, turns, tools, calls, effects, clock, dur, num, bytes, esc, rel, full, union, turnTime, sessionTime, counts, countsText, plural,
-  LABELS, CHANGE, STATUS, toolArg, lineStat, toolNo, toolRef, labelTools, effectTarget, effectWhat, effectStat, labelBadge, diffHTML,
+  LABELS, CHANGE, STATUS, toolArg, lineStat, toolNo, toolRef, toolShort, labelTools, effectTarget, effectWhat, effectStat, labelBadge, diffHTML,
   walk, during, detail, detailTurn, detailTool, detailCall, detailEffect, effList, sessionFacts, themeInit, themeButtons, topbar, sideToggle, headerFacts, sessionMeta, unassignedNote, turnTimeText, railMeta, pre, dl };
 })();
