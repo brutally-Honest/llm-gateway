@@ -43,5 +43,6 @@ test("attributionText", () => {
   );
   assert.equal(attributionText({ label: "outside" }, nos), "○ outside any tool call");
   assert.equal(attributionText({ label: "harness" }, nos), "⚙ harness");
+  assert.equal(attributionText({ label: "harness", client: "client-a" }, nos), "⚙ harness: client-a");
   assert.equal(attributionText(undefined, nos), "");
 });

@@ -103,7 +103,9 @@ func (attrTestRules) HarnessHost(host string) bool { return host == "harness.exa
 
 // spec 015 AC11: each effect carries its attribution, computed from the session's hook
 // events; several lists its candidates; an effect with no window has none; an unassigned
-// harness connection is harness.
+// connection is harness, naming the client, when any registered profile lists its host —
+// the proxy stores unassigned connections under client "unknown", which has no rules
+// (research.md Q5). cmd/gateway repeats the unknown case with the real profiles.
 func TestEffectsAPI_Attribution(t *testing.T) {
 	e := newAPIEnv(t)
 	r, err := store.OpenReader(e.dir)
@@ -138,7 +140,12 @@ func TestEffectsAPI_Attribution(t *testing.T) {
 	}
 	harness := core.Effect{Kind: core.EffectNetConn, At: at(5), EndedAt: at(6), Principal: id.Principal,
 		Client: id.Client, Host: "harness.example", Port: 443, Via: "connect", Outcome: core.NetOK}
-	effs := []core.Effect{fx("/w/a.txt", at(0), at(3)), fx("/w/out.bin", at(0), at(3)), fx("/w/old.txt", time.Time{}, time.Time{}), harness}
+	unassigned := func(host string) core.Effect {
+		return core.Effect{Kind: core.EffectNetConn, At: at(7), EndedAt: at(8), Principal: id.Principal,
+			Client: "unknown", Host: host, Port: 443, Via: "connect", Outcome: core.NetOK}
+	}
+	effs := []core.Effect{fx("/w/a.txt", at(0), at(3)), fx("/w/out.bin", at(0), at(3)), fx("/w/old.txt", time.Time{}, time.Time{}), harness,
+		unassigned("harness.example"), unassigned("example.com")}
 	if err := e.s.SaveEffects(t.Context(), effs, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +179,17 @@ func TestEffectsAPI_Attribution(t *testing.T) {
 		t.Errorf("old.txt attribution = %+v, want none", old)
 	}
 	get("/api/effects/unassigned")
-	if len(page.Effects) != 1 || page.Effects[0].Attribution == nil || page.Effects[0].Attribution.Label != "harness" {
-		t.Errorf("unassigned = %+v, want one harness", page.Effects)
+	if len(page.Effects) != 3 {
+		t.Fatalf("unassigned = %+v, want 3", page.Effects)
+	}
+	own, unknown, other := page.Effects[0].Attribution, page.Effects[1].Attribution, page.Effects[2].Attribution
+	if own == nil || own.Label != "harness" || own.Client != "client-a" {
+		t.Errorf("harness.example attribution = %+v, want harness client-a", own)
+	}
+	if unknown == nil || unknown.Label != "harness" || unknown.Client != "client-a" || unknown.Tool != nil {
+		t.Errorf("harness.example under client unknown = %+v, want harness client-a", unknown)
+	}
+	if other != nil {
+		t.Errorf("example.com under client unknown = %+v, want none", other)
 	}
 }

@@ -16,11 +16,13 @@ type ToolRef struct {
 }
 
 // Attribution is one effect's label (spec 015). Tool is set for named and only_one;
-// Candidates for several. An empty Label means none.
+// Candidates for several; Client for an unassigned harness connection, naming the client
+// whose harness list holds the host. An empty Label means none.
 type Attribution struct {
 	Label      core.Attribution
 	Tool       *ToolRef
 	Candidates []ToolRef
+	Client     string
 }
 
 // InputFn reads a stored tool input by its content hash; nil when it cannot.
@@ -44,14 +46,10 @@ type toolSpan struct {
 
 // Attribute labels a session's effects from its hook rows, in receive order (spec 015
 // AC3–AC10). rules may be nil (an unknown client): labels then come from timing only.
-// assigned is false for unassigned effects, which are harness or unlabelled.
-func Attribute(hooks []store.HookRow, effects []store.EffectRow, rules core.AttributionRules, input InputFn, skew time.Duration, assigned bool) []Attribution {
+// Unassigned effects are labelled by Unassigned instead.
+func Attribute(hooks []store.HookRow, effects []store.EffectRow, rules core.AttributionRules, input InputFn, skew time.Duration) []Attribution {
 	out := make([]Attribution, len(effects))
-	var spans []*toolSpan
-	byHook := map[int64]*toolSpan{}
-	if assigned {
-		spans, byHook = buildSpans(hooks, rules, int64(skew))
-	}
+	spans, byHook := buildSpans(hooks, rules, int64(skew))
 	short, long := splitSpans(spans)
 	inputs := map[string][]byte{}
 	read := func(hash string) []byte {
@@ -66,9 +64,27 @@ func Attribute(hooks []store.HookRow, effects []store.EffectRow, rules core.Attr
 		return b
 	}
 	for i, e := range effects {
-		out[i] = label(e, short, long, byHook, rules, read, assigned)
+		out[i] = label(e, short, long, byHook, rules, read)
 	}
 	return out
+}
+
+// HarnessLookup reports which registered client, if any, lists host as its harness's own
+// traffic.
+type HarnessLookup func(host string) (client string, ok bool)
+
+// Unassigned labels an effect that belongs to no session (spec 015 AC9): a connection whose
+// host a registered client lists is harness, naming that client; anything else carries
+// no label. An unassigned connection's own client is "unknown", so its rules cannot be
+// used (AC10).
+func Unassigned(e store.EffectRow, lookup HarnessLookup) Attribution {
+	if e.Kind != string(core.EffectNetConn) || lookup == nil {
+		return Attribution{}
+	}
+	if client, ok := lookup(e.Host); ok {
+		return Attribution{Label: core.AttrHarness, Client: client}
+	}
+	return Attribution{}
 }
 
 // buildSpans pairs hook rows by tool-call id into spans (AC3). A call with no end event
@@ -183,14 +199,8 @@ func overlapping(short, long []*toolSpan, from, to int64) []*toolSpan {
 }
 
 // label is one effect's attribution.
-func label(e store.EffectRow, short, long []*toolSpan, byHook map[int64]*toolSpan, rules core.AttributionRules, read func(string) []byte, assigned bool) Attribution {
+func label(e store.EffectRow, short, long []*toolSpan, byHook map[int64]*toolSpan, rules core.AttributionRules, read func(string) []byte) Attribution {
 	harness := e.Kind == string(core.EffectNetConn) && rules != nil && rules.HarnessHost(e.Host)
-	if !assigned {
-		if harness {
-			return Attribution{Label: core.AttrHarness}
-		}
-		return Attribution{}
-	}
 	var cands []*toolSpan
 	var target string
 	switch e.Kind {

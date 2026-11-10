@@ -98,12 +98,14 @@ export function toolText(t, toolNos) {
 }
 
 // attributionText is an effect's label as glyph and word, then its tool or candidates
-// (spec 015 AC12); "" when the server sent no label. The browser never derives a label.
+// (spec 015 AC12), or for an unassigned harness connection the client whose harness list
+// holds the host; "" when the server sent no label. The browser never derives a label.
 export function attributionText(a, toolNos) {
   if (!a || !a.label) return "";
   const word = ATTRIBUTION[a.label] || `? ${a.label}`;
   if (a.tool) return `${word}: ${toolText(a.tool, toolNos)}`;
   if (a.candidates && a.candidates.length) return `${word}: ${a.candidates.map((t) => toolText(t, toolNos)).join(", ")}`;
+  if (a.client) return `${word}: ${a.client}`;
   return word;
 }
 

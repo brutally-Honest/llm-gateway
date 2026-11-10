@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"unicode/utf8"
 
@@ -43,11 +44,13 @@ type effectJSON struct {
 }
 
 // attributionJSON is an effect's label, the tool call it names (named, only_one) and the
-// candidates (several).
+// candidates (several); for an unassigned harness connection, the client whose harness
+// list holds the host.
 type attributionJSON struct {
 	Label      string        `json:"label"`
 	Tool       *toolRefJSON  `json:"tool,omitempty"`
 	Candidates []toolRefJSON `json:"candidates,omitempty"`
+	Client     string        `json:"client,omitempty"`
 }
 
 // toolRefJSON is one tool call: its id, tool name and sub-agent id.
@@ -66,7 +69,7 @@ func attributionToJSON(a effects.Attribution) *attributionJSON {
 	if a.Label == "" {
 		return nil
 	}
-	out := &attributionJSON{Label: string(a.Label)}
+	out := &attributionJSON{Label: string(a.Label), Client: a.Client}
 	if a.Tool != nil {
 		t := toolRef(*a.Tool)
 		out.Tool = &t
@@ -77,9 +80,8 @@ func attributionToJSON(a effects.Attribution) *attributionJSON {
 	return out
 }
 
-// attribute labels rows of one client's effects; hooks are the session's hook rows, none
-// for unassigned effects.
-func (d Deps) attribute(c *store.CtxReader, client string, hooks []store.HookRow, rows []store.EffectRow, assigned bool) []effects.Attribution {
+// attribute labels rows of one session's effects from its hook rows.
+func (d Deps) attribute(c *store.CtxReader, client string, hooks []store.HookRow, rows []store.EffectRow) []effects.Attribution {
 	rules, _ := d.Rules[client].(core.AttributionRules)
 	input := func(hash string) []byte {
 		b, err := c.Content(hash)
@@ -88,7 +90,30 @@ func (d Deps) attribute(c *store.CtxReader, client string, hooks []store.HookRow
 		}
 		return b
 	}
-	return effects.Attribute(hooks, rows, rules, input, d.AttributionSkew, assigned)
+	return effects.Attribute(hooks, rows, rules, input, d.AttributionSkew)
+}
+
+// harnessLookup asks every registered client's attribution rules whether a host is its
+// harness's own traffic, first the row's own client, then the rest by name.
+func (d Deps) harnessLookup(own string) effects.HarnessLookup {
+	names := make([]string, 0, len(d.Rules))
+	for name, r := range d.Rules {
+		if _, ok := r.(core.AttributionRules); ok && name != own {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	if _, ok := d.Rules[own].(core.AttributionRules); ok {
+		names = append([]string{own}, names...)
+	}
+	return func(host string) (string, bool) {
+		for _, name := range names {
+			if d.Rules[name].(core.AttributionRules).HarnessHost(host) {
+				return name, true
+			}
+		}
+		return "", false
+	}
 }
 
 // effectVersionJSON is a session's effect version.
@@ -198,7 +223,7 @@ func (d Deps) listEffects(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	labels := d.attribute(c, client, hooks, rows, true)
+	labels := d.attribute(c, client, hooks, rows)
 	v := vers[ident]
 	page := effectsPage{Effects: make([]effectJSON, 0, len(rows)), Version: &effectVersionJSON{Count: v.Count, MaxID: v.MaxID}}
 	for i, e := range rows {
@@ -227,7 +252,7 @@ func (d Deps) listUnassigned(w http.ResponseWriter, r *http.Request) {
 	page := effectsPage{Effects: make([]effectJSON, 0, len(rows))}
 	for _, e := range rows {
 		j := d.effectToJSON(e)
-		j.Attribution = attributionToJSON(d.attribute(c, e.Client, nil, []store.EffectRow{e}, false)[0])
+		j.Attribution = attributionToJSON(effects.Unassigned(e, d.harnessLookup(e.Client)))
 		page.Effects = append(page.Effects, j)
 	}
 	writeJSON(w, page)

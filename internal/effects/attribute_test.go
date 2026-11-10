@@ -93,20 +93,24 @@ func TestAttribute_Labels(t *testing.T) {
 		effects[i] = c.effect
 	}
 	read := func(h string) []byte { return inputs[h] }
-	got := Attribute(rows, effects, fakeAttrRules{}, read, 100*time.Millisecond, true)
+	got := Attribute(rows, effects, fakeAttrRules{}, read, 100*time.Millisecond)
 	for i, c := range cases {
 		if a := got[i]; a.Label != c.label || !sameTools(a, c.tools) {
 			t.Errorf("%s: got %s %v %v, want %s %v", c.name, a.Label, a.Tool, a.Candidates, c.label, c.tools)
 		}
 	}
 
-	// AC9: unassigned connections are harness or unlabelled.
-	un := Attribute(nil, []store.EffectRow{conn("harness.example", 1), conn("x.example", 1)}, fakeAttrRules{}, read, 0, false)
-	if un[0].Label != core.AttrHarness || un[1].Label != "" {
-		t.Errorf("unassigned = %+v", un)
+	// AC9: unassigned connections are harness, naming the client that lists the host, or
+	// unlabelled.
+	lookup := func(host string) (string, bool) { return "client-a", fakeAttrRules{}.HarnessHost(host) }
+	if un := Unassigned(conn("harness.example", 1), lookup); un.Label != core.AttrHarness || un.Client != "client-a" {
+		t.Errorf("unassigned harness.example = %+v, want harness client-a", un)
+	}
+	if un := Unassigned(conn("x.example", 1), lookup); un.Label != "" {
+		t.Errorf("unassigned x.example = %+v, want none", un)
 	}
 	// AC10: with no rules, timing only: the Write is only one running, the harness host too.
-	none := Attribute(rows, []store.EffectRow{change("/w/a", 150, 250), conn("harness.example", 4200)}, nil, read, 100*time.Millisecond, true)
+	none := Attribute(rows, []store.EffectRow{change("/w/a", 150, 250), conn("harness.example", 4200)}, nil, read, 100*time.Millisecond)
 	if none[0].Label != core.AttrOnlyOne || none[1].Label != core.AttrOnlyOne {
 		t.Errorf("no rules = %s, %s; want only_one twice", none[0].Label, none[1].Label)
 	}
