@@ -1,0 +1,5 @@
+Spec: specs/015-effect-attribution/spec.md (AC9, AC11, AC12); research.md Q5, D9
+Why this approach: effects.Unassigned takes a HarnessLookup built in internal/ui from Deps.Rules (core.AttributionRules.HarnessHost), the row's own client first, then by name; core and ui name no client. Attribute loses its assigned flag, so the unassigned rule lives in one place.
+Trade-off / known limit: with two profiles listing the same host, the first by name wins.
+Verified by: TestUI_UnassignedHarnessUsesRegisteredProfiles (cmd/gateway, real uiRules; red with the fix stashed: downloads.claude.ai = <nil>), TestEffectsAPI_Attribution, TestAttribute_Labels, effects.test.js attributionText; make verify.
+Note: the real-profile case lives in cmd/gateway because TestCore_NoProviderOrClientIdentifiers forbids client names anywhere under internal/ui, tests included.
