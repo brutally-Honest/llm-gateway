@@ -1,0 +1,4 @@
+Spec: specs/015-effect-attribution/spec.md (AC5, AC6)
+Research: specs/015-effect-attribution/research.md (D5, D6, D7)
+Why this approach: token boundaries instead of shell parsing; a miss falls back to timing labels
+Trade-off / known limit: a cd, variable or glob in a command hides the name (KI2); host list pending T003 data
