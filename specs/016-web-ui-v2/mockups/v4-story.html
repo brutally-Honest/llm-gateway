@@ -116,69 +116,191 @@ details.think pre { margin-top: 6px; }
   .crumb b { max-width: 20ch; }
 }
 
-/* ---- variant 4: each turn told as a short changelog entry; diffs one click away in place ---- */
-.layout { display: grid; grid-template-columns: 15rem minmax(0, 52rem); gap: 0 32px; justify-content: center; padding: 0 16px; }
-.toc { position: sticky; top: 45px; align-self: start; max-height: calc(100vh - 45px); overflow: auto; padding: 18px 0; }
-.toc h2 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
-.toc ol { list-style: none; margin: 0; padding: 0; border-left: 2px solid var(--line); }
-.toc a { display: block; padding: 5px 10px; margin-left: -2px; border-left: 2px solid transparent; color: var(--text); text-decoration: none; }
+/* ==== variant 4: turns left, the story in the middle, the session's files, commands and
+   network on the right. Its own neutral theme; every text pair is ≥ 4.5:1. ==== */
+:root, :root[data-theme=dark] {
+  --bg: #09090b; --card: #111114; --panel: #18181b; --panel2: #1f1f23; --border: #2a2a30; --line: #222227;
+  --text: #e4e4e7; --hi: #fafafa; --muted: #a1a1aa; --accent: #a5b4fc; --accent-strong: #818cf8; --accent-bg: #1e1b4b;
+  --ok: #4ade80; --ok-bg: #0d2818; --bad: #f87171; --bad-bg: #2a1215; --warn: #fbbf24; --warn-bg: #2a1f06;
+  --add: #4ade80; --add-bg: #0f2a1a; --del: #fca5a5; --del-bg: #2d1215; --model: #93c5fd; --toolc: #c4b5fd; --tool-bg: #1e1830;
+  --scrim: #000000b8; --shadow: 0 1px 2px #0006, 0 0 0 1px #ffffff08;
+}
+:root[data-theme=light] {
+  --bg: #fafafa; --card: #ffffff; --panel: #f4f4f5; --panel2: #ededf0; --border: #e4e4e7; --line: #efeff1;
+  --text: #27272a; --hi: #09090b; --muted: #52525b; --accent: #4338ca; --accent-strong: #4f46e5; --accent-bg: #eef2ff;
+  --ok: #15803d; --ok-bg: #ecfdf3; --bad: #b91c1c; --bad-bg: #fef2f2; --warn: #a16207; --warn-bg: #fefce8;
+  --add: #15803d; --add-bg: #ecfdf3; --del: #b91c1c; --del-bg: #fef2f2; --model: #1d4ed8; --toolc: #6d28d9; --tool-bg: #f5f3ff;
+  --scrim: #09090b66; --shadow: 0 1px 2px #0000000d, 0 1px 3px #00000012;
+}
+html, body { font: 14px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+code, pre, .mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.top { height: 56px; padding: 0 24px; background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+.brand { font-weight: 700; letter-spacing: -.01em; }
+.crumb b { font-weight: 600; }
+.vname { border-style: solid; border-color: var(--border); border-radius: 6px; padding: 1px 8px; }
+.seg { border-radius: 8px; background: var(--panel); border-color: var(--border); padding: 2px; gap: 2px; }
+.seg button { border-radius: 6px; color: var(--muted); font-weight: 500; }
+.seg button[aria-pressed=true] { background: var(--card); color: var(--hi); box-shadow: var(--shadow); }
+
+/* three columns, equal sides */
+.cols { display: grid; grid-template-columns: 20rem minmax(0, 1fr) 20rem; grid-template-areas: "toc story side"; gap: 24px; max-width: 1480px; margin: 0 auto; padding: 24px; align-items: start; }
+.toc { grid-area: toc; } main { grid-area: story; } .sidebar { grid-area: side; }
+.toc, .sidebar { position: sticky; top: 80px; max-height: calc(100vh - 96px); overflow: auto; scrollbar-width: thin; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+.colhead { margin: 0 0 8px; font-size: 12px; font-weight: 700; color: var(--hi); letter-spacing: .02em; text-transform: uppercase; }
+
+/* left: turns */
+.toc ol { list-style: none; margin: 0; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.toc a { display: grid; grid-template-columns: 1.6rem 1fr; gap: 2px 8px; padding: 8px; border-radius: 8px; color: var(--text); text-decoration: none; }
 .toc a:hover { background: var(--panel); }
-.toc a[aria-current=true] { border-left-color: var(--accent); }
-.toc .p { color: var(--hi); font-size: 12.5px; }
-.toc .m { font-size: 11px; color: var(--muted); display: block; }
-.toc .err { color: var(--bad); font-weight: 600; }
-.toc .btw { font-size: 11px; color: var(--muted); padding: 2px 10px 2px 22px; }
-main { padding: 18px 0 60px; display: flex; flex-direction: column; gap: 22px; min-width: 0; }
-.entry { scroll-margin-top: 60px; display: flex; flex-direction: column; gap: 8px; }
-.entry > header { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
-.entry h2 { margin: 0; font-size: 16px; color: var(--hi); }
-.entry .when { font-size: 12px; color: var(--muted); }
-.entry .cnt { margin-left: auto; font-size: 12px; color: var(--muted); }
-.ask { margin: 0; padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--panel); border-radius: 0 6px 6px 0; color: var(--hi); }
-.ask .who { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-.timebar { font-size: 12.5px; color: var(--text); display: flex; flex-wrap: wrap; gap: 4px 14px; }
-.timebar b { color: var(--hi); }
-ol.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.step { display: flex; flex-direction: column; gap: 3px; }
-.say { font-size: 12.5px; color: var(--muted); display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
-.say .linkish { font-size: 12.5px; }
-ul.tools { list-style: none; margin: 0 0 0 14px; padding: 0 0 0 12px; border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 3px; }
-.tl { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-.tl .nm { color: var(--hi); font-weight: 600; }
-.tl code { font-size: 12.5px; overflow-wrap: anywhere; }
-.tl .tm { color: var(--muted); font-size: 12px; }
-.tl.failed { border-left: 3px solid var(--bad); padding-left: 6px; margin-left: -9px; }
-.why { font-size: 12px; color: var(--bad); margin-left: 22px; }
-ul.effs { list-style: none; margin: 2px 0 4px 22px; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; }
-ul.effs > li > .eh { display: grid; grid-template-columns: 11.5rem minmax(0, 1fr) auto; gap: 8px; align-items: baseline; }
-ul.effs details > summary { cursor: pointer; color: var(--accent); font-size: 12px; list-style: none; }
+.toc a[aria-current=true] { background: var(--accent-bg); }
+.toc .n { grid-row: span 2; width: 1.6rem; height: 1.6rem; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: var(--hi); background: var(--panel2); }
+.toc a[aria-current=true] .n { background: var(--accent-strong); color: #fff; }
+.toc .p { color: var(--hi); font-size: 13px; font-weight: 500; line-height: 1.4; }
+.toc .m { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 0 6px; }
+.toc .btw { font-size: 12px; color: var(--muted); padding: 2px 8px 6px 2.9rem; }
+.toc .btw a { display: inline; padding: 0; color: var(--warn); }
+
+/* centre: overview + turns */
+main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.hero { padding: 22px 24px; display: flex; flex-direction: column; gap: 14px; }
+.hero .status { display: inline-flex; align-self: flex-start; gap: 6px; align-items: center; font-size: 12px; font-weight: 600; color: var(--muted); background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 1px 10px; }
+.hero h1 { margin: 0; font-size: 26px; line-height: 1.25; font-weight: 700; letter-spacing: -.02em; color: var(--hi); }
+.hero .meta { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+.hero .meta span + span::before { content: "·"; margin-right: 14px; color: var(--muted); }
+.lead { margin: 0; font-size: 16px; line-height: 1.6; color: var(--text); }
+.lead b { color: var(--hi); font-weight: 700; }
+.attn h2 { margin: 0 0 6px; font-size: 14px; font-weight: 700; color: var(--hi); }
+.attn ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.attn button { all: unset; box-sizing: border-box; width: 100%; display: grid; grid-template-columns: 1.8rem 1fr auto; gap: 10px; align-items: center; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; background: var(--card); }
+.attn button:hover { background: var(--panel); }
+.attn button:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+.attn .ic { width: 1.8rem; height: 1.8rem; border-radius: 8px; display: grid; place-items: center; font-weight: 700; }
+.attn .bad .ic { background: var(--bad-bg); color: var(--bad); }
+.attn .warn .ic { background: var(--warn-bg); color: var(--warn); }
+.attn .info .ic { background: var(--panel2); color: var(--hi); }
+.attn .t { color: var(--hi); font-weight: 600; font-size: 13.5px; }
+.attn .s { color: var(--muted); font-size: 12.5px; display: block; font-weight: 400; }
+.attn .go { color: var(--accent); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.kpi { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; background: var(--card); }
+.kpi .l { font-size: 12px; font-weight: 600; color: var(--muted); }
+.kpi .v { font-size: 20px; font-weight: 700; color: var(--hi); letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.kpi .s { font-size: 12px; color: var(--muted); }
+.foot { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }
+details.side summary { border-color: var(--border); }
+
+.turn { scroll-margin-top: 80px; overflow: hidden; }
+.th { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 16px 20px 14px; border-bottom: 1px solid var(--line); }
+.th .k { font-size: 12px; font-weight: 600; color: var(--muted); display: flex; gap: 10px; align-items: center; }
+.th .k .linkish { font-weight: 700; color: var(--accent); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.th h2 { grid-column: 1; margin: 0; font-size: 17px; line-height: 1.4; font-weight: 700; color: var(--hi); letter-spacing: -.01em; }
+.th .dur { grid-column: 2; grid-row: 1 / span 2; align-self: start; text-align: right; }
+.th .dur b { display: block; font-size: 18px; font-weight: 700; color: var(--hi); font-variant-numeric: tabular-nums; }
+.th .dur span { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.tb { padding: 14px 20px 18px; display: flex; flex-direction: column; gap: 12px; }
+.sum { display: flex; flex-wrap: wrap; gap: 6px; }
+.pill { font-size: 12px; font-weight: 600; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 1px 9px; }
+.pill.bad { color: var(--bad); background: var(--bad-bg); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+ol.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.say { font-size: 13px; color: var(--muted); display: flex; gap: 6px; flex-wrap: wrap; align-items: baseline; }
+.say .linkish { font-weight: 600; }
+.cn { font-weight: 700; color: var(--model); }
+ul.tools { list-style: none; margin: 6px 0 0 6px; padding: 0 0 0 14px; border-left: 2px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.tl { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; padding: 4px 8px; margin-left: -8px; border-radius: 8px; }
+.tl .si { font-weight: 700; }
+.tl .si.ok { color: var(--ok); } .tl .si.failed { color: var(--bad); }
+.tl .nm { color: var(--hi); font-weight: 700; }
+.tl code { font-size: 12.5px; color: var(--text); overflow-wrap: anywhere; }
+.tl .ls { font-size: 12px; font-weight: 600; }
+.tl .tm { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.tl.failed { background: var(--bad-bg); }
+.why { font-size: 12.5px; color: var(--bad); margin: 2px 0 0 22px; font-weight: 500; }
+ul.effs { list-style: none; margin: 4px 0 2px 22px; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+ul.effs > li { border-radius: 8px; padding: 2px 6px; margin-left: -6px; }
+ul.effs > li > .eh { display: grid; grid-template-columns: 11rem minmax(0, 1fr) auto; gap: 8px; align-items: baseline; }
+ul.effs .eh .linkish code { color: var(--accent); }
+ul.effs details > summary { cursor: pointer; color: var(--accent); font-size: 12px; font-weight: 600; list-style: none; width: max-content; }
 ul.effs details > summary::before { content: "▸ "; }
 ul.effs details[open] > summary::before { content: "▾ "; }
-ul.effs details > .diff, ul.effs details > pre, ul.effs details > p { margin: 4px 0 6px; }
-.sub { margin: 4px 0 2px 14px; padding: 6px 10px; border: 1px dashed var(--toolc); border-radius: 6px; display: flex; flex-direction: column; gap: 4px; }
-.sub .say { color: var(--toolc); }
-.grp { font-size: 12px; color: var(--muted); font-style: italic; margin: 4px 0 0 22px; }
-.answer { margin: 0; padding: 8px 12px; border-left: 3px solid var(--line); color: var(--text); }
-.answer .who { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-.btwentry { border: 1px dashed var(--warn); border-radius: 8px; padding: 8px 12px; display: flex; flex-direction: column; gap: 4px; }
-.btwentry h2 { margin: 0; font-size: 13px; color: var(--hi); }
+ul.effs details > .diff, ul.effs details > pre, ul.effs details > p { margin: 6px 0; }
+.sub { margin: 6px 0 2px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--toolc) 40%, transparent); background: var(--tool-bg); border-radius: 10px; display: flex; flex-direction: column; gap: 6px; }
+.sub > .say { color: var(--toolc); font-weight: 600; }
+.grp { font-size: 12.5px; color: var(--muted); margin: 8px 0 0 22px; font-weight: 600; border-radius: 8px; }
+.answer { margin: 4px 0 0; padding: 12px 14px; border-radius: 10px; background: var(--panel); color: var(--text); }
+.answer .who { display: block; font-size: 12px; font-weight: 700; color: var(--hi); margin-bottom: 2px; }
+.btwentry { border: 1px dashed color-mix(in srgb, var(--warn) 60%, transparent); background: var(--warn-bg); padding: 14px 20px; display: flex; flex-direction: column; gap: 6px; scroll-margin-top: 80px; }
+.btwentry h2 { margin: 0; font-size: 14px; font-weight: 700; color: var(--hi); }
 .btwentry ul.effs { margin-left: 0; }
-dialog { width: min(42rem, 94vw); max-height: 88vh; padding: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); }
+.agent { font-size: 11px; font-weight: 600; color: var(--toolc); border: 1px solid currentColor; border-radius: 6px; padding: 0 5px; }
+
+/* labels and diffs in this theme */
+.lbl { font-weight: 600; border-radius: 6px; padding: 0 7px; background: var(--panel); border-color: var(--border); }
+.lbl-named { background: var(--ok-bg); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.lbl-only_one { background: var(--accent-bg); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.lbl-outside { background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
+.lbl-harness { color: var(--text); }
+.diff { border-radius: 8px; border-color: var(--border); }
+pre { border-radius: 8px; border-color: var(--border); }
+
+/* right: the session's files, commands, network */
+.sidebar { display: flex; flex-direction: column; gap: 14px; }
+.pc > header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 14px 16px 8px; }
+.pc h2 { margin: 0; font-size: 14px; font-weight: 700; color: var(--hi); }
+.pc .cnt { font-size: 12px; font-weight: 700; color: var(--hi); background: var(--panel2); border-radius: 999px; padding: 0 8px; }
+.pc .hint { margin: 0; padding: 0 16px 8px; font-size: 12px; color: var(--muted); }
+.pc ul { list-style: none; margin: 0; padding: 0 6px 8px; display: flex; flex-direction: column; }
+.prow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; border-radius: 8px; }
+.prow:hover { background: var(--panel); }
+.pj { all: unset; box-sizing: border-box; cursor: pointer; padding: 7px 10px; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pj:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: -2px; border-radius: 8px; }
+.pj .l1 { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.pj .l1 code { color: var(--hi); font-size: 12.5px; font-weight: 500; overflow-wrap: anywhere; min-width: 0; }
+.pj .l1 .g { font-weight: 700; color: var(--muted); width: .9rem; flex: none; }
+.pj .l2 { font-size: 12px; color: var(--muted); padding-left: 1.4rem; }
+.pj .l2 .bad { color: var(--bad); font-weight: 600; }
+.ad { font-size: 12px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ad .a { color: var(--add); } .ad .d { color: var(--del); }
+.pd { all: unset; cursor: pointer; margin: 7px 8px 0 0; font-size: 12px; font-weight: 600; color: var(--accent); padding: 1px 6px; border-radius: 6px; }
+.pd:hover { background: var(--panel2); }
+.pd:focus-visible { outline: 2px solid var(--accent-strong); }
+.pdx { grid-column: 1 / -1; padding: 0 10px 8px; }
+.pc details.reads { padding: 0 16px 12px; font-size: 12.5px; color: var(--muted); }
+.pc details.reads summary { cursor: pointer; font-weight: 600; color: var(--text); }
+.pc details.reads ul { padding: 6px 0 0; gap: 2px; }
+.pc .pfoot { margin: 0; padding: 8px 16px 12px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+
+/* jump highlight */
+.flash { animation: flash 2.4s ease-out; }
+@keyframes flash { 0%, 35% { background: var(--accent-bg); box-shadow: 0 0 0 2px var(--accent-strong); } 100% { background: transparent; box-shadow: 0 0 0 2px transparent; } }
+
+dialog { width: min(44rem, 94vw); max-height: 88vh; padding: 0; border: 1px solid var(--border); border-radius: 14px; background: var(--card); color: var(--text); box-shadow: 0 24px 64px #0008; }
 dialog::backdrop { background: var(--scrim); }
-.dbar { position: sticky; top: 0; display: flex; justify-content: flex-end; padding: 6px 10px; background: var(--panel2); border-bottom: 1px solid var(--line); }
-.dbar button { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 2px 10px; cursor: pointer; }
-@media (max-width: 900px) {
-  .layout { grid-template-columns: 1fr; }
-  .toc { position: static; max-height: none; }
+.dbar { position: sticky; top: 0; display: flex; justify-content: flex-end; padding: 8px 12px; background: var(--card); border-bottom: 1px solid var(--line); z-index: 1; }
+.dbar button { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 3px 10px; cursor: pointer; font-weight: 600; }
+.dhead h2 { font-size: 16px; font-weight: 700; }
+.dsec h3 { font-weight: 700; color: var(--hi); }
+kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+
+@media (max-width: 1280px) { .cols { grid-template-columns: 17rem minmax(0, 1fr) 17rem; gap: 18px; padding: 18px; } }
+@media (max-width: 1080px) {
+  .cols { grid-template-columns: 15rem minmax(0, 1fr); grid-template-areas: "toc story" "toc side"; }
+  .sidebar { position: static; max-height: none; }
+}
+@media (max-width: 760px) {
+  .cols { grid-template-columns: 1fr; grid-template-areas: "story" "side"; padding: 12px; }
+  .toc { display: none; }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   ul.effs > li > .eh { grid-template-columns: 1fr; gap: 0; }
 }
 </style>
 </head>
 <body>
 <div id="top"></div>
-<div class="layout">
+<div class="cols">
   <nav class="toc" aria-label="Turns" id="toc"></nav>
   <main id="main"></main>
+  <aside class="sidebar" id="side" aria-label="Session files, commands and network"></aside>
 </div>
 <dialog id="dlg" aria-label="Details"><div class="dbar"><button type="button" id="dclose">Close <kbd>Esc</kbd></button></div><div id="dbody"></div></dialog>
 <script>// 016 mockups: the shared made-up dataset and helpers. build.py inlines this file into
@@ -707,60 +829,153 @@ return { S, T0, FOLDER, turns, tools, calls, effects, clock, dur, num, bytes, es
 </script>
 <script>
 "use strict";
-const { S, turns, tools, esc, dur, clock, plural } = G;
+const { S, turns, tools, effects, esc, dur, clock, plural, num } = G;
 document.getElementById("top").innerHTML = G.topbar("mockup 4 · story");
 
-document.getElementById("toc").innerHTML = `<h2>Turns</h2><ol>` + turns.map((t) => {
-  const fails = t.tools.filter((x) => !x.ok).length;
-  const b = S.between.find((x) => x.after === t.n);
-  return `<li><a href="#turn-${t.n}" data-turn="${t.n}" title="${esc(t.prompt)}"><span class="p clamp">${t.n}. ${esc(t.prompt)}</span><span class="m">${esc(G.railMeta(t))}${fails ? ` · <span class="err">✗ ${fails} failed</span>` : ""}</span></a></li>`
-    + (b ? `<li class="btw">○ you edited ${esc(b.effects.map((e) => e.path).join(", "))}</li>` : "");
-}).join("") + `</ol>`;
+// ---------- session-wide lists ----------
+const allEff = [...effects.values()].sort((a, b) => a.at - b.at);
+const changes = allEff.filter((e) => e.kind === "change");
+const reads = allEff.filter((e) => e.kind === "read");
+const conns = allEff.filter((e) => e.kind === "net");
+const commands = [...tools.values()].filter((t) => t.name === "Bash").sort((a, b) => a.at - b.at);
+const failed = [...tools.values()].filter((t) => !t.ok);
+const outside = allEff.filter((e) => e.label === "outside");
+const several = allEff.filter((e) => e.label === "several");
+const hooksOnly = turns.filter((t) => t.hooksOnly);
+const where = (e) => (e.turn ? `Turn ${e.turn}` : `Between turns ${e.between}–${e.between + 1}`);
+const LW = (e) => `${G.LABELS[e.label].g} ${G.LABELS[e.label].w}`;
 
+// ---------- left: turns ----------
+document.getElementById("toc").innerHTML = `<h2 class="colhead">Turns</h2><div class="card"><ol>` + turns.map((t) => {
+  const f = t.tools.filter((x) => !x.ok).length;
+  const c = G.counts(t.effects);
+  const b = S.between.find((x) => x.after === t.n);
+  return `<li><a href="#turn-${t.n}" data-turn="${t.n}" title="${esc(t.prompt)}"><span class="n">${t.n}</span><span class="p clamp clamp2">${esc(t.prompt)}</span><span class="m"><span>${t.hooksOnly ? "hooks only" : dur(t.end - t.at)}</span>${c.changed ? `<span>${plural(c.changed, "file")} changed</span>` : ""}${f ? `<span style="color:var(--bad);font-weight:600">✗ ${f} failed</span>` : ""}</span></a></li>`
+    + (b ? `<li class="btw">○ <a href="#between-${t.n}">you edited ${esc(b.effects.map((e) => e.path).join(", "))}</a></li>` : "");
+}).join("") + `</ol></div>`;
+
+// ---------- right: files, commands, network ----------
+function fileRow(e) {
+  const tool = e.tool ? tools.get(e.tool) : null;
+  const diff = G.diffHTML(e);
+  return `<li class="prow"><button type="button" class="pj" data-jump="eff-${e.id}"><span class="l1"><span class="g" aria-hidden="true">${G.CHANGE[e.change][0]}</span><code title="${esc(G.full(e.path))}">${esc(e.path)}</code></span><span class="l2">${e.binary ? `${G.bytes(e.size)} binary` : e.add != null ? `<span class="ad"><span class="a">+${e.add}</span> <span class="d">−${e.del}</span></span>` : G.bytes(e.size)} · ${esc(e.change)} · ${esc(where(e))} · ${esc(LW(e))}${tool ? ` · ${esc(G.toolRef(tool))}` : ""}</span></button>${diff && !e.binary ? `<button type="button" class="pd" aria-expanded="false" data-label="${e.diff ? "Diff" : "View"}" aria-label="Show the ${e.diff ? "diff" : "content"} of ${esc(e.path)} here">${e.diff ? "Diff" : "View"}</button><div class="pdx" hidden>${diff}</div>` : ""}</li>`;
+}
+function cmdRow(t) {
+  return `<li class="prow"><button type="button" class="pj" data-jump="tool-${t.id}"><span class="l1"><span class="g" aria-hidden="true">$</span><code>${esc(t.input.command)}</code></span><span class="l2">Turn ${t.turn} · ${t.ok ? "✓ ok" : `<span class="bad">✗ failed</span>`} · ${dur(t.dur)}${t.call ? "" : " · seen by hooks only"}${t.effects.length ? ` · ${esc(G.countsText(G.counts(t.effects)))}` : ""}</span></button></li>`;
+}
+function netRow(e) {
+  return `<li class="prow"><button type="button" class="pj" data-jump="eff-${e.id}"><span class="l1"><span class="g" aria-hidden="true">⇄</span><code>${esc(e.host)}:${e.port}</code></span><span class="l2">${esc(where(e))} · ${esc(LW(e))}${e.tool ? ` · ${esc(G.toolRef(tools.get(e.tool)))}` : ""} · ↑ ${G.bytes(e.up)} ↓ ${G.bytes(e.down)}</span></button></li>`;
+}
+const u = S.unassigned[0];
+document.getElementById("side").innerHTML = `
+  <section class="card pc" aria-labelledby="h-files"><header><h2 id="h-files">Files changed</h2><span class="cnt">${changes.length}</span></header>
+    <p class="hint">Click a file to jump to the turn that changed it, or open its diff here.</p>
+    <ul>${changes.map(fileRow).join("")}</ul>
+    <details class="reads"><summary>${plural(new Set(reads.map((e) => e.path)).size, "file")} read by Claude's tools (${plural(reads.length, "read")})</summary><ul>${reads.map((e) => `<li class="prow"><button type="button" class="pj" data-jump="eff-${e.id}"><span class="l1"><span class="g" aria-hidden="true">→</span><code title="${esc(G.full(e.path))}">${esc(e.path)}</code></span><span class="l2">${esc(where(e))} · ${esc(e.detail)}</span></button></li>`).join("")}</ul></details>
+  </section>
+  <section class="card pc" aria-labelledby="h-cmds"><header><h2 id="h-cmds">Commands run</h2><span class="cnt">${commands.length}</span></header>
+    <p class="hint">Every shell command, in order. <code>cat</code> and <code>ls</code> read files too, but only Claude's Read, Grep and Glob show up as reads.</p>
+    <ul>${commands.map(cmdRow).join("")}</ul>
+  </section>
+  <section class="card pc" aria-labelledby="h-net"><header><h2 id="h-net">Network</h2><span class="cnt">${conns.length}</span></header>
+    <p class="hint">Connections through the gateway's proxy. HTTPS shows host, bytes and timing only.</p>
+    <ul>${conns.map(netRow).join("")}</ul>
+    <p class="pfoot">Outside this session: <a href="sessions.html#unassigned">1 unassigned connection</a> to ${esc(u.host)} at ${clock(u.at)} (⚙ harness, ${esc(u.client)}).</p>
+  </section>`;
+
+// ---------- centre: overview ----------
+function overview() {
+  const st = G.sessionTime();
+  const c = G.counts(allEff);
+  const items = [];
+  for (const t of failed) items.push(["bad", "✗", `A tool call failed: ${t.name} ${G.toolArg(t)}`, `turn ${t.turn} · ${t.result.split("\n")[0]}`, `tool-${t.id}`]);
+  if (outside.length) items.push(["warn", "○", `${plural(outside.length, "file")} changed while no tool was running`, `${outside.map((e) => e.path).join(", ")} · between turns ${outside[0].between} and ${outside[0].between + 1}, most likely your own edit`, `between-${outside[0].between}`]);
+  if (several.length) items.push(["info", "◌", `${plural(several.length, "effect")} not pinned to one tool`, `turn ${several[0].turn}: two commands ran at once, so both are listed`, `sev-${several[0].turn}`]);
+  for (const t of hooksOnly) items.push(["info", "◇", `Turn ${t.n} has no model calls captured`, "only the hooks saw it: its tool calls show, the conversation does not", `turn-${t.n}`]);
+  const longest = commands.reduce((a, t) => (t.dur > a.dur ? t : a));
+  const sum = (k) => [...G.calls.values()].reduce((a, x) => a + (x[k] || 0), 0);
+  return `<section class="card hero" aria-label="Session overview">
+    <span class="status">● Ended</span>
+    <h1>${esc(S.title)}</h1>
+    <div class="meta"><span>Today ${clock(S.side[0].at, false)}–${clock(S.end, false)}</span><span title="${esc(S.folder)}">~/code/shop-api</span><span>${esc(S.model)}</span><span title="session ${esc(S.id)}">claude-code</span></div>
+    <p class="lead">You sent <b>${plural(turns.length, "prompt")}</b> over <b>${dur(st.clock)}</b>. Claude changed <b>${plural(c.changed, "file")}</b>, ran <b>${plural(commands.length, "command")}</b> and contacted <b>${plural(c.sites, "site")}</b>.${failed.length ? ` <b>${plural(failed.length, "tool call")}</b> failed.` : ""}</p>
+    ${items.length ? `<div class="attn"><h2>Worth a look</h2><ul>${items.map(([k, ic, t, s, to]) => `<li class="${k}"><button type="button" data-jump="${to}"><span class="ic" aria-hidden="true">${ic}</span><span><span class="t">${esc(t)}</span><span class="s">${esc(s)}</span></span><span class="go">Show →</span></button></li>`).join("")}</ul></div>` : ""}
+    <div class="kpis">
+      <div class="kpi"><span class="l">Time</span><span class="v">${dur(st.clock)}</span><span class="s">model ${dur(st.model)} · tools ${dur(st.tool)}</span></div>
+      <div class="kpi"><span class="l">Files</span><span class="v">${c.changed} changed</span><span class="s">${c.read} read by Claude's tools</span></div>
+      <div class="kpi"><span class="l">Commands</span><span class="v">${commands.length}</span><span class="s">longest: ${esc(longest.input.command)}, ${dur(longest.dur)}</span></div>
+      <div class="kpi"><span class="l">Network</span><span class="v">${plural(c.sites, "site")}</span><span class="s">${plural(conns.length, "connection")}, ${conns.filter((e) => e.label === "harness").length} by the harness</span></div>
+    </div>
+    <div class="foot"><span>Tokens: ${num(sum("in"))} input · ${num(sum("out"))} output · ${num(sum("cw"))} cache write · ${num(sum("cr"))} cache read</span>${G.sideToggle()}</div>
+  </section>`;
+}
+
+// ---------- centre: turns ----------
 function effLi(e) {
   const w = G.effectWhat(e);
   const hint = e.label === "harness" || e.label === "outside" ? G.during(e) : "";
   const body = e.kind === "change" ? G.diffHTML(e) : "";
-  return `<li><div class="eh">${G.labelBadge(e)}<span>${w.g} ${esc(w.w)} <button type="button" class="linkish" data-open="effect:${e.id}"><code title="${esc(e.kind === "net" ? "" : G.full(e.path))}">${esc(G.effectTarget(e))}</code></button></span><span class="muted small">${esc(G.effectStat(e))}${hint ? ` · ${esc(hint)}` : ""}</span></div>${body ? `<details><summary>${e.diff ? "show diff" : e.binary ? "about this file" : "show content"}</summary>${body}</details>` : ""}</li>`;
+  return `<li id="eff-${e.id}"><div class="eh">${G.labelBadge(e)}<span>${w.g} ${esc(w.w)} <button type="button" class="linkish" data-open="effect:${e.id}"><code title="${esc(e.kind === "net" ? "" : G.full(e.path))}">${esc(G.effectTarget(e))}</code></button></span><span class="muted small">${esc(G.effectStat(e))}${hint ? ` · ${esc(hint)}` : ""}</span></div>${body ? `<details><summary>${e.diff ? "Show diff" : e.binary ? "About this file" : "Show content"}</summary>${body}</details>` : ""}</li>`;
 }
 function toolLi(x) {
   const s = G.STATUS(x);
-  return `<li><div class="tl${x.ok ? "" : " failed"}"><span class="st st-${s.w}">${s.g}${x.ok ? "" : " failed"}</span><button type="button" class="linkish nm" data-open="tool:${x.id}">${esc(x.name)}</button><code>${esc(G.toolArg(x))}</code>${G.lineStat(x) ? `<span class="mono small">${G.lineStat(x)}</span>` : ""}<span class="tm">· ${dur(x.dur)}</span></div>${x.ok ? "" : `<div class="why">${esc(x.result.split("\n")[0])}</div>`}${x.effects.length ? `<ul class="effs">${x.effects.map(effLi).join("")}</ul>` : ""}${x.spawns ? subAgent(x) : ""}</li>`;
+  return `<li><div class="tl${x.ok ? "" : " failed"}" id="tool-${x.id}"><span class="si ${s.w}">${s.g}${x.ok ? "" : " failed"}</span><button type="button" class="linkish nm" data-open="tool:${x.id}">${esc(x.name)}</button>${x.agent ? `<span class="agent">${esc(x.agent)}</span>` : ""}<code>${esc(G.toolArg(x))}</code>${G.lineStat(x) ? `<span class="ls"><span style="color:var(--add)">+${x.add}</span> <span style="color:var(--del)">−${x.del}</span></span>` : ""}<span class="tm">${dur(x.dur)}</span></div>${x.ok ? "" : `<div class="why">${esc(x.result.split("\n")[0])}</div>`}${x.effects.length ? `<ul class="effs">${x.effects.map(effLi).join("")}</ul>` : ""}${x.spawns ? subAgent(x) : ""}</li>`;
 }
 function subAgent(x) {
-  const t = G.turns[x.turn - 1];
+  const t = turns[x.turn - 1];
   const cs = t.calls.filter((c) => c.agent === x.spawns);
-  return `<div class="sub" role="group" aria-label="Sub-agent ${esc(x.spawns)}"><div class="say">Sub-agent ${esc(x.spawns)} worked for ${dur(x.dur)} in ${plural(cs.length, "model call")}:</div><ol class="steps">${cs.map((c) => step(c, t)).join("")}</ol></div>`;
+  return `<div class="sub" role="group" aria-label="Sub-agent ${esc(x.spawns)}"><div class="say">Sub-agent ${esc(x.spawns)} · ${dur(x.dur)} · ${plural(cs.length, "model call")}</div><ol class="steps">${cs.map((c) => step(c, t)).join("")}</ol></div>`;
 }
 function step(c, t) {
   const mine = t.tools.filter((x) => x.call === c.n);
   const sev = t.several.filter((e) => e.cands.every((id) => tools.get(id).call === c.n));
-  const verb = mine.length === 0 ? "answered" : mine.length === 1 ? "then" : `then, ${mine.length} in parallel`;
-  return `<li class="step"><div class="say"><button type="button" class="linkish" data-open="call:${c.n}">#${c.n}</button><span>${c.thinking ? "thought and wrote" : "wrote"} for ${dur(c.dur)}${c.thinking ? ` · <button type="button" class="linkish" data-open="call:${c.n}">read the thinking</button>` : ""}${mine.length ? ` · ${verb}:` : ""}</span></div>${mine.length ? `<ul class="tools">${mine.map(toolLi).join("")}</ul>` : ""}${sev.length ? `<p class="grp">◌ not pinned to one tool: ${esc(sev[0].cands.map((id) => G.toolShort(tools.get(id))).join(" and "))} were both running</p><ul class="effs">${sev.map(effLi).join("")}</ul>` : ""}</li>`;
+  const then = mine.length === 0 ? "" : mine.length === 1 ? ", then ran:" : `, then ran ${mine.length} at once:`;
+  return `<li class="step"><div class="say"><button type="button" class="linkish cn" data-open="call:${c.n}">#${c.n}</button><span>${c.thinking ? "Thought and wrote" : mine.length ? "Wrote" : "Wrote the answer"} for ${dur(c.dur)}${then}</span>${c.thinking ? `<button type="button" class="linkish" data-open="call:${c.n}">Read the thinking</button>` : ""}</div>${mine.length ? `<ul class="tools">${mine.map(toolLi).join("")}</ul>` : ""}${sev.length ? `<p class="grp" id="sev-${t.n}">◌ Not pinned to one tool: ${esc(sev[0].cands.map((id) => G.toolShort(tools.get(id))).join(" and "))} were running together</p><ul class="effs">${sev.map(effLi).join("")}</ul>` : ""}</li>`;
 }
-function entry(t) {
-  const tt = G.turnTime(t);
-  const time = t.hooksOnly
-    ? `<div class="timebar"><span>no model calls captured</span><span>tool time <b>${dur(tt.tool)}</b></span></div>`
-    : `<div class="timebar"><span>prompt to answer <b>${dur(tt.clock)}</b></span><span>model <b>${dur(tt.model)}</b></span><span>tools <b>${dur(tt.tool)}</b></span><span>waiting <b>${dur(tt.wait)}</b></span></div>`;
+function turnCard(t) {
+  const tt = G.turnTime(t), c = G.counts(t.effects), f = t.tools.filter((x) => !x.ok).length;
+  const pills = [`${plural(t.tools.length, "tool call")}`, c.changed && `${plural(c.changed, "file")} changed`, c.read && `${c.read} read`, c.sites && plural(c.sites, "site")].filter(Boolean)
+    .map((p) => `<span class="pill">${esc(p)}</span>`).join("") + (f ? `<span class="pill bad">✗ ${f} failed</span>` : "");
   const steps = t.hooksOnly
-    ? `<ol class="steps"><li class="step"><div class="say">The hooks saw (no #n, no model call to open):</div><ul class="tools">${t.tools.map(toolLi).join("")}</ul></li></ol>`
+    ? `<ol class="steps"><li class="step"><div class="say">No model calls captured. The hooks saw:</div><ul class="tools">${t.tools.map(toolLi).join("")}</ul></li></ol>`
     : `<ol class="steps">${t.calls.filter((c) => !c.agent).map((c) => step(c, t)).join("")}</ol>`;
-  const loose = t.unpinned.length ? `<p class="grp">○ not caused by a tool call</p><ul class="effs">${t.unpinned.map(effLi).join("")}</ul>` : "";
-  return `<article class="entry" id="turn-${t.n}" aria-labelledby="h-${t.n}"><header><h2 id="h-${t.n}"><button type="button" class="linkish" data-open="turn:${t.n}" style="font-size:16px;font-weight:600">Turn ${t.n}</button></h2><span class="when">${clock(t.at)}</span><span class="cnt">${plural(t.tools.length, "tool call")} · ${esc(G.countsText(G.counts(t.effects)))}</span></header>
-    <p class="ask"><span class="who">You asked</span>${esc(t.prompt)}</p>${time}${steps}${loose}
-    ${t.answer ? `<p class="answer"><span class="who">Claude answered</span>${esc(t.answer)}</p>` : ""}</article>`;
+  const loose = t.unpinned.length ? `<p class="grp">○ Not caused by a tool call</p><ul class="effs">${t.unpinned.map(effLi).join("")}</ul>` : "";
+  return `<article class="card turn" id="turn-${t.n}" aria-labelledby="h-${t.n}">
+    <header class="th"><div class="k"><button type="button" class="linkish" data-open="turn:${t.n}">Turn ${t.n}</button><span>${clock(t.at)}</span></div>
+      <div class="dur">${t.hooksOnly ? `<b>—</b><span>no model calls captured</span>` : `<b>${dur(tt.clock)}</b><span>model ${dur(tt.model)} · tools ${dur(tt.tool)}</span>`}</div>
+      <h2 id="h-${t.n}">${esc(t.prompt)}</h2></header>
+    <div class="tb"><div class="sum">${pills}</div>${steps}${loose}${t.answer ? `<div class="answer"><span class="who">Claude answered</span>${esc(t.answer)}</div>` : ""}</div></article>`;
 }
-const main = document.getElementById("main");
-main.innerHTML = `<section class="shead" aria-label="Session"><h1>${esc(S.title)}</h1>${G.sessionMeta()}${G.headerFacts(true)}<div>${G.sideToggle()}</div>${G.unassignedNote()}</section>`
-  + turns.map((t) => {
-    const b = S.between.find((x) => x.after === t.n);
-    return entry(t) + (b ? `<section class="btwentry" aria-label="Between turns"><h2>Between turns ${t.n} and ${t.n + 1} · ${clock(b.effects[0].at)}</h2><p class="muted small" style="margin:0">A change while no tool call was running: most likely your own edit.</p><ul class="effs">${b.effects.map(effLi).join("")}</ul></section>` : "");
-  }).join("");
+document.getElementById("main").innerHTML = overview() + turns.map((t) => {
+  const b = S.between.find((x) => x.after === t.n);
+  return turnCard(t) + (b ? `<section class="card btwentry" id="between-${t.n}" aria-label="Between turns"><h2>Between turns ${t.n} and ${t.n + 1} · ${clock(b.effects[0].at)}</h2><p class="muted small" style="margin:0">A change while no tool call was running: most likely your own edit.</p><ul class="effs">${b.effects.map(effLi).join("")}</ul></section>` : "");
+}).join("");
 
+// ---------- behaviour ----------
+function jump(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  for (let p = el.parentElement; p; p = p.parentElement) if (p.tagName === "DETAILS") p.open = true;
+  const d = el.querySelector(":scope > details");
+  if (d) d.open = true;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+  const f = el.querySelector("button, a");
+  if (f) f.focus({ preventScroll: true });
+}
 const dlg = document.getElementById("dlg");
 let opener = null;
 document.body.addEventListener("click", (ev) => {
+  const j = ev.target.closest("[data-jump]");
+  if (j) { jump(j.dataset.jump); return; }
+  const pd = ev.target.closest(".pd");
+  if (pd) {
+    const box = pd.nextElementSibling;
+    box.hidden = !box.hidden;
+    pd.setAttribute("aria-expanded", String(!box.hidden));
+    pd.textContent = box.hidden ? pd.dataset.label : "Hide";
+    return;
+  }
   const o = ev.target.closest("[data-open]");
   if (o && !o.closest("dialog")) {
     opener = o;
@@ -771,11 +986,10 @@ document.body.addEventListener("click", (ev) => {
 });
 document.getElementById("dclose").addEventListener("click", () => dlg.close());
 dlg.addEventListener("close", () => { if (opener && opener.isConnected) opener.focus(); });
-// the TOC marks the entry in view
 const io = new IntersectionObserver((xs) => {
-  for (const x of xs) if (x.isIntersecting) document.querySelectorAll(".toc a").forEach((a) => a.setAttribute("aria-current", String(a.getAttribute("href") === `#${x.target.id}`)));
-}, { rootMargin: "-20% 0px -70% 0px" });
-document.querySelectorAll(".entry").forEach((e) => io.observe(e));
+  for (const x of xs) if (x.isIntersecting) document.querySelectorAll(".toc a[data-turn]").forEach((a) => a.setAttribute("aria-current", String(a.getAttribute("href") === `#${x.target.id}`)));
+}, { rootMargin: "-25% 0px -65% 0px" });
+document.querySelectorAll(".turn").forEach((e) => io.observe(e));
 G.themeInit();
 </script>
 </body>
