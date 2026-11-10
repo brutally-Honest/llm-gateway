@@ -143,6 +143,8 @@ Karthik's answers (2026-11-10):
   login store shows `⚙ harness: claude-code` on every `api.anthropic.com`,
   `mcp-proxy.anthropic.com`, Datadog and `downloads.claude.ai` row; `api.github.com`,
   `registry.npmjs.org` and `bridge.claudeusercontent.com` stay unlabelled.
+- 2026-11-10 — Manual check `docs/manual-checks/015-attribution.md`: passed, Karthik's
+  verdict after reviewing the GIF (`~/Downloads/015-attribution-2026-11-10.gif`).
 
 ### T003 — fresh Claude Code session (2026-11-10)
 - 2026-11-10 — Session `63999a51…` (working folder `~/fx015-t003`), run by Karthik on the
