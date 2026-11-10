@@ -99,6 +99,13 @@ Karthik's answers (2026-11-10):
   L1–L3: every turn-4 effect got the label the seed prints. Turns 1–3 send each tool's Pre
   and Post back to back, so their changes read `several` or `only_one` by timing; expected.
 
+- 2026-11-10 — Verify of b71e18b in a worktree failed once in an untouched package:
+  `TestProxy_GoldenAnthropicStreamReplay` "reading the replayed stream: unexpected EOF". It
+  passed 3/3 alone and the full verify of that commit passed on a rerun. Not caused by 015;
+  noted as a possible flake.
+- 2026-11-10 — T009 mutation check: `several` turned into `only_one` (`len(cands) >= 1`),
+  `TestAttribute_Labels` failed on "several running", restored.
+
 ### Brief facts, checked (2026-11-10)
 - F1 — Holds. `Runner.OnStored` signals a checkpoint for every stored hook with a session and
   a `WorkDir` (Pre and Post tool hooks included); `signalLocked` coalesces to one running and
