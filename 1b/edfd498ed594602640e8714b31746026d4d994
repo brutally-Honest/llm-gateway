@@ -1,0 +1,4 @@
+Spec: none yet (016 mockups)
+Why this style: a table already is a compact list; v1's dense rows and stacked labelled counts fit it with no extra layout.
+Titles: generated title, else first prompt, else 'Hooks only · <folder>' or 'No prompt · <folder>' with the reason underneath; the session key only on hover.
+Verified by: headless Chrome screenshot at 1500 wide; make verify green.
