@@ -106,6 +106,11 @@ Karthik's answers (2026-11-10):
 - 2026-11-10 — T009 mutation check: `several` turned into `only_one` (`len(cands) >= 1`),
   `TestAttribute_Labels` failed on "several running", restored.
 
+- 2026-11-10 — T010 `/ui-check` of 015-attribution.md steps 3–6: NOT EXERCISED, the Chrome
+  extension was not connected. The same labels were read from the API of the throwaway
+  gateway (see the L1–L3 line above); the browser rendering is still unchecked. Step 7 (real
+  session) is by hand.
+
 ### Brief facts, checked (2026-11-10)
 - F1 — Holds. `Runner.OnStored` signals a checkpoint for every stored hook with a session and
   a `WorkDir` (Pre and Post tool hooks included); `signalLocked` coalesces to one running and
