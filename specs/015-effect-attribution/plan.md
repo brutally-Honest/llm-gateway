@@ -129,10 +129,12 @@ else in `effects` or `hook_events` changes.
 2. **Candidates.** Sort spans by start; for each effect, a binary search plus a scan of spans
    that started before the effect's upper bound. File change: overlap with
    `[window_from, window_to]`. Connection: span holds `at`. Read: the call of `hook_id`.
-3. **Label.** Connection with `HarnessHost(host)` → `harness`. Else the candidates whose
-   input `NamesTarget` the effect's path (file) or host (connection): exactly one → `named`.
-   Else one candidate → `only_one`; two or more → `several`; none → `outside`. A read →
-   `named` with its own call. No rules (AC10): skip harness and named.
+3. **Label.** The candidates whose input `NamesTarget` the effect's path (file) or host
+   (connection): exactly one → `named` (named beats harness). Else a connection with
+   `HarnessHost(host)` → `harness`. Else one candidate → `only_one`; two or more →
+   `several`; none → `outside`. A read → `named` with its own call. No rules (AC10): skip
+   named and harness. A Bash call can only be `named` while it is a candidate, i.e. its
+   widened span overlaps the change's window (answer 4).
 4. **Inputs.** `InputFn(hash)` reads a candidate's tool input from content storage, cached per
    request by hash; only candidates' inputs are read.
 5. **Unassigned connections:** `harness` or no label (AC9). An effect with no window and no
@@ -149,8 +151,9 @@ else in `effects` or `hook_events` changes.
     relative to `workDir`, or the host (also inside a URL). Plain substring checks on token
     boundaries; no shell parsing.
 - `HarnessHost`: exact names, plus suffix entries written with a leading dot. Start list
-  (research D4): `downloads.claude.ai`, `http-intake.logs.us5.datadoghq.com`; more only after
-  the fresh-data check (T002).
+  (research D4): `downloads.claude.ai`, `http-intake.logs.us5.datadoghq.com`,
+  `api.anthropic.com`, `mcp-proxy.anthropic.com`; not `registry.npmjs.org`. Rechecked
+  against the T003 data.
 - `IsAgentTool`: the existing method.
 
 ### Config (`internal/config/effects.go`)
@@ -206,7 +209,7 @@ should get.
 | AC2 | `claudecode/harness.go`, `store/hooks.go` | `TestAttribute_Labels` (rows built from stored hooks) |
 | AC3 | `effects/attribute.go` | `TestAttribute_Labels` (interrupted call, sub-agent end, skew) |
 | AC4 | `effects/attribute.go` | `TestAttribute_Labels` |
-| AC5 | `attribute.go`, `claudecode/attribution.go` | `TestAttribute_Labels`, `TestClaudeCode_NamesTarget` |
+| AC5 | `attribute.go`, `claudecode/attribution.go` | `TestClaudeCode_NamesTarget`, `TestAttribute_Labels` |
 | AC6 | `attribute.go`, `claudecode/attribution.go` | `TestClaudeCode_NamesTarget`, `TestAttribute_Labels` |
 | AC7–AC9 | `attribute.go` | `TestAttribute_Labels` |
 | AC10 | `attribute.go` | `TestAttribute_Labels` (nil rules case) |
@@ -245,3 +248,5 @@ Functional tests only, one or two per part (D1), written together near the end:
 
 ## Changelog
 - v1 (2026-11-10) — first draft
+- v1 (2026-11-10) — Karthik's answers folded in: named beats harness, four start hosts,
+  Bash paths named only as whole words inside the call's window

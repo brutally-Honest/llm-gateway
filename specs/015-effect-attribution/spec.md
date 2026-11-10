@@ -69,18 +69,19 @@ This changes earlier features:
   call that spawns a sub-agent (as the client profile names it) is never a candidate.
 
 ### Labels
-- **AC5** — When a connection's host is on the client profile's harness host list, the system
-  shall label it `harness` with no tool, whatever tool calls were running.
-- **AC6** — When exactly one candidate's input names the effect's target, as the client
+- **AC5** — When exactly one candidate's input names the effect's target, as the client
   profile reads it (a write tool's path, a read tool's target, a fetch tool's URL host, a path
-  or host in a shell command), the system shall label it `named` with that tool call; a read
-  is always `named` with its own tool call.
-- **AC7** — When no single candidate names the target and there is exactly one candidate, the
+  or host appearing as a whole word in a shell command, a relative path resolved against the
+  call's stored working folder), the system shall label it `named` with that tool call; a
+  read is always `named` with its own tool call. No shell parsing.
+- **AC6** — When no candidate names a connection's host and the host is on the client
+  profile's harness host list, the system shall label it `harness` with no tool.
+- **AC7** — When neither AC5 nor AC6 applies and there is exactly one candidate, the
   system shall label it `only_one` with that tool call.
-- **AC8** — When no single candidate names the target and there are two or more candidates,
+- **AC8** — When neither AC5 nor AC6 applies and there are two or more candidates,
   the system shall label it `several` with every candidate listed and no tool picked.
 - **AC9** — When there is no candidate, the system shall label it `outside`; an unassigned
-  connection is `harness` (AC5) or carries no label.
+  connection is `harness` (AC6) or carries no label.
 - **AC10** — When a client's profile has no attribution rules (an unknown client), the system
   shall label its effects from timing only (`only_one`, `several`, `outside`), never `named`
   or `harness`.
@@ -105,16 +106,19 @@ This changes earlier features:
   tools run → the sub-agent's tool calls carry their own spans; the Agent call is never a
   candidate (AC3, AC4).
 - **E5** — Two parallel tool calls both name the changed path → `several`, both listed (AC8).
+- **E5a** — A Bash command names a path but its span does not overlap the change's window →
+  it is not a candidate, so it is not `named`; timing labels apply (AC4, AC5).
 - **E6** — A checkpoint triggered by a tool's own pre-tool hook already sees that tool's change
   (async hooks) → the tool is still a candidate, because the window ends at the scan's end
   (AC1, AC4).
 - **E7** — First checkpoint after a gateway restart or a memory eviction → window starts at the
   session's last hook before the trigger; changes made while the gateway was down are
   `outside` unless a tool call spans the gap (AC1, AC9).
-- **E8** — Grep or Glob over the working folder (empty `path`) → `named`, its own tool (AC6).
+- **E8** — Grep or Glob over the working folder (empty `path`) → `named`, its own tool (AC5).
 - **E9** — A shell command naming a path relative to its working folder → `named`; after a `cd`
-  inside the command the path may not match, and the label falls back to timing (AC6, AC7).
-- **E10** — A connection to a harness host while a tool call runs → `harness` (AC5).
+  inside the command the path may not match, and the label falls back to timing (AC5, AC7).
+- **E10** — A connection to a harness host while a tool call runs → `harness`, unless that
+  call's input names the host (`curl https://api.anthropic.com/…`), then `named` (AC5, AC6).
 - **E11** — A tool call in a hooks-only session (no captured model call) → its tool shows by
   name without `#n` (AC12).
 - **E12** — A connection that starts after the session ends → `outside` (AC9).
@@ -143,3 +147,6 @@ This changes earlier features:
 
 ## Changelog
 - v1 (2026-11-10) — first draft
+- v1 (2026-11-10) — approved by Karthik with his answers folded in: `named` beats `harness`
+  (AC5/AC6 swapped), Bash paths count as `named` only as whole words inside the call's
+  window (research.md, answers 2026-11-10)

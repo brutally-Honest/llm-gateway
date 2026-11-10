@@ -23,6 +23,17 @@ feature: 015-effect-attribution
 - D4 (2026-11-10) — Start harness host list: `downloads.claude.ai` and
   `http-intake.logs.us5.datadoghq.com` (014 step 9), to be confirmed or extended from fresh
   data in T003.
+- D5 (2026-11-10) — Replaces D4's list: the start harness host list is `downloads.claude.ai`,
+  `http-intake.logs.us5.datadoghq.com`, `api.anthropic.com` and `mcp-proxy.anthropic.com`;
+  not `registry.npmjs.org`. It lives in the Claude Code profile — Karthik's answer 1.
+- D6 (2026-11-10) — `named` beats `harness`: when a candidate's input names the host, the
+  connection is `named`, not `harness` (spec AC5/AC6 swapped from the draft) — answer 1.
+- D7 (2026-11-10) — A Bash path is `named` for a file change only as a whole word in the
+  command (relative paths resolved against the stored `work_dir`) and only when the change's
+  window overlaps that call's span widened by the skew; no shell parsing; otherwise timing
+  labels — answer 4 (refines K6).
+- D8 (2026-11-10) — T003's fresh session is run by Karthik from a prompt and commands
+  given to him; the skew is set from its measurements — answer 2.
 
 ## Decisions for Karthik
 Choices made while drafting that you were not asked about. Each has a recommendation; say if
@@ -59,6 +70,15 @@ you want one changed.
 - K12 — The previous checkpoint's start lives in memory only (no extra write per checkpoint);
   after a restart or eviction the window starts at the session's last hook before the
   trigger (E7). The other way is one small write on every checkpoint. Recommended: memory.
+
+Karthik's answers (2026-11-10):
+- Q1 → A, with `api.anthropic.com` and `mcp-proxy.anthropic.com` added (D5) and named beating
+  harness (D6).
+- Q2 → A: Karthik runs the T003 session (D8).
+- Q3 → `#n` is the model call that asked for the tool (K5 as recommended).
+- Q4 → yes, with the whole-word and window conditions (D7).
+- K1–K12 → accepted; none conflicts with the answers (K6 refined by D7). Spec, plan and tasks
+  approved with these folded in; build outside the kit (D1), no push.
 
 ## Notes
 
