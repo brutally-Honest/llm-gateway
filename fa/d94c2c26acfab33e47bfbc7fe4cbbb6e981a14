@@ -1,0 +1,6 @@
+Spec: none yet (016 mockups; feedback on variant 4, 2026-11-10)
+Asked for: one place per session for all diffs, all commands, all network calls, each clicking through to its turn; symmetrical layout; a cleaner theme with bold headings; knowing what to look at on opening a session.
+Why this approach: the right column lists session-wide facts the story already holds, so jumping only scrolls, opens the diff and flashes the row; no second data path. The stat groups became one sentence, four cards and a 'Worth a look' list (failed tool, change outside any tool, unpinned effects, hooks-only turn), each jumping to its row.
+Theme: own tokens in v4 only (zinc neutrals, indigo accent, tinted label badges); core.css untouched, so variants 1-3 look as before. Light muted #52525b and warn #a16207 kept above 4.5:1 on white.
+Trade-off / known limit: three columns need ~1280px; below 1080px the right column drops under the story, below 760px the turn list hides.
+Verified by: headless Chrome screenshots dark and light at 1600 wide; scripted clicks: file, command and network entries flash their target and open the diff, all 4 'Worth a look' targets exist, no script errors; make verify green.
