@@ -176,3 +176,50 @@ no test is retired for any other reason.
   The default text keeps the usage totals block after the view, so the text halves of the
   usage tests pass unchanged. `internal/timeline/render_test.go` needed no change: the flat
   renderers it pins are unchanged and still used by `-entries`.
+
+### Retired and changed tests (Decisions for Karthik 15, as answered)
+Each retired test is removed in the commit that removes the code it covered, with the Go or
+web test that now covers the same fact, or the AC that drops the feature.
+
+- 2026-11-11 — T008 (`feat(ui): lay out the session page in the new theme`). The session
+  route renders the server's view; the entry-merging live path has no caller and is removed
+  (`liveEffect`, `liveBatch`, `replaceExchange`, `replaceHooks` in `web/entries.js`).
+  Retired:
+  - `app.test.js` `sixPageLoadRendersABoundedNumberOfTimes`, `pagesBeforeAFailingPageStillShow`
+    — the page no longer pages the timeline: it loads one view (AC1, Q3 A); render cost is
+    covered by `view.test.js` `twoThousandCallViewRendersUnderBudget`.
+  - `app.test.js` `aStreamBurstIsDrawnOnceNotPerEvent` — the server folds a burst into one
+    view event: Go `TestViewStream_SendsChangedTurns`; the page swaps only changed turns:
+    `view.test.js` `liveEventReplacesOnlyTheChangedTurn` (AC12).
+  - `entries.test.js` `empty hooks snapshot removes the hook group (E6)`, `a hooks event
+    replaces the hook group and keeps the exchanges (never replaceExchange)`, `an empty hooks
+    event removes the hook group and keeps the exchanges`, `an exchange or entries event
+    replaces its exchange, not the hook group`, `a session event sets the summary and leaves
+    the entries alone`, `a snapshot_error event reports its message`, `an unknown event name is
+    dropped`, `liveBatchMatchesApplyingEachEventInOrder`, and the `replaceHooks` line of
+    `exchange sorts before hook lines on an exact time tie` — AC12 replaces 013 AC19: Go
+    `TestViewStream_SendsChangedTurns`, `view.test.js` `liveEventReplacesOnlyTheChangedTurn`.
+  - `perf.test.js` `snapshotOfTwoThousandExchangesMergesUnderBudget` — no entry merge (AC12):
+    `view.test.js` `twoThousandCallViewRendersUnderBudget`.
+  - `turns.test.js` `lateCommitRenumbersFromTheOrderKey` — the server numbers calls on every
+    build: Go `TestView_Turns`.
+  - `keybar.test.js`: the TURNS and CALL bar contents and the `e`, `t`, `Enter`, `h`, `/`,
+    `Backspace` session keys — AC13 and Q4 A drop the session key bar and those keys; `j`/`k`
+    and the drawer's arrows and Esc stay asserted.
+  - `layout.test.js` `railIsFixedBetweenHeaderAndKeyBar`, `narrowWindowPutsTheRailBackInFlow`
+    — the rail is gone (AC3 replaces 013 AC9): `storyScrollsAloneBetweenTheTwoCards`,
+    `narrowWindowFallsBackToOnePage`.
+  - Go `TestStream_LiveHookUpdateReplacesFirstSnapshotHookLines`: only its pin of the removed
+    `web/entries.js` replace functions; its server assertions stay.
+  Changed in the open, same facts: `api.test.js` (the stream also listens for `view`);
+  `app.test.js` `droppedSessionStream…`, `retriesSessionLoadOnceAfter504`,
+  `showsBuildingSessionWhileWaitingToRetry`, `secondFailureShowsTheError`,
+  `callDetailRetriesOnceAfter504`, `callDetailSecond504ShowsTheReason` (the page loads
+  `/view`; the drawer loads entries when a call opens), `laterPage504IsNotRetried` (now the
+  drawer's paged load); `contrast.test.js` (pairs on the new tokens, every text colour on
+  every background, digit names read); `web_test.go` `TestWeb_ComponentsCallTheTestedHelpers`
+  (wiring of `mergeView` and keyed turns instead of `liveBatch`); `dom-stub.js` (`append`
+  turns a string into a text node, as the DOM does).
+- 2026-11-11 — Light theme: the mockup's `--ok`/`--add` (#15803d) and `--warn` (#a16207)
+  read 4.29–4.49:1 on the panel shades; darkened to #166534 and #854d0e. Probed: restoring
+  #a16207 fails `contrast.test.js` (`light: warn on panel is 4.48`).

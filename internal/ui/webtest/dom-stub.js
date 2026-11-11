@@ -23,15 +23,18 @@ export class StubElement {
       if (n && typeof n === "object") n.parentNode = this;
     }
   }
-  append(...nodes) {
+  append(...items) {
+    const nodes = items.map(asNode);
     this.adopt(nodes);
     this.children.push(...nodes);
   }
-  prepend(...nodes) {
+  prepend(...items) {
+    const nodes = items.map(asNode);
     this.adopt(nodes);
     this.children.unshift(...nodes);
   }
-  replaceChildren(...nodes) {
+  replaceChildren(...items) {
+    const nodes = items.map(asNode);
     for (const c of this.children) if (c && typeof c === "object") c.parentNode = null;
     this.children = [];
     this.adopt(nodes);
@@ -66,6 +69,14 @@ export class StubElement {
   fire(type, event = {}) {
     for (const fn of this.listeners[type] || []) fn(event);
   }
+}
+
+// asNode turns a string into a text node, as append() does in a browser.
+function asNode(n) {
+  if (typeof n !== "string") return n;
+  const t = new StubElement("#text");
+  t.textContent = n;
+  return t;
 }
 
 export function installDom() {

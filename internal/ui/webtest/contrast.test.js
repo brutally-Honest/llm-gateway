@@ -6,7 +6,7 @@ const css = readFileSync(new URL("../web/style.css", import.meta.url), "utf8");
 
 function tokens(selector) {
   const block = css.split(selector)[1].split("}")[0];
-  return Object.fromEntries([...block.matchAll(/--([a-z-]+):\s*(#[0-9a-fA-F]{6})/g)].map((m) => [m[1], m[2]]));
+  return Object.fromEntries([...block.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-fA-F]{6})/g)].map((m) => [m[1], m[2]]));
 }
 
 function lum(hex) {
@@ -19,12 +19,12 @@ const ratio = (a, b) => {
   return (hi + 0.05) / (lo + 0.05);
 };
 
-// every text colour against every background it is drawn on
-const PAIRS = [
-  ["fg", "bg"], ["muted", "bg"], ["accent", "bg"], ["err", "bg"], ["ok", "bg"],
-  ["fg", "surface"], ["muted", "surface"], ["accent", "surface"],
-  ["badge-fg", "ok"], ["badge-fg", "err"], ["badge-fg", "muted"],
-];
+// every text colour against every background it is drawn on (spec 016 AC14): the text,
+// status and diff colours on the page, card and panel shades and on the tinted rows they sit
+// in, and the button text on the strong accent
+const TEXTS = ["text", "hi", "muted", "accent", "ok", "bad", "warn", "add", "del", "model", "toolc"];
+const BACKS = ["bg", "card", "panel", "panel2", "accent-bg", "ok-bg", "bad-bg", "warn-bg", "add-bg", "del-bg", "tool-bg"];
+const PAIRS = [...TEXTS.flatMap((fg) => BACKS.map((bg) => [fg, bg])), ["on-accent", "accent-strong"]];
 
 test("allTextPairsMeet4_5InBothThemes", () => {
   for (const [name, selector] of [["dark", ':root[data-theme="dark"]'], ["light", ':root[data-theme="light"]']]) {

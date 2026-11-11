@@ -1,11 +1,11 @@
 // Key bar content and the shortcut reducer. Pure: the page feeds it keyboard events.
 export const SHORTCUTS = {
   SESSIONS: [["↑/↓", "select"], ["Enter", "open"], ["/", "filter"]],
-  TURNS: [
-    ["j/k", "turn"], ["e", "next error"], ["t", "next tool"], ["Enter", "open first call"],
-    ["h", "hooks"], ["/", "filter"], ["Backspace", "Sessions"],
-  ],
-  CALL: [["↑/↓", "call"], ["Esc", "close"], ["t", "back to turn"]],
+  // The session page has no key bar (spec 016 AC13, Q4): j/k step through turns, the tabs
+  // take arrow keys, Esc closes a dialog or the call drawer, and every action is a button
+  // or link reachable by Tab and Enter.
+  TURNS: [],
+  CALL: [],
   // #/ungrouped and #/exchanges/{id}: level SESSIONS, no position, one way out (E17)
   BACK: [["Backspace", "Sessions"]],
 };
@@ -22,9 +22,11 @@ export function keyLevel(route) {
   }
 }
 
-// keyBar returns { level, position, shortcuts }; pos is { index, total } or null.
+// keyBar returns { level, position, shortcuts }; pos is { index, total } or null. A level
+// with no shortcuts has no bar: level is "".
 export function keyBar(route, pos) {
   const { level, set, noun } = keyLevel(route);
+  if (SHORTCUTS[set].length === 0) return { level: "", position: "", shortcuts: [] };
   let position = "";
   if (noun && pos && pos.total > 0) {
     position = noun.endsWith("#") ? `${noun}${pos.index}/${pos.total}` : `${noun} ${pos.index}/${pos.total}`;
@@ -42,7 +44,8 @@ export function isTextInput(node) {
 }
 
 // turnTarget finds the next turn card after index `from` (wrapping) that has an error
-// (kind "error") or a tool (kind "tool"); -1 when none does. Pure: the page scrolls.
+// (kind "error") or a tool (kind "tool"); -1 when none does. Used by the 013 timeline page
+// until it is removed (spec 016 T009).
 export function turnTarget(cards, from, kind) {
   const n = cards.length;
   for (let i = 1; i <= n; i++) {
@@ -68,17 +71,10 @@ export function handleKey(route, press) {
   } else if (set === "TURNS") {
     if (k === "j") return { type: "turn", delta: 1 };
     if (k === "k") return { type: "turn", delta: -1 };
-    if (k === "e") return { type: "nextError" };
-    if (k === "t") return { type: "nextTool" };
-    if (k === "Enter") return { type: "openFirstCall" };
-    if (k === "h") return { type: "hooks" };
-    if (k === "/") return { type: "filter" };
-    if (k === "Backspace") return { type: "toSessions" };
   } else if (set === "CALL") {
     if (k === "ArrowUp") return { type: "call", delta: -1 };
     if (k === "ArrowDown") return { type: "call", delta: 1 };
     if (k === "Escape") return { type: "close" };
-    if (k === "t") return { type: "backToTurn" };
   } else if (k === "Backspace") {
     return { type: "toSessions" };
   }
