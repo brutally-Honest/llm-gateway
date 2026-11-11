@@ -300,6 +300,20 @@ web test that now covers the same fact, or the AC that drops the feature.
   view object"; fill it in the CLI or accept? (c) the cold 2,000-call open is ≈ 2.7 s, of which
   2.3 s is the server build (within the 1.2× budget of T006); the browser render alone is
   ≤ 0.6 s.
+- 2026-11-11 — Attribution wording, Files tab against the story (asked by Karthik before the
+  final report). They differed: the story's effect lines show spec 015's label as glyph and
+  word (`● named`, `◐ only one running`, `◌ several running`, `○ outside any tool call`,
+  `⚙ harness`), while the Files tab's rows said it in other words (`by #10 Edit …`,
+  `likely by #12 Bash …`, `by one of 2 tool calls running together`, `with no tool running,
+  likely you`, `by claude-code itself`). Made them match in
+  `fix(ui): word attributions in the files tab as the story does`: a Files row now shows
+  the same glyph and word, then the tool call or calls the label points at
+  (`● named · #10 Edit src/payment/retry.js`, `◌ several running · #14 Bash npm install,
+  #14 Bash npm test`, `○ outside any tool call`). The view's `by` field is now only that
+  tool part (empty for outside and harness), which the dialog also uses as its link text;
+  the why sentence (`why`) is unchanged. AC9's "who changed it in words" is the label word
+  plus the tool. Pinned by `TestView_Placement` (`by` per label) and `view.test.js` (a Files
+  row and the story's effect line carry the same label words).
 - 2026-11-11 — Light theme: the mockup's `--ok`/`--add` (#15803d) and `--warn` (#a16207)
   read 4.29–4.49:1 on the panel shades; darkened to #166534 and #854d0e. Probed: restoring
   #a16207 fails `contrast.test.js` (`light: warn on panel is 4.48`).

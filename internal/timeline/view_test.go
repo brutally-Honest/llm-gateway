@@ -416,6 +416,7 @@ func TestView_Placement(t *testing.T) {
 	eq(t, "named lines", fmt.Sprint(e.Added, e.Removed), "2 1")
 	eq(t, "named mark", e.Mark.Glyph+" "+e.Mark.Word, "● named")
 	eq(t, "named what", e.What.Glyph+" "+e.What.Word, "~ modified")
+	eq(t, "named by", e.By, "#4 Edit src/a.js")
 	if n := len(mustTool(t, v, "t3").Effects); n != 0 {
 		t.Errorf("t3 effects = %d, want 0", n)
 	}
@@ -423,18 +424,21 @@ func TestView_Placement(t *testing.T) {
 	if len(net) != 1 || net[0].Host != "registry.npmjs.org" || net[0].Label != "only_one" {
 		t.Errorf("t1 effects = %+v", net)
 	}
+	eq(t, "only one by", net[0].By, "#3 Bash npm test")
 
 	step := v.Turns[0].Steps[1]
 	if len(step.Several) != 1 || step.Several[0].Path != "dist/out.js" {
 		t.Fatalf("step 4 several = %+v", step.Several)
 	}
 	eq(t, "several names", strings.Join(step.SeveralNames, " and "), "#4 Edit src/a.js and #4 Edit src/b.js")
+	eq(t, "several by", step.Several[0].By, "#4 Edit src/a.js, #4 Edit src/b.js")
 
 	loose := v.Turns[0].Loose
 	if len(loose) != 1 || loose[0].Host != "telemetry.example" || loose[0].Label != "harness" {
 		t.Fatalf("turn 1 loose = %+v", loose)
 	}
 	eq(t, "loose during", loose[0].During, "#4 Edit, #4 Edit")
+	eq(t, "harness by", loose[0].By, "")
 
 	if len(v.Between) != 1 {
 		t.Fatalf("between = %+v", v.Between)
@@ -445,6 +449,7 @@ func TestView_Placement(t *testing.T) {
 	if len(b.Effects) != 1 || b.Effects[0].Path != "notes.md" {
 		t.Errorf("between effects = %+v", b.Effects)
 	}
+	eq(t, "outside by", b.Effects[0].By, "")
 	for _, tr := range v.Turns {
 		for _, l := range tr.Loose {
 			if l.Path == "notes.md" {

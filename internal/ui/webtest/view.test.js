@@ -13,16 +13,16 @@ const { createSessionPage } = await import("../web/session-page.js");
 const web = new URL("../web/", import.meta.url);
 
 const mark = (glyph, word) => ({ glyph, word });
-const eff = (o) => ({ id: 1, kind: "change", change: "modified", at: "2026-11-10T10:00:06Z", what: mark("~", "modified"), path: "src/a.js", full_path: "/w/src/a.js", added: 2, removed: 1, has_diff: true, label: "named", mark: mark("●", "named"), why: "Edit names this file in its input.", tool: "t2", by: "by #4 Edit", where: "turn 1", turn: 1, ...o });
+const eff = (o) => ({ id: 1, kind: "change", change: "modified", at: "2026-11-10T10:00:06Z", what: mark("~", "modified"), path: "src/a.js", full_path: "/w/src/a.js", added: 2, removed: 1, has_diff: true, label: "named", mark: mark("●", "named"), why: "Edit names this file in its input.", tool: "t2", by: "#4 Edit src/a.js", where: "turn 1", turn: 1, ...o });
 const tool = (o) => ({ id: "t2", name: "Edit", kind: "file", state: mark("✓", "ok"), chip: "ok", summary: "src/a.js", added: 2, removed: 1, dur_ms: 400, call_n: 4, turn: 1, effects: [], ...o });
 const step = (n, o) => ({ n, exchange_id: `e${n}`, at: "2026-11-10T10:00:05Z", dur_ms: 1000, did: "wrote", tools: [], ...o });
 const turn = (n, o) => ({ n, hash: `h${n}`, prompt: `prompt ${n}`, at: "2026-11-10T10:00:00Z", clock_ms: 7100, model_ms: 4000, tool_ms: 1400, wait_ms: 1700, counts: { tools: 1, changed: 0, read: 0, searched: 0, sites: 0, failed: 0 }, steps: [], ...o });
 
 function fixture() {
   const named = eff();
-  const several = eff({ id: 2, path: "dist/out.js", full_path: "/w/dist/out.js", label: "several", mark: mark("◌", "several running"), has_diff: false, has_copy: true, added: -1, removed: -1, size: 2048, tool: "" });
-  const harness = eff({ id: 3, kind: "net", host: "telemetry.example", port: 443, up: 10, down: 20, what: mark("⇄", "connected"), label: "harness", mark: mark("⚙", "harness"), during: "#4 Edit", path: "", full_path: "", has_diff: false, tool: "" });
-  const outside = eff({ id: 4, path: "notes.md", full_path: "/w/notes.md", label: "outside", mark: mark("○", "outside any tool call"), tool: "", where: "between turns 1 and 2", turn: 0 });
+  const several = eff({ id: 2, path: "dist/out.js", full_path: "/w/dist/out.js", label: "several", mark: mark("◌", "several running"), has_diff: false, has_copy: true, added: -1, removed: -1, size: 2048, tool: "", by: "#4 Edit src/a.js, #4 Edit src/b.js" });
+  const harness = eff({ id: 3, kind: "net", host: "telemetry.example", port: 443, up: 10, down: 20, what: mark("⇄", "connected"), label: "harness", mark: mark("⚙", "harness"), during: "#4 Edit", path: "", full_path: "", has_diff: false, tool: "", by: "" });
+  const outside = eff({ id: 4, path: "notes.md", full_path: "/w/notes.md", label: "outside", mark: mark("○", "outside any tool call"), tool: "", by: "", where: "between turns 1 and 2", turn: 0 });
   return {
     version: "v1",
     overview: { title: "Retry fix", title_source: "generated", status: mark("■", "ended"), client: "c", key: "k", models: ["m1"], time: { clock_ms: 9000, model_ms: 5000, tool_ms: 1500, wait_ms: 2500 }, files: { changed: 3, added: 2, removed: 1, read: 0 }, commands: { count: 1, longest: "pandoc docs/checkout-fix.md -o docs/checkout-fix.pdf --pdf-engine=xelatex", longest_ms: 5400 }, sites: { count: 1, connections: 1 }, context: { last: 600 }, needs_look: [], tokens: {} },
@@ -118,7 +118,14 @@ test("rendersTurnsTabsAndDialogFromTheView", async () => {
   // the right card: counts and rows from the view's lists
   const tabs = withClass(page.el, "tab");
   assert.deepEqual(tabs.map((t) => `${t.textContent}${t.children[0].textContent}`), ["Files2", "Commands1", "Sites1", "Context"]);
-  assert.match(textOf(byId(page.el, "tp-files")), /a\.js/);
+  // the Files tab words an attribution as the story does: the label's glyph and word, then
+  // the tool call it points at
+  const rows = withClass(byId(page.el, "tp-files"), "row").map((r) => textOf(r).replace(/\s+/g, " "));
+  assert.match(rows[0], /a\.js .*modified turn 1 · ● named · #4 Edit src\/a\.js/);
+  assert.match(rows[1], /notes\.md .*○ outside any tool call/);
+  assert.doesNotMatch(rows[1], /·\s*$/);
+  assert.match(textOf(byId(page.el, "eff-1")).replace(/\s+/g, " "), /● named/);
+  assert.match(textOf(byId(page.el, "eff-4")).replace(/\s+/g, " "), /○ outside any tool call/);
   tabs[3].fire("click");
   assert.equal(byId(page.el, "tp-context").hidden, false);
   assert.equal(byId(page.el, "tp-files").hidden, true);

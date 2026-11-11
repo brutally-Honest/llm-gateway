@@ -242,27 +242,32 @@ func (b *builder) effectLine(row store.EffectRow, lbl EffectLabel) EffectLine {
 	return l
 }
 
-// byWords says who made an effect, in words (AC9: "who changed it in words").
+// byWords names the tool call or calls an effect's label points at, the part a list adds
+// after the label's glyph and word (AC9: "who changed it in words"): one tool for named and
+// only one running, every candidate for several running, nothing for outside and harness,
+// whose label says it all. The story shows the same label words (AC6).
 func (b *builder) byWords(e *vEffect) string {
 	switch e.label.Label {
-	case string(core.AttrNamed):
+	case string(core.AttrNamed), string(core.AttrOnlyOne):
 		if e.tool != nil {
-			return "by " + b.shortName(e.tool)
+			return b.shortName(e.tool)
 		}
-		return "by " + toolWords(e.label.Tool)
-	case string(core.AttrOnlyOne):
-		if e.tool != nil {
-			return "likely by " + b.shortName(e.tool)
-		}
-		return "likely by " + toolWords(e.label.Tool)
+		return toolWords(e.label.Tool)
 	case string(core.AttrSeveral):
-		return "by one of " + strconv.Itoa(len(e.label.Candidates)) + " tool calls running together"
-	case string(core.AttrOutside):
-		return "with no tool running, likely you"
-	case string(core.AttrHarness):
-		return "by " + b.in.Session.Client + " itself"
+		if len(e.line.Candidates) > 0 {
+			return strings.Join(e.line.Candidates, ", ")
+		}
+		names := make([]string, 0, len(e.label.Candidates))
+		for _, c := range e.label.Candidates {
+			if t, ok := b.tools[c.ID]; ok {
+				names = append(names, b.shortName(t))
+			} else {
+				names = append(names, c.Name)
+			}
+		}
+		return strings.Join(names, ", ")
 	}
-	return "not labelled"
+	return ""
 }
 
 func toolWords(t *LabelTool) string {

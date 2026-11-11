@@ -55,6 +55,10 @@ const t1 = (text, code = false) => {
   else s.textContent = text;
   return s;
 };
+// labelText is an effect's attribution as the story shows it, the label's glyph and word,
+// then the tool call or calls it points at: "● named · #10 Edit src/app.js".
+const labelText = (e) => (e.mark ? `${e.mark.glyph} ${e.mark.word}` : "— no label") + (e.by ? ` · ${e.by}` : "");
+
 const lines = (a, d) => {
   const s = el("span", "r");
   s.append(el("span", "a", `+${a}`), " ", el("span", "d", `−${d}`));
@@ -72,8 +76,8 @@ function filesPanel(f, ctx) {
     const last = it.last || {};
     const [dir, name] = split(it.path);
     const right = it.lines ? lines(it.added, it.removed) : el("span", "r", last.size !== undefined && last.size !== null ? bytes(last.size) : "");
-    const t2 = el("span", "t2", `${dirText(dir)} · ${[last.change, last.where].filter(Boolean).join(" ")}`);
-    if (last.by) t2.append(" ", el("span", last.label === "outside" ? "warn" : "", last.by));
+    const t2 = el("span", "t2", `${dirText(dir)} · ${[last.change, last.where].filter(Boolean).join(" ")} · `);
+    t2.append(el("span", last.label === "outside" ? "warn" : "", labelText(last)));
     return row(ctx, { key: `file:${it.full_path}`, ic: icon((last.what || {}).glyph || "~"), t1: t1(name), r: right, t2, title: it.full_path });
   })));
   out.push(el("h3", "", `Read · ${(f.read || []).length}`));
