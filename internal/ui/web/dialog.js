@@ -370,6 +370,8 @@ export function createDialog(ctx = {}) {
     el: root,
     // open shows a key; from inside an open dialog it is a related link (Back returns).
     open(key, from) {
+      // the browser fires "close" a task later: a dialog already closed starts afresh
+      if (shown && !root.open) finish();
       if (shown) {
         push(key);
         return;

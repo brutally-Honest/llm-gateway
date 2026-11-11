@@ -144,6 +144,15 @@ test("rendersTurnsTabsAndDialogFromTheView", async () => {
   assert.equal(page.dialog.current(), "tool:t1");
   withClass(dlg, "primary")[0].fire("click");
   assert.equal(page.dialogOpen(), false);
+
+  // closed by the browser, its "close" event not yet fired: the next open starts afresh
+  page.dialog.open("tool:t1");
+  page.dialog.open("file:/w/src/a.js");
+  dlg.open = false;
+  page.dialog.open("site:telemetry.example");
+  assert.equal(page.dialog.current(), "site:telemetry.example");
+  assert.equal(withClass(dlg, "x")[0].hidden, true, "no Back to an item of the closed dialog");
+  assert.equal(dlg.open, true);
 });
 
 test("clickingTheLastTurnMarksIt", () => {
