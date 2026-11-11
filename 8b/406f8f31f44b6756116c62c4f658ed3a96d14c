@@ -1,0 +1,4 @@
+Spec: specs/016-web-ui-v2/spec.md (AC6, AC9); spec 015 AC12 labels
+Found by: Karthik's check that the Files tab and the story word attributions alike; they did not (research.md note of 2026-11-11).
+Choice: the story's label words are the reference (spec 015's vocabulary); the Files row adds the tool part after them, as 015's label: tool form did.
+Verified by: TestView_Placement pins by for named, only one running, several, harness, outside; view.test.js pins a Files row and the story line sharing the label words and fails with the old wording (probe); make verify green.
