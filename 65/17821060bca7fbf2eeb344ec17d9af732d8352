@@ -1,0 +1,5 @@
+Spec: specs/016-web-ui-v2/spec.md (AC1–AC15, manual)
+Task: T015
+Why: one seeded session (seed-session.mjs) gives every mockup case; the check compares each turn with the seed's printed expectation lines, so the reader does not re-derive them.
+Contrast: Lighthouse plus an in-page snippet that walks every visible text node against its effective background, in both themes and with a dialog open.
+Seed fix: turn 3's Edit retry.js is +2 −1 (the earlier +3 −2 miscounted the stub edit).
