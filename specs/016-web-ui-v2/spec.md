@@ -2,7 +2,7 @@
 feature: 016-web-ui-v2
 kind: feat
 status: draft
-version: 1
+version: 2
 created: 2026-11-10
 supersedes:
 branch: feat/016-web-ui-v2
@@ -69,7 +69,7 @@ This changes earlier features (each AC listed is replaced or narrowed as said):
 - The sessions list, the call details that replace the drawer, the ungrouped and
   unassigned pages (017).
 - New capture: no new hook, effect or proxy data; 016 reads what 013–015 store.
-- Filters and search over turns (dropped from 013 AC14 unless research Q5 keeps them).
+- Filters and search over turns (dropped from 013 AC14, research Q5 A).
 - Cost or money, and any percentage of a context window (013 AC35 stands).
 - Editing, replaying or exporting a session.
 - Other clients' tool summaries: the seam is there, only Claude Code fills it.
@@ -102,7 +102,8 @@ This changes earlier features (each AC listed is replaced or narrowed as said):
 - **AC4** — When a turn is shown, it shall show the prompt as its heading (reminders behind a
   "+N reminders" toggle), its start time, its clock time from the prompt to the final answer
   split into model, tool and waiting time, and its counts (tool calls, files changed, files
-  read, searches, sites, failures).
+  read, searches, sites, failures); a turn with no final answer shall show its end state as
+  glyph and word: running (session active), interrupted, or ended by error.
 - **AC5** — When a tool call is shown, it shall be one line holding its state as glyph and
   word (`✓` alone for ok), its name, the profile's summary of its input (`npm test`,
   `src/app.js +3 −1`, `pdf`) and its run time, with a failed call's first error line under
@@ -150,7 +151,7 @@ This changes earlier features (each AC listed is replaced or narrowed as said):
   overview, tabs and counts shall update without a reload, an open dialog shall stay on its
   item, and the story shall keep its scroll position unless it was at the bottom.
 - **AC13** — When any action is offered, it shall be a real button or link reachable by
-  keyboard, tabs shall move with arrow keys, Esc shall close a dialog and return focus to
+  Tab and run by Enter, tabs shall move with arrow keys, Esc shall close a dialog and return focus to
   what opened it, and `j`/`k` shall step through turns while focus is not in a text field.
 - **AC14** — When any page of the UI is shown, it shall use the neutral theme in dark by
   default with a stored light choice, show every status as glyph and word, and keep every
@@ -162,10 +163,11 @@ This changes earlier features (each AC listed is replaced or narrowed as said):
   object the API returns.
 
 ## Edge cases
-- **E1** — A turn still running (no final answer yet) → clock time runs to the last activity
-  seen and the turn says "running" (AC4, research Q1).
+- **E1** — A turn still running (no final answer yet, session active) → clock time runs to
+  the last activity seen and the turn shows "running" as glyph and word (AC4, research Q1).
 - **E2** — A turn interrupted (Esc) or ended by an errored call → clock time ends at the last
-  call or tool end; the errored call is red with its status (AC4, AC7).
+  call or tool end; the turn shows "interrupted" or "ended by error" as glyph and word; the
+  errored call is red with its status (AC4, AC7).
 - **E3** — A tool call with no hook events (hooks off) → run time from the gap between the
   call that asked for it and the next call of its thread, shown with `≈`; no hook lines in
   its details (AC5, AC11).
@@ -197,8 +199,11 @@ This changes earlier features (each AC listed is replaced or narrowed as said):
 - The view is built from the same snapshot as the timeline (013) plus the session's effects
   and their labels (015); the effect version and `SessionVersions` keep their meanings.
 - At the 2,000-call seed the view request answers within the 5 s store timeout and no slower
-  than 1.2× today's `GET /api/sessions/{id}/timeline` for the same session (measured in
-  research.md before and after).
+  than 1.2× today's `GET /api/sessions/{id}/timeline` for the same session, measured both
+  cold (fresh gateway, no cache) and warm, before and after, figures in research.md
+  (research Q3).
+- A 2,000-call session renders in the browser within 2 s of its view data arriving (013's
+  constraint kept), figure in research.md.
 - No new Go or JS dependency; the contrast check uses a tool that needs no install (Chrome
   DevTools or a snippet run in the page).
 - The browser keeps no copy of any rule: no tool names, no label logic, no time arithmetic
@@ -216,7 +221,10 @@ This changes earlier features (each AC listed is replaced or narrowed as said):
   interface.
 
 ## Open questions
-- [NEEDS CLARIFICATION: research.md Q1–Q5]
+- None. research.md Q1–Q5 answered 2026-11-11 and folded in (AC4, AC13, E1, E2,
+  Constraints).
 
 ## Changelog
 - v1 (2026-11-10) — first draft from the chosen mockup
+- v2 (2026-11-11) — Q1–Q5 answers folded in: turn end states (AC4, E1, E2), Tab/Enter
+  (AC13), cold and warm measures and the 2 s render budget (Constraints); approved

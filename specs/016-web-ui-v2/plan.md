@@ -51,7 +51,8 @@ agent-loop kit (research.md D1).
   for a tool call's input, result and hook lines (research Q3).
 - **Live by parts.** The hub rebuilds the view when the timeline version or effect version
   moves and sends a `view` event with the overview, the lists and only the turns whose
-  content hash changed; the browser swaps them by turn number (Decisions for Karthik 11).
+  content hash changed; the browser renders turns by key and replaces only the changed
+  turn's node (Decisions for Karthik 11, as answered).
 
 ## Alternatives considered
 ### A1 — Server builds a view; the browser renders it (chosen)
@@ -69,7 +70,7 @@ agent-loop kit (research.md D1).
 - Cons: live updates and dialogs become HTML diffing; the CLI still needs a data form; a
   rewrite of the UI's whole approach for no reader gain.
 ### Verdict
-A1. Flip to paging turns (Q3 B) if the 2,000-call view breaks the 1.2× budget.
+A1. Flip to paging turns (Q3 B) if the 2,000-call view breaks the 1.2× budget, cold or warm.
 
 ## Design
 ### Core (`internal/core/tools.go`)
@@ -215,8 +216,11 @@ effect and between block. `--fast` shrinks the 2-minute Bash to 5 s.
   call to removed builders), the turn list marks the clicked last turn.
 - `internal/ui/webtest/contrast.test.js`: its pairs move to the new tokens (text, muted,
   accent, ok, bad, warn, add, del on bg, card and panel, both themes), all ≥ 4.5:1.
-- Retired with the code they test (research Decisions for Karthik 15): `turns`, `strip`,
-  `stats`, `context`, `keybar`, `filters`, `tool-card` and the placement half of `effects`.
+- Retired with the code they test (research Decisions for Karthik 15, as answered): `turns`,
+  `strip`, `stats`, `context`, `keybar`, `filters`, `tool-card` and the placement half of
+  `effects`. Each one is removed in the same commit as the code it covered and listed in
+  research.md with the Go test that now covers the same fact or the AC that drops the
+  feature; no test is retired for any other reason.
 
 ## Risks
 - **View cost at 2,000 calls** (constraint 1.2×): measured in T006 before the web work.

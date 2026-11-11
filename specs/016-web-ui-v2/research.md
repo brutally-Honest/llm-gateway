@@ -5,26 +5,35 @@ feature: 016-web-ui-v2
 
 ## Open questions
 <!-- Answer by changing "(open)" to "(answered)" and writing the answer underneath. -->
-- **Q1** (open) T003 — Where does a turn's clock time end when there is no final answer
+- **Q1** (answered) T003 — Where does a turn's clock time end when there is no final answer
   (still running, interrupted with Esc, ended by an errored call)? — options: A) at the last
   call or tool end seen in the turn, and "running" while the session is active (recommended:
   honest, never counts idle time) B) at the next prompt (simple, but counts the time the user
   spent reading)
-- **Q2** (open) T007 — What does `gateway timeline` print by default once it follows the
+  - Answer (Karthik, 2026-11-11): A. Plus: a turn with no final answer shows its end state as
+    glyph + word: running (session active), interrupted, or ended by error.
+- **Q2** (answered) T007 — What does `gateway timeline` print by default once it follows the
   view? — options: A) the turn view in text, `-json` the API's view object, today's flat
   entry list behind a new `-entries` flag (recommended: one source of truth, old output still
   reachable for scripts) B) keep the flat list as default and add `-turns`
-- **Q3** (open) T006 — How much does one view response carry for a 2,000-call session? —
+  - Answer (Karthik, 2026-11-11): A.
+- **Q3** (answered) T006 — How much does one view response carry for a 2,000-call session? —
   options: A) every turn at once with tool lines and effects, but no tool inputs, results,
   diffs or thinking (fetched when a dialog opens); measure against the 1.2× budget before
   and after (recommended) B) page turns (first 50, then "Load more") from the start
-- **Q4** (open) T008 — The chosen mockup drops 013's key bar and most shortcuts (`e` next
+  - Answer (Karthik, 2026-11-11): A. Measure both cold (fresh gateway, no cache) and warm
+    against the budget, and keep 013's constraint: a 2,000-call session renders within 2 s
+    of its data arriving. Record the numbers here.
+- **Q4** (answered) T008 — The chosen mockup drops 013's key bar and most shortcuts (`e` next
   error, `t` next tool, `h` hooks, `/` filter, Backspace). Keep any? — options: A) no key bar;
   keep `j`/`k` for turns, arrow keys in tabs, Esc in dialogs (recommended; written into AC13)
   B) keep the key bar and all 013 shortcuts that still have a target
-- **Q5** (open) T009 — 013's text filter and tool-name picker over turns have no place in
+  - Answer (Karthik, 2026-11-11): A. Every action stays reachable by Tab/Enter on real buttons
+    and links.
+- **Q5** (answered) T009 — 013's text filter and tool-name picker over turns have no place in
   the mockup. Drop them? — options: A) drop in 016; the right card's lists cover "where did
   this file / command / site come from" (recommended) B) keep a filter box above the story
+  - Answer (Karthik, 2026-11-11): A.
 
 ## Decisions
 - D1 (2026-11-10) — Built outside the agent-loop kit, like 014 and 015: one branch, feature
@@ -61,6 +70,11 @@ feature: 016-web-ui-v2
   mockup accuracy bug.
 - D12 (2026-11-10) — Context is per thread: each row says what was added since the previous
   call of the same thread; side calls are separate requests and left out (mockup choice).
+- D14 (2026-11-11) — 016 spec, plan and tasks approved by Karthik with Q1–Q5 and the 15
+  recommendations folded in; 017 stays spec-only until 016 is built. Build rules: no
+  agent-loop kit, feature tasks first, one or two functional tests per part near the end,
+  `make verify` green after every commit, a git note per commit, no push without his OK, the
+  gateway service is never restarted by the agent (commands are printed for him).
 - D13 (2026-11-10) — `gateway timeline` follows the server view; its pinned tests
   (`internal/timeline/render_test.go`, `cmd/gateway/viewer*_test.go`) are updated in the open
   in T007, each change noted under Notes with why (Karthik's rule).
@@ -116,6 +130,12 @@ you want another.
     spec drops. Each removal is listed under Notes with the AC that replaced it; no other
     test is weakened. *Recommend: yes.* Alternative: keep the old modules alive for their
     tests — dead code kept to keep tests green.
+
+Answer (Karthik, 2026-11-11): all 15 accepted. #11 adds: the browser also renders turns by
+key and replaces only the changed turn's node. #15 is accepted on these conditions: each
+retired web test is removed in the same commit as the code it covered; this file lists each
+one with either the Go test that now covers the same fact or the AC that drops the feature;
+no test is retired for any other reason.
 
 ## Notes
 - 2026-11-10 — Mockup accuracy bugs found during review and fixed in the dataset before
