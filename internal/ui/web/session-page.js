@@ -239,7 +239,10 @@ export function createSessionPage(ctx = {}) {
     fs.append(el("span", "a", `+${files.added ?? 0}`), " ", el("span", "d", `−${files.removed ?? 0}`), ` lines · ${files.read ?? 0} read`);
     kpi("Files changed", num(files.changed ?? 0), fs, "files");
     const cmds = o.commands || {};
-    kpi("Commands", num(cmds.count ?? 0), el("span", "s", cmds.longest ? `longest ${cmds.longest}, ${dur(cmds.longest_ms)}` : "none ran"), "commands");
+    // the longest command on one line, cut with an ellipsis; the whole command on hover
+    const longest = el("span", "s one-line", cmds.longest ? `longest ${dur(cmds.longest_ms)} · ${cmds.longest}` : "none ran");
+    if (cmds.longest) longest.title = cmds.longest;
+    kpi("Commands", num(cmds.count ?? 0), longest, "commands");
     const sites = o.sites || {};
     kpi("Sites", num(sites.count ?? 0), el("span", "s", plural(sites.connections ?? 0, "connection")), "sites");
     kpi("Context", num((o.context || {}).last), el("span", "s", "tokens in the last call"), "context");

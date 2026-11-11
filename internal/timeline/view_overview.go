@@ -78,8 +78,7 @@ func (b *builder) overview(v *View) {
 		if c.DurMS != nil && (o.Commands.LongestMS == nil || *c.DurMS > *o.Commands.LongestMS) {
 			d := *c.DurMS
 			o.Commands.LongestMS = &d
-			words := strings.Fields(c.Summary)
-			o.Commands.Longest = strings.Join(words[:min(2, len(words))], " ")
+			o.Commands.Longest = c.Summary
 		}
 	}
 	o.Sites.Count = len(v.Sites.Items)

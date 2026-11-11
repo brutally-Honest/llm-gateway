@@ -135,7 +135,8 @@ type FilesCard struct {
 	Read    int `json:"read"`
 }
 
-// CmdCard counts shell commands and names the longest.
+// CmdCard counts shell commands and names the longest, whole: the page clamps it to one
+// line.
 type CmdCard struct {
 	Count     int    `json:"count"`
 	Longest   string `json:"longest,omitempty"`

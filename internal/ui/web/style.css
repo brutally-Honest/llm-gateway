@@ -170,6 +170,7 @@ button.kpi:focus-visible { outline: 2px solid var(--accent-strong); outline-offs
 .kpi .l i { font-style: normal; color: var(--accent); }
 .kpi .v { font-size: 20px; font-weight: 700; color: var(--hi); letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
 .kpi .s { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.kpi .s.one-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
 .a { color: var(--add); } .d { color: var(--del); }
 .attn h2 { margin: 0 0 8px; font-size: 14px; font-weight: 700; color: var(--hi); }
 .attn ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }

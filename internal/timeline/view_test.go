@@ -196,8 +196,8 @@ func seedFixture(withTitle bool) *fixture {
 
 	// Turn 3: hooks only, one command.
 	f.vhook(core.PhasePrompt, "", "", 20)
-	f.vhook(core.PhasePreTool, "h1", "Bash", 20.5, func(h *store.HookRow) { h.InputHash = f.put(`{"command":"ls"}`) })
-	f.vhook(core.PhasePostTool, "h1", "Bash", 21)
+	f.vhook(core.PhasePreTool, "h1", "Bash", 20.5, func(h *store.HookRow) { h.InputHash = f.put(`{"command":"ls -la src/payment"}`) })
+	f.vhook(core.PhasePostTool, "h1", "Bash", 22)
 	return x
 }
 
@@ -355,7 +355,7 @@ func TestView_Turns(t *testing.T) {
 	}
 	ls := t3.HookTools[0]
 	eq(t, "h1 state", ls.State.Glyph+" "+ls.State.Word, "? unmatched")
-	eq(t, "h1 summary", ls.Summary, "ls")
+	eq(t, "h1 summary", ls.Summary, "ls -la src/payment")
 	eq(t, "h1 call number", ls.CallN, 0)
 
 	// a turn's hash is its content: the same build gives the same hashes, a changed turn a
@@ -386,18 +386,18 @@ func TestView_Times(t *testing.T) {
 			t.Errorf("turn %d clock/model/tool/wait = %v, want %v", tr.N, got, w)
 		}
 	}
-	for id, ms := range map[string]int64{"t1": 1000, "t2": 400, "t3": 200, "t4": 650, "t5": 80, "h1": 500} {
+	for id, ms := range map[string]int64{"t1": 1000, "t2": 400, "t3": 200, "t4": 650, "t5": 80, "h1": 1500} {
 		l := mustTool(t, v, id)
 		if l.DurMS == nil || *l.DurMS != ms {
 			t.Errorf("%s run time = %v, want %d ms", id, l.DurMS, ms)
 		}
 	}
-	eq(t, "session clock", v.Overview.Time.ClockMS, int64(20800))
+	eq(t, "session clock", v.Overview.Time.ClockMS, int64(21800))
 	eq(t, "session model", v.Overview.Time.ModelMS, int64(5500))
 	eq(t, "session tools", v.Overview.Time.ToolMS, int64(1480))
-	// waiting is the clock less each turn's busy time: 20.8 − (5.4 + 1.58) = 13.82 s, so
+	// waiting is the clock less each turn's busy time: 21.8 − (5.4 + 1.58) = 14.82 s, so
 	// model + tools + waiting is the clock, as in a turn's header
-	eq(t, "session waiting", v.Overview.Time.WaitMS, int64(13820))
+	eq(t, "session waiting", v.Overview.Time.WaitMS, int64(14820))
 	eq(t, "session parts sum to the clock", v.Overview.Time.ModelMS+v.Overview.Time.ToolMS+v.Overview.Time.WaitMS, v.Overview.Time.ClockMS)
 }
 
@@ -482,8 +482,11 @@ func TestView_Lists(t *testing.T) {
 	c1, c2 := v.Commands.Items[0], v.Commands.Items[1]
 	eq(t, "command 1", c1.ToolID+" "+c1.Summary+" "+c1.Chip, "t1 npm test failed")
 	eq(t, "command 1 did", c1.Did, "1 site")
-	eq(t, "command 2", c2.ToolID+" "+c2.Summary, "h1 ls")
+	eq(t, "command 2", c2.ToolID+" "+c2.Summary, "h1 ls -la src/payment")
 	eq(t, "command 2 hooks only", c2.HooksOnly, true)
+	// the overview names the longest command whole; the page clamps it
+	eq(t, "longest command", v.Overview.Commands.Longest, "ls -la src/payment")
+	eq(t, "longest command time", *v.Overview.Commands.LongestMS, int64(1500))
 
 	if len(v.Sites.Items) != 2 {
 		t.Fatalf("sites = %+v", v.Sites.Items)
