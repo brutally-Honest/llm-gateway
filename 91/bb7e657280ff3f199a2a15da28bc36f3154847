@@ -1,0 +1,6 @@
+Spec: specs/016-web-ui-v2/spec.md (AC15)
+Plan: plan.md CLI (T007); research Q2 A, D13
+Why this approach: the CLI calls the same ui.BuildView the API memoises, so the page and the CLI cannot disagree.
+Tests changed in the open (research Notes 2026-11-11): eight viewer tests gain -entries and keep every assertion; render_test.go unchanged.
+Trade-off / known limit: the text keeps the usage totals block after the view (same facts as the token line), so scripts reading the totals still work; scripts reading entries need -entries.
+Verified by: make verify; gateway timeline on the seeded session matched the seed's printed expectations line by line
