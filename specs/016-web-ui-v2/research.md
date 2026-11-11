@@ -151,3 +151,16 @@ no test is retired for any other reason.
   `internal/ui/web/model.js` builds turns, durations, rail items and effect placement
   (`buildTurns`, `railItems`, `placeEffects` in `effects.js`); 016 moves each of these to
   `internal/timeline/` (plan.md).
+- 2026-11-11 — View cost at 2,000 calls (T006, constraint and Q3): `seed-calls.mjs --calls 2000`
+  on a fresh throwaway gateway (9,600 entries, no hooks or effects), curl from localhost.
+  Cold = first request after a gateway restart, no cache; warm = five repeats.
+  | request | cold | warm | body |
+  |---|---|---|---|
+  | `/timeline?limit=2000` (one page, before) | 2.35–2.57 s | 10–12 ms | 0.54 MB |
+  | `/timeline` every page (what the 013 page loads) | 2.41–2.48 s | 70–79 ms | 2.59 MB |
+  | `/view` (after) | 2.34–2.39 s | 6–11 ms | 1.34 MB |
+  The view is ≈1.0× cold and faster warm: both wait on the same timeline build (2.7 s of
+  CPU, mostly event reads and call facts); BuildView adds ~80 ms and marshalling ~130 ms.
+  A first run before empty fields were omitted measured 3.16 s cold at 1.54 MB (1.22×), so
+  the view's JSON omits empty lists and zero fields. Within the 1.2× budget; paging (Q3 B)
+  not needed.

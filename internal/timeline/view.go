@@ -172,7 +172,7 @@ type LookItem struct {
 // Target is a place on the page: a tool, file, site or call to open, or a turn, a
 // between block or a several-running group to show.
 type Target struct {
-	Kind string `json:"kind"` // tool, file, site, call, turn, between, several
+	Kind string `json:"kind,omitempty"` // tool, file, site, call, turn, between, several
 	ID   string `json:"id,omitempty"`
 	Turn int    `json:"turn,omitempty"`
 }
@@ -193,18 +193,18 @@ type Turn struct {
 	Hash            string       `json:"hash"`
 	Prompt          string       `json:"prompt"`
 	PromptTruncated bool         `json:"prompt_truncated,omitempty"`
-	Reminders       []string     `json:"reminders"`
+	Reminders       []string     `json:"reminders,omitempty"`
 	At              string       `json:"at"`
 	End             *Mark        `json:"end,omitempty"` // set when the turn has no final answer
 	ClockMS         int64        `json:"clock_ms"`
 	ModelMS         int64        `json:"model_ms"`
 	ToolMS          int64        `json:"tool_ms"`
 	WaitMS          int64        `json:"wait_ms"`
-	HooksOnly       bool         `json:"hooks_only"`
+	HooksOnly       bool         `json:"hooks_only,omitempty"`
 	Counts          TurnCounts   `json:"counts"`
-	Steps           []Step       `json:"steps"`
-	HookTools       []ToolLine   `json:"hook_tools"`
-	Loose           []EffectLine `json:"loose"`
+	Steps           []Step       `json:"steps,omitempty"`
+	HookTools       []ToolLine   `json:"hook_tools,omitempty"`
+	Loose           []EffectLine `json:"loose,omitempty"`
 	Answer          string       `json:"answer,omitempty"`
 	AnswerCall      int          `json:"answer_call,omitempty"`
 	atNS            int64
@@ -212,7 +212,7 @@ type Turn struct {
 
 // TurnCounts are a turn's pills.
 type TurnCounts struct {
-	Tools    int `json:"tools"`
+	Tools    int `json:"tools,omitempty"`
 	Changed  int `json:"changed"`
 	Read     int `json:"read"`
 	Searched int `json:"searched"`
@@ -227,13 +227,13 @@ type Step struct {
 	At           string       `json:"at"`
 	DurMS        int64        `json:"dur_ms"`
 	Did          string       `json:"did"`
-	Errored      bool         `json:"errored"`
+	Errored      bool         `json:"errored,omitempty"`
 	Status       string       `json:"status,omitempty"`
-	Thinking     bool         `json:"thinking"`
+	Thinking     bool         `json:"thinking,omitempty"`
 	Agent        string       `json:"agent,omitempty"`
-	Tools        []ToolLine   `json:"tools"`
-	Several      []EffectLine `json:"several"`
-	SeveralNames []string     `json:"several_names"`
+	Tools        []ToolLine   `json:"tools,omitempty"`
+	Several      []EffectLine `json:"several,omitempty"`
+	SeveralNames []string     `json:"several_names,omitempty"`
 }
 
 // ToolLine is one tool call as a line (AC5).
@@ -241,20 +241,20 @@ type ToolLine struct {
 	ID         string       `json:"id"`
 	Name       string       `json:"name"`
 	State      Mark         `json:"state"`
-	Chip       string       `json:"chip"`
-	Kind       string       `json:"kind"`
-	Summary    string       `json:"summary"`
+	Chip       string       `json:"chip,omitempty"`
+	Kind       string       `json:"kind,omitempty"`
+	Summary    string       `json:"summary,omitempty"`
 	FullPath   string       `json:"full_path,omitempty"`
 	Added      int          `json:"added"`
 	Removed    int          `json:"removed"`
 	DurMS      *int64       `json:"dur_ms"`
-	Approx     bool         `json:"approx"`
+	Approx     bool         `json:"approx,omitempty"`
 	FirstError string       `json:"first_error,omitempty"`
 	CallN      int          `json:"call_n,omitempty"`
 	Agent      string       `json:"agent,omitempty"`
-	Short      string       `json:"short"`
-	Turn       int          `json:"turn"`
-	Effects    []EffectLine `json:"effects"`
+	Short      string       `json:"short,omitempty"`
+	Turn       int          `json:"turn,omitempty"`
+	Effects    []EffectLine `json:"effects,omitempty"`
 	Sub        *SubAgent    `json:"sub,omitempty"`
 }
 
@@ -262,13 +262,13 @@ type ToolLine struct {
 type SubAgent struct {
 	Label string `json:"label"`
 	Calls int    `json:"calls"`
-	Steps []Step `json:"steps"`
+	Steps []Step `json:"steps,omitempty"`
 }
 
 // EffectLine is one effect as a line (AC6).
 type EffectLine struct {
 	ID         int64    `json:"id"`
-	Kind       string   `json:"kind"` // change, read, search, net
+	Kind       string   `json:"kind,omitempty"` // change, read, search, net
 	At         string   `json:"at"`
 	What       Mark     `json:"what"`
 	Path       string   `json:"path,omitempty"`
@@ -290,12 +290,12 @@ type EffectLine struct {
 	Label      string   `json:"label,omitempty"`
 	Mark       *Mark    `json:"mark,omitempty"`
 	Tool       string   `json:"tool,omitempty"`
-	By         string   `json:"by"`
-	Why        string   `json:"why"`
+	By         string   `json:"by,omitempty"`
+	Why        string   `json:"why,omitempty"`
 	During     string   `json:"during,omitempty"`
 	Candidates []string `json:"candidates,omitempty"`
-	Turn       int      `json:"turn"`
-	Where      string   `json:"where"`
+	Turn       int      `json:"turn,omitempty"`
+	Where      string   `json:"where,omitempty"`
 }
 
 // Between is an edit seen between two turns (AC8, D9).
@@ -303,7 +303,7 @@ type Between struct {
 	After   int          `json:"after"`
 	At      string       `json:"at"`
 	Text    string       `json:"text"`
-	Effects []EffectLine `json:"effects"`
+	Effects []EffectLine `json:"effects,omitempty"`
 }
 
 // FilesList is the Files tab (AC9).
@@ -332,7 +332,7 @@ type ReadItem struct {
 	Path     string       `json:"path"`
 	FullPath string       `json:"full_path"`
 	Count    int          `json:"count"`
-	Where    string       `json:"where"`
+	Where    string       `json:"where,omitempty"`
 	Reads    []EffectLine `json:"reads"`
 }
 
@@ -340,8 +340,8 @@ type ReadItem struct {
 type SearchItem struct {
 	ToolID  string `json:"tool_id"`
 	Name    string `json:"name"`
-	Summary string `json:"summary"`
-	Where   string `json:"where"`
+	Summary string `json:"summary,omitempty"`
+	Where   string `json:"where,omitempty"`
 	Agent   string `json:"agent,omitempty"`
 }
 
@@ -355,14 +355,14 @@ type CommandsList struct {
 // CommandItem is one shell command.
 type CommandItem struct {
 	ToolID    string `json:"tool_id"`
-	Summary   string `json:"summary"`
+	Summary   string `json:"summary,omitempty"`
 	State     Mark   `json:"state"`
-	Chip      string `json:"chip"`
-	Turn      int    `json:"turn"`
+	Chip      string `json:"chip,omitempty"`
+	Turn      int    `json:"turn,omitempty"`
 	DurMS     *int64 `json:"dur_ms"`
-	Approx    bool   `json:"approx"`
+	Approx    bool   `json:"approx,omitempty"`
 	Did       string `json:"did"`
-	HooksOnly bool   `json:"hooks_only"`
+	HooksOnly bool   `json:"hooks_only,omitempty"`
 }
 
 // SitesList is the Sites tab.
@@ -380,7 +380,7 @@ type SiteItem struct {
 	Connections int          `json:"connections"`
 	Up          int64        `json:"up"`
 	Down        int64        `json:"down"`
-	Where       string       `json:"where"`
+	Where       string       `json:"where,omitempty"`
 	Who         string       `json:"who"`
 	Harness     bool         `json:"harness"`
 	Conns       []EffectLine `json:"conns"`
@@ -416,8 +416,8 @@ type CtxThread struct {
 type CtxRow struct {
 	N          int    `json:"n"`
 	ExchangeID string `json:"exchange_id"`
-	Turn       int    `json:"turn"`
+	Turn       int    `json:"turn,omitempty"`
 	Ctx        *int64 `json:"ctx"`
 	Delta      *int64 `json:"delta"`
-	Why        string `json:"why"`
+	Why        string `json:"why,omitempty"`
 }

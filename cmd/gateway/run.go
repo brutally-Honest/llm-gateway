@@ -375,6 +375,7 @@ type captureRun struct {
 	// timelines is the one timeline cache the hub and the UI handler share, so the
 	// process holds a single set of builds under a single byte budget.
 	timelines *ui.TimelineCache
+	views     *ui.ViewCache
 	// digests is the one digest cache they share, for the same reason.
 	digests *ui.DigestCache
 	// effects is the effect sensors; nil when effects are off (spec 014, E15).
@@ -415,7 +416,7 @@ func (c *captureRun) hasUI() bool { return c != nil && c.hub != nil }
 func (c *captureRun) uiDeps(ctx context.Context, addr string, log *zap.Logger) ui.Deps {
 	return ui.Deps{
 		Addr: addr, Log: log, Reader: c.reader, Hub: c.hub,
-		Rules: uiRules(), Ctx: ctx, Timelines: c.timelines, Digests: c.digests,
+		Rules: uiRules(), Ctx: ctx, Timelines: c.timelines, Digests: c.digests, Views: c.views,
 		AttributionSkew: c.skew,
 	}
 }
@@ -451,6 +452,7 @@ func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, wit
 	var hub *ui.Hub
 	var timelines *ui.TimelineCache
 	var digests *ui.DigestCache
+	var views *ui.ViewCache
 	if withUI {
 		// The store exists now (E2), so the read-only view can open on it.
 		if reader, err = store.OpenReader(dir); err != nil {
@@ -463,7 +465,9 @@ func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, wit
 		}
 		timelines = ui.NewTimelineCache(ctx, log)
 		digests = ui.NewDigestCache(ctx, log)
-		hub = ui.NewHub(ui.Deps{Log: log, Reader: reader, Rules: uiRules(), Timelines: timelines, Digests: digests})
+		views = ui.NewViewCache()
+		hub = ui.NewHub(ui.Deps{Log: log, Reader: reader, Rules: uiRules(), Timelines: timelines, Digests: digests,
+			Views: views, AttributionSkew: e.Attribution.Skew})
 		cfg.OnCommit = hub.Publish
 	}
 	sink := capture.NewSink(cfg, st, log)
@@ -489,7 +493,7 @@ func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, wit
 	}
 	return &captureRun{
 		store: st, sink: sink, hooks: hookSink, budget: core.NewBudget(c.MemoryLimit), maxBodyBytes: c.MaxBodyBytes,
-		reader: reader, hub: hub, timelines: timelines, digests: digests, effects: eff,
+		reader: reader, hub: hub, timelines: timelines, views: views, digests: digests, effects: eff,
 		skew: e.Attribution.Skew,
 	}, exitOK
 }

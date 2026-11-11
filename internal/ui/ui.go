@@ -40,6 +40,9 @@ type Deps struct {
 	// Timelines memoises whole-session timeline builds; nil gets a fresh cache from
 	// Handler and NewHub. The server passes one instance to both.
 	Timelines *TimelineCache
+	// Views memoises session views (spec 016); nil gets a fresh memo from Handler and
+	// NewHub. The server passes one instance to both.
+	Views *ViewCache
 	// AttributionSkew widens each tool call's span when effects are labelled
 	// (effects.attribution.skew, spec 015).
 	AttributionSkew time.Duration
@@ -92,6 +95,9 @@ func newRouter(d Deps, extra ...func(chi.Router)) chi.Router {
 	if d.Timelines == nil {
 		d.Timelines = newTimelineCache(d.Ctx, d.Log, timelineCacheSessions, timelineCacheBytes)
 	}
+	if d.Views == nil {
+		d.Views = NewViewCache()
+	}
 	log := d.Log
 	if log == nil {
 		log = zap.NewNop()
@@ -108,6 +114,7 @@ func newRouter(d Deps, extra ...func(chi.Router)) chi.Router {
 			mountToday(api, d)
 			mountExchanges(api, d)
 			mountEffects(api, d)
+			mountView(api, d)
 		}
 		if d.Hub != nil {
 			mountStreams(api, d)

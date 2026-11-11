@@ -25,11 +25,7 @@ type viewDeps struct {
 // sessionView builds one session's view (spec 016 AC1) from a timeline build: it reads the
 // session's hook rows and effects, labels the effects (spec 015), names the unassigned
 // connections seen while it ran, and hands everything to timeline.BuildView.
-func (vd viewDeps) sessionView(c *store.CtxReader, who sessIdent, bs builtSession, active bool, version string) (timeline.View, error) {
-	hooks, err := c.HookEvents(who.principal, who.client, who.name)
-	if err != nil {
-		return timeline.View{}, err
-	}
+func (vd viewDeps) sessionView(c *store.CtxReader, who sessIdent, bs builtSession, hooks []store.HookRow, active bool, version string) (timeline.View, error) {
 	ident := store.SessionIdent{Principal: who.principal, Client: who.client, Key: who.name}
 	rows, err := c.SessionEffects(ident)
 	if err != nil {
@@ -177,7 +173,6 @@ func BuildView(ctx context.Context, r *store.Reader, s store.SessionRow, rules m
 	if err != nil {
 		return timeline.View{}, err
 	}
-	active := now.Sub(time.Unix(0, lastActivity(bs, hooks))) < ActiveWindow
 	vd := viewDeps{rules: rules, skew: skew}
-	return vd.sessionView(c, who, bs, active, "")
+	return vd.sessionView(c, who, bs, hooks, isActive(lastActivity(bs, hooks), now), "")
 }

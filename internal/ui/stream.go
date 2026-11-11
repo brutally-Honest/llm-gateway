@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
 
 // snapshotRetryMS is the reconnect delay sent with snapshot_error (E22).
@@ -48,6 +50,10 @@ func validResumeInputs(r *http.Request) bool {
 func (h *Hub) serve(w http.ResponseWriter, r *http.Request, session string) {
 	if !validResumeInputs(r) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "Last-Event-ID and since must be non-negative integers")
+		return
+	}
+	if session != "" && r.URL.Query().Get("view") == "1" {
+		h.serveView(w, r, session)
 		return
 	}
 	sub, err := h.subscribe(session)
@@ -263,4 +269,134 @@ func writeRefresh(w http.ResponseWriter, m liveMsg, sent map[string]string) erro
 		clear(sent)
 	}
 	return nil
+}
+
+// viewDebounce is how long a view stream gathers pokes before it rebuilds the view once.
+const viewDebounce = 150 * time.Millisecond
+
+// viewEventJSON is the live view event (spec 016 AC12): the overview, the side calls, the
+// between blocks and the lists whole, and only the turns whose hash changed since this
+// stream last sent them. Order is the number of every turn the view has now, in order, so a
+// client drops any other; Full marks the first event, which carries every turn.
+type viewEventJSON struct {
+	Version   string                `json:"version"`
+	Full      bool                  `json:"full"`
+	Order     []int                 `json:"order"`
+	Turns     []timeline.Turn       `json:"turns"`
+	Overview  timeline.Overview     `json:"overview"`
+	SideCalls []timeline.SideCall   `json:"side_calls"`
+	Between   []timeline.Between    `json:"between"`
+	Files     timeline.FilesList    `json:"files"`
+	Commands  timeline.CommandsList `json:"commands"`
+	Sites     timeline.SitesList    `json:"sites"`
+	Context   timeline.ContextView  `json:"context"`
+}
+
+// serveView runs one session view stream: the whole view on open, then, a debounce after
+// each burst of changes, a view event with the turns that changed. It never reads entries.
+func (h *Hub) serveView(w http.ResponseWriter, r *http.Request, session string) {
+	principal, client, key, _ := parseSessionID(session)
+	who := sessIdent{principal, client, key}
+	sub, err := h.subscribeView(session, true)
+	switch {
+	case errors.Is(err, errTooManyStreams):
+		writeErr(w, http.StatusServiceUnavailable, "too_many_streams", "too many open streams")
+		return
+	case err != nil:
+		writeErr(w, http.StatusServiceUnavailable, "shutting_down", "the gateway is shutting down")
+		return
+	}
+	defer h.unsubscribe(sub)
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	sent := map[int]string{} // turn number -> hash last sent
+	send := func(full bool) error {
+		ctx, cancel := context.WithTimeout(r.Context(), buildTimeout)
+		v, err := h.viewOf(ctx, who)
+		cancel()
+		if err != nil {
+			if r.Context().Err() != nil {
+				return err
+			}
+			code, msg := "store_error", "the store could not be read"
+			if errors.Is(err, context.DeadlineExceeded) {
+				code, msg = "timeout", "the store did not answer in time"
+			}
+			b, _ := json.Marshal(envelope{Error: errBody{Code: code, Message: msg}})
+			_, werr := fmt.Fprintf(w, "retry: %d\nevent: snapshot_error\ndata: %s\n\n", snapshotRetryMS, b)
+			_ = rc.Flush()
+			if werr != nil {
+				return werr
+			}
+			return errViewFailed
+		}
+		b, err := json.Marshal(viewEvent(v, sent, full))
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "event: view\ndata: %s\n\n", b); err != nil {
+			return err
+		}
+		return rc.Flush()
+	}
+	if err := send(true); err != nil {
+		return
+	}
+	if _, err := fmt.Fprint(w, ": open\n\n"); err != nil || rc.Flush() != nil {
+		return
+	}
+	tick := time.NewTicker(h.heartbeat)
+	defer tick.Stop()
+	var fire <-chan time.Time
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-h.done:
+			return
+		case <-sub.gone:
+			return
+		case <-tick.C:
+			if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil || rc.Flush() != nil {
+				return
+			}
+		case <-sub.ch:
+			if fire == nil {
+				fire = time.After(viewDebounce)
+			}
+		case <-fire:
+			fire = nil
+			if err := send(false); err != nil {
+				return
+			}
+		}
+	}
+}
+
+// errViewFailed ends a view stream whose build failed; the browser reopens it.
+var errViewFailed = errors.New("ui: view build failed")
+
+// viewEvent is v as a live event: every turn when full, else only those whose hash
+// differs from what sent holds. sent is updated to what this event carries.
+func viewEvent(v timeline.View, sent map[int]string, full bool) viewEventJSON {
+	ev := viewEventJSON{Version: v.Version, Full: full, Order: make([]int, 0, len(v.Turns)), Turns: []timeline.Turn{},
+		Overview: v.Overview, SideCalls: v.SideCalls, Between: v.Between, Files: v.Files, Commands: v.Commands,
+		Sites: v.Sites, Context: v.Context}
+	have := make(map[int]bool, len(v.Turns))
+	for _, t := range v.Turns {
+		ev.Order = append(ev.Order, t.N)
+		have[t.N] = true
+		if full || sent[t.N] != t.Hash {
+			ev.Turns = append(ev.Turns, t)
+			sent[t.N] = t.Hash
+		}
+	}
+	for n := range sent {
+		if !have[n] {
+			delete(sent, n)
+		}
+	}
+	return ev
 }
