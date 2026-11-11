@@ -1,0 +1,6 @@
+Spec: specs/016-web-ui-v2/spec.md (AC9, AC10)
+Task: T010
+Why this approach: a tab's panel is rebuilt only when its part of the view changed (JSON signature), so live updates keep focus and scroll in the other tabs.
+Bars use transform: scaleY(ctx/peak) rather than a percentage height: the no-percent rule (TestWeb_NoCostOrContextPercent) is lexical, and a CSSOM transform is allowed under style-src 'self'.
+Deviation: the strip/stats/context-line builders the plan removes here were already removed in T009.
+Verified by: make verify green; DOM-stub smoke render of all four tabs, row open, arrow-key tab move, bar scales.
