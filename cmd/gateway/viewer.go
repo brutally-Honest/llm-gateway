@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"flag"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/logging"
 	"github.com/brutally-honest/llm-gateway/internal/store"
 	"github.com/brutally-honest/llm-gateway/internal/timeline"
+	"github.com/brutally-honest/llm-gateway/internal/ui"
 )
 
 // defaultSessionLimit is how many sessions (or ungrouped exchanges) are listed
@@ -27,6 +29,8 @@ type viewer struct {
 	log  *zap.Logger
 	dir  string
 	name string
+	// skew is effects.attribution.skew, for labelling a session view's effects.
+	skew time.Duration
 }
 
 // openViewer loads config and opens the store read-only. On failure it logs one line
@@ -53,7 +57,7 @@ func openViewer(d deps, name, configPath string) (*viewer, int) {
 		log.Error(name+" failed", zap.String("path", dir), zap.String("reason", reason), zap.Error(err))
 		return nil, exitRuntime
 	}
-	return &viewer{r: r, log: log, dir: dir, name: name}, exitOK
+	return &viewer{r: r, log: log, dir: dir, name: name, skew: cfg.Effects.Attribution.Skew}, exitOK
 }
 
 func (v *viewer) fail(reason string, err error) int {
@@ -173,11 +177,12 @@ func runTimeline(d deps) int {
 	last := flags.Bool("last", false, "print the session with the most recent exchange")
 	full := flags.Bool("full", false, "do not cut long entries")
 	asJSON := flags.Bool("json", false, "print JSON lines with times in UTC")
+	entries := flags.Bool("entries", false, "print the flat entry list instead of the session view")
 	switch err := flags.Parse(d.args[1:]); {
 	case errors.Is(err, flag.ErrHelp):
 		boot.Info("usage", zap.Strings("forms", []string{
-			"timeline [-config <path>] [-full] [-json] <session-key>",
-			"timeline [-config <path>] [-full] [-json] -last",
+			"timeline [-config <path>] [-full] [-json] [-entries] <session-key>",
+			"timeline [-config <path>] [-full] [-json] [-entries] -last",
 		}))
 		return exitOK
 	case err != nil:
@@ -220,6 +225,12 @@ func runTimeline(d deps) int {
 	var out bytes.Buffer
 	l := loc(*asJSON)
 	for _, s := range sessions {
+		if !*entries {
+			if err := v.printView(&out, s, len(sessions) > 1, *full, *asJSON, l); err != nil {
+				return v.fail("cannot read store", err)
+			}
+			continue
+		}
 		entries, sum, err := timeline.BuildWithUsage(v.r, s, timeline.Options{Full: *full})
 		if err != nil {
 			return v.fail("cannot read store", err)
@@ -246,4 +257,30 @@ func runTimeline(d deps) int {
 		}
 	}
 	return v.flush(d.stdout, &out)
+}
+
+// printView writes one session's view (spec 016 AC15): as text with the usage totals
+// after it, or with asJSON the view object the UI API returns, one line per session. With
+// several sessions the text gets each one's heading.
+func (v *viewer) printView(out *bytes.Buffer, s store.SessionRow, heading, full, asJSON bool, l *time.Location) error {
+	view, err := ui.BuildView(context.Background(), v.r, s, uiRules(), v.skew, full, time.Now())
+	if err != nil {
+		return err
+	}
+	if asJSON {
+		return timeline.RenderViewJSON(out, view)
+	}
+	if heading {
+		if err := timeline.RenderSessionHeaderText(out, s.Client, s.PrincipalID, s.SessionKey); err != nil {
+			return err
+		}
+	}
+	if err := timeline.RenderViewText(out, view, l); err != nil {
+		return err
+	}
+	_, sum, err := timeline.BuildWithUsage(v.r, s, timeline.Options{})
+	if err != nil {
+		return err
+	}
+	return timeline.RenderUsageText(out, sum)
 }

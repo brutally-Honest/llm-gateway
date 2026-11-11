@@ -164,3 +164,15 @@ no test is retired for any other reason.
   A first run before empty fields were omitted measured 3.16 s cold at 1.54 MB (1.22×), so
   the view's JSON omits empty lists and zero fields. Within the 1.2× budget; paging (Q3 B)
   not needed.
+- 2026-11-11 — `gateway timeline` now prints the session view (T007, Q2 A, D13). Pinned
+  tests changed in the open; each keeps every assertion and only gains `-entries`, because
+  the facts it checks (flat entry order, entry text, `-json` entry and `usage_total` lines)
+  now live behind that flag:
+  `TestTimeline_PrintsSession`, `TestTimeline_LastPrintsTopSession`,
+  `TestTimeline_SameKeyTwoClientsPrintsBoth`, `TestTimeline_JSONFlag` (viewer_test.go);
+  `TestTimelineCmd_PrintsUsageTotals` (its `-json` half), `TestTimelineCmd_JSONSessionHeadersHaveNoUsage`
+  (viewer_usage_test.go); `TestFixture_HeadHelloNotAModelCall` (its `-json` half),
+  `TestFixture_TimelineJSONCarriesSameTotals` (its `-json` half) (viewer_fixture_test.go).
+  The default text keeps the usage totals block after the view, so the text halves of the
+  usage tests pass unchanged. `internal/timeline/render_test.go` needed no change: the flat
+  renderers it pins are unchanged and still used by `-entries`.
