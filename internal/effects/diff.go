@@ -266,3 +266,17 @@ func hunkRange(start, n int) string {
 	}
 	return fmt.Sprintf("%d,%d", start+1, n)
 }
+
+// LineCounts is how many lines the diff from before to after adds and removes, by the same
+// edit script Diff renders, so a line count never disagrees with the diff shown.
+func LineCounts(before, after string) (added, removed int) {
+	for _, o := range editScript(splitLines(before), splitLines(after)) {
+		switch o.kind {
+		case opInsert:
+			added++
+		case opDelete:
+			removed++
+		}
+	}
+	return added, removed
+}

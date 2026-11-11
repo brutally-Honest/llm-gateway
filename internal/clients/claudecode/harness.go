@@ -64,3 +64,17 @@ func (Profile) MapHarness(body []byte) core.HarnessEvent {
 }
 
 var _ core.HarnessMapper = Profile{}
+
+// PromptOf reads the "prompt" field of a UserPromptSubmit payload; ok is false when the
+// payload has none.
+func (Profile) PromptOf(payload []byte) (string, bool) {
+	var v struct {
+		Prompt string `json:"prompt"`
+	}
+	if json.Unmarshal(payload, &v) != nil || v.Prompt == "" {
+		return "", false
+	}
+	return v.Prompt, true
+}
+
+var _ core.PromptReader = Profile{}
