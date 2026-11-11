@@ -1,0 +1,7 @@
+Spec: specs/016-web-ui-v2/spec.md (AC5)
+ADR: docs/decisions/0016-server-built-session-view.md
+Plan: plan.md Design > Core, Claude Code (T001)
+Why this approach: tool names and input shapes stay in the profile; core gets a neutral kind and argument (Decisions for Karthik 1).
+Deviation from plan.md: ToolSummary gains Path (absolute path the call names) beside Arg, so the view can make Grep/Glob folders relative too; plan's single Arg could not.
+Trade-off / known limit: Edit line counts strip common leading/trailing lines only; NotebookEdit has no counts (-1); the view prefers an effect's own counts when one exists.
+Verified by: make verify; covered by T012 view tests
