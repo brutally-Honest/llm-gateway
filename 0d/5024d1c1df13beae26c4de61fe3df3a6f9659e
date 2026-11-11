@@ -1,0 +1,7 @@
+Spec: specs/016-web-ui-v2/spec.md (AC1-AC10, E1-E14)
+Plan: plan.md Design > View (T003, T004, T005 in one commit)
+Research: D5-D12, Q1 (end states running / interrupted / ended by error)
+Deviation from tasks.md: T003-T005 land as one commit; the builder's parts (turns, placement, lists, overview) call each other and splitting them needed throwaway stubs.
+Deviation from plan.md: call facts moved to timeline.CallFacts (ui wraps it); optional core.PromptReader reads a prompt hook's text for hooks-only turns; optional SideCallNamer names side calls; effects.LineCounts gives a change's +/- lines from the same edit script as the diff; store gains SessionEffects and UnassignedConnsBetween (no schema change).
+Trade-off / known limit: a prompt hook is matched to the call turn whose first call starts within 1 s after it; unassigned connections are found by a scan of effects by time (no index on at).
+Verified by: make verify; ran on the seeded session (seed-session.mjs --fast) and checked every turn, line, placement and list against the seed's expectations; tests in T012
