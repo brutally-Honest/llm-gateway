@@ -141,8 +141,8 @@ func (p *viewPrinter) overview(v View) {
 	if o.Commands.LongestMS != nil {
 		cmds += fmt.Sprintf(" (longest %s, %s)", o.Commands.Longest, FormatDuration(o.Commands.LongestMS))
 	}
-	p.line(0, "time %s (model %s · tools %s) · %s · %d read · %s · %s (%s) · context %s",
-		dur(o.Time.ClockMS), dur(o.Time.ModelMS), dur(o.Time.ToolMS), files, o.Files.Read, cmds,
+	p.line(0, "time %s (model %s · tools %s · waiting %s) · %s · %d read · %s · %s (%s) · context %s",
+		dur(o.Time.ClockMS), dur(o.Time.ModelMS), dur(o.Time.ToolMS), dur(o.Time.WaitMS), files, o.Files.Read, cmds,
 		plural(o.Sites.Count, "site", "sites"), plural(o.Sites.Connections, "connection", "connections"), count(o.Context.Last))
 	t := o.Tokens
 	tokens := fmt.Sprintf("tokens: %s input · %s output · %s cache write · %s cache read", count(t.Input), count(t.Output), count(t.CacheWrite), count(t.CacheRead))

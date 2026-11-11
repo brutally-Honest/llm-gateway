@@ -55,14 +55,17 @@ func (b *builder) overview(v *View) {
 		return o.Models[i] < o.Models[j]
 	})
 	o.Calls = len(b.calls)
+	var busy int64 // each turn's model ∪ tool time: its clock less its waiting
 	for _, t := range v.Turns {
 		if t.N > 0 {
 			o.Turns++
 		}
 		o.Time.ModelMS += t.ModelMS
 		o.Time.ToolMS += t.ToolMS
+		busy += t.ClockMS - t.WaitMS
 	}
 	o.Time.ClockMS = ms(max(0, to-from))
+	o.Time.WaitMS = max(0, o.Time.ClockMS-busy)
 
 	o.Files.Changed = len(v.Files.Changed)
 	for _, f := range v.Files.Changed {

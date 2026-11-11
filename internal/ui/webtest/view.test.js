@@ -25,7 +25,7 @@ function fixture() {
   const outside = eff({ id: 4, path: "notes.md", full_path: "/w/notes.md", label: "outside", mark: mark("○", "outside any tool call"), tool: "", where: "between turns 1 and 2", turn: 0 });
   return {
     version: "v1",
-    overview: { title: "Retry fix", title_source: "generated", status: mark("■", "ended"), client: "c", key: "k", models: ["m1"], time: { clock_ms: 9000, model_ms: 5000, tool_ms: 1500 }, files: { changed: 3, added: 2, removed: 1, read: 0 }, commands: { count: 1, longest: "npm test", longest_ms: 1000 }, sites: { count: 1, connections: 1 }, context: { last: 600 }, needs_look: [], tokens: {} },
+    overview: { title: "Retry fix", title_source: "generated", status: mark("■", "ended"), client: "c", key: "k", models: ["m1"], time: { clock_ms: 9000, model_ms: 5000, tool_ms: 1500, wait_ms: 2500 }, files: { changed: 3, added: 2, removed: 1, read: 0 }, commands: { count: 1, longest: "npm test", longest_ms: 1000 }, sites: { count: 1, connections: 1 }, context: { last: 600 }, needs_look: [], tokens: {} },
     side_calls: [{ n: 1, exchange_id: "q", name: "quota probe", at: "2026-11-10T09:59:59Z", dur_ms: 100, status: "ok" }],
     turns: [
       turn(1, {
@@ -88,6 +88,7 @@ test("rendersTurnsTabsAndDialogFromTheView", async () => {
   // turns: heading, times, reminders, pills, steps with their #n links, the answer
   assert.match(story, /Turn 1 .*prompt 1/);
   assert.match(story, /model 4\.0s · tools 1\.4s · waiting 1\.7s/);
+  assert.match(story, /Time 9\.0s model 5\.0s · tools 1\.5s · waiting 2\.5s/, "the Time card splits the clock like a turn header");
   assert.match(story, /\+1 reminder/);
   assert.match(story, /3 tool calls 2 files changed 1 site ✗ 1 failed/);
   const links = withClass(page.el, "call-link").map((a) => a.href);

@@ -117,11 +117,14 @@ type Overview struct {
 	Empty string `json:"empty,omitempty"`
 }
 
-// TimeCard is the session's clock time and its model and tool parts.
+// TimeCard is the session's clock time and its model, tool and waiting parts. Waiting is
+// the clock time no turn spent in a model call or a tool, so the three parts sum to the
+// clock as a turn's do when model and tool time do not overlap.
 type TimeCard struct {
 	ClockMS int64 `json:"clock_ms"`
 	ModelMS int64 `json:"model_ms"`
 	ToolMS  int64 `json:"tool_ms"`
+	WaitMS  int64 `json:"wait_ms"`
 }
 
 // FilesCard counts changed and read files; Added and Removed sum the known line counts.

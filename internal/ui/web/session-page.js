@@ -233,7 +233,7 @@ export function createSessionPage(ctx = {}) {
       kpis.append(k);
     };
     const time = o.time || {};
-    kpi("Time", dur(time.clock_ms ?? 0), el("span", "s", `model ${dur(time.model_ms ?? 0)} · tools ${dur(time.tool_ms ?? 0)}`));
+    kpi("Time", dur(time.clock_ms ?? 0), el("span", "s", `model ${dur(time.model_ms ?? 0)} · tools ${dur(time.tool_ms ?? 0)} · waiting ${dur(time.wait_ms ?? 0)}`));
     const files = o.files || {};
     const fs = el("span", "s");
     fs.append(el("span", "a", `+${files.added ?? 0}`), " ", el("span", "d", `−${files.removed ?? 0}`), ` lines · ${files.read ?? 0} read`);
