@@ -1,0 +1,3 @@
+Spec: specs/016-web-ui-v2/spec.md (AC2, AC15)
+Rule: wait_ms = clock − Σ over turns (turn clock − turn waiting), i.e. the turn rule (wait = clock − model ∪ tool) applied session-wide; gaps between turns and side calls outside turns count as waiting.
+Verified by: TestView_Times pins 13,820 ms and model + tools + waiting = clock; view.test.js pins the card text; mutation probe (busy halved) fails TestView_Times; make verify green.
