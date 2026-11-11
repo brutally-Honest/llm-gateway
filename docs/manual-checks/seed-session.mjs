@@ -337,7 +337,7 @@ async function seed() {
   results(main, [fixRetry, "ok"], [fixApp, "ok"]);
   const c9 = await call(main, [text("Moved makeKey() above the retry loop so every attempt sends the same key, and made app.js pass the order id through. Edit #1 failed because my old_string was out of date; I re-read the file and retried.")]);
   await stop();
-  expect("turn 3", `#${c6} ✗ failed Edit src/payment/retry.js, first error line "String to replace not found in file."; #${c7} ✓ Read; #${c8} ran 2 at once: Edit retry.js (+3 −2) with "● named ~ modified src/payment/retry.js", Edit app.js (+1 −1) with "● named ~ modified src/app.js"; #${c9} answer; 1 failure`);
+  expect("turn 3", `#${c6} ✗ failed Edit src/payment/retry.js, first error line "String to replace not found in file."; #${c7} ✓ Read; #${c8} ran 2 at once: Edit retry.js (+2 −1) with "● named ~ modified src/payment/retry.js", Edit app.js (+1 −1) with "● named ~ modified src/app.js"; #${c9} answer; 1 failure`);
   await pause();
 
   // Turn 4: one command writes three files it does not name: only one running.
