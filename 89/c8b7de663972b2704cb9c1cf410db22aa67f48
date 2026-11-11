@@ -1,0 +1,5 @@
+Spec: specs/016-web-ui-v2/spec.md (AC1–AC10)
+Task: T012
+Fixture: side calls (quota, title), turn 1 (failed command, two edits at once, several-running and harness effects), an outside edit between turns 1 and 2, turn 2 (sub-agent search), turn 3 hooks only. Labels are given by hand as spec 015 would give them, so the test pins the view, not attribution.
+Every expected number was checked by hand against plan.md's rules before pinning (e.g. turn 1 wait = 7.1 − (4.0 + 1.4) = 1.7 s).
+Verified by: mutation probes — wait without busy time, and the between-window rule — each fail TestView_Times / TestView_Placement; make verify green.
