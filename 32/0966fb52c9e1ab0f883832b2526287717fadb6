@@ -1,0 +1,4 @@
+Spec: specs/016-web-ui-v2/spec.md (AC2, AC1)
+Why: the two-word cut was text shaping on the server for one display; the card now cuts by CSS (one-line, ellipsis) and carries the whole command in its title, so nothing is lost on hover.
+Fixture: the hooks-only command is now 'ls -la src/payment' and runs 1.5 s so it is the longest; session clock and waiting move by 1 s accordingly.
+Verified by: TestView_Lists pins the whole command (fails with the old two-word cut — probe); view.test.js pins the card text and title; make verify green.
