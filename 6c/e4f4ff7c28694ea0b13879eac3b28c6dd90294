@@ -1,0 +1,5 @@
+Spec: specs/016-web-ui-v2/spec.md (AC1-AC15, manual)
+Plan: plan.md Seed (T002); Decisions for Karthik 14
+Why this approach: one session from the real paths (stub upstream, hooks, scratch git repo, proxy) so labels come from the real runner, not fixtures.
+Trade-off / known limit: the harness step needs the internet to connect; refused, it is still labelled harness. A pause after turn 8's prompt keeps the between-turns edit outside (without it the commit Bash overlapped the checkpoint window and the edit read only_one).
+Verified by: ran --fast against the current build on a throwaway gateway: 24 calls, labels as printed (named, only_one, several, harness, outside), 2 unassigned connections
