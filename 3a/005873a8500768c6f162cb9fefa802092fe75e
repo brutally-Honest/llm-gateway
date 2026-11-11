@@ -1,0 +1,5 @@
+Spec: specs/016-web-ui-v2/spec.md v2 (AC4, AC13, E1, E2, Constraints)
+Research: specs/016-web-ui-v2/research.md (Q1-Q5 answered, D14, Decisions for Karthik 1-15)
+Why: Karthik approved 016 with these answers on 2026-11-11 (research D14); the kit's front-matter approval fields stay empty, as in 015, since the build runs outside the kit.
+Trade-off: #11 and #15 carry conditions, recorded in plan.md (live by key; retired tests listed with their replacement).
+Verified by: make verify (docs only)
