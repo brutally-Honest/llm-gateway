@@ -1,0 +1,7 @@
+Spec: specs/016-web-ui-v2/spec.md (AC11, AC12, AC13)
+Task: T011
+Why this approach: facts come from the view (findTool walks turns, steps, sub-agents and hook tools); only a tool's input/result and a change's diff/content are fetched, once per key, and redraw in place when they land.
+Live: update() redraws the open item keeping scroll; a tool whose view line changed is fetched again.
+Esc is the native dialog's cancel; the 'close' event returns focus to the opener. showModal is guarded for the DOM stub.
+API: toolJSON gains hook_omitted_bytes (research.md T011 note).
+Verified by: make verify green; DOM-stub smoke of file (diff rows), related tool push, Back, Show in turn (closes, places eff-1, focus returns), site.
