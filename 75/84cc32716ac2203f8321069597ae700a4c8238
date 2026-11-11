@@ -1,0 +1,4 @@
+Task: T016
+Run: ui-check in Chrome on a throwaway gateway; GIF ~/Downloads/016-session-page-2026-11-11.gif.
+Not exercised: #n → drawer in the browser (covered by tests), Lighthouse (extension cannot run it).
+Not recorded as a pass of the kit's manual gate: that is Karthik's call.
