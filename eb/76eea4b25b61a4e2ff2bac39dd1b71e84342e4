@@ -1,0 +1,4 @@
+Spec: specs/016-web-ui-v2/spec.md (AC1, AC11, AC12)
+Task: T013
+Runs on the real store and hub (newStreamEnvRules); GETs go through the listener so the host check sees the real address.
+Verified by: mutation probes — dropping hook_omitted_bytes fails TestViewAPI_ToolDetails; sending every turn on each event fails TestViewStream_SendsChangedTurns; make verify green.
