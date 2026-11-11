@@ -4,7 +4,7 @@ import { byTag, installDom, textOf, withClass } from "./dom-stub.js";
 import { call, item } from "./fixtures.js";
 
 installDom();
-const { createTimelinePage } = await import("../web/timeline-page.js");
+const { createDrawerHost } = await import("./drawer-host.js");
 
 const summary = { id: "s1", client: "c", models: ["m"], first_at: "2026-01-01T00:00:00Z", last_at: "2026-01-01T00:01:00Z", exchange_count: 3, model_calls: 3, main_errors: 0, active: true, usage: {}, tool_states: {} };
 const prompt = (id, text) => item(id, "user_prompt", { role: "user", text });
@@ -13,7 +13,7 @@ const entries = () => [call("a", 1), prompt("a", "one"), call("b", 2, { prev: "a
 function setup(callId = null, es = entries(), loaded = true) {
   const navs = [];
   const nav = { push: (r) => navs.push(["push", r]), replace: (r) => navs.push(["replace", r]), back: () => navs.push(["back"]) };
-  const p = createTimelinePage({ nav });
+  const p = createDrawerHost({ nav });
   const data = { summary, entries: es, error: "", snapshotError: "", callId, loaded };
   p.render(data);
   const drawer = withClass(p.el, "drawer")[0];
@@ -29,7 +29,7 @@ test("opensFromLinkBarAndEnter", () => {
   s.show("a");
   assert.equal(s.drawer.hidden, false);
   assert.match(textOf(s.drawer), /Call #1/);
-  const bar = withClass(s.p.el, "strip-bar")[1];
+  const bar = withClass(s.p.el, "call-link")[1];
   assert.match(bar.href, /#\/sessions\/s1\/call\/b$/);
   bar.fire("click");
   s.show("b");
@@ -74,9 +74,9 @@ test("firstAndLastStepDisabled", () => {
 test("unknownCallShowsNoSuchCallNote", () => {
   const s = setup("zzz");
   assert.equal(s.drawer.hidden, true);
-  assert.match(textOf(s.p.el), /No such call/);
+  assert.equal(s.p.render({ ...s.data, callId: "zzz" }).missing, true); // app.js shows "No such call"
   const early = setup("zzz", [], false);
-  assert.doesNotMatch(textOf(early.p.el), /No such call/);
+  assert.equal(early.p.render({ ...early.data, callId: "zzz" }).missing, false);
 });
 
 test("focusFallsToTurnHeading", () => {
@@ -98,7 +98,7 @@ test("backClosesDrawer", () => {
   assert.deepEqual(s.navs.at(-1), ["replace", { name: "session", id: "s1", call: null }]);
   s.show(null); // the browser's Back lands here too
   assert.equal(s.drawer.hidden, true);
-  assert.equal(s.p.position().total, 1);
+  assert.equal(s.p.position().index, 0);
 });
 
 test("streamDropKeepsDrawer", () => {
@@ -107,7 +107,6 @@ test("streamDropKeepsDrawer", () => {
   s.p.render({ ...s.data, callId: "b", snapshotError: "boom" });
   assert.equal(s.drawer.hidden, false);
   assert.match(textOf(s.drawer), /Call #2/);
-  assert.match(textOf(s.p.el), /Live snapshot failed/);
 });
 
 // ---- drawer sections (T014) ----
@@ -125,7 +124,7 @@ async function open(callId, es, detail) {
   const navs = [];
   const nav = { push() {}, replace() {}, back() {} };
   const loadDetail = typeof detail === "function" ? detail : async () => detail;
-  const p = createTimelinePage({ nav, loadDetail });
+  const p = createDrawerHost({ nav, loadDetail });
   p.render({ summary, entries: es, error: "", snapshotError: "", callId, loaded: true });
   await new Promise((r) => setTimeout(r, 0));
   const drawer = withClass(p.el, "drawer")[0];
@@ -255,14 +254,14 @@ function withHistory(startCall, startStack = [null]) {
     replace: (r) => { hist.stack[hist.stack.length - 1] = r.call; sync(); },
     back: () => { hist.stack.pop(); sync(); },
   };
-  const p = createTimelinePage({ nav });
+  const p = createDrawerHost({ nav });
   const data = { summary, entries: entries(), error: "", snapshotError: "", loaded: true };
   const sync = () => p.render({ ...data, callId: top() });
   sync();
   const drawer = withClass(p.el, "drawer")[0];
   // click a link or bar: the page notes the opener, then the browser follows the href.
   const clickToCall = (node, id) => { node.fire("click"); hist.stack.push(id); sync(); };
-  return { p, hist, top, drawer, clickToCall, bars: () => withClass(p.el, "strip-bar") };
+  return { p, hist, top, drawer, clickToCall, bars: () => withClass(p.el, "call-link") };
 }
 
 test("closeFromInAppOpenLandsOnSessionUrl", () => {

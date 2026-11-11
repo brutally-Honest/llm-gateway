@@ -21,7 +21,7 @@ func (b *builder) renderTurns(v *View) {
 	sort.Ints(afters)
 	v.Between = []Between{}
 	for _, a := range afters {
-		bt := Between{After: a, Text: "Seen " + betweenWhere(a) + ": a change while no tool call was running, most likely your own edit."}
+		bt := Between{After: a, Title: "Seen " + betweenWhere(a), Text: "A change while no tool call was running: most likely your own edit."}
 		for _, e := range b.between[a] {
 			bt.Effects = append(bt.Effects, e.line)
 		}

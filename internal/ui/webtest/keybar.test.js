@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handleKey, isTextInput, keyBar, turnTarget } from "../web/keys.js";
+import { handleKey, isTextInput, keyBar } from "../web/keys.js";
 
 const keys = (bar) => bar.shortcuts.map((s) => `${s.key} ${s.label}`);
 const sessions = { name: "sessions" };
@@ -49,12 +49,4 @@ test("turnKeysMoveAndFindErrors", () => {
   for (const key of ["e", "t", "Enter", "h", "/", "Backspace"]) assert.equal(handleKey(turns, { key }), null, key);
   assert.deepEqual(handleKey(call, { key: "ArrowDown" }), { type: "call", delta: 1 });
   assert.equal(handleKey(call, { key: "t" }), null);
-  const cards = [{ errored: false, tools: [] }, { errored: true, tools: [{}] }, { errored: false, tools: [{}] }, { errored: true, tools: [] }];
-  assert.equal(turnTarget(cards, 0, "error"), 1);
-  assert.equal(turnTarget(cards, 1, "error"), 3);
-  assert.equal(turnTarget(cards, 3, "error"), 1);
-  assert.equal(turnTarget(cards, 0, "tool"), 1);
-  assert.equal(turnTarget(cards, 2, "tool"), 1);
-  assert.equal(turnTarget([{ errored: false, tools: [] }], 0, "error"), -1);
-  assert.equal(turnTarget([], 0, "tool"), -1);
 });

@@ -88,6 +88,7 @@ test("droppedSessionStreamKeepsDrawerAndHistoryAndShowsDisconnected", async (t) 
     assert.equal(drawer.hidden, false, "the drawer stays open");
     assert.match(textOf(drawer), /Call #2/);
     assert.equal(withClass(page, "toc-item").length, 2, "the turns stay");
+    assert.equal(withClass(page, "call-link").length, 2, "each turn's step keeps its call link");
   };
   const first = streams.at(-1);
   assert.equal(first.url, "/api/sessions/s1/stream?view=1");

@@ -43,19 +43,6 @@ export function isTextInput(node) {
   return Boolean(node.isContentEditable);
 }
 
-// turnTarget finds the next turn card after index `from` (wrapping) that has an error
-// (kind "error") or a tool (kind "tool"); -1 when none does. Used by the 013 timeline page
-// until it is removed (spec 016 T009).
-export function turnTarget(cards, from, kind) {
-  const n = cards.length;
-  for (let i = 1; i <= n; i++) {
-    const idx = (from + i + n) % n;
-    const c = cards[idx];
-    if (kind === "error" ? c.errored : c.tools.length > 0) return idx;
-  }
-  return -1;
-}
-
 // handleKey maps a keyboard event ({ key, ctrlKey, metaKey, altKey, inInput }) to an action
 // or null. In a text input only Esc acts: it leaves the input.
 export function handleKey(route, press) {

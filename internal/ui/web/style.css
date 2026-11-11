@@ -243,6 +243,13 @@ ul.effs .linkish code { color: var(--accent); }
 .btwentry h2 { margin: 0; font-size: 14px; font-weight: 700; color: var(--hi); }
 .btwentry p { margin: 0; color: var(--text); font-size: 12.5px; }
 .btwentry ul.effs { margin-left: 0; }
+.reminder-list { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.reminder-list pre { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--panel); color: var(--text); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 16rem; overflow: auto; }
+.btn { all: unset; box-sizing: border-box;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--hi); white-space: nowrap; }
+.btn:hover { background: var(--panel); }
+.btn.sm { font-size: 12px; padding: 3px 9px; border-radius: 6px; }
+.btn:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
 .flash { animation: flash 2.4s ease-out; }
 @keyframes flash { 0%, 35% { background: var(--accent-bg); box-shadow: 0 0 0 2px var(--accent-strong); } 100% { background: transparent; box-shadow: 0 0 0 2px transparent; } }
 

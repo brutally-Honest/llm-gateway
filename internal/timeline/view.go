@@ -302,6 +302,7 @@ type EffectLine struct {
 type Between struct {
 	After   int          `json:"after"`
 	At      string       `json:"at"`
+	Title   string       `json:"title"`
 	Text    string       `json:"text"`
 	Effects []EffectLine `json:"effects,omitempty"`
 }

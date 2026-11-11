@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { filterSessions, filterTurns, toolNames } from "../web/filters.js";
-import { buildTurns } from "../web/model.js";
+import { filterSessions } from "../web/filters.js";
 import { call, item } from "./fixtures.js";
 
 const row = (id, o = {}) => ({ id, title: id, client: "client-x", models: [], main_errors: 0, side_errors: 0,
@@ -40,16 +39,4 @@ test("noMatchNoteWithLoadMore", () => {
   assert.equal(r.rows.length, 0);
   assert.equal(r.note, "no sessions match");
   assert.equal(r.loadMore, true);
-});
-
-test("toolPickerFiltersLoadedTurns", () => {
-  const { cards } = buildTurns([
-    call("a", 1), item("a", "user_prompt", { text: "first" }), item("a", "tool_call", { name: "Bash", tool_call_id: "t1" }),
-    call("b", 2, { prev: "a" }), item("b", "user_prompt", { text: "second" }), item("b", "tool_call", { name: "Read", tool_call_id: "t2" }),
-  ]);
-  assert.deepEqual(toolNames(cards), ["Bash", "Read"]);
-  const f = filterTurns(cards, { tool: "Read" });
-  assert.equal(f.length, 1);
-  assert.equal(f[0].prompt.text, "second");
-  assert.equal(filterTurns(cards, { text: "FIRST" }).length, 1);
 });

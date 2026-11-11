@@ -310,7 +310,7 @@ func (p *viewPrinter) effect(e EffectLine, indent int) {
 
 func (p *viewPrinter) between(b Between) {
 	p.line(0, "")
-	p.line(0, "%s · %s", strings.TrimSuffix(strings.SplitN(b.Text, ":", 2)[0], "."), p.clock(b.At))
+	p.line(0, "%s · %s", b.Title, p.clock(b.At))
 	for _, e := range b.Effects {
 		p.effect(e, 1)
 	}

@@ -220,6 +220,48 @@ web test that now covers the same fact, or the AC that drops the feature.
   every background, digit names read); `web_test.go` `TestWeb_ComponentsCallTheTestedHelpers`
   (wiring of `mergeView` and keyed turns instead of `liveBatch`); `dom-stub.js` (`append`
   turns a string into a text node, as the DOM does).
+- 2026-11-11 — T009 (`feat(ui): render the session story from the server view`). The story
+  renders the view's turns (`web/story.js`); the 013 page and its builders are removed:
+  `web/timeline-page.js`; in `web/model.js` `buildTurns` and its helpers, `railItems`,
+  `hooksLabel`, and — a deviation from plan.md, which put them in T010 — `stripBars`,
+  `buildStats` and `borrowedContext`, because their only caller was the 013 page;
+  `placeEffects`, `countsText`, `toolNumbers` in `web/effects.js`; `filterTurns`, `toolNames`
+  in `web/filters.js`; `toolRowNode` and `section` in `web/tool-card.js`; `turnTarget` in
+  `web/keys.js`; `countText` in `web/entries.js` (no caller left). Retired:
+  - `timeline-page.test.js` (whole file) — the 013 page is gone: the story is AC4–AC8, Go
+    `TestView_Turns`, `TestView_Placement`, `view.test.js` (T014).
+  - `turns.test.js`, `stats.test.js`, `strip.test.js` (whole files) — turns, durations and
+    counts are built on the server: Go `TestView_Turns`, `TestView_Times`; the stats row and
+    strip are replaced by the overview (AC2) and the Context tab's bars (AC10): Go
+    `TestView_Lists`.
+  - `perf.test.js` `twoThousandCallsModelUnderBudget` (whole file) — the browser builds no
+    model: `view.test.js` `twoThousandCallViewRendersUnderBudget`.
+  - `effects.test.js` `placesEffectsInTurns` — placement is on the server (AC6, AC8): Go
+    `TestView_Placement`.
+  - `filters.test.js` `toolPickerFiltersLoadedTurns` — filters over turns are dropped (Q5 A).
+  - `tool-card.test.js` (whole file: hook input, omitted-bytes note, raw link) — the tool row
+    is replaced by the tool line (AC5); the hook input moves to the details dialog (AC11),
+    and these three facts return as dialog tests in T011.
+  - `context.test.js` `contextLineIsAnSvgPolylineWithADotPerCall`,
+    `contextLineKeepsTheNoMainCallsNote` — the page's context line is replaced by the
+    Context tab (AC10): Go `TestView_Lists`; the drawer's plot keeps `drawer.test.js`
+    `contextPartsAndDelta`.
+  - `live.test.js` `liveUpdatesAllViews`, `liveEffectsRedrawOnlyTheChangedRows`,
+    `newHookEventKeepsEarlierTurnsElements` — AC12 replaces 013 AC19 and 014 AC14:
+    `view.test.js` `liveEventReplacesOnlyTheChangedTurn`, Go `TestViewStream_SendsChangedTurns`.
+  - `keybar.test.js`: the `turnTarget` asserts — the `e`/`t` keys were dropped in T008 (Q4 A).
+  - `web_test.go`: the `tool-card.js` and `timeline-page.js` lines of
+    `TestWeb_ServesHarnessBadgeRendering` and `TestWeb_ComponentsCallTheTestedHelpers` — the
+    tool line's state, agent and hook tools are now pinned in `story.js`; the hook-input wiring
+    returns against `dialog.js` in T011.
+  Changed in the open, same facts: `drawer.test.js` and the two drawer tests of `live.test.js`
+  host the drawer in `webtest/drawer-host.js` (call links, a turn heading, `sync`) instead of
+  the 013 page; `strip-bar` clicks became `call-link` clicks; `unknownCallShowsNoSuchCallNote`
+  asserts the drawer's `missing` result (app.js turns it into the note);
+  `streamDropKeepsDrawer` lost only its page-note line (covered by `app.test.js`
+  `droppedSessionStream…`); `backClosesDrawer` checks the closed position instead of the old
+  page's turn count. `app.test.js` `droppedSessionStream…` now also counts the steps' call
+  links. `effects.test.js` `attributionText` builds its tool-number map by hand.
 - 2026-11-11 — Light theme: the mockup's `--ok`/`--add` (#15803d) and `--warn` (#a16207)
   read 4.29–4.49:1 on the panel shades; darkened to #166534 and #854d0e. Probed: restoring
   #a16207 fails `contrast.test.js` (`light: warn on panel is 4.48`).

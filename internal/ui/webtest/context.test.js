@@ -61,25 +61,6 @@ test("plotHasOnePointPerMainCallLeavingOutSideAndSubAgent", () => {
   assert.equal(contextPlot([call("q", 1, { main: false, side: true })]).note, "no main-thread calls to plot");
 });
 
-test("contextLineIsAnSvgPolylineWithADotPerCall", async () => {
-  installDom();
-  const { createTimelinePage } = await import("../web/timeline-page.js");
-  const p = createTimelinePage();
-  const es = [call("a", 1, { usage: u(100, 0, 0) }), call("q", 2, { main: false, side: true }), call("b", 3, { prev: "a", usage: u(300, 0, 0) })];
-  p.render({ summary, entries: es, error: "", snapshotError: "" });
-  const [line] = withClass(p.el, "context-line");
-  const svg = line.children[0].children[0]; // inside the block that sizes it
-  assert.equal(svg.tagName, "svg");
-  assert.equal(svg.attrs.role, "img");
-  assert.match(svg.attrs["aria-label"], /over 2 calls/);
-  const kids = all(svg).filter((e) => e !== svg);
-  assert.equal(kids.filter((e) => e.tagName === "polyline").length, 1);
-  assert.equal(kids.find((e) => e.tagName === "polyline").attrs.points, "20,52 780,8");
-  const dots = kids.filter((e) => e.tagName === "circle");
-  assert.equal(dots.length, 2);
-  assert.match(dots[1].children[0].textContent, /#3 · context 300/);
-});
-
 test("plotFitsItsBlockAndFollowsResize", async () => {
   installDom();
   const { fitContextPlot } = await import("../web/plot.js");
@@ -116,14 +97,4 @@ test("plotFitsItsBlockAndFollowsResize", async () => {
   } finally {
     delete globalThis.ResizeObserver;
   }
-});
-
-test("contextLineKeepsTheNoMainCallsNote", async () => {
-  installDom();
-  const { createTimelinePage } = await import("../web/timeline-page.js");
-  const p = createTimelinePage();
-  p.render({ summary, entries: [call("q", 1, { main: false, side: true })], error: "", snapshotError: "" });
-  const [line] = withClass(p.el, "context-line");
-  assert.equal(all(line).filter((e) => e.tagName === "svg").length, 0);
-  assert.match(line.children[0].textContent, /no main-thread calls to plot/);
 });
