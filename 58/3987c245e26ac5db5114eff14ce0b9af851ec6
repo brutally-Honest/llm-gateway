@@ -1,0 +1,7 @@
+Spec: specs/016-web-ui-v2/spec.md (AC1, AC11 data, AC12, Constraints)
+Plan: plan.md API, Live (T006); Decisions for Karthik 11 (as answered)
+Research: Q3 A; Notes 2026-11-11 (cost: cold ~1.0x of /timeline, warm 6-11 ms vs 10-12 ms)
+Why this approach: a view stream is poked by the hub on every exchange, hook or effects event, waits 150 ms for the burst to settle, rebuilds the view once (memoised, from a fresh build) and sends only changed turns by hash; the hub never reads entries for a view-only stream.
+Deviation from plan.md: the view event carries 'order' (every turn's number) instead of a turn count, so the browser drops any turn not in it; view streams are a ?view=1 mode of the session stream, and the 013 exchange events stay on the plain stream for the drawer.
+Trade-off / known limit: the view JSON omits empty lists and zero fields to stay within the 1.2x cost budget; the browser defaults them.
+Verified by: make verify; curl on the seeded session (view, tool details, stream); 2,000-call measurements in research.md; tests in T013
