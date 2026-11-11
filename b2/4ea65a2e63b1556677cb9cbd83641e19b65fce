@@ -1,0 +1,5 @@
+Spec: specs/016-web-ui-v2/spec.md (AC1, AC3, AC11, AC12)
+Task: T014
+Restores the three retired tool-card.test.js facts (hook input shown when it differs, its own omitted-bytes note, no raw link on it while the cut input keeps one), as research.md T011 promised.
+twoThousandCallViewRendersUnderBudget runs under the DOM stub (~140 ms); the browser figure is measured in the manual check (T016).
+Verified by: mutation probes — rebuilding every turn on a live event fails liveEventReplacesOnlyTheChangedTurn; dropping the omitted-bytes note fails rendersTurnsTabsAndDialogFromTheView; make verify green.
