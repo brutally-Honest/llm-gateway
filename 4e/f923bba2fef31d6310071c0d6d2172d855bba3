@@ -1,0 +1,6 @@
+Spec: specs/016-web-ui-v2/spec.md (AC2, AC3, AC12, AC13, AC14)
+Plan: plan.md Web (T008); research Q4 A, Decisions for Karthik 9, 11, 15
+Why this approach: the page renders the view and computes nothing; a live event merges by turn number (mergeView) and only turns whose hash changed get a new node.
+Retired/changed tests: research.md 'Retired and changed tests', T008 entry (same commit as the removed code).
+Deviation from plan.md: the drawer keeps flat entries but loads them only when a call opens, and reloads them after a view event while open; story, side card and dialog are placeholders until T009-T011; light ok/add/warn darkened for 4.5:1.
+Verified by: make verify; contrast probe (mockup warn fails)
