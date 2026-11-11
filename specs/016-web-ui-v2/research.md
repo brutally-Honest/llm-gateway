@@ -270,6 +270,36 @@ web test that now covers the same fact, or the AC that drops the feature.
   wired in `dialog.js` (`web_test.go` pins `hookInputEntry(det)`,
   `omittedNote(det.hook_omitted_bytes)`), and `view.test.js` (T014) renders them; the hook
   input still has no raw link, the input and result keep theirs.
+- 2026-11-11 — T016: `docs/manual-checks/016-session-page.md` run with the `ui-check` skill in
+  Chrome (1,440 × 900, then 1,000 × 800), Karthik watching, on a throwaway gateway (ports
+  17195–17199, stub upstream) seeded with `seed-session.mjs --fast`. GIF:
+  `~/Downloads/016-session-page-2026-11-11.gif`. Expected against seen:
+  | step | expected | seen | match |
+  |---|---|---|---|
+  | 3 layout | three columns, only the story scrolls; one page ~1,000 px | three columns, story scrolls alone; at 1,000 px two columns, turn list sticky | yes |
+  | 4–5 overview | generated title, meta, five cards opening tabs | "Fix flaky checkout tests", folder, model, client; Time 25s, Files 9 (+18 −4, 2 read), Commands 6, Sites 2, Context 7,308 | yes |
+  | 6 needs a look | failed Edit, errored #16, between edit, several, hooks-only turn 8, unmatched command | all six, each with Open / Show in turn | yes |
+  | 7 tokens, side calls | quiet "N side calls", not red | "2 side calls": #1 quota probe 429, #4 title generation ok, grey | yes |
+  | 8 turn list | 8 turns + 1 between entry; last turn selectable | 9 entries; clicking turn 8 marks it although it cannot reach the top | yes |
+  | 9–12 turns 1–8 | each turn as the seed printed it | every printed line matched (steps, tool lines, labels, several group, 500 in red as a word, sub-agent block, harness "during #22 Bash", between block, hooks-only turn 8). Turn 1's `npm test` read 0.6 s, not the seed's "~2.4s": `--fast` caps tool time; the seed's line is corrected to follow `--fast` | yes |
+  | 13 `#n` opens the drawer | drawer for the call | not exercised in this run (covered by `app.test.js` `droppedSessionStream…` and `drawer.test.js`) | NOT EXERCISED |
+  | 14 tabs | files grouped, reads and searches apart; commands in order; sites with unassigned link; context facts, bars, rows | as expected; unassigned link → `#/effects/unassigned` | yes |
+  | 15 tablist keys | arrows move, roving tabindex | ArrowRight moved Files → Commands → Sites → Context; only the selected tab has tabindex 0 | yes |
+  | 16 dialog | one shape for file, command, tool, site; Back; Show in turn; Esc returns focus | all four; related tool link then Back; "Show in turn 3" closed, scrolled, highlighted, marked turn 3; Esc returned focus to the Diff button | yes |
+  | 16 (found) | — | `dialog.close()` then an immediate open (same task) stacked on the closed item: fixed in `fix(ui): start the details dialog afresh…` with a test | fixed |
+  | 17 live | new turns without reload; follows at bottom; holds scroll when up; dialog stays | `--live`: 7 → 10 turns, followed the bottom; scrolled up 11 → 13 turns, scrollTop stayed 400; an open tool dialog stayed on `$ npm test` | yes |
+  | 18 earlier turns kept | earlier `<article>` not re-created | turn 1 the same element after new turns; its opened "+1 reminder" stayed open | yes |
+  | 19 keys | Tab/Enter; `j`/`k` | `j` moved the mark 2 → 3, `k k` 3 → 1 | yes |
+  | 20 theme | dark default; light kept on reload | dark first; Light, then a real reload: light | yes |
+  | 21 contrast | every pair ≥ 4.5:1 both themes | in-page snippet: dark 474 text nodes, min 6.24:1 (519 with a file dialog open, min 6.24); light 474, min 5.90:1 (519 with a file dialog, min 5.90; tool dialog 30 nodes, min 6.29); none below 4.5. Lighthouse not run (not reachable from the extension) | yes (snippet); Lighthouse NOT EXERCISED |
+  | 22 CLI | text and `-json` match the page and `/view` | text matched the seed's lines; `-json` equals `/view` in every field except `version` (CLI `""`, API the cache build key) | yes, `version` differs |
+  | 23 2,000 calls ≤ 2 s | | warm reload: 200 turns, 2,000 `#n` links drawn by 586 ms after navigation start (`/view` answered at 67 ms). Cold first open: `/view` 2.31 s (1.3 MB, the server build measured in T006) then drawn ≤ 0.38 s after it, ≈ 2.7 s in all | warm yes; cold over by the server build |
+  Open for Karthik: (a) a command's tool line sums the line counts of the changes labelled to it
+  (turn 4 `Bash … +7 −1`); the mockup shows counts on Edit/Write only — keep or drop? (b) the
+  CLI's `-json` sends `version: ""` where the API sends its build key — AC15 says "the same
+  view object"; fill it in the CLI or accept? (c) the cold 2,000-call open is ≈ 2.7 s, of which
+  2.3 s is the server build (within the 1.2× budget of T006); the browser render alone is
+  ≤ 0.6 s.
 - 2026-11-11 — Light theme: the mockup's `--ok`/`--add` (#15803d) and `--warn` (#a16207)
   read 4.29–4.49:1 on the panel shades; darkened to #166534 and #854d0e. Probed: restoring
   #a16207 fails `contrast.test.js` (`light: warn on panel is 4.48`).
