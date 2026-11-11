@@ -1,0 +1,3 @@
+Spec: specs/016-web-ui-v2/spec.md (AC11)
+Found by: the T016 browser check (dialog.close() then an immediate row click left a stale Back arrow and, in one case, no dialog shown).
+Verified by: view.test.js rendersTurnsTabsAndDialogFromTheView gains the case; it fails without the fix (probe), make verify green.
