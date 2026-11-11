@@ -262,6 +262,14 @@ web test that now covers the same fact, or the AC that drops the feature.
   `droppedSessionStream…`); `backClosesDrawer` checks the closed position instead of the old
   page's turn count. `app.test.js` `droppedSessionStream…` now also counts the steps' call
   links. `effects.test.js` `attributionText` builds its tool-number map by hand.
+- 2026-11-11 — T011 (`feat(ui): open session details in one dialog shape`). The dialog
+  needs the hook input's own cut (the old tool row read `hook_omitted_bytes` from the
+  timeline entry), so `GET /api/sessions/{id}/tools/{tid}` gains `hook_omitted_bytes`
+  (omitted when 0); `TestViewAPI_ToolDetails` (T013) pins it. The three retired
+  `tool-card.test.js` facts return: the hook-input section and its omitted-bytes note are
+  wired in `dialog.js` (`web_test.go` pins `hookInputEntry(det)`,
+  `omittedNote(det.hook_omitted_bytes)`), and `view.test.js` (T014) renders them; the hook
+  input still has no raw link, the input and result keep theirs.
 - 2026-11-11 — Light theme: the mockup's `--ok`/`--add` (#15803d) and `--warn` (#a16207)
   read 4.29–4.49:1 on the panel shades; darkened to #166534 and #854d0e. Probed: restoring
   #a16207 fails `contrast.test.js` (`light: warn on panel is 4.48`).

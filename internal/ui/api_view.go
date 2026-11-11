@@ -183,6 +183,7 @@ type toolJSON struct {
 	Chip            string         `json:"chip"`
 	InputDiffers    bool           `json:"input_differs,omitempty"`
 	HookInput       string         `json:"hook_input,omitempty"`
+	HookOmitted     int            `json:"hook_omitted_bytes,omitempty"`
 	Hooks           []hookLineJSON `json:"hooks"`
 }
 
@@ -227,7 +228,7 @@ func (d Deps) getTool(w http.ResponseWriter, r *http.Request) {
 			found = true
 			out.Name, out.ExchangeID, out.Input, out.InputTruncated = e.Name, e.RequestID, e.Text, e.Omitted > 0
 			out.State, out.Reason, out.Outcome, out.Chip = e.State, e.Reason, e.Outcome, e.Chip
-			out.InputDiffers, out.HookInput = e.InputDiffers, e.HookInput
+			out.InputDiffers, out.HookInput, out.HookOmitted = e.InputDiffers, e.HookInput, e.HookOmitted
 		case timeline.KindToolResult:
 			if out.Result == nil {
 				text := e.Text

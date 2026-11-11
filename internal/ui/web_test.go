@@ -164,11 +164,13 @@ func TestWeb_NoHTMLInjectionSinks(t *testing.T) {
 // TestWeb_ServesHarnessBadgeRendering: the tool line shows its state and agent label, the
 // story renders the tools only hooks saw and says when no model call was captured, and
 // the sessions list shows the hooks-only label. All text goes through textContent (no HTML
-// sinks, tested above). The hook input returns with the details dialog (spec 016 T011).
+// sinks, tested above). The details dialog shows the hook input when it differs, with its
+// own omitted-bytes note.
 func TestWeb_ServesHarnessBadgeRendering(t *testing.T) {
 	files := webFiles(t)
 	want := map[string][]string{
 		"story.js":         {"markText(l.state, ok)", "l.agent", "t.hook_tools", "No model calls captured. The hooks saw:"},
+		"dialog.js":        {"det.input_differs", "det.hook_input", "det.hook_omitted_bytes", "det.hooks"},
 		"model.js":         {"agentLabel(e)", "export function chipOf"},
 		"sessions-page.js": {"hooks_only", "hooks only"},
 	}
