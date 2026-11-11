@@ -1,0 +1,7 @@
+Spec: specs/016-web-ui-v2/spec.md (AC4, AC5, AC6, AC7, AC8)
+Task: T009
+Why this approach: story.js only lays out the view (no counting or placement in the browser, AC1); effect controls open the dialog by target (file = full path, site = host, search = tool id), #n and 'Read the thinking' link to the 013 drawer until 017.
+Deviation: stripBars, buildStats, borrowedContext removed here, not T010 (their only caller was the removed page). Between gains a Title field; Text is now the sentence.
+Drawer tests now host the drawer in webtest/drawer-host.js instead of the old page.
+Hook-input wiring expectations leave web_test.go until dialog.js (T011).
+Verified by: make verify green; DOM-stub smoke render of every line shape (steps, failed/unmatched tools, sub-agent, several, loose with during, between, hooks-only).
