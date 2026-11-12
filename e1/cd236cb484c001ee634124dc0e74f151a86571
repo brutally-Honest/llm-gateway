@@ -1,0 +1,4 @@
+Spec: specs/016-web-ui-v2/spec.md (AC2, AC15)
+Found by: Karthik — 6e680d9 counted gaps between turns as waiting, so time spent reading or away read as waiting.
+Rule: wait_ms = Σ turn wait_ms (turn rule: clock − model ∪ tool); between_ms = session clock − Σ turn clock_ms, floored at 0. Turn headers unchanged.
+Verified by: TestView_Times pins waiting 2,220 ms, between 12,600 ms and the four summing to 21,800 ms; TestView_TimeLineText pins the CLI line; view.test.js pins the card text; with the code reverted all three fail; make verify green.
