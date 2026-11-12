@@ -317,3 +317,17 @@ web test that now covers the same fact, or the AC that drops the feature.
 - 2026-11-11 — Light theme: the mockup's `--ok`/`--add` (#15803d) and `--warn` (#a16207)
   read 4.29–4.49:1 on the panel shades; darkened to #166534 and #854d0e. Probed: restoring
   #a16207 fails `contrast.test.js` (`light: warn on panel is 4.48`).
+- 2026-11-12 — Time card split (asked by Karthik before the browser look). `6e680d9` counted
+  every second outside a turn's model and tool time as waiting, gaps between turns included
+  (21.8 s = 5.5 + 1.48 + 14.82 in `TestView_Times`), so idle time between prompts read as
+  waiting. Waiting and between turns are now two parts: **waiting** is the sum of the turn
+  headers' waiting (inside turns, the same rule: turn clock − model ∪ tool), **between turns**
+  is the session clock that no turn covers (before the first prompt, from one turn's end to
+  the next prompt, after the last; side calls and hooks-only turns fall here, as they have no
+  turn clock). The Time card and `gateway timeline`'s overview read `model · tools · waiting
+  · between turns`; the view gains `time.between_ms`. The fixture now reads 21.8 s = 5.5 +
+  1.48 + 2.22 + 12.6. Turn headers are unchanged. The four sum to the clock as a turn's three
+  do: exactly when model and tool time do not overlap inside a turn (a model call running
+  while a non-Agent tool runs would be counted in both). Pinned by `TestView_Times`,
+  `TestView_TimeLineText` (CLI line) and `view.test.js` (card text); each fails without the
+  change.

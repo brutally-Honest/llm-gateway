@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brutally-honest/llm-gateway/internal/core"
 	"github.com/brutally-honest/llm-gateway/internal/store"
@@ -395,10 +396,25 @@ func TestView_Times(t *testing.T) {
 	eq(t, "session clock", v.Overview.Time.ClockMS, int64(21800))
 	eq(t, "session model", v.Overview.Time.ModelMS, int64(5500))
 	eq(t, "session tools", v.Overview.Time.ToolMS, int64(1480))
-	// waiting is the clock less each turn's busy time: 21.8 − (5.4 + 1.58) = 14.82 s, so
-	// model + tools + waiting is the clock, as in a turn's header
-	eq(t, "session waiting", v.Overview.Time.WaitMS, int64(14820))
-	eq(t, "session parts sum to the clock", v.Overview.Time.ModelMS+v.Overview.Time.ToolMS+v.Overview.Time.WaitMS, v.Overview.Time.ClockMS)
+	// waiting is inside turns, the turn headers' sum: 1.7 + 0.52 = 2.22 s; between turns is
+	// the clock no turn covers: 21.8 − (7.1 + 2.1) = 12.6 s; the four parts sum to the clock
+	tc := v.Overview.Time
+	eq(t, "session waiting", tc.WaitMS, int64(2220))
+	eq(t, "session between turns", tc.BetweenMS, int64(12600))
+	eq(t, "session parts sum to the clock", tc.ModelMS+tc.ToolMS+tc.WaitMS+tc.BetweenMS, tc.ClockMS)
+}
+
+// AC15: gateway timeline's overview line reads the Time card's four parts.
+func TestView_TimeLineText(t *testing.T) {
+	v := seedFixture(true).view(t, true)
+	var out strings.Builder
+	if err := timeline.RenderViewText(&out, v, time.UTC); err != nil {
+		t.Fatal(err)
+	}
+	want := "time 22s (model 5.5s · tools 1.5s · waiting 2.2s · between turns 13s)"
+	if !strings.Contains(out.String(), want) {
+		t.Errorf("overview lacks %q:\n%s", want, out.String())
+	}
 }
 
 // AC6, AC8: a labelled effect under its tool; several after the step of its candidates;
