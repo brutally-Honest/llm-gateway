@@ -2,7 +2,9 @@ import { button, bytes, clock, dur, el, markText, plural } from "./fmt.js";
 
 // The story's turn cards (spec 016 AC4–AC8). Every fact comes from the server's view:
 // these functions only lay it out. ctx: { open(target, opener), callHref(exchangeId),
-// noteOpener(node) }.
+// noteOpener(node), isOpen(key), setOpen(key, open) }. A turn shows its prompt and its
+// final answer; the steps between sit in a stepper, one line each, folded until opened
+// (research 2026-11-13); isOpen and setOpen keep what was opened across live redraws.
 
 const run = (ctx, target, opener) => {
   if (ctx && ctx.open) ctx.open(target, opener);
@@ -120,6 +122,41 @@ export function toolNode(l, ctx) {
   return li;
 }
 
+// folds maps a folded body to the function that opens it, so reveal can open the folds
+// around any node it is asked to show.
+const folds = new WeakMap();
+
+// foldToggle is a stepper item's header button and its body: the button folds and
+// unfolds the body. key names the fold for ctx.isOpen and ctx.setOpen; the body starts
+// open only when the user opened it before.
+function foldToggle(ctx, key, id) {
+  const body = el("div", "fold-body");
+  body.id = id;
+  const set = (open, remember = true) => {
+    body.hidden = !open;
+    toggle.setAttribute("aria-expanded", String(open));
+    if (remember && ctx && ctx.setOpen) ctx.setOpen(key, open);
+  };
+  const toggle = button("fold", undefined, () => set(body.hidden));
+  toggle.setAttribute("aria-controls", id);
+  folds.set(body, () => set(true));
+  set(Boolean(ctx && ctx.isOpen && ctx.isOpen(key)), false);
+  return { toggle, body };
+}
+
+// reveal opens every fold around node, so a row the page scrolls to is visible.
+export function reveal(node) {
+  for (let n = node; n; n = n.parentNode) {
+    const open = folds.get(n);
+    if (open && n.hidden) open();
+  }
+}
+
+// peek is a folded step's tools in one line: state glyph, name and summary of each.
+function peek(tools) {
+  return tools.map((l) => [l.state && l.state.glyph, l.name, l.summary].filter(Boolean).join(" ")).join(" · ");
+}
+
 function toolList(list, ctx) {
   const ul = el("ul", "tools");
   for (const l of list) ul.append(toolNode(l, ctx));
@@ -131,24 +168,50 @@ const capital = (s) => (s ? s[0].toUpperCase() + s.slice(1) : "");
 // stepNode is one model call (AC7): #n, what it did and for how long, how many tools it
 // ran at once; an errored call's status in red; thinking behind a control.
 export function stepNode(s, ctx) {
-  const li = el("li", "step");
+  const li = el("li", `step${s.errored || (s.tools || []).some((l) => l.chip === "failed") ? " bad" : ""}`);
   const say = el("div", "say");
   say.append(callLink(ctx, s.exchange_id, `#${s.n}`, "linkish cn call-link"));
-  const n = (s.tools || []).length;
+  const tools = s.tools || [];
+  const n = tools.length;
   const then = n === 0 ? "" : n === 1 ? ", then ran:" : `, then ran ${n} at once:`;
+  const what = el("span");
   if (s.errored) {
-    say.append(el("span", "err-word", `✗ ${s.status || "failed"}`), el("span", "", `after ${dur(s.dur_ms)}${then}`));
+    what.append(el("span", "err-word", `✗ ${s.status || "failed"}`), ` after ${dur(s.dur_ms)}${then}`);
   } else {
-    say.append(el("span", "", `${capital(s.did)} for ${dur(s.dur_ms)}${then}`));
+    what.textContent = `${capital(s.did)} for ${dur(s.dur_ms)}${then}`;
   }
+  const several = s.several || [];
+  if (!n && !several.length) {
+    say.append(what);
+    if (s.thinking) say.append(callLink(ctx, s.exchange_id, "Read the thinking", "linkish"));
+    li.append(say);
+    return li;
+  }
+  const { toggle, body } = foldToggle(ctx, `step:${s.exchange_id}`, `steps-${s.exchange_id}`);
+  toggle.append(el("span", "chev", "▸"), what);
+  if (n) toggle.append(el("span", `peek${tools.some((l) => l.chip === "failed") ? " bad" : ""}`, peek(tools)));
+  say.append(toggle);
   if (s.thinking) say.append(callLink(ctx, s.exchange_id, "Read the thinking", "linkish"));
-  li.append(say);
-  if (n) li.append(toolList(s.tools, ctx));
-  if ((s.several || []).length) {
+  if (n) body.append(toolList(tools, ctx));
+  if (several.length) {
     const g = el("p", "grp", `◌ Not pinned to one tool call: ${(s.several_names || []).join(" and ")} ran together`);
     g.id = `several-${s.exchange_id}`;
-    li.append(g, effectList(s.several, ctx));
+    body.append(g, effectList(several, ctx));
   }
+  li.append(say, body);
+  return li;
+}
+
+// foldItem is a stepper item that is not a model call: the hooks' tool calls of a turn,
+// or the effects no tool call caused. Its line says what it holds; its body is folded.
+function foldItem(ctx, key, title, content, cls = "") {
+  const li = el("li", `step ${cls}`.trim());
+  const say = el("div", "say");
+  const { toggle, body } = foldToggle(ctx, key, `fold-${key.replace(/[^\w-]/g, "-")}`);
+  toggle.append(el("span", "chev", "▸"), el("span", "", title));
+  say.append(toggle);
+  body.append(...content);
+  li.append(say, body);
   return li;
 }
 
@@ -207,20 +270,16 @@ export function turnNode(t, ctx) {
   pills(t.counts || {}, sum);
   if (sum.children.length) body.append(sum);
   const hookTools = t.hook_tools || [];
+  const ol = el("ol", "steps");
   if (t.hooks_only) {
-    const ol = el("ol", "steps");
-    const li = el("li", "step");
-    li.append(el("div", "say", "No model calls captured. The hooks saw:"));
-    if (hookTools.length) li.append(toolList(hookTools, ctx));
-    ol.append(li);
-    body.append(ol);
+    ol.append(foldItem(ctx, `hooks:${t.n}`, `No model calls captured. The hooks saw: ${plural(hookTools.length, "tool call")}`, [toolList(hookTools, ctx)]));
   } else {
-    const ol = el("ol", "steps");
     for (const s of t.steps || []) ol.append(stepNode(s, ctx));
-    body.append(ol);
-    if (hookTools.length) body.append(el("p", "grp", "Seen by hooks only"), toolList(hookTools, ctx));
+    if (hookTools.length) ol.append(foldItem(ctx, `hooks:${t.n}`, `Seen by hooks only: ${plural(hookTools.length, "tool call")}`, [toolList(hookTools, ctx)]));
   }
-  if ((t.loose || []).length) body.append(el("p", "grp", "○ Not caused by a tool call"), effectList(t.loose, ctx));
+  const loose = t.loose || [];
+  if (loose.length) ol.append(foldItem(ctx, `loose:${t.n}`, `○ Not caused by a tool call: ${plural(loose.length, "effect")}`, [effectList(loose, ctx)], "loose"));
+  if (ol.children.length) body.append(ol);
   if (t.answer) {
     const a = el("div", "answer");
     a.append(el("span", "who", "Final answer"), t.answer);

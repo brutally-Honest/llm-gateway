@@ -1,7 +1,7 @@
 import { button, clock, dur, el, num, plural } from "./fmt.js";
 import { createDialog } from "./dialog.js";
 import { createSideCard } from "./side-card.js";
-import { betweenNode, turnNode } from "./story.js";
+import { betweenNode, reveal, turnNode } from "./story.js";
 
 // The session page (spec 016): the turn list on the left, the story in the middle, the
 // session's files, commands, sites and context on the right, one details dialog. It
@@ -61,6 +61,7 @@ export function createSessionPage(ctx = {}) {
   let pinned = false; // a selected entry stays current until the user scrolls by hand
   const turnEls = new Map(); // turn number -> { hash, node }
   const btwEls = new Map(); // after -> { sig, node }
+  const opened = new Set(); // the story's folds the user opened, kept across redraws
   let entries = []; // the turn list's entries: { id, button }
 
   const page = {
@@ -77,6 +78,7 @@ export function createSessionPage(ctx = {}) {
     if (!target) return false;
     const section = typeof target.closest === "function" ? target.closest(".turn, .btwentry") : null;
     if (section) setCurrentById(section.id, true);
+    reveal(target);
     if (typeof target.scrollIntoView === "function") target.scrollIntoView({ block: target === section ? "start" : "center" });
     if (flash && target.classList) {
       const mark = target === section ? target.querySelector(".th, h2") || target : target;
@@ -123,7 +125,13 @@ export function createSessionPage(ctx = {}) {
       default:
     }
   }
-  const storyCtx = { open, callHref: ctx.callHref, noteOpener: ctx.noteOpener };
+  const storyCtx = {
+    open,
+    callHref: ctx.callHref,
+    noteOpener: ctx.noteOpener,
+    isOpen: (key) => opened.has(key),
+    setOpen: (key, open) => (open ? opened.add(key) : opened.delete(key)),
+  };
 
   function setCurrentById(id, pin) {
     const i = entries.findIndex((e) => e.id === id);

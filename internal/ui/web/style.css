@@ -210,7 +210,23 @@ details.side ul { list-style: none; margin: 6px 0 2px; padding: 0; display: flex
 .sum { display: flex; flex-wrap: wrap; gap: 6px; }
 .pill { font-size: 12px; font-weight: 600; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 1px 9px; }
 .pill.bad { color: var(--bad); background: var(--bad-bg); }
-ol.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+/* the steps between the prompt and the answer: a stepper, one folded line per step */
+ol.steps { position: relative; list-style: none; margin: 0; padding: 0 0 0 20px; display: flex; flex-direction: column; gap: 8px; }
+ol.steps::before { content: ""; position: absolute; left: 5px; top: 8px; bottom: 8px; width: 2px; background: var(--border); }
+li.step { position: relative; min-width: 0; }
+li.step::before { content: ""; position: absolute; left: -20px; top: 5px; width: 12px; height: 12px; box-sizing: border-box; border-radius: 50%; background: var(--card); border: 2px solid var(--model); }
+li.step.bad::before { border-color: var(--bad); }
+li.step.loose::before { border-color: var(--muted); border-style: dashed; }
+.fold { all: unset; box-sizing: border-box;
+  cursor: pointer; flex: 1 1 12rem; min-width: 0; display: inline-flex; gap: 6px; align-items: baseline; border-radius: 6px; color: var(--muted); }
+.fold:hover { color: var(--text); }
+.fold:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+.fold .chev { flex: none; display: inline-block; font-size: 11px; transition: transform .15s; }
+.fold[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.fold > span:nth-child(2) { flex: none; }
+.fold .peek { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: 12px; color: var(--text); }
+.fold .peek.bad { color: var(--bad); }
+.fold-body { margin-top: 2px; }
 .say { font-size: 13px; color: var(--muted); display: flex; gap: 6px; flex-wrap: wrap; align-items: baseline; }
 .say .err-word { color: var(--bad); font-weight: 700; }
 .cn { font-weight: 700; color: var(--model); }

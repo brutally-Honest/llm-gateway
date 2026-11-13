@@ -231,6 +231,60 @@ test("twoThousandCallViewRendersUnderBudget", () => {
   assert.ok(took < 2000, `rendering 2,000 calls took ${Math.round(took)} ms`);
 });
 
+// shown is true when no node from n up to the page is hidden.
+function shown(n) {
+  for (; n; n = n.parentNode) if (n.hidden) return false;
+  return true;
+}
+
+// A turn shows its prompt and its answer; every step between is one line in a stepper,
+// folded until opened, and stays as the user left it across a live redraw (research
+// 2026-11-13, Karthik's feedback).
+test("stepsAreFoldedBetweenPromptAndAnswer", () => {
+  const { page } = mount();
+  const t1 = byId(page.el, "turn-1");
+  assert.ok(shown(byId(t1, "h-1")), "the prompt is shown");
+  assert.ok(shown(withClass(t1, "answer")[0]), "the answer is shown");
+  const body = byId(t1, "steps-e3");
+  assert.equal(body.hidden, true, "a step's tool lines start folded");
+  assert.equal(shown(byId(t1, "tool-t1")), false);
+  const toggle = withClass(t1, "fold").find((b) => b.attrs["aria-controls"] === "steps-e3");
+  assert.equal(toggle.attrs["aria-expanded"], "false");
+  assert.match(textOf(toggle).replace(/\s+/g, " "), /Thought|Wrote|wrote/i);
+  assert.match(textOf(toggle), /✗ Bash npm test/, "the folded line names its tools");
+  assert.equal(withClass(t1, "call-link").length, 3, "every step keeps its #n in the stepper");
+  assert.equal(byId(t1, "steps-e5"), undefined, "a step with nothing under it has no fold");
+  assert.ok(body.parentNode.className.split(" ").includes("bad"), "a step whose tool failed is marked on the stepper");
+  assert.ok(!byId(t1, "steps-e4").parentNode.className.split(" ").includes("bad"));
+  const loose = withClass(t1, "fold").find((b) => /Not caused by a tool call/.test(textOf(b)));
+  assert.equal(loose.attrs["aria-expanded"], "false", "the effects no tool call caused are folded too");
+  assert.equal(shown(byId(t1, "eff-3")), false);
+
+  toggle.fire("click");
+  assert.equal(body.hidden, false);
+  assert.equal(toggle.attrs["aria-expanded"], "true");
+  assert.ok(shown(byId(t1, "tool-t1")));
+
+  // a live event rebuilding turn 1 keeps its opened step open
+  const v = fixture();
+  page.applyEvent({ ...v, full: false, order: [1, 2, 3], turns: [{ ...v.turns[0], hash: "h1b" }] });
+  const again = byId(page.el, "turn-1");
+  assert.notEqual(again, t1);
+  assert.equal(byId(again, "steps-e3").hidden, false);
+  assert.equal(byId(again, "steps-e4").hidden, true);
+});
+
+// "Show in turn" opens the folds around the row it shows.
+test("showInTurnOpensTheFoldAroundTheRow", async () => {
+  const { page } = mount();
+  assert.equal(byId(page.el, "steps-e4").hidden, true);
+  page.dialog.open("file:/w/src/a.js");
+  await settle();
+  withClass(page.dialog.el, "primary")[0].fire("click");
+  assert.equal(byId(page.el, "steps-e4").hidden, false, "the step holding the change opened");
+  assert.ok(shown(byId(page.el, "eff-1")));
+});
+
 // Each turn names the models its calls used, from the view (AC4 as amended).
 test("turnHeaderNamesItsModels", () => {
   const { page } = mount();
