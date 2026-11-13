@@ -1,0 +1,6 @@
+Spec: specs/016-web-ui-v2/spec.md (AC5, AC15), research.md 2026-11-13
+Why: answers (a)-(c) of the T016 run and the Time card overlap note.
+Answer 1 needs no code: only named and only-one-running labels carry a Tool, and only those reach a tool line's sum (internal/timeline/view_effects.go place, internal/effects/attribute.go). No test pins the exclusion alone.
+Answer 2: version is the ViewCache key; the CLI caches nothing, so it has none to send.
+Answer 3: 013's 2 s budget counts from the data arriving; the 2.3 s server build is a roadmap speed follow-up.
+Verified by: browser look 2026-11-13 (turn 5 Bash lines carry no counts).
