@@ -1,0 +1,3 @@
+Spec: specs/016-web-ui-v2/plan.md
+Why: Karthik asked for plan.md to match the build, edited directly under D1 (no /al-change).
+Changes: ToolSummary.Path, PromptReader, SideCallNamer, CallFacts in timeline/facts.go, real view file names and types, between-turns time, ViewCache key as version, ?view=1 stream with order/full and a 150 ms debounce, lazy drawer entries, Files wording, Commands clamp, hook_omitted_bytes, AC15 amendment; summarised under As built.
