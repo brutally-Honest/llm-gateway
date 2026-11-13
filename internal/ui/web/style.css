@@ -197,6 +197,7 @@ details.side ul { list-style: none; margin: 6px 0 2px; padding: 0; display: flex
 .th .k { font-size: 12px; font-weight: 600; color: var(--muted); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .th .k b { font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; }
 .th .end { font-weight: 600; color: var(--warn); }
+.th .k .mdl { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-weight: 600; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 0 6px; }
 .th .end.bad { color: var(--bad); }
 .th h2 { grid-column: 1; margin: 0; font-size: 17px; line-height: 1.4; font-weight: 700; color: var(--hi); letter-spacing: -.01em; overflow-wrap: anywhere; white-space: pre-wrap; }
 .th .dur { grid-column: 2; grid-row: 1 / span 2; align-self: start; text-align: right; }

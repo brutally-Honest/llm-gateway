@@ -38,7 +38,7 @@ function fixture() {
         ],
         loose: [harness],
       }),
-      turn(2, { prompt: "prompt 2", steps: [step(6, { did: "wrote the answer" })] }),
+      turn(2, { prompt: "prompt 2", models: ["m1", "m2"], steps: [step(6, { did: "wrote the answer" })] }),
       turn(3, { hooks_only: true, prompt: "", clock_ms: 0, hook_tools: [tool({ id: "h1", name: "Bash", kind: "command", state: mark("?", "unmatched"), chip: "unmatched", summary: "ls", added: 0, removed: 0, call_n: 0, turn: 3 })] }),
     ],
     between: [{ after: 1, at: "2026-11-10T10:00:09Z", title: "Seen between turns 1 and 2", text: "A change while no tool call was running: most likely your own edit.", effects: [outside] }],
@@ -229,4 +229,12 @@ test("twoThousandCallViewRendersUnderBudget", () => {
   const took = performance.now() - start;
   assert.equal(withClass(page.el, "call-link").length, 2000);
   assert.ok(took < 2000, `rendering 2,000 calls took ${Math.round(took)} ms`);
+});
+
+// Each turn names the models its calls used, from the view (AC4 as amended).
+test("turnHeaderNamesItsModels", () => {
+  const { page } = mount();
+  const head = withClass(byId(page.el, "turn-2"), "th")[0];
+  assert.equal(withClass(head, "mdl")[0].textContent, "m1, m2");
+  assert.equal(withClass(withClass(byId(page.el, "turn-1"), "th")[0], "mdl").length, 0, "no models, no tag");
 });

@@ -187,6 +187,7 @@ export function turnNode(t, ctx) {
   const head = el("header", "th");
   const k = el("div", "k");
   k.append(el("b", "", t.n ? `Turn ${t.n}` : "Before the first prompt"), el("span", "", clock(t.at)));
+  if ((t.models || []).length) k.append(el("span", "mdl", t.models.join(", ")));
   if (t.end) k.append(el("span", `end${t.end.word === "ended by error" ? " bad" : ""}`, markText(t.end)));
   const d = el("div", "dur");
   if (t.hooks_only) {
