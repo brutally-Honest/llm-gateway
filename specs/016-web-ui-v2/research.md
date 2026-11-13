@@ -355,3 +355,18 @@ web test that now covers the same fact, or the AC that drops the feature.
   4. **The 3 ms model/tool overlap** (Time card note of 2026-11-12: a model call running
      while a non-Agent tool runs is counted in both, so the four parts can sum past the
      clock): accepted as is; it rounds away on screen. The note above stays.
+- 2026-11-13 — Browser look after the three fixes since T016 (`6e680d9`, `e1cd236`,
+  `320966f`, `8b406f8`), fresh throwaway gateway (ports 17195–17199, stub upstream), seed
+  `--fast`, Chrome at 1,520 × 784, both themes. Time card: `25s · model 5.5s · tools 9.4s ·
+  waiting 2.1s · between turns 7.8s`. Commands card: `longest 5.4s · pandoc d…`, one line
+  (box 18.6 px = its line height; `white-space: nowrap`, `text-overflow: ellipsis`), full
+  command `pandoc docs/checkout-fix.md -o docs/checkout-fix.pdf` in `title` (the browser's
+  tooltip is drawn outside the page and does not show in a screenshot). Files tab: all nine
+  changed rows read glyph + word + tool as the story's effect lines do (`● named · #10 Edit
+  src/payment/retry.js`, `◐ only one running · #12 Bash node scripts/gen-fixtures.js`,
+  `◌ several running · #14 Bash npm install, #14 Bash npm test`, `○ outside any tool
+  call`); turn 5's two Bash lines carry no line counts (answer 1). Contrast snippet: dark
+  474 text nodes, min 6.24:1; light 474, min 5.90:1; none below 4.5.
+- 2026-11-13 — Manual check `docs/manual-checks/016-session-page.md` (T016): passed,
+  Karthik's verdict after reviewing the GIF (`~/Downloads/016-session-page-2026-11-11.gif`).
+
