@@ -183,6 +183,9 @@ func (p *viewPrinter) turn(t Turn) {
 	default:
 		head := fmt.Sprintf("%s · %s · %s (model %s · tools %s · waiting %s)", name, p.clock(t.At), dur(t.ClockMS),
 			dur(t.ModelMS), dur(t.ToolMS), dur(t.WaitMS))
+		if len(t.Models) > 0 {
+			head += " · " + strings.Join(t.Models, ", ")
+		}
 		if t.End != nil {
 			head += " · " + t.End.Glyph + " " + t.End.Word
 		}
