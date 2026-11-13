@@ -1,0 +1,4 @@
+Spec: specs/016-web-ui-v2/spec.md (AC5, AC6), research.md 2026-11-13 answer 1
+Why: Karthik's answer 1 (line counts on a command's tool line from named and only-one-running changes only) needed no code change, so it is pinned by a test instead.
+Fixture: two parallel Bash calls; named +3 -0 and only_one +1 -1 on npm install, several +5 -2 naming both. Expect npm install 4 1, npm test -1 -1, the several change after the step with 5 2. The fixture gains a per-path line map; existing tests are unchanged.
+Verified by: a probe summing several-running changes on each candidate's line fails the test (9 3 want 4 1; 5 2 want -1 -1); make verify green.
