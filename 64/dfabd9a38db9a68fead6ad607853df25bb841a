@@ -1,0 +1,2 @@
+Spec: specs/016-web-ui-v2/research.md (Build log)
+Why: HANDOFF.md was an untracked session hand-off; its commit list, build rules, kit-guard note and purity check are kept in research.md and the file is deleted, as Karthik asked.
