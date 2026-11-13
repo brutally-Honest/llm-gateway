@@ -331,3 +331,27 @@ web test that now covers the same fact, or the AC that drops the feature.
   while a non-Agent tool runs would be counted in both). Pinned by `TestView_Times`,
   `TestView_TimeLineText` (CLI line) and `view.test.js` (card text); each fails without the
   change.
+- 2026-11-13 — Karthik's answers to the three open points of the T016 run and the one in
+  the T003 notes:
+  1. **Line counts on a command's tool line** (point a): kept, summed only from file changes
+     labelled `named` or `only one running`; `several running` changes are not counted. No
+     code change needed: `place()` (`internal/timeline/view_effects.go`) adds an effect to a
+     tool's own list only when its label names one tool (`Tool` set), and spec 015's
+     attribution sets `Tool` only for `named` and `only one running`
+     (`internal/effects/attribute.go`); a `several running` change goes to its step's
+     several group (D6), never into a tool line's sum. Turn 4's `Bash … +7 −1` is a `named`
+     change. No test pins this exclusion alone today: `TestView_Placement` checks where the
+     several change sits, not that it is left out of `t2`'s line counts.
+  2. **The CLI's empty `version`** (point b): accepted. AC15 amended: `-json` is the API's
+     view object in every field except `version`. Why: `version` is the API's cache key (the
+     build key the `ViewCache` memo and the stream compare to decide whether a view changed);
+     the CLI builds the view once and caches nothing, so it has no key to send, and making
+     one up would claim a cache state that does not exist.
+  3. **Cold first open of a 2,000-call session ≈ 2.7 s** (point c): accepted for 016. 013's
+     2 s budget counts from the data arriving (the browser draws in ≤ 0.6 s after `/view`
+     answers); the 2.3 s before it is the server's timeline build, measured in T006 and
+     within its 1.2× budget. Added to the speed follow-ups in `docs/roadmap.md`: cold view
+     build for large sessions.
+  4. **The 3 ms model/tool overlap** (Time card note of 2026-11-12: a model call running
+     while a non-Agent tool runs is counted in both, so the four parts can sum past the
+     clock): accepted as is; it rounds away on screen. The note above stays.

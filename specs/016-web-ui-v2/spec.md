@@ -160,7 +160,8 @@ This changes earlier features (each AC listed is replaced or narrowed as said):
 - **AC15** — When `gateway timeline` prints a session, it shall print the server's view: one
   block per turn with its prompt, durations, step lines, tool lines and effects with labels,
   the between-turn blocks, side calls folded into one line, and with `-json` the same view
-  object the API returns.
+  object the API returns in every field except `version`, the API's cache key (research
+  2026-11-13).
 
 ## Edge cases
 - **E1** — A turn still running (no final answer yet, session active) → clock time runs to

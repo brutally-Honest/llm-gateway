@@ -17,6 +17,8 @@ features. Update it when the order changes.
 - On Ubuntu, test `sandbox.network.allowAllUnixSockets: true` as the workaround for the
   sandbox bug (014 D17).
 - The speed follow-ups, re-measured after 016.
+  - Cold view build for large sessions (2.3 s server build at 2,000 calls; 016 research
+    2026-11-13).
 - Gateway stop takes 90 s and ends in SIGKILL: open proxy tunnels are only closed after
   the shutdown timeout runs out. Close them as soon as shutdown starts, and set
   `TimeoutStopSec` in the systemd unit in `docs/clients/claude-code.md` (and the launchd
