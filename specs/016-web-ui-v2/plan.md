@@ -139,7 +139,7 @@ type View struct {
 type TimeCard struct { ClockMS, ModelMS, ToolMS, WaitMS, BetweenMS int64 }
 type Turn struct {
     N; Hash                // Hash: content hash for live diffing
-    Prompt; Reminders; At; End *Mark // End: running, interrupted, ended by error (Q1)
+    Prompt; Reminders; At; Models; End *Mark // End: running, interrupted, ended by error (Q1)
     ClockMS; ModelMS; ToolMS; WaitMS; HooksOnly; Counts
     Steps []Step; HookTools []ToolLine // hooks-only tool calls
     Loose []EffectLine; Answer; AnswerCall
@@ -279,3 +279,8 @@ Differences from the plan as approved (D14), each folded into the sections above
   tool); the Commands card clamps to one line.
 - The tools endpoint gained `hook_omitted_bytes`.
 - AC15 amended: the CLI's `-json` matches `/view` in every field except `version`.
+- After Karthik's review (2026-11-13, research.md): the story scrolls inside its own card
+  (`.storycol`); a turn's steps sit on a stepper, folded behind one line each, with the
+  open folds kept in the page across live redraws and opened by `place()` through
+  `story.js` `reveal()`; `Turn.Models` and the header's model tag; Files rows are the name
+  and line counts only.

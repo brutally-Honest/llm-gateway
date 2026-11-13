@@ -376,6 +376,36 @@ web test that now covers the same fact, or the AC that drops the feature.
   line reads `+4 −1`, the second has no counts. Probed: counting several-running changes
   on each candidate's line makes it fail (`9 3, want 4 1`; `5 2, want -1 -1`).
 
+- 2026-11-13 — Karthik's review of the merged page (PR #44), on his own session in the
+  real gateway, four changes; built on `feat/016-session-page-feedback` outside the kit
+  (D1), spec amended in place:
+  1. **The story in its own card** (AC3): the middle column scrolled with its scrollbar at
+     the column's edge, unlike the two side cards. The story now sits in a `.storycol` card
+     and scrolls inside it (`0b6ba3c`). `layout.test.js` `storyScrollsAloneBetweenTheTwoCards`
+     changed in the open: it reads the shared rule `.toc, .storycol, .sidebar`.
+  2. **Steps folded on a stepper** (AC7): only the prompt and the final answer are open;
+     each step is one line on a stepper (`#n`, what it did, the tools in one line, a red dot
+     when the call errored or a tool failed), its tool calls and effects folded until
+     opened. The hooks-only tools and the "not caused by a tool call" group fold the same
+     way. Opened folds survive a live redraw; "Show in turn", "Needs a look" and the turn
+     list open the folds around their target (`16a10c7`). New: `view.test.js`
+     `stepsAreFoldedBetweenPromptAndAnswer`, `showInTurnOpensTheFoldAroundTheRow`.
+  3. **Models per turn** (AC4): the view's turn gains `models` (its calls' models, sub-agents
+     included, first-use order, side calls and unknown models out); the turn header shows
+     them after the start time and the CLI's turn line ends with them (`b4d4574`,
+     `f3a8874`). New: Go `TestView_TurnModels`, `view.test.js` `turnHeaderNamesItsModels`.
+  4. **Files rows: name and lines only** (AC9): a changed file is its name and `+n −n` (its
+     size when the lines are unknown), full path on hover; folder, turn and attribution are
+     in its dialog (`82fcf69`). This replaces the Files wording of 2026-11-11 (label and
+     tool, `8b406f8`); `view.test.js` `rendersTurnsTabsAndDialogFromTheView` changed in the
+     open to pin the new rows. Read and Searched rows are unchanged. Known limit: two
+     changed files with one name in different folders read alike; hover tells them apart.
+  Every new test was probed: each fails with its change taken out. Browser look on a
+  throwaway gateway (seed `--fast`), Chrome 1,520 × 784: story scrollbar inside its card,
+  folds open and close, turn 7's sub-agent block folds inside its step, turn headers carry
+  `claude-seed-016`, Files rows are name and lines. Contrast snippet with folds open: dark
+  392 text nodes, min 6.24:1; light 392, min 5.90:1; none below 4.5.
+
 ### Build log (folded in from the 2026-11-11 HANDOFF.md)
 - Commits, oldest first: `3a00587` Q1–Q5 and the 15 decisions folded in (spec v2, D14);
   `ddb6fca` T001 `ToolSummarizer`, ADR 0016; `6ce4f4f` T002 seed; `0d5024d` T003–T005 in one
