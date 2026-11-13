@@ -118,12 +118,12 @@ test("rendersTurnsTabsAndDialogFromTheView", async () => {
   // the right card: counts and rows from the view's lists
   const tabs = withClass(page.el, "tab");
   assert.deepEqual(tabs.map((t) => `${t.textContent}${t.children[0].textContent}`), ["Files2", "Commands1", "Sites1", "Context"]);
-  // the Files tab words an attribution as the story does: the label's glyph and word, then
-  // the tool call it points at
-  const rows = withClass(byId(page.el, "tp-files"), "row").map((r) => textOf(r).replace(/\s+/g, " "));
-  assert.match(rows[0], /a\.js .*modified turn 1 · ● named · #4 Edit src\/a\.js/);
-  assert.match(rows[1], /notes\.md .*○ outside any tool call/);
-  assert.doesNotMatch(rows[1], /·\s*$/);
+  // a changed file in the Files tab is its name and its lines alone; the folder, turn and
+  // attribution are in its dialog, the full path on hover (research 2026-11-13)
+  const fileRows = withClass(byId(page.el, "tp-files"), "row").filter((r) => r.className.split(" ").includes("file"));
+  const rows = fileRows.map((r) => textOf(r).replace(/\s+/g, " ").trim());
+  assert.deepEqual(rows, ["a.js +2 −1", "notes.md"]);
+  assert.equal(fileRows[0].title, "/w/src/a.js");
   assert.match(textOf(byId(page.el, "eff-1")).replace(/\s+/g, " "), /● named/);
   assert.match(textOf(byId(page.el, "eff-4")).replace(/\s+/g, " "), /○ outside any tool call/);
   tabs[3].fire("click");

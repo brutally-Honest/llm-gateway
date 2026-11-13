@@ -55,9 +55,6 @@ const t1 = (text, code = false) => {
   else s.textContent = text;
   return s;
 };
-// labelText is an effect's attribution as the story shows it, the label's glyph and word,
-// then the tool call or calls it points at: "● named · #10 Edit src/app.js".
-const labelText = (e) => (e.mark ? `${e.mark.glyph} ${e.mark.word}` : "— no label") + (e.by ? ` · ${e.by}` : "");
 
 const lines = (a, d) => {
   const s = el("span", "r");
@@ -72,13 +69,19 @@ function filesPanel(f, ctx) {
     return out;
   }
   out.push(el("h3", "", `Changed · ${(f.changed || []).length}`));
+  // a changed file is its name and its lines added and removed (its size when the lines
+  // are not known); the folder, change, turn and attribution are in its dialog, and the
+  // full path is on hover (research 2026-11-13)
   out.push(rows((f.changed || []).map((it) => {
     const last = it.last || {};
-    const [dir, name] = split(it.path);
+    const [, name] = split(it.path);
     const right = it.lines ? lines(it.added, it.removed) : el("span", "r", last.size !== undefined && last.size !== null ? bytes(last.size) : "");
-    const t2 = el("span", "t2", `${dirText(dir)} · ${[last.change, last.where].filter(Boolean).join(" ")} · `);
-    t2.append(el("span", last.label === "outside" ? "warn" : "", labelText(last)));
-    return row(ctx, { key: `file:${it.full_path}`, ic: icon((last.what || {}).glyph || "~"), t1: t1(name), r: right, t2, title: it.full_path });
+    const li = el("li");
+    const b = button("row file", undefined, () => ctx.open && ctx.open(`file:${it.full_path}`, b));
+    b.title = it.full_path;
+    b.append(t1(name), right);
+    li.append(b);
+    return li;
   })));
   out.push(el("h3", "", `Read · ${(f.read || []).length}`));
   out.push(rows((f.read || []).map((it) => {

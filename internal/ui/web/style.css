@@ -294,6 +294,7 @@ ul.effs .linkish code { color: var(--accent); }
 .row .t1 { color: var(--hi); font-weight: 600; font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
 .row .t2 { grid-column: 2 / -1; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .row .t2 .warn { color: var(--warn); font-weight: 600; }
+.row.file { grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; }
 .row .r { font-size: 12px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted); }
 .tabp .pad { margin: 8px 10px; }
 .tabfoot { margin: 8px 10px 0; padding-top: 8px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
