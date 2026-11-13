@@ -1,7 +1,7 @@
 ---
 feature: 016-web-ui-v2
 kind: feat
-status: draft
+status: done
 version: 2
 created: 2026-11-10
 supersedes:
