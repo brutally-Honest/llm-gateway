@@ -122,8 +122,8 @@ body[data-page="session"] { height: 100vh; overflow: hidden; }
 body[data-page="session"] main#app { padding: 0; }
 .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
 .cols { display: grid; grid-template-columns: 22rem minmax(0, 1fr) 23rem; grid-template-rows: minmax(0, 1fr); grid-template-areas: "toc story side"; gap: 24px; max-width: 1640px; height: calc(100vh - var(--head-h)); margin: 0 auto; padding: 20px 24px; }
-.toc { grid-area: toc; } .story { grid-area: story; } .sidebar { grid-area: side; }
-.toc, .sidebar { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.toc { grid-area: toc; } .storycol { grid-area: story; } .sidebar { grid-area: side; }
+.toc, .storycol, .sidebar { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .colhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 18px 12px; border-bottom: 1px solid var(--line); }
 .colhead h2 { margin: 0; font-size: 14px; font-weight: 700; color: var(--hi); }
 .colhead .sub { font-size: 12px; color: var(--muted); }
@@ -150,9 +150,11 @@ body[data-page="session"] main#app { padding: 0; }
 .clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
 .toc-item:is(:hover, :focus) .clamp { -webkit-line-clamp: unset; line-clamp: unset; }
 
-/* centre: the story */
-.story { display: flex; flex-direction: column; gap: 20px; min-width: 0; min-height: 0; overflow: auto; padding-right: 4px; scrollbar-width: thin; }
+/* centre: the story, scrolling inside its own card */
+.storycol { min-width: 0; }
+.story { flex: 1; display: flex; flex-direction: column; gap: 16px; min-width: 0; min-height: 0; overflow: auto; padding: 16px; scrollbar-width: thin; }
 .story > * { flex: none; }
+.story .card { box-shadow: none; }
 /* room under the last turn, so any turn can scroll to the top */
 .story::after { content: ""; flex: 0 0 55vh; }
 .hero { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
@@ -333,6 +335,7 @@ dialog.details::backdrop { background: var(--scrim); }
   body[data-page="session"] { height: auto; overflow: auto; }
   .cols { height: auto; grid-template-columns: 16rem minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: "toc story" "toc side"; }
   .toc { position: sticky; top: calc(var(--head-h) + 16px); max-height: calc(100vh - var(--head-h) - 32px); align-self: start; }
+  .storycol { overflow: visible; }
   .story { overflow: visible; }
   .story::after { display: none; }
   .sidebar { max-height: 80vh; }

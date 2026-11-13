@@ -30,7 +30,7 @@ test("storyScrollsAloneBetweenTheTwoCards", () => {
   assert.equal(cols["grid-template-areas"], '"toc story side"');
   assert.equal(cols.height, "calc(100vh - var(--head-h))");
   assert.equal(rule(".story").overflow, "auto");
-  assert.equal(rule(".toc, .sidebar").overflow, "hidden");
+  assert.equal(rule(".toc, .storycol, .sidebar").overflow, "hidden", "the story sits in a card like the two side columns");
   assert.match(rule(".scroll").overflow, /auto/);
   assert.match(rule(".story::after").flex || "", /55vh/, "room under the last turn");
 });

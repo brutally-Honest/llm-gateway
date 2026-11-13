@@ -46,12 +46,15 @@ export function createSessionPage(ctx = {}) {
   const tocList = el("ol");
   tocScroll.append(tocList);
   toc.append(tocHead, tocScroll);
+  // the story scrolls inside its own card, as the turn list and the side card do
+  const storyCard = el("section", "storycol card");
   const story = el("div", "story");
   story.setAttribute("role", "region");
   story.setAttribute("aria-label", "Story");
   story.tabIndex = -1;
+  storyCard.append(story);
   const status = el("div", "page-status");
-  root.append(toc, story);
+  root.append(toc, storyCard);
 
   let view = null;
   let current = 0; // index of the current entry in the turn list
