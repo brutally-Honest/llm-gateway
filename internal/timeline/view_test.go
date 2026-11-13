@@ -127,6 +127,7 @@ type fixture struct {
 	f       *fake
 	effects []store.EffectRow
 	labels  []timeline.EffectLabel
+	lines   map[string][2]int // a change's line counts by path; src/a.js is 2 1 always
 }
 
 func (x *fixture) effect(e store.EffectRow, l timeline.EffectLabel) {
@@ -231,6 +232,9 @@ func (x *fixture) view(t *testing.T, rules bool) timeline.View {
 		Lines: func(e store.EffectRow) (int, int, bool) {
 			if e.Path == "/w/src/a.js" {
 				return 2, 1, true
+			}
+			if l, ok := x.lines[e.Path]; ok {
+				return l[0], l[1], true
 			}
 			return 0, 0, false
 		},
@@ -590,4 +594,40 @@ func TestView_UnknownClient(t *testing.T) {
 	}
 	eq(t, "client", v.Overview.Client, "c")
 	eq(t, "commands without a profile", len(v.Commands.Items), 0)
+}
+
+// AC5, AC6 (research 2026-11-13, answer 1): a command's tool line sums the line counts of
+// the changes labelled for it alone (named, only one running); a several-running change
+// that names it among others is listed after the step and never counted on its line.
+func TestView_CommandLineCountsLeaveOutSeveral(t *testing.T) {
+	f := newFake()
+	x := &fixture{f: f, lines: map[string][2]int{
+		"/w/package-lock.json": {3, 0}, "/w/out.txt": {1, 1}, "/w/package.json": {5, 2}}}
+	ask := "Install and test"
+	f.vhook(core.PhasePrompt, "", "", 0.9)
+	f.call(vcallSpec{id: "a1", from: 1, to: 2, msgs: []string{"u:" + ask},
+		tools: [][3]string{{"t1", "Bash", `{"command":"npm install"}`}, {"t2", "Bash", `{"command":"npm test"}`}}, in: 100})
+	f.vhook(core.PhasePreTool, "t1", "Bash", 2.1)
+	f.vhook(core.PhasePreTool, "t2", "Bash", 2.2)
+	f.vhook(core.PhasePostTool, "t2", "Bash", 2.8)
+	f.vhook(core.PhasePostTool, "t1", "Bash", 2.9)
+	f.call(vcallSpec{id: "a2", from: 3, to: 4, msgs: []string{"u:" + ask, "a:Done."},
+		results: [][2]string{{"t1", "ok"}, {"t2", "ok"}}, in: 100})
+	x.effect(store.EffectRow{Kind: "file_change", At: vat(2.3), Path: "/w/package-lock.json", Change: "modified", Size: 10, BeforeHash: "b1", AfterHash: "a1"},
+		timeline.EffectLabel{Label: "named", Tool: tool("t1", "Bash")})
+	x.effect(store.EffectRow{Kind: "file_change", At: vat(2.4), Path: "/w/out.txt", Change: "modified", Size: 10, BeforeHash: "b2", AfterHash: "a2"},
+		timeline.EffectLabel{Label: "only_one", Tool: tool("t1", "Bash")})
+	x.effect(store.EffectRow{Kind: "file_change", At: vat(2.5), Path: "/w/package.json", Change: "modified", Size: 10, BeforeHash: "b3", AfterHash: "a3"},
+		timeline.EffectLabel{Label: "several", Candidates: []timeline.LabelTool{*tool("t1", "Bash"), *tool("t2", "Bash")}})
+	v := x.view(t, true)
+
+	install, test := mustTool(t, v, "t1"), mustTool(t, v, "t2")
+	eq(t, "npm install kind", install.Kind, "command")
+	eq(t, "npm install lines", fmt.Sprint(install.Added, install.Removed), "4 1")
+	eq(t, "npm test lines", fmt.Sprint(test.Added, test.Removed), "-1 -1")
+	step := v.Turns[0].Steps[0]
+	if len(step.Several) != 1 || step.Several[0].Path != "package.json" {
+		t.Fatalf("several = %+v", step.Several)
+	}
+	eq(t, "several lines", fmt.Sprint(step.Several[0].Added, step.Several[0].Removed), "5 2")
 }

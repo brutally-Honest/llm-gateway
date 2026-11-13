@@ -370,6 +370,12 @@ web test that now covers the same fact, or the AC that drops the feature.
 - 2026-11-13 — Manual check `docs/manual-checks/016-session-page.md` (T016): passed,
   Karthik's verdict after reviewing the GIF (`~/Downloads/016-session-page-2026-11-11.gif`).
 
+- 2026-11-13 — Answer 1 is now pinned: `TestView_CommandLineCountsLeaveOutSeveral`
+  (`internal/timeline/view_test.go`) has one Bash call with a `named` and an `only one
+  running` change and a `several running` change naming it and a second Bash; the first
+  line reads `+4 −1`, the second has no counts. Probed: counting several-running changes
+  on each candidate's line makes it fail (`9 3, want 4 1`; `5 2, want -1 -1`).
+
 ### Build log (folded in from the 2026-11-11 HANDOFF.md)
 - Commits, oldest first: `3a00587` Q1–Q5 and the 15 decisions folded in (spec v2, D14);
   `ddb6fca` T001 `ToolSummarizer`, ADR 0016; `6ce4f4f` T002 seed; `0d5024d` T003–T005 in one
