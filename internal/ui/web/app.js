@@ -1,14 +1,14 @@
 import { getJSON, loadAllPages, openStream } from "./api.js";
 import { effectsListNode } from "./drawer-sections.js";
 import { lastID } from "./effects.js";
-import { addUnique, liveBatch, upsertSession } from "./entries.js";
+import { addUnique, upsertSession } from "./entries.js";
 import { createStore } from "./store.js";
-import { createTimelinePage } from "./timeline-page.js";
+import { createSessionPage } from "./session-page.js";
 import { createSessionsPage, localMidnight, note } from "./sessions-page.js";
 import { initTheme } from "./theme.js";
 import { buildRoute, parseRoute } from "./route.js";
 import { handleKey, isTextInput } from "./keys.js";
-import { shouldFollow } from "./drawer.js";
+import { createDrawer } from "./drawer.js";
 import { mountShell } from "./shell.js";
 import "./exchange-detail.js";
 import "./ungrouped-list.js";
@@ -32,7 +32,7 @@ const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "",
 let closeStream = null;
 let view = null;
 let page = null; // the Sessions page while it is shown
-let tpage = null; // the timeline page while a session is shown
+let tpage = null; // the session page and its drawer while a session is shown
 let todayTimer = null;
 let sessionSync = null; // the shown session, so a drawer URL change does not reload it
 
@@ -118,9 +118,6 @@ let seq = 0;
 // through globalThis.__retryDelay so tests do not wait.
 const retryDelay = (ms) => (globalThis.__retryDelay ? globalThis.__retryDelay(ms) : new Promise((r) => setTimeout(r, ms)));
 
-// LIVE_BATCH_MS is how long a session view gathers stream events before it draws them.
-const LIVE_BATCH_MS = 50;
-
 // retryOn504 runs fn; on a 504 it calls onWait, waits and runs fn once more. Any other error,
 // and a second 504, reach the caller.
 async function retryOn504(fn, onWait) {
@@ -134,145 +131,131 @@ async function retryOn504(fn, onWait) {
   }
 }
 
-// showSession loads the summary and every timeline page, then, for an active session,
-// opens its stream. A stale load (the route changed meanwhile) is dropped.
+// showSession shows the session page (spec 016): it loads the server's view of the session
+// (one retry on 504 while the build runs), then, for an active session, opens the session's
+// view stream, whose events replace only the turns that changed. The 013 drawer stays until
+// 017: its call list and entries are loaded only when a call is opened.
 async function showSession(id) {
   const mine = ++seq;
-  const tl = createTimelinePage({
-    nav: {
-      push: (r) => { location.hash = buildRoute(r); },
-      replace: (r) => location.replace(buildRoute(r)),
-      back: () => history.back(),
-    },
-    // a call's detail gets the summary's single retry on 504; the drawer shows "loading…"
+  const enc = encodeURIComponent;
+  setPage("session");
+  const nav = {
+    push: (r) => { location.hash = buildRoute(r); },
+    replace: (r) => location.replace(buildRoute(r)),
+    back: () => history.back(),
+  };
+  let page = null;
+  const drawer = createDrawer({
+    nav,
+    turnHeading: () => (page ? page.turnHeading() : null),
+    // a call's detail gets the view's single retry on 504; the drawer shows "loading…"
     // meanwhile (F9)
-    loadDetail: (callId) => retryOn504(() => getJSON(`exchanges/${encodeURIComponent(callId)}`), () => {}),
+    loadDetail: (callId) => retryOn504(() => getJSON(`exchanges/${enc(callId)}`), () => {}),
   });
-  app.replaceChildren(tl.el);
-  const st = { summary: null, entries: [], effects: [], error: "", snapshotError: "", callId: parseRoute(location.hash).call || null, loaded: false };
-  tpage = tl;
-  sessionSync = { id, apply: (call) => { st.callId = call || null; draw(); } };
-  const draw = () => {
-    tl.render(st);
-    shell.setKeyBar(parseRoute(location.hash), tl.position());
+  page = createSessionPage({
+    callHref: (exchangeId) => buildRoute({ name: "session", id, call: exchangeId }),
+    noteOpener: (node) => drawer.noteOpener(node),
+    openCall: (exchangeId, from) => drawer.openCall(exchangeId, from),
+    loadTool: (tid) => getJSON(`sessions/${enc(id)}/tools/${enc(tid)}`),
+    loadDiff: (eid) => getJSON(`effects/${enc(eid)}/diff`),
+    loadContent: (eid) => getJSON(`effects/${enc(eid)}/content`),
+  });
+  app.replaceChildren(page.el, drawer.el);
+  tpage = { page, drawer };
+
+  // The drawer's entries: loaded on first open, and again after the session changed.
+  const calls = { entries: [], state: "none", callId: parseRoute(location.hash).call || null, error: "" };
+  const syncDrawer = () => {
+    const drawn = drawer.sync({ sessionId: id, callId: calls.callId, entries: calls.entries, loaded: calls.state === "ready" });
+    if (drawn.missing) page.setStatus("No such call in this session.", "error");
   };
-  draw();
-  const set = (patch) => {
-    if (mine !== seq) return;
-    Object.assign(st, patch);
-    draw();
+  const loadEntries = async () => {
+    if (calls.state === "loading") return;
+    calls.state = "loading";
+    const got = [];
+    try {
+      let first = true;
+      const fetchPage = (after) => getJSON(`sessions/${enc(id)}/timeline`, { after, limit: 2000 });
+      await loadAllPages(
+        (after) => {
+          if (!first) return fetchPage(after); // later pages are not retried
+          first = false;
+          return retryOn504(() => fetchPage(after), () => {});
+        },
+        (p) => {
+          if (mine !== seq) return false;
+          got.push(...p.entries);
+          return true;
+        },
+      );
+      if (mine !== seq) return;
+      calls.entries = got;
+      calls.state = "ready";
+    } catch (e) {
+      if (mine !== seq) return;
+      calls.entries = got;
+      calls.state = "failed";
+      page.setStatus(e.message, "error");
+    }
+    syncDrawer();
   };
-  // Effects load apart from the timeline, after the last id held, and redraw only the
-  // list: a live effects event never rebuilds the turns (AC14). A pull asked for while one
-  // runs is run once more when it ends.
-  const EFFECTS_PAGE = 5000;
-  let effBusy = false;
-  let effAgain = false;
-  const pullEffects = async () => {
-    if (effBusy) {
-      effAgain = true;
+  const followDrawer = () => {
+    if (!calls.callId) {
+      syncDrawer();
       return;
     }
-    effBusy = true;
-    try {
-      do {
-        effAgain = false;
-        for (;;) {
-          const p = await getJSON(`sessions/${encodeURIComponent(id)}/effects`, { after: lastID(st.effects), limit: EFFECTS_PAGE });
-          if (mine !== seq) return;
-          if (p.effects.length) {
-            st.effects = st.effects.concat(p.effects);
-            tl.setEffects(st.effects);
-          }
-          if (p.effects.length < EFFECTS_PAGE) break;
-        }
-      } while (effAgain);
-    } catch {
-      // the effects shown stay as they were; the timeline is unaffected
-    } finally {
-      effBusy = false;
-    }
+    if (calls.state === "none" || calls.state === "stale") loadEntries();
+    else syncDrawer();
   };
-  let held = []; // timeline pages fetched but not yet drawn
+  sessionSync = {
+    id,
+    apply: (call) => {
+      calls.callId = call || null;
+      followDrawer();
+    },
+  };
+
+  let view;
   try {
-    const waiting = () => set({ building: true });
-    const summary = await retryOn504(() => getJSON(`sessions/${encodeURIComponent(id)}`), waiting);
-    if (mine !== seq) return;
-    set({ summary, building: false });
-    pullEffects();
-    if (mine === seq) shell.setRoute(parseRoute(location.hash), summary.title || id);
-    const fetchPage = (after) => getJSON(`sessions/${encodeURIComponent(id)}/timeline`, { after, limit: 2000 });
-    let first = true;
-    // Each render rebuilds the whole list, so the first page shows at once and the later
-    // pages are held and drawn together with the last one: a bounded number of renders
-    // however many pages a session has, not one per page.
-    let shown = false;
-    await loadAllPages(
-      (after) => {
-        if (!first) return fetchPage(after); // later pages are not retried
-        first = false;
-        return retryOn504(() => fetchPage(after), waiting);
-      },
-      (p) => {
-        if (mine !== seq) return false;
-        held.push(...p.entries);
-        if (shown && p.next_after) return true;
-        shown = true;
-        const more = held;
-        held = [];
-        set({ entries: st.entries.concat(more), building: false, loaded: !p.next_after });
-        return true;
-      },
-    );
-    if (mine !== seq) return;
-    if (!summary.active) return;
+    view = await retryOn504(() => getJSON(`sessions/${enc(id)}/view`), () => page.setStatus("building session…"));
   } catch (e) {
-    // pages fetched before the failing one still show
-    set({ error: e.message, building: false, entries: held.length ? st.entries.concat(held) : st.entries });
+    if (mine === seq) page.setStatus(e.message, "error");
     return;
   }
-  // follow new entries only when the page is already at the bottom (AC45)
-  const nearBottom = () => {
-    const d = document.documentElement;
-    return d.scrollHeight - (window.scrollY + window.innerHeight) <= 8;
-  };
-  // Stream events are queued and applied together, with one draw, LIVE_BATCH_MS after the
-  // first of a burst: a snapshot sends one event per exchange, and drawing after each one
-  // rebuilt the whole list thousands of times and froze the page on an active session.
-  // Whether to follow is decided before the burst changes the page, as for one event.
-  let queued = [];
-  let follow = false;
-  const flushLive = () => {
-    const events = queued;
-    queued = [];
-    if (mine !== seq) return;
-    const patch = liveBatch(events, st.entries);
-    if (!patch) return;
-    set(patch);
-    // a snapshot error alone never scrolls the view
-    const moved = events.some((e) => e.name !== "snapshot_error");
-    if (moved && follow && mine === seq) window.scrollTo(0, document.documentElement.scrollHeight);
-  };
-  // The snapshot-error state survives the native error event and the reconnect; only the
-  // first hooks, exchange or entries event of a later connection (its snapshot) clears it.
+  if (mine !== seq) return;
+  page.setStatus("");
+  page.setView(view);
+  shell.setRoute(parseRoute(location.hash), view.overview.title);
+  followDrawer();
+  if (view.overview.status.word !== "active") return;
   closeStream = openStream(
     (name, data) => {
       if (mine !== seq) return;
-      if (name === "effects") {
-        pullEffects();
+      if (name === "snapshot_error") {
+        page.setStatus(`Live snapshot failed: ${data.error ? data.error.message : "unknown"}`, "error");
         return;
       }
-      if (queued.length === 0) {
-        follow = shouldFollow(tl.drawerOpen(), nearBottom());
-        setTimeout(flushLive, LIVE_BATCH_MS);
+      if (name !== "view") return;
+      page.setStatus("");
+      page.applyEvent(data);
+      if (calls.state === "ready" || calls.state === "failed") {
+        calls.state = "stale";
+        if (drawer.isOpen()) loadEntries();
       }
-      queued.push({ name, data });
     },
-    (state) => {
-      shell.setLive(liveText(state));
-    },
-    `sessions/${encodeURIComponent(id)}/stream`,
+    (state) => shell.setLive(liveText(state)),
+    `sessions/${enc(id)}/stream?view=1`,
   );
+}
+
+// setPage marks the page shown on <body>, so the stylesheet can give the session page the
+// whole window.
+function setPage(name) {
+  const body = document.body;
+  if (body && body.dataset) {
+    if (name) body.dataset.page = name;
+    else delete body.dataset.page;
+  }
 }
 
 // showUnassigned lists the connections linked to no session (spec 014, AC15).
@@ -375,6 +358,7 @@ function route() {
   if (todayTimer) clearTimeout(todayTimer);
   todayTimer = null;
   stopStream();
+  setPage("");
   seq++;
   const r = parseRoute(location.hash);
   shell.setRoute(r, "");
@@ -414,22 +398,16 @@ window.addEventListener("keydown", (e) => {
     shell.setKeyBar(parseRoute(location.hash), page.select(act.delta));
   } else if (act.type === "open" && page) {
     if (page.selectedId()) location.hash = `#/sessions/${encodeURIComponent(page.selectedId())}`;
-  } else if (tpage && ["turn", "nextError", "nextTool", "hooks"].includes(act.type)) {
+  } else if (tpage && act.type === "turn") {
+    // j/k step through turns; a dialog takes no turn keys (AC13)
+    if (tpage.page.dialogOpen() || tpage.drawer.isOpen()) return;
     e.preventDefault();
-    if (act.type === "turn") tpage.moveTurn(act.delta);
-    else if (act.type === "nextError") tpage.nextError();
-    else if (act.type === "nextTool") tpage.nextTool();
-    else tpage.toggleHooks();
-    shell.setKeyBar(parseRoute(location.hash), tpage.position());
-  } else if (act.type === "openFirstCall" && tpage) {
-    tpage.openFirstCall();
+    tpage.page.moveTurn(act.delta);
   } else if (tpage && act.type === "call") {
     e.preventDefault();
-    tpage.stepCall(act.delta);
+    tpage.drawer.step(act.delta);
   } else if (tpage && act.type === "close") {
-    tpage.closeDrawer();
-  } else if (tpage && act.type === "backToTurn") {
-    tpage.backToTurn();
+    tpage.drawer.close();
   } else if (act.type === "filter") {
     const f = app.querySelector("input");
     if (f) {

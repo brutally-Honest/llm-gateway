@@ -25,6 +25,20 @@ func (Profile) IsSideCall(userTexts []string) bool {
 	return false
 }
 
+// SideCallName names a side call in words: "quota probe", "title generation", else "side
+// call".
+func (p Profile) SideCallName(userTexts []string) string {
+	if len(userTexts) == 1 && userTexts[0] == "quota" {
+		return "quota probe"
+	}
+	for _, t := range userTexts {
+		if strings.HasPrefix(t, "<session>") && strings.Contains(t, "Write the title") {
+			return "title generation"
+		}
+	}
+	return "side call"
+}
+
 // StripReminders removes every <system-reminder>…</system-reminder> block. An unclosed
 // block is removed to the end of the text.
 func (p Profile) StripReminders(text string) string {

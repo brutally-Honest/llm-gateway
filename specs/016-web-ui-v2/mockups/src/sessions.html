@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>016 mockup · Sessions</title>
+<style>
+/*CORE_CSS*/
+/* ---- sessions list ---- */
+main { padding: 16px 22px 60px; display: flex; flex-direction: column; gap: 14px; max-width: 92rem; }
+h1 { margin: 0; font-size: 20px; color: var(--hi); }
+.bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.search { display: flex; gap: 6px; align-items: center; border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; background: var(--bg); font-size: 12px; }
+.search input { border: 0; background: none; outline: none; color: var(--text); font: inherit; width: 16rem; }
+.tablebox { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th { text-align: left; font-weight: 500; font-size: 12px; color: var(--muted); padding: 7px 10px; background: var(--panel); border-bottom: 1px solid var(--border); white-space: nowrap; vertical-align: bottom; }
+th small { display: block; font-weight: 400; font-size: 11px; }
+td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+tbody tr:hover td { background: var(--panel); }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ttl a { color: var(--hi); font-weight: 500; text-decoration: none; }
+.ttl a:hover { text-decoration: underline; }
+.ttl .sub { font-size: 12px; color: var(--muted); }
+.ttl .noprompt { font-style: italic; }
+.cap { font-size: 12px; white-space: nowrap; }
+.chip { font-size: 12px; white-space: nowrap; border: 1px solid var(--border); border-radius: 999px; padding: 0 7px; }
+.chip.live { border-color: var(--ok); color: var(--hi); }
+.chip.err { border-color: var(--bad); color: var(--hi); }
+.stack { display: flex; flex-direction: column; gap: 1px; font-size: 12px; white-space: nowrap; }
+.stack b { color: var(--hi); font-weight: 600; font-variant-numeric: tabular-nums; }
+.dim { color: var(--muted); }
+.un { border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; scroll-margin-top: 60px; }
+.un:target { border-color: var(--accent); }
+.un h2 { margin: 0; font-size: 14px; color: var(--hi); }
+.coverage { font-size: 12px; color: var(--muted); margin: 0; }
+</style>
+</head>
+<body>
+<header class="top"><a class="brand" href="index.html">Gateway</a><nav class="crumb" aria-label="Breadcrumb"><b>Sessions</b></nav><span class="vname">sessions list</span><span class="spacer"></span><div id="theme"></div></header>
+<main id="main"></main>
+<script>/*CORE_JS*/</script>
+<script>
+"use strict";
+const { esc, dur, num, plural } = G;
+document.getElementById("theme").innerHTML = G.themeButtons();
+const st = G.sessionTime(), all = [...G.effects.values()], c = G.counts(all);
+const sum = (k) => [...G.calls.values()].reduce((a, x) => a + (x[k] || 0), 0);
+
+// rows: the mockup session plus four made-up neighbours; titles are never a session key
+const rows = [
+  { started: "10:31", title: "Upgrade eslint to v9", sub: "~/code/shop-api · opus-5-5 · first prompt (no generated title yet)", key: "a0e4…", api: true, hooks: true, status: "active",
+    turns: 2, calls: 7, side: 1, tools: { ok: 5, failed: 0 }, errors: 0, eff: { changed: 3, read: 4, sites: 1 }, clock: "4m 10s", in: 6_210, out: 1_904, cr: 88_100 },
+  { started: "10:01", title: G.S.title, sub: "~/code/shop-api · opus-5-5 · generated title", key: G.S.id.slice(0, 8), api: true, hooks: true, status: "ended", href: "v4-story.html",
+    turns: G.turns.length, calls: [...G.calls.values()].filter((x) => !x.side).length, side: G.S.side.length, tools: { ok: [...G.tools.values()].filter((t) => t.ok).length, failed: [...G.tools.values()].filter((t) => !t.ok).length }, errors: 0, eff: c, clock: dur(st.clock), in: sum("in"), out: sum("out"), cr: sum("cr") },
+  { started: "09:40", title: "Hooks only · ~/code/infra", sub: "no prompt captured · no model calls captured (API not routed through the gateway)", noprompt: true, key: "5d21…", api: false, hooks: true, status: "hooks only",
+    turns: 1, calls: 0, side: 0, tools: { ok: 3, failed: 0 }, errors: 0, eff: { changed: 1, read: 2, sites: 0 }, clock: "1m 02s", in: null, out: null, cr: null },
+  { started: "09:12", title: "No prompt · ~/code/shop-api", sub: "only side calls captured (quota probe, title generation)", noprompt: true, key: "c771…", api: true, hooks: false, status: "ended",
+    turns: 0, calls: 0, side: 2, tools: { ok: 0, failed: 0 }, errors: 0, eff: { changed: 0, read: 0, sites: 0 }, clock: "2s", in: 220, out: 9, cr: 0 },
+  { started: "08:47", title: "Migrate the orders table to bigint ids", sub: "~/code/shop-api · opus-5-5 · generated title", key: "91bf…", api: true, hooks: true, status: "ended",
+    turns: 5, calls: 19, side: 2, tools: { ok: 14, failed: 2 }, errors: 1, errWord: "1 API error · 500", eff: { changed: 6, read: 9, sites: 0 }, clock: "22m 40s", in: 31_000, out: 9_400, cr: 702_300 },
+];
+const capText = (on, w) => `${on ? "●" : "○"} ${w}${on ? "" : " off"}`;
+const tok = (n) => (n == null ? `<span class="dim" title="no usage captured">—</span>` : num(n));
+const today = {
+  sessions: rows.length, calls: rows.reduce((a, r) => a + r.calls + r.side, 0), changed: rows.reduce((a, r) => a + r.eff.changed, 0), sites: rows.reduce((a, r) => a + r.eff.sites, 0),
+  in: rows.reduce((a, r) => a + (r.in || 0), 0), out: rows.reduce((a, r) => a + (r.out || 0), 0),
+};
+const u = G.S.unassigned[0];
+document.getElementById("main").innerHTML = `
+  <div class="bar"><h1>Sessions</h1><div class="seg" role="group" aria-label="Show"><button type="button" aria-pressed="true">All</button><button type="button" aria-pressed="false">Has errors</button><button type="button" aria-pressed="false">Active</button><button type="button" aria-pressed="false">Hooks only</button></div><label class="search">Filter <input type="search" aria-label="Filter sessions" placeholder="title, folder, model"></label></div>
+  <div class="facts-groups" aria-label="Today"><div class="fg"><span class="fgname">Today</span><span class="fact"><b>${today.sessions}</b> sessions</span><span class="fact"><b>${today.calls}</b> model calls (side calls included)</span><span class="fact"><b>${today.changed}</b> files changed</span><span class="fact"><b>${today.sites}</b> sites</span><span class="fact"><b>${num(today.in)}</b> input tokens</span><span class="fact"><b>${num(today.out)}</b> output tokens</span></div></div>
+  <div class="tablebox"><table>
+    <thead><tr><th>Started</th><th>Session</th><th>Capture</th><th>Status</th><th class="num">Turns</th><th>Calls</th><th>Tool calls</th><th>Errors<small>side calls excluded</small></th><th>Effects</th><th class="num">Wall clock</th><th>Tokens</th></tr></thead>
+    <tbody>${rows.map((r) => `<tr>
+      <td class="mono">${r.started}</td>
+      <td class="ttl"><a href="${r.href || "#"}" title="session ${esc(r.key)}" ${r.href ? "" : 'onclick="return false"'}>${esc(r.title)}</a><div class="sub${r.noprompt ? " noprompt" : ""}">${esc(r.sub)}</div></td>
+      <td class="cap"><div>${capText(r.api, "API")}</div><div>${capText(r.hooks, "hooks")}</div></td>
+      <td>${r.status === "active" ? `<span class="chip live">● active</span>` : r.status === "hooks only" ? `<span class="chip">◇ hooks only</span>` : `<span class="dim">ended</span>`}</td>
+      <td class="num">${r.turns}</td>
+      <td><div class="stack"><span><b>${r.calls}</b> model</span>${r.side ? `<span class="dim">${plural(r.side, "side call")}</span>` : ""}</div></td>
+      <td><div class="stack"><span><b>${r.tools.ok}</b> ✓ ok</span>${r.tools.failed ? `<span><b>${r.tools.failed}</b> ✗ failed</span>` : ""}</div></td>
+      <td>${r.errors ? `<span class="chip err">✗ ${esc(r.errWord)}</span>` : `<span class="dim">none</span>`}</td>
+      <td><div class="stack"><span><b>${r.eff.changed}</b> changed</span><span><b>${r.eff.read}</b> read</span><span><b>${r.eff.sites}</b> ${r.eff.sites === 1 ? "site" : "sites"}</span></div></td>
+      <td class="num">${r.clock}</td>
+      <td><div class="stack"><span>${tok(r.in)} input</span><span>${tok(r.out)} output</span><span>${tok(r.cr)} cache read</span></div></td>
+    </tr>`).join("")}</tbody>
+  </table></div>
+  <section class="un" id="unassigned" aria-label="Unassigned connections"><h2>Unassigned connections · 1</h2>
+    <p class="coverage">Connections through the gateway's proxy that no single active session could own (none active, or more than one).</p>
+    <ul class="elist"><li><span class="elbl">${G.labelBadge(u)}</span><span>⇄ connected</span><code>${esc(u.host)}:${u.port}</code><span class="muted">${esc(u.client)} · ↑ ${G.bytes(u.up)} ↓ ${G.bytes(u.down)} · ${dur(u.dur)} · ${G.clock(u.at)}</span></li></ul>
+  </section>
+  <p class="coverage">Files: changes seen at the agent's hook checkpoints, plus the agent's own reads. Network: traffic through the gateway proxy only.</p>`;
+G.themeInit();
+</script>
+</body>
+</html>

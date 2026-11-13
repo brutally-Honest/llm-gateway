@@ -72,7 +72,7 @@ func TestTimelineCmd_PrintsUsageTotals(t *testing.T) {
 		}
 	}
 
-	_, js := viewerRun(t, dir, "timeline", "-json", "k")
+	_, js := viewerRun(t, dir, "timeline", "-entries", "-json", "k")
 	jl := lines(js)
 	var m map[string]any
 	if err := json.Unmarshal([]byte(jl[len(jl)-1]), &m); err != nil || m["type"] != "usage_total" {
@@ -266,7 +266,7 @@ func TestTimelineCmd_JSONSessionHeadersHaveNoUsage(t *testing.T) {
 		call{id: "a", key: "k", client: "cc", model: "m1", at: 1, in: 10, out: 20},
 		call{id: "b", key: "k", client: "other", model: "m1", at: 2, in: 3, out: 4},
 	)
-	code, out := viewerRun(t, dir, "timeline", "-json", "k")
+	code, out := viewerRun(t, dir, "timeline", "-entries", "-json", "k")
 	if code != exitOK {
 		t.Fatalf("exit %d\n%s", code, out)
 	}

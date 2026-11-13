@@ -205,7 +205,7 @@ func TestTimeline_PrintsSession(t *testing.T) {
 		vx{id: "b", key: "k", at: 5, prompt: "second"},
 		vx{id: "a", key: "k", at: 1, prompt: "first"},
 	)
-	code, out := viewerRun(t, dir, "timeline", "k")
+	code, out := viewerRun(t, dir, "timeline", "-entries", "k")
 	if code != exitOK {
 		t.Fatalf("exit %d\n%s", code, out)
 	}
@@ -226,7 +226,7 @@ func TestTimeline_LastPrintsTopSession(t *testing.T) {
 		vx{id: "a", key: "old", at: 1, prompt: "old prompt"},
 		vx{id: "b", key: "new", at: 5, prompt: "new prompt"},
 	)
-	code, out := viewerRun(t, dir, "timeline", "-last")
+	code, out := viewerRun(t, dir, "timeline", "-entries", "-last")
 	if code != exitOK || !strings.Contains(out, "new prompt") || strings.Contains(out, "old prompt") {
 		t.Errorf("exit %d\n%s", code, out)
 	}
@@ -262,7 +262,7 @@ func TestTimeline_SameKeyTwoClientsPrintsBoth(t *testing.T) {
 		vx{id: "a", key: "k", client: "cc", at: 1, prompt: "from cc"},
 		vx{id: "b", key: "k", client: "other", principal: "alice", at: 2, prompt: "from other"},
 	)
-	code, out := viewerRun(t, dir, "timeline", "k")
+	code, out := viewerRun(t, dir, "timeline", "-entries", "k")
 	if code != exitOK {
 		t.Fatalf("exit %d", code)
 	}
@@ -278,7 +278,7 @@ func TestTimeline_SameKeyTwoClientsPrintsBoth(t *testing.T) {
 
 func TestTimeline_JSONFlag(t *testing.T) {
 	dir := seedViewer(t, vx{id: "a", key: "k", at: 1, prompt: "hi"})
-	code, out := viewerRun(t, dir, "timeline", "-json", "k")
+	code, out := viewerRun(t, dir, "timeline", "-entries", "-json", "k")
 	if code != exitOK {
 		t.Fatalf("exit %d", code)
 	}

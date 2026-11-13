@@ -10,9 +10,11 @@ import (
 type builtSession struct {
 	entries []timeline.Entry
 	facts   map[string]*callFactsJSON
-	byID    map[string]store.ExchangeRow
-	rowID   map[string]int64
-	rows    int
+	// calls is the timeline's own facts of each model call, which the session view reads.
+	calls map[string]*timeline.CallFact
+	byID  map[string]store.ExchangeRow
+	rowID map[string]int64
+	rows  int
 }
 
 // eventsOnce serves each request's events from the first read, so the timeline build
@@ -79,9 +81,9 @@ func buildFrom(source timeline.Source, who sessIdent, exs []store.ExchangeRow, r
 	if err != nil {
 		return builtSession{}, err
 	}
-	facts, err := callFacts(src, entries, rules, src.events)
+	facts, calls, err := callFactsBoth(src, entries, rules, src.events)
 	if err != nil {
 		return builtSession{}, err
 	}
-	return builtSession{entries: entries, facts: facts, byID: byID, rows: len(exs)}, nil
+	return builtSession{entries: entries, facts: facts, calls: calls, byID: byID, rows: len(exs)}, nil
 }

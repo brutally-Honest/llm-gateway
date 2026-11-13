@@ -168,7 +168,7 @@ func TestFixture_HeadHelloNotAModelCall(t *testing.T) {
 	if !strings.HasSuffix(ungrouped, "\t1\t\tno model calls") {
 		t.Errorf("ungrouped line = %q\n%s", ungrouped, out)
 	}
-	_, js := viewerRun(t, dir, "timeline", "-json", "fixture-id-1")
+	_, js := viewerRun(t, dir, "timeline", "-entries", "-json", "fixture-id-1")
 	jl := lines(js)
 	var m map[string]any
 	if err := json.Unmarshal([]byte(jl[len(jl)-1]), &m); err != nil {
@@ -181,7 +181,7 @@ func TestFixture_HeadHelloNotAModelCall(t *testing.T) {
 
 func TestFixture_TimelineJSONCarriesSameTotals(t *testing.T) {
 	dir := fixtureStore(t)
-	code, out := viewerRun(t, dir, "timeline", "-json", "fixture-id-1")
+	code, out := viewerRun(t, dir, "timeline", "-entries", "-json", "fixture-id-1")
 	if code != exitOK {
 		t.Fatalf("exit %d\n%s", code, out)
 	}

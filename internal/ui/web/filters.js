@@ -37,26 +37,3 @@ export function filterSessions(rows, { kind = "all", text = "", hasMore = false 
   else if (filtering && hasMore) note = `filtering ${rows.length} loaded`;
   return { rows: out, note, loadMore: hasMore };
 }
-
-// filterTurns narrows the loaded timeline cards by text (prompt, replies, tool names) and
-// by tool name; a card keeps only the tool rows that match the picker.
-export function filterTurns(cards, { text = "", tool = "" } = {}) {
-  const q = text.trim().toLowerCase();
-  const out = [];
-  for (const card of cards) {
-    const tools = tool ? card.tools.filter((t) => t.name === tool) : card.tools;
-    if (tool && !tools.length) continue;
-    if (q) {
-      const hay = [card.prompt && card.prompt.text, ...card.texts, ...card.tools.map((t) => t.name)]
-        .filter(Boolean).join("\n").toLowerCase();
-      if (!hay.includes(q)) continue;
-    }
-    out.push({ ...card, tools });
-  }
-  return out;
-}
-
-// toolNames lists the distinct tool names in the loaded cards, for the picker.
-export function toolNames(cards) {
-  return [...new Set(cards.flatMap((c) => c.tools.map((t) => t.name).filter(Boolean)))].sort();
-}

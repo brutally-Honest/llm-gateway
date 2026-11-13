@@ -161,15 +161,17 @@ func TestWeb_NoHTMLInjectionSinks(t *testing.T) {
 	}
 }
 
-// TestWeb_ServesHarnessBadgeRendering: the tool row shows its chip and agent label and the
-// hook input, the timeline renders hook lines, and the sessions list shows the hooks-only
-// label. All text goes through textContent (no HTML sinks, tested above).
+// TestWeb_ServesHarnessBadgeRendering: the tool line shows its state and agent label, the
+// story renders the tools only hooks saw and says when no model call was captured, and
+// the sessions list shows the hooks-only label. All text goes through textContent (no HTML
+// sinks, tested above). The details dialog shows the hook input when it differs, with its
+// own omitted-bytes note.
 func TestWeb_ServesHarnessBadgeRendering(t *testing.T) {
 	files := webFiles(t)
 	want := map[string][]string{
-		"tool-card.js":     {"chipNode(row.chip)", "row.agent", "input_differs", "hook_input", "hook_omitted_bytes"},
+		"story.js":         {"markText(l.state, ok)", "l.agent", "t.hook_tools", "No model calls captured. The hooks saw:"},
+		"dialog.js":        {"det.input_differs", "det.hook_input", "det.hook_omitted_bytes", "det.hooks"},
 		"model.js":         {"agentLabel(e)", "export function chipOf"},
-		"timeline-page.js": {"hookLabel(h)", "agentLabel(h)"},
 		"sessions-page.js": {"hooks_only", "hooks only"},
 	}
 	for name, subs := range want {
@@ -181,29 +183,24 @@ func TestWeb_ServesHarnessBadgeRendering(t *testing.T) {
 	}
 }
 
-// TestWeb_ComponentsCallTheTestedHelpers: the dispatch of stream events, the omitted-bytes
-// note, the hook label and the hook input's truncation live in entries.js, where the Node
-// tests run them; the components must call those functions, not repeat the logic. Stream
-// events reach liveEffect through liveBatch, which applies a burst of them in order.
+// TestWeb_ComponentsCallTheTestedHelpers: the omitted-bytes note, the hook label and the
+// hook input's truncation live in entries.js, where the Node tests run them; the components
+// must call those functions, not repeat the logic. A live view event reaches the session
+// page through mergeView, which the Node tests run, and the page swaps turns by key (spec
+// 016 AC12).
 func TestWeb_ComponentsCallTheTestedHelpers(t *testing.T) {
 	files := webFiles(t)
 	want := map[string][]string{
-		"api.js":           {"export const STREAM_EVENTS", "for (const name of STREAM_EVENTS)"},
-		"app.js":           {"liveBatch(events, st.entries)", "import { addUnique, liveBatch, upsertSession }"},
-		"tool-card.js":     {"hookInputEntry(call)", "omittedNote(call.hook_omitted_bytes)"},
-		"timeline-page.js": {"hookLabel(h)"},
-		"entries.js":       {"export function liveEffect", "export function liveBatch", "const p = liveEffect(name, data, cur)", "export function omittedNote", "export function hookInputEntry", "export function hookLabel"},
+		"api.js":          {"export const STREAM_EVENTS", "for (const name of STREAM_EVENTS)"},
+		"app.js":          {"page.applyEvent(data)", "stream?view=1"},
+		"session-page.js": {"export function mergeView", "page.applyEvent = (ev) => page.setView(mergeView(view, ev))", "k.hash !== t.hash"},
+		"entries.js":      {"export function omittedNote", "export function hookInputEntry", "export function hookLabel"},
 	}
 	for name, subs := range want {
 		for _, sub := range subs {
 			if !strings.Contains(files[name], sub) {
 				t.Errorf("%s does not contain %q", name, sub)
 			}
-		}
-	}
-	for _, name := range []string{"app.js", "tool-card.js", "timeline-page.js"} {
-		if strings.Contains(files[name], "replaceHooks(") || strings.Contains(files[name], "replaceExchange(") {
-			t.Errorf("%s calls a replace function directly; app.js must route through liveBatch and liveEffect", name)
 		}
 	}
 }

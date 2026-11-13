@@ -1,0 +1,1211 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>016 mockup 4 · Story</title>
+<style>
+/* 016 mockups: shared tokens and parts. Every text colour pair below is ≥ 4.5:1 on its
+   background in both themes; status is always glyph + word, colour only repeats it. */
+/* one neutral theme for every mockup page (zinc greys, indigo accent) */
+:root, :root[data-theme=dark] {
+  color-scheme: dark;
+  --bg: #09090b; --card: #111114; --panel: #18181b; --panel2: #1f1f23; --border: #2a2a30; --line: #222227;
+  --text: #e4e4e7; --hi: #fafafa; --muted: #a1a1aa; --accent: #a5b4fc; --accent-strong: #818cf8; --accent-bg: #1e1b4b; --on-accent: #0b0b1a;
+  --ok: #4ade80; --ok-bg: #0d2818; --bad: #f87171; --bad-bg: #2a1215; --warn: #fbbf24; --warn-bg: #2a1f06;
+  --add: #4ade80; --add-bg: #0f2a1a; --del: #fca5a5; --del-bg: #2d1215;
+  --model: #93c5fd; --model-bg: #172554; --toolc: #c4b5fd; --tool-bg: #1e1830;
+  --scrim: #000000b8; --shadow: 0 1px 2px #0006, 0 0 0 1px #ffffff08;
+}
+:root[data-theme=light] {
+  color-scheme: light;
+  --bg: #fafafa; --card: #ffffff; --panel: #f4f4f5; --panel2: #ededf0; --border: #e4e4e7; --line: #efeff1;
+  --text: #27272a; --hi: #09090b; --muted: #52525b; --accent: #4338ca; --accent-strong: #4f46e5; --accent-bg: #eef2ff; --on-accent: #ffffff;
+  --ok: #15803d; --ok-bg: #ecfdf3; --bad: #b91c1c; --bad-bg: #fef2f2; --warn: #a16207; --warn-bg: #fefce8;
+  --add: #15803d; --add-bg: #ecfdf3; --del: #b91c1c; --del-bg: #fef2f2;
+  --model: #1d4ed8; --model-bg: #dbeafe; --toolc: #6d28d9; --tool-bg: #f5f3ff;
+  --scrim: #09090b66; --shadow: 0 1px 2px #0000000d, 0 1px 3px #00000012;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+a { color: var(--accent); }
+code, pre, .mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+code { font-size: 12.5px; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+[hidden] { display: none !important; }
+
+/* top bar */
+/* the header is drawn into #top on most pages; the wrapper is what sticks */
+#top { position: sticky; top: 0; z-index: 20; }
+.top { position: sticky; top: 0; z-index: 20; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding: 8px 24px; background: color-mix(in srgb, var(--card) 90%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+#top .top { position: static; }
+.brand { font-weight: 700; color: var(--hi); text-decoration: none; }
+.crumb { display: flex; gap: 6px; align-items: center; min-width: 0; font-size: 13px; color: var(--muted); }
+.crumb b { color: var(--hi); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40ch; }
+.vname { font-size: 12px; color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 1px 8px; }
+.spacer { flex: 1; }
+.seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+.seg button { background: none; border: 0; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 500; cursor: pointer; color: var(--muted); min-height: 28px; }
+.seg button[aria-pressed=true] { background: var(--card); color: var(--hi); font-weight: 600; box-shadow: var(--shadow); }
+
+/* session header */
+.shead { display: flex; flex-direction: column; gap: 8px; }
+.shead h1 { margin: 0; font-size: 24px; color: var(--hi); font-weight: 700; letter-spacing: -.02em; }
+.meta { margin: 0; font-size: 12px; color: var(--muted); }
+.facts-groups { display: flex; flex-wrap: wrap; gap: 8px; }
+.fg { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); font-size: 12px; }
+.fgname { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.fact { color: var(--muted); white-space: nowrap; }
+.fact b { color: var(--hi); font-weight: 600; font-variant-numeric: tabular-nums; }
+.facts-groups.compact .fg { padding: 4px 8px; }
+details.side { font-size: 12px; color: var(--muted); }
+details.side summary { cursor: pointer; display: inline-block; padding: 1px 8px; border: 1px solid var(--line); border-radius: 999px; }
+details.side summary:hover { color: var(--text); }
+details.side ul { margin: 6px 0 2px; }
+
+/* labels, statuses */
+.lbl { display: inline-flex; gap: 4px; align-items: center; white-space: nowrap; font-size: 12px; font-weight: 600; padding: 0 7px; border-radius: 6px; border: 1px solid var(--border); color: var(--hi); background: var(--panel); }
+.lbl-named { background: var(--ok-bg); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.lbl-only_one { background: var(--accent-bg); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.lbl-several { border-style: dashed; }
+.lbl-outside { background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
+.lbl-harness { color: var(--text); }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+.st { white-space: nowrap; font-weight: 600; }
+.st-ok { color: var(--ok); }
+.st-failed { color: var(--bad); }
+.errbox { border-left: 3px solid var(--bad); padding-left: 8px; }
+.linkish { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-align: left; }
+.linkish:hover { text-decoration: underline; }
+ul.plain { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+
+/* rail prompts: clamped to 3 lines, full text on hover or focus */
+.clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; overflow-wrap: anywhere; }
+.clamp2 { -webkit-line-clamp: 2; line-clamp: 2; }
+:is(a, button, li, div):is(:hover, :focus, :focus-within) > .clamp { -webkit-line-clamp: unset; line-clamp: unset; }
+
+/* details view parts */
+.dhead { display: flex; flex-direction: column; gap: 4px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.dhead h2 { margin: 0; font-size: 15px; color: var(--hi); font-weight: 600; overflow-wrap: anywhere; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.kicker { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.dsec { padding: 12px 18px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.dsec h3 { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; }
+dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; margin: 0; font-size: 12.5px; }
+dl.facts dt { color: var(--muted); }
+dl.facts dd { margin: 0; color: var(--hi); overflow-wrap: anywhere; }
+pre { margin: 0; font-size: 12px; color: var(--hi); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 22rem; overflow: auto; }
+.diff { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: 12.5px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg); }
+.diff div { padding: 2px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.diff .dg { display: inline-block; width: 1.2em; color: var(--muted); }
+.diff .ctx { color: var(--muted); }
+.diff .add { color: var(--hi); background: var(--add-bg); }
+.diff .add .dg { color: var(--add); }
+.diff .del { color: var(--hi); background: var(--del-bg); }
+.diff .del .dg { color: var(--del); }
+.fileblock { display: flex; flex-direction: column; gap: 6px; }
+.fileblock p { margin: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+ul.elist { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+ul.elist li { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
+ul.elist .elbl { min-width: 11.5rem; }
+ul.elist code { overflow-wrap: anywhere; }
+details.think summary { cursor: pointer; color: var(--accent); }
+details.think pre { margin-top: 6px; }
+
+/* legend */
+.legend { display: flex; flex-wrap: wrap; gap: 6px 10px; font-size: 12px; color: var(--muted); align-items: center; }
+
+@media (max-width: 760px) {
+  .crumb b { max-width: 20ch; }
+}
+
+/* ==== variant 4: turns left, the story in the middle, what the session touched on the
+   right (files, commands, sites). One modal shape for every detail. Own neutral theme;
+   every text pair is ≥ 4.5:1. ==== */
+.top { height: 56px; padding-top: 0; padding-bottom: 0; }
+.btn { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--hi); white-space: nowrap; }
+.btn:hover { background: var(--panel); }
+.btn.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--on-accent); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.sm { font-size: 12px; padding: 3px 9px; border-radius: 6px; }
+.btn:focus-visible, .row:focus-visible, .tab:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+
+/* ---- app shell: the header on top, three columns filling the rest of the window. Only
+   the story scrolls; the side cards share width, top and bottom. ---- */
+body { height: 100vh; overflow: hidden; }
+.cols { display: grid; grid-template-columns: 23rem minmax(0, 1fr) 23rem; grid-template-rows: minmax(0, 1fr); grid-template-areas: "toc story side"; gap: 24px; max-width: 1640px; height: calc(100vh - 56px); margin: 0 auto; padding: 20px 24px; }
+.toc { grid-area: toc; } main { grid-area: story; } .sidebar { grid-area: side; }
+.toc, .sidebar { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.colhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 18px 12px; border-bottom: 1px solid var(--line); }
+.colhead h2 { margin: 0; font-size: 14px; font-weight: 700; color: var(--hi); }
+.colhead .sub { font-size: 12px; color: var(--muted); }
+.scroll { overflow: auto; flex: 1; scrollbar-width: thin; }
+
+/* left: turns */
+.toc ol { list-style: none; margin: 0; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.toc a { display: grid; grid-template-columns: 1.6rem 1fr; gap: 2px 10px; padding: 8px; border-radius: 8px; color: var(--text); text-decoration: none; }
+.toc a:hover { background: var(--panel); }
+.toc a[aria-current=true] { background: var(--accent-bg); }
+.toc .n { grid-row: span 2; width: 1.6rem; height: 1.6rem; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: var(--hi); background: var(--panel2); }
+.toc a[aria-current=true] .n { background: var(--accent-strong); color: var(--on-accent); }
+.toc .p { color: var(--hi); font-size: 13px; font-weight: 500; line-height: 1.4; }
+.toc .m { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 0 8px; }
+.toc .m .bad { color: var(--bad); font-weight: 600; }
+.toc .btw a { grid-template-columns: 1.6rem 1fr; padding: 4px 8px; }
+.toc .btw .n { background: var(--warn-bg); color: var(--warn); grid-row: auto; width: 1.6rem; height: 1.3rem; border-radius: 6px; }
+.toc .btw .p { color: var(--warn); font-size: 12px; font-weight: 600; }
+
+/* right: what the session touched */
+.tabs { display: flex; justify-content: space-between; gap: 12px; padding: 0 18px; border-bottom: 1px solid var(--line); }
+.tab { all: unset; cursor: pointer; padding: 13px 0 10px; margin-bottom: -1px; border-bottom: 2px solid transparent; font-size: 14px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.tab:hover { color: var(--text); }
+.tab b { font-weight: 500; margin-left: 5px; font-variant-numeric: tabular-nums; }
+.tab[aria-selected=true] { color: var(--hi); border-bottom-color: var(--accent-strong); }
+/* context tab */
+.ctxfacts { margin: 4px 10px 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ctxchart { display: flex; gap: 6px; margin: 4px 10px 0; }
+.ctxchart .ct { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ctxchart .bars { display: flex; align-items: flex-end; gap: 2px; height: 104px; border-bottom: 1px solid var(--border); }
+.ctxchart .bars button { all: unset; cursor: pointer; flex: 1; min-width: 4px; background: color-mix(in srgb, var(--model) 70%, transparent); border-radius: 2px 2px 0 0; }
+.ctxchart .bars button:hover, .ctxchart .bars button:focus-visible { background: var(--accent-strong); outline: none; }
+.ctxchart .tl2 { font-size: 11px; font-weight: 600; color: var(--muted); text-align: center; }
+.tabp { padding: 4px 6px 10px; }
+.tabp .lead { margin: 8px 10px 6px; font-size: 12px; color: var(--muted); }
+.tabp h3 { margin: 12px 10px 4px; font-size: 12px; font-weight: 700; color: var(--hi); text-transform: uppercase; letter-spacing: .04em; }
+.rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.row { all: unset; box-sizing: border-box; cursor: pointer; width: 100%; display: grid; grid-template-columns: 1.4rem minmax(0, 1fr) auto; gap: 1px 8px; padding: 8px 10px; border-radius: 8px; }
+.row:hover { background: var(--panel); }
+.row .ic { font-weight: 700; color: var(--muted); text-align: center; grid-row: span 2; }
+.row .ic.ok { color: var(--ok); } .row .ic.bad { color: var(--bad); }
+.row .t1 { color: var(--hi); font-weight: 600; font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
+.row .t1 code { font-weight: 500; font-size: 12.5px; }
+.row .t2 { grid-column: 2 / -1; font-size: 12px; color: var(--muted); }
+.row .t2 .warn { color: var(--warn); font-weight: 600; }
+.row .t2 .bad { color: var(--bad); font-weight: 600; }
+.row .r { font-size: 12px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted); }
+.a { color: var(--add); } .d { color: var(--del); }
+.tabfoot { margin: 8px 10px 0; padding-top: 8px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+
+/* centre */
+main { display: flex; flex-direction: column; gap: 20px; min-width: 0; min-height: 0; overflow: auto; padding-right: 4px; scrollbar-width: thin; }
+main > * { flex: none; }
+/* room under the last turn, so any turn can scroll to the top */
+main::after { content: ""; flex: 0 0 55vh; }
+.hero { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
+.hero .status { display: inline-flex; align-self: flex-start; gap: 6px; align-items: center; font-size: 12px; font-weight: 600; color: var(--muted); background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 1px 10px; }
+.hero h1 { margin: 0; font-size: 26px; line-height: 1.25; font-weight: 700; letter-spacing: -.02em; color: var(--hi); }
+.hero .meta { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+.hero .meta span + span::before { content: "·"; margin-right: 14px; }
+.kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.kpi { all: unset; box-sizing: border-box; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; background: var(--card); }
+button.kpi { cursor: pointer; } button.kpi:hover { background: var(--panel); } button.kpi:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+.kpi .l { font-size: 12px; font-weight: 600; color: var(--muted); display: flex; justify-content: space-between; }
+.kpi .l i { font-style: normal; color: var(--accent); }
+.kpi .v { font-size: 20px; font-weight: 700; color: var(--hi); letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.kpi .s { font-size: 12px; color: var(--muted); }
+.attn h2 { margin: 0 0 8px; font-size: 14px; font-weight: 700; color: var(--hi); }
+.attn ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.attn button { all: unset; box-sizing: border-box; width: 100%; display: grid; grid-template-columns: 1.8rem 1fr auto; gap: 12px; align-items: center; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; background: var(--card); }
+.attn button:hover { background: var(--panel); }
+.attn button:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+.attn .ic { width: 1.8rem; height: 1.8rem; border-radius: 8px; display: grid; place-items: center; font-weight: 700; }
+.attn .bad .ic { background: var(--bad-bg); color: var(--bad); }
+.attn .warn .ic { background: var(--warn-bg); color: var(--warn); }
+.attn .info .ic { background: var(--panel2); color: var(--hi); }
+.attn .t { color: var(--hi); font-weight: 600; font-size: 13.5px; }
+.attn .s { color: var(--muted); font-size: 12.5px; display: block; }
+.attn .go { color: var(--accent); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.foot { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }
+details.side summary { border-color: var(--border); }
+
+.turn { scroll-margin-top: 0; overflow: hidden; }
+.th { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 16px 20px 14px; border-bottom: 1px solid var(--line); }
+.th .k { font-size: 12px; font-weight: 600; color: var(--muted); display: flex; gap: 10px; align-items: center; }
+.th .k b { font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; }
+.th h2 { grid-column: 1; margin: 0; font-size: 17px; line-height: 1.4; font-weight: 700; color: var(--hi); letter-spacing: -.01em; }
+.th .dur { grid-column: 2; grid-row: 1 / span 2; align-self: start; text-align: right; }
+.th .dur b { display: block; font-size: 18px; font-weight: 700; color: var(--hi); font-variant-numeric: tabular-nums; }
+.th .dur span { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.tb { padding: 14px 20px 18px; display: flex; flex-direction: column; gap: 12px; }
+.sum { display: flex; flex-wrap: wrap; gap: 6px; }
+.pill { font-size: 12px; font-weight: 600; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 1px 9px; }
+.pill.bad { color: var(--bad); background: var(--bad-bg); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+ol.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.say { font-size: 13px; color: var(--muted); display: flex; gap: 6px; flex-wrap: wrap; align-items: baseline; }
+.say .linkish { font-weight: 600; }
+.cn { font-weight: 700; color: var(--model); }
+ul.tools { list-style: none; margin: 6px 0 0 6px; padding: 0 0 0 14px; border-left: 2px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.tl { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; padding: 4px 8px; margin-left: -8px; border-radius: 8px; }
+.tl .si { font-weight: 700; }
+.tl .si.ok { color: var(--ok); } .tl .si.failed { color: var(--bad); }
+.tl .nm { color: var(--hi); font-weight: 700; }
+.tl code { font-size: 12.5px; color: var(--text); overflow-wrap: anywhere; }
+.tl .ls { font-size: 12px; font-weight: 600; }
+.tl .tm { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.tl.failed { background: var(--bad-bg); }
+.why { font-size: 12.5px; color: var(--bad); margin: 2px 0 0 22px; font-weight: 500; }
+ul.effs { list-style: none; margin: 4px 0 2px 22px; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+ul.effs > li { display: grid; grid-template-columns: 11rem minmax(0, 1fr) auto auto; gap: 8px; align-items: baseline; border-radius: 8px; padding: 2px 6px; margin-left: -6px; }
+ul.effs .linkish code { color: var(--accent); }
+.subagent { margin: 6px 0 2px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--toolc) 40%, transparent); background: var(--tool-bg); border-radius: 10px; display: flex; flex-direction: column; gap: 6px; }
+.subagent > .say { color: var(--toolc); font-weight: 600; }
+.grp { font-size: 12.5px; color: var(--muted); margin: 8px 0 0 22px; font-weight: 600; border-radius: 8px; }
+.answer { margin: 4px 0 0; padding: 12px 14px; border-radius: 10px; background: var(--panel); color: var(--text); }
+.answer .who { display: block; font-size: 12px; font-weight: 700; color: var(--hi); margin-bottom: 2px; }
+.btwentry { border: 1px dashed color-mix(in srgb, var(--warn) 60%, transparent); background: var(--warn-bg); padding: 14px 20px; display: flex; flex-direction: column; gap: 6px; scroll-margin-top: 0; }
+.btwentry h2 { margin: 0; font-size: 14px; font-weight: 700; color: var(--hi); }
+.btwentry ul.effs { margin-left: 0; }
+.agent { font-size: 11px; font-weight: 600; color: var(--toolc); border: 1px solid currentColor; border-radius: 6px; padding: 0 5px; }
+
+/* labels and diffs */
+
+/* jump highlight */
+.flash { animation: flash 2.4s ease-out; }
+@keyframes flash { 0%, 35% { background: var(--accent-bg); box-shadow: 0 0 0 2px var(--accent-strong); } 100% { background: transparent; box-shadow: 0 0 0 2px transparent; } }
+
+/* ---- the one modal ---- */
+dialog { width: min(46rem, 94vw); max-height: 86vh; padding: 0; border: 1px solid var(--border); border-radius: 14px; background: var(--card); color: var(--text); box-shadow: 0 24px 64px #0008; overflow: hidden; }
+dialog[open] { display: flex; flex-direction: column; }
+dialog::backdrop { background: var(--scrim); }
+.mh { display: flex; gap: 12px; align-items: flex-start; padding: 16px 20px 14px; border-bottom: 1px solid var(--line); }
+.mh .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.mh .kick { font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .05em; }
+.mh h2 { margin: 0; font-size: 18px; line-height: 1.35; font-weight: 700; color: var(--hi); overflow-wrap: anywhere; }
+.mh h2 code { font-size: 16px; font-weight: 600; }
+.mh .subt { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.mh .x { all: unset; cursor: pointer; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--muted); font-size: 18px; }
+.mh .x:hover { background: var(--panel); color: var(--hi); }
+.mh .x:focus-visible { outline: 2px solid var(--accent-strong); }
+.mb { overflow: auto; padding: 4px 20px 18px; display: flex; flex-direction: column; }
+.ms { padding: 14px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.ms:last-child { border-bottom: 0; }
+.ms > h3 { margin: 0; font-size: 13px; font-weight: 700; color: var(--hi); display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ms > h3 .sub { font-size: 12px; font-weight: 500; color: var(--muted); }
+.mfacts { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 8px; }
+.mfact { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+.mfact .l { display: block; font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.mfact .v { display: block; font-size: 14px; font-weight: 700; color: var(--hi); overflow-wrap: anywhere; }
+.why2 { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--panel); }
+.mlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.mlist li { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 13px; }
+.mlist .linkish code { color: var(--accent); }
+.mf { display: flex; gap: 8px; justify-content: flex-end; align-items: center; padding: 12px 20px; border-top: 1px solid var(--line); background: var(--card); }
+.mf .grow { flex: 1; }
+.muted-note { font-size: 12.5px; color: var(--muted); margin: 0; }
+
+@media (max-width: 1360px) { .cols { grid-template-columns: 20rem minmax(0, 1fr) 20rem; gap: 18px; padding: 18px; } .tabs { padding: 0 14px; } .tab { font-size: 13px; } }
+/* narrower: back to one scrolling page, the turn list sticky on the left */
+@media (max-width: 1080px) {
+  body { height: auto; overflow: auto; }
+  .cols { height: auto; grid-template-columns: 17rem minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: "toc story" "toc side"; }
+  .toc { position: sticky; top: 76px; max-height: calc(100vh - 92px); align-self: start; }
+  main { overflow: visible; }
+  main::after { display: none; }
+}
+@media (max-width: 760px) {
+  .cols { grid-template-columns: 1fr; grid-template-areas: "story" "side"; padding: 12px; }
+  .toc { display: none; }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  ul.effs > li { grid-template-columns: 1fr; gap: 0; }
+}
+</style>
+</head>
+<body>
+<div id="top"></div>
+<div class="cols">
+  <nav class="toc card" aria-label="Turns" id="toc"></nav>
+  <main id="main"></main>
+  <aside class="sidebar card" id="side" aria-label="What this session touched"></aside>
+</div>
+<dialog id="dlg" aria-labelledby="mtitle"><div id="mwrap" style="display:contents"></div></dialog>
+<script>// 016 mockups: the shared made-up dataset and helpers. build.py inlines this file into
+// every variant, so all of them show the same session. Times are seconds from T0.
+"use strict";
+const G = (() => {
+const T0 = new Date(2026, 10, 10, 10, 2, 0).getTime();
+const FOLDER = "/home/dev/code/shop-api";
+
+// ---------- the session ----------
+const S = {
+  id: "7f3c91e2-5b0a-4d1e-9c55-2a8e61f0b7d4",
+  client: "claude-code", model: "claude-opus-5-5", folder: FOLDER,
+  title: "Fix flaky checkout tests", titleFrom: "generated title (#3)",
+  ended: true,
+  unassigned: [{ host: "downloads.claude.ai", port: 443, at: 1180, dur: 2.1, up: 1200, down: 4_812_000, outcome: "ok", label: "harness", client: "claude-code" }],
+};
+
+// side calls: the client's own calls, never a turn, never red by default
+S.side = [
+  { n: 1, kind: "quota probe", at: -4, dur: 0.3, status: 429, statusText: "429 rate limited — expected answer to a quota probe", in: 8, out: 0, cr: 0, cw: 0 },
+  { n: 3, kind: "title generation", at: 0.6, dur: 1.4, status: 200, statusText: "200 ok", in: 212, out: 9, cr: 0, cw: 0, response: "Fix flaky checkout tests" },
+];
+
+const turns = [];
+let tid = 0, eid = 0;
+const call = (n, at, dur, tok, extra = {}) => ({ n, at, dur, ...tok, ...extra });
+const tok = (inp, out, cw, cr) => ({ in: inp, out, cw, cr });
+const tool = (t) => ({ id: `t${++tid}`, ok: true, ...t });
+const eff = (e) => ({ id: ++eid, ...e });
+
+// Turn 1: a 2+ minute Bash with harness traffic during it, reasoning on #2
+turns.push({
+  n: 1, at: 0, end: 152.9,
+  prompt: "Run the test suite and tell me what's failing. The checkout tests have been flaky all week and I'd like to know whether it's the retry logic or the fixtures before I touch anything.",
+  calls: [
+    call(2, 0.5, 6.2, tok(1820, 312, 16400, 0), { stop: "tool_use", thinking: "The user wants the failing tests first. Running the whole suite is slow (about two minutes on this repo, judging by the jest config with --runInBand) but it's the only way to see the flaky ones together. I'll run npm test and read the summary rather than guessing from the file names." }),
+    call(4, 141.6, 11.3, tok(2410, 486, 3100, 16400), { stop: "end_turn" }),
+  ],
+  tools: [
+    tool({ call: 2, name: "Bash", at: 7.0, dur: 134.2, input: { command: "npm test", description: "Run the full test suite" },
+      result: "> shop-api@2.4.0 test\n> jest --runInBand\n\nPASS test/cart.test.js\nPASS test/users.test.js\nFAIL test/checkout.test.js\n  ● checkout › retries a declined card once\n    expected charge count 1, got 2\nFAIL test/payment.test.js (2 failed)\n\nTests: 3 failed, 118 passed, 121 total\nTime: 133.8 s" }),
+  ],
+  answer: "3 tests fail, all on retries: the payment client sends a second charge when the first times out, because the retry builds a new idempotency key. The fixtures look fine.",
+});
+turns[0].effects = [
+  eff({ kind: "net", host: "registry.npmjs.org", port: 443, at: 9.2, dur: 0.8, up: 2100, down: 18_400, outcome: "ok", label: "only_one", tool: "t1" }),
+  eff({ kind: "net", host: "statsig.anthropic.com", port: 443, at: 41.0, dur: 0.4, up: 3800, down: 600, outcome: "ok", label: "harness" }),
+  eff({ kind: "change", path: "test-results.xml", change: "created", size: 14_820, at: 141.4, label: "only_one", tool: "t1", content: "<?xml version=\"1.0\"?>\n<testsuites tests=\"121\" failures=\"3\" time=\"133.8\">\n  <testsuite name=\"checkout\" failures=\"1\">…" }),
+];
+
+// Turn 2: parallel reads plus a sub-agent
+turns.push({
+  n: 2, at: 240, end: 302.5,
+  prompt: "Read the checkout test and the payment client and find out why a retry double-charges.",
+  calls: [
+    call(5, 240.4, 4.8, tok(980, 274, 2900, 19500), { stop: "tool_use" }),
+    call(6, 246.0, 3.1, tok(1400, 120, 6200, 0), { stop: "tool_use", agent: "Explore" }),
+    call(7, 249.6, 4.0, tok(820, 96, 2100, 6200), { stop: "tool_use", agent: "Explore" }),
+    call(8, 254.1, 29.0, tok(640, 1210, 1800, 8300), { stop: "end_turn", agent: "Explore" }),
+    call(9, 284.0, 18.5, tok(3100, 702, 4800, 22400), { stop: "end_turn" }),
+  ],
+  answer: "Found it: retry.js calls makeKey() inside the retry loop, so each attempt gets a fresh idempotency key and Stripe treats it as a new charge. The test is right; the client is wrong.",
+});
+turns[1].tools = [
+  tool({ call: 5, name: "Read", at: 245.4, dur: 0.1, input: { file_path: `${FOLDER}/src/checkout.js` }, result: "1  import { charge } from './payment/client.js'\n2  …\n(212 lines)" }),
+  tool({ call: 5, name: "Read", at: 245.4, dur: 0.1, input: { file_path: `${FOLDER}/test/checkout.test.js` }, result: "1  import { checkout } from '../src/checkout.js'\n…\n(148 lines)" }),
+  tool({ call: 5, name: "Grep", at: 245.5, dur: 0.3, input: { pattern: "retry", path: "src/" }, result: "src/payment/client.js:41\nsrc/payment/retry.js:3\nsrc/payment/retry.js:18\nsrc/checkout.js:77" }),
+  tool({ call: 5, name: "Bash", at: 245.4, dur: 0.1, input: { command: "ls -la src/payment", description: "List the payment folder" }, result: "client.js  keys.js  retry.js" }),
+  tool({ call: 5, name: "Bash", at: 245.4, dur: 0.1, input: { command: "cat src/payment/keys.js", description: "Show the key helper" }, result: "export const makeKey = (order) => `${order.id}-${randomUUID()}`" }),
+  tool({ call: 5, name: "Agent", at: 245.4, dur: 38.2, input: { description: "Explore payment client", subagent_type: "Explore", prompt: "Map how src/payment builds and reuses idempotency keys." }, result: "client.js builds a key per charge(); retry.js wraps charge() and calls makeKey() on every attempt (line 18)." , spawns: "Explore" }),
+  tool({ call: 6, agent: "Explore", name: "Read", at: 249.3, dur: 0.1, input: { file_path: `${FOLDER}/src/payment/client.js` }, result: "(96 lines)" }),
+  tool({ call: 6, agent: "Explore", name: "Glob", at: 249.3, dur: 0.1, input: { pattern: "src/payment/**" }, result: "src/payment/client.js\nsrc/payment/retry.js\nsrc/payment/keys.js" }),
+  tool({ call: 7, agent: "Explore", name: "Read", at: 253.8, dur: 0.1, input: { file_path: `${FOLDER}/src/payment/retry.js` }, result: "(41 lines)" }),
+];
+const [r1, r2, g1, , , , r3, gl, r4] = turns[1].tools;
+turns[1].effects = [
+  eff({ kind: "read", path: "src/checkout.js", detail: "lines 1–212", at: 245.5, label: "named", tool: r1.id }),
+  eff({ kind: "read", path: "test/checkout.test.js", detail: "lines 1–148", at: 245.5, label: "named", tool: r2.id }),
+  eff({ kind: "read", search: true, path: "src/", detail: "pattern “retry”", at: 245.8, label: "named", tool: g1.id }),
+  eff({ kind: "read", path: "src/payment/client.js", detail: "lines 1–96", at: 249.4, label: "named", tool: r3.id }),
+  eff({ kind: "read", search: true, path: "src/payment/", detail: "pattern src/payment/**", at: 249.4, label: "named", tool: gl.id }),
+  eff({ kind: "read", path: "src/payment/retry.js", detail: "lines 1–41", at: 253.9, label: "named", tool: r4.id }),
+];
+
+// Turn 3: an errored Edit, then two Edits in parallel
+turns.push({
+  n: 3, at: 400, end: 431.5,
+  prompt: "Fix the retry so it reuses the idempotency key from the first attempt.",
+  calls: [
+    call(10, 400.3, 9.2, tok(1210, 388, 5200, 27200), { stop: "tool_use", thinking: "makeKey() must move out of the loop. The Edit needs the exact old line; I'll try the version I remember from the sub-agent's summary." }),
+    call(11, 409.9, 5.5, tok(420, 96, 600, 32400), { stop: "tool_use" }),
+    call(12, 415.8, 8.0, tok(910, 544, 1900, 33000), { stop: "tool_use" }),
+    call(13, 424.4, 7.1, tok(700, 310, 1200, 34900), { stop: "end_turn" }),
+  ],
+  answer: "Moved makeKey() above the retry loop so every attempt sends the same key, and made app.js pass the order id through. Edit #1 failed because my old_string was out of date; I re-read the file and retried.",
+});
+turns[2].tools = [
+  tool({ call: 10, name: "Edit", ok: false, at: 409.6, dur: 0.1, input: { file_path: `${FOLDER}/src/payment/retry.js`, old_string: "const key = makeKey()\n  for (", new_string: "…" }, result: "Error: String to replace not found in file.\nString: const key = makeKey()\n  for (", add: 0, del: 0 }),
+  tool({ call: 11, name: "Read", at: 415.5, dur: 0.1, input: { file_path: `${FOLDER}/src/payment/retry.js` }, result: "(41 lines)" }),
+  tool({ call: 12, name: "Edit", at: 423.9, dur: 0.2, add: 6, del: 2, input: { file_path: `${FOLDER}/src/payment/retry.js`, old_string: "for (let i = 0; i < tries; i++) {\n    const key = makeKey(order)", new_string: "const key = makeKey(order)\n  for (let i = 0; i < tries; i++) {" }, result: "The file src/payment/retry.js has been updated." }),
+  tool({ call: 12, name: "Edit", at: 423.9, dur: 0.1, add: 3, del: 1, input: { file_path: `${FOLDER}/src/app.js`, old_string: "checkout(cart)", new_string: "checkout(cart, { orderId })" }, result: "The file src/app.js has been updated." }),
+];
+const [, rr, e1, e2] = turns[2].tools;
+turns[2].effects = [
+  eff({ kind: "read", path: "src/payment/retry.js", detail: "lines 1–41", at: 415.6, label: "named", tool: rr.id }),
+  eff({ kind: "change", path: "src/payment/retry.js", change: "modified", size: 1_384, add: 6, del: 2, at: 424.3, label: "named", tool: e1.id,
+    diff: [" export async function withRetry(order, tries, send) {", "-  for (let i = 0; i < tries; i++) {", "-    const key = makeKey(order)", "+  // one key for every attempt: Stripe dedupes on it", "+  const key = makeKey(order)", "+  for (let i = 0; i < tries; i++) {", "     try {", "       return await send({ ...order, idempotencyKey: key })", "+    } catch (err) {", "+      if (!isRetryable(err)) throw err", "+    }"] }),
+  eff({ kind: "change", path: "src/app.js", change: "modified", size: 2_210, add: 3, del: 1, at: 424.3, label: "named", tool: e2.id,
+    diff: [" app.post('/checkout', async (req, res) => {", "-  const result = await checkout(cart)", "+  const { orderId } = req.body", "+  // the order id seeds the idempotency key", "+  const result = await checkout(cart, { orderId })", "   res.json(result)"] }),
+];
+
+// between turns 3 and 4: the user's own edit in their editor
+S.between = [{ after: 3, effects: [
+  eff({ kind: "change", path: "README.md", change: "modified", size: 4_102, add: 4, del: 0, at: 520, label: "outside",
+    diff: [" ## Payments", "+", "+Retries reuse the first attempt's idempotency key,", "+so a retried charge is never billed twice.", "+"] }),
+] }];
+
+// Turn 4: one Bash that writes 3 files it does not name
+turns.push({
+  n: 4, at: 600, end: 612.8,
+  prompt: "Regenerate the fixtures with seed 42.",
+  calls: [call(14, 600.4, 4.2, tok(380, 140, 900, 36100), { stop: "tool_use" }), call(15, 608.9, 3.9, tok(520, 180, 700, 37000), { stop: "end_turn" })],
+  answer: "Regenerated: orders.json and users.json are new, payments.json changed (seed 42).",
+});
+turns[3].tools = [tool({ call: 14, name: "Bash", at: 604.8, dur: 3.8, input: { command: "node scripts/gen-fixtures.js --seed 42", description: "Regenerate test fixtures" }, result: "wrote 3 fixture files (seed 42)" })];
+turns[3].effects = ["orders.json", "users.json", "payments.json"].map((f, i) => eff({
+  kind: "change", path: `test/fixtures/${f}`, change: i < 2 ? "created" : "modified", size: [2150, 940, 3310][i], add: [62, 28, 9][i], del: [0, 0, 9][i], at: 608.7, label: "only_one", tool: turns[3].tools[0].id,
+  diff: i < 2 ? undefined : ["   {", "-    \"id\": \"pay_8c1\",", "+    \"id\": \"pay_42a\",", "     \"amount\": 1999,"],
+  content: i < 2 ? `[\n  { "id": "${f.slice(0, 3)}_42a", "seed": 42 },\n  …\n]` : undefined,
+}));
+
+// Turn 5: two Bash calls in parallel, so the changes are "several running"
+turns.push({
+  n: 5, at: 700, end: 722.0,
+  prompt: "Add stripe-mock as a dev dependency and rerun the checkout tests.",
+  calls: [call(16, 700.3, 5.0, tok(610, 210, 800, 37700), { stop: "tool_use" }), call(17, 715.2, 6.8, tok(880, 260, 1100, 38500), { stop: "end_turn" })],
+  answer: "stripe-mock 0.188.0 is installed and the checkout tests pass (14/14).",
+});
+turns[4].tools = [
+  tool({ call: 16, name: "Bash", at: 705.5, dur: 9.4, input: { command: "npm install -D stripe-mock" }, result: "added 1 package, audited 412 packages in 9s" }),
+  tool({ call: 16, name: "Bash", at: 705.5, dur: 6.1, input: { command: "npm test -- checkout" }, result: "PASS test/checkout.test.js\nTests: 14 passed, 14 total" }),
+];
+const both = turns[4].tools.map((t) => t.id);
+turns[4].effects = [
+  eff({ kind: "change", path: "package.json", change: "modified", size: 1_920, add: 1, del: 0, at: 715.0, label: "several", cands: both, diff: ["   \"devDependencies\": {", "+    \"stripe-mock\": \"^0.188.0\",", "     \"jest\": \"^29.7.0\""] }),
+  eff({ kind: "change", path: "package-lock.json", change: "modified", size: 312_400, add: 18, del: 2, at: 715.0, label: "several", cands: both, diff: ["   \"node_modules/stripe-mock\": {", "+    \"version\": \"0.188.0\",", "+    \"dev\": true,", "…16 more lines"] }),
+  eff({ kind: "net", host: "registry.npmjs.org", port: 443, at: 706.2, dur: 3.1, up: 9_800, down: 1_240_000, outcome: "ok", label: "several", cands: both }),
+];
+
+// Turn 6: WebFetch
+turns.push({
+  n: 6, at: 800, end: 815.5,
+  prompt: "Check Stripe's docs on how long an idempotency key stays valid.",
+  calls: [call(18, 800.3, 3.5, tok(410, 120, 700, 39500), { stop: "tool_use" }), call(19, 806.1, 9.4, tok(2900, 420, 3600, 40200), { stop: "end_turn" })],
+  answer: "Keys are kept for at least 24 hours, so reusing one across retries a few seconds apart is safe.",
+});
+turns[5].tools = [tool({ call: 18, name: "WebFetch", at: 804.0, dur: 1.9, input: { url: "https://docs.stripe.com/api/idempotent_requests", prompt: "How long is a key valid?" }, result: "Keys are eligible to be removed from the system automatically after they're at least 24 hours old…" })];
+turns[5].effects = [eff({ kind: "net", host: "docs.stripe.com", port: 443, at: 804.1, dur: 1.6, up: 1_900, down: 88_200, outcome: "ok", label: "named", tool: turns[5].tools[0].id })];
+
+// Turn 7: a skill, a Write and a Bash that names its output
+turns.push({
+  n: 7, at: 900, end: 926.2,
+  prompt: "Write the change up as a PDF for review.",
+  calls: [
+    call(20, 900.3, 2.8, tok(330, 90, 600, 43800), { stop: "tool_use" }),
+    call(21, 903.6, 12.4, tok(4200, 1650, 5100, 44400), { stop: "tool_use" }),
+    call(22, 916.3, 3.0, tok(300, 140, 1800, 49500), { stop: "tool_use" }),
+    call(23, 922.2, 4.0, tok(260, 120, 400, 51300), { stop: "end_turn" }),
+  ],
+  answer: "Wrote docs/checkout-fix.md and rendered it to docs/checkout-fix.pdf (2 pages).",
+});
+turns[6].tools = [
+  tool({ call: 20, name: "Skill", at: 903.2, dur: 0.3, input: { skill: "pdf" }, result: "Launching skill: pdf" }),
+  tool({ call: 21, name: "Write", at: 916.1, dur: 0.1, add: 38, del: 0, input: { file_path: `${FOLDER}/docs/checkout-fix.md`, content: "# Checkout retry fix\n\n…" }, result: "File created successfully at: docs/checkout-fix.md" }),
+  tool({ call: 22, name: "Bash", at: 919.4, dur: 2.7, input: { command: "python3 scripts/md2pdf.py docs/checkout-fix.md -o docs/checkout-fix.pdf" }, result: "wrote docs/checkout-fix.pdf (2 pages)" }),
+];
+turns[6].effects = [
+  eff({ kind: "change", path: "docs/checkout-fix.md", change: "created", size: 1_640, add: 38, del: 0, at: 916.2, label: "named", tool: turns[6].tools[1].id, content: "# Checkout retry fix\n\n## What was wrong\nEach retry built a new idempotency key…" }),
+  eff({ kind: "read", path: "docs/checkout-fix.md", detail: "via Bash, not seen", at: 919.6, label: "named", tool: turns[6].tools[2].id, hidden: true }),
+  eff({ kind: "change", path: "docs/checkout-fix.pdf", change: "created", size: 48_310, binary: true, at: 922.1, label: "named", tool: turns[6].tools[2].id }),
+].filter((e) => !e.hidden);
+
+// Turn 8: hooks only, no model calls captured
+turns.push({
+  n: 8, at: 1000, end: 1003.6, hooksOnly: true,
+  prompt: "commit it",
+  calls: [],
+  answer: null,
+});
+turns[7].tools = [tool({ call: null, name: "Bash", at: 1003.0, dur: 0.4, input: { command: "git commit -am \"fix(payment): reuse idempotency key on retry\"" }, result: "[main 4e1c2a9] fix(payment): reuse idempotency key on retry\n 6 files changed, 71 insertions(+), 12 deletions(-)" })];
+turns[7].effects = [];
+
+S.turns = turns;
+
+// context only grows within a thread: a call's cache read is the previous call's whole
+// context, so each call's context = input + cache write + the previous context
+{
+  const threads = new Map();
+  for (const t of turns) for (const c of t.calls) { const k = c.agent || "main"; if (!threads.has(k)) threads.set(k, []); threads.get(k).push(c); }
+  for (const list of threads.values()) { let prev = 0; for (const c of list.sort((a, b) => a.n - b.n)) { c.cr = prev; prev = c.in + c.cw + c.cr; } }
+}
+S.end = 1003.6;
+
+// ---------- indexes ----------
+const tools = new Map(), calls = new Map(), effects = new Map();
+for (const t of turns) {
+  for (const x of t.tools) { x.turn = t.n; tools.set(x.id, x); }
+  for (const c of t.calls) { c.turn = t.n; calls.set(c.n, c); }
+  for (const e of t.effects) { e.turn = t.n; effects.set(e.id, e); }
+  t.label = t.prompt; // what the rail shows
+}
+for (const s of S.side) calls.set(s.n, { ...s, side: true });
+for (const b of S.between) for (const e of b.effects) { e.turn = null; e.between = b.after; effects.set(e.id, e); }
+for (const t of tools.values()) t.effects = [...effects.values()].filter((e) => e.tool === t.id);
+for (const t of turns) t.several = t.effects.filter((e) => e.label === "several");
+for (const t of turns) t.unpinned = t.effects.filter((e) => !e.tool && e.label !== "several");
+
+// ---------- formatting ----------
+const pad = (n) => String(n).padStart(2, "0");
+function clock(sec, withSeconds = true) {
+  const d = new Date(T0 + sec * 1000);
+  const base = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return withSeconds ? `${base}:${pad(d.getSeconds())}` : base;
+}
+function dur(sec) {
+  if (sec == null) return "—";
+  if (sec < 10) return `${sec.toFixed(1)}s`;
+  if (sec < 60) return `${Math.round(sec)}s`;
+  const m = Math.floor(sec / 60), s = Math.round(sec % 60);
+  if (m < 60) return `${m}m ${pad(s)}s`;
+  return `${Math.floor(m / 60)}h ${pad(m % 60)}m`;
+}
+const num = (n) => (n == null ? "—" : n.toLocaleString("en-US"));
+function bytes(n) {
+  if (n == null) return "—";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const rel = (abs) => (abs.startsWith(FOLDER + "/") ? abs.slice(FOLDER.length + 1) : abs);
+const full = (p) => (p.startsWith("/") ? p : `${FOLDER}/${p}`);
+
+// union length of [start, end] spans
+function union(spans) {
+  const s = spans.filter((x) => x[1] > x[0]).sort((a, b) => a[0] - b[0]);
+  let total = 0, cur = null;
+  for (const [a, b] of s) {
+    if (!cur || a > cur[1]) { if (cur) total += cur[1] - cur[0]; cur = [a, b]; } else cur[1] = Math.max(cur[1], b);
+  }
+  if (cur) total += cur[1] - cur[0];
+  return total;
+}
+
+// turn time: clock from prompt to final answer, split into model time and tool time.
+// A sub-agent's Agent call is not tool time: its model calls already count as model time.
+function turnTime(t) {
+  const m = t.calls.map((c) => [c.at, c.at + c.dur]);
+  const k = t.tools.filter((x) => !x.spawns).map((x) => [x.at, x.at + x.dur]);
+  const clock = t.end - t.at;
+  const model = union(m), tool = union(k);
+  return { clock, model, tool, wait: Math.max(0, clock - union([...m, ...k])) };
+}
+function sessionTime() {
+  const ts = turns.map(turnTime);
+  return {
+    clock: S.end - S.side[0].at,
+    model: ts.reduce((a, x) => a + x.model, 0),
+    tool: ts.reduce((a, x) => a + x.tool, 0),
+  };
+}
+
+// effect counts: distinct changed files, read files, sites
+function counts(list) {
+  const ch = new Set(), rd = new Set(), sr = new Set(), st = new Set();
+  for (const e of list) (e.kind === "change" ? ch : e.kind === "read" ? (e.search ? sr : rd) : st).add(e.kind === "net" ? e.host : e.path + (e.search ? e.detail : ""));
+  return { changed: ch.size, read: rd.size, searched: sr.size, sites: st.size };
+}
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+function countsText(c, empty = "no effects") {
+  const parts = [];
+  if (c.changed) parts.push(`${c.changed} changed`);
+  if (c.read) parts.push(`${c.read} read`);
+  if (c.searched) parts.push(plural(c.searched, "search", "searches"));
+  if (c.sites) parts.push(plural(c.sites, "site"));
+  return parts.length ? parts.join(" · ") : empty;
+}
+
+const LABELS = {
+  named: { g: "●", w: "named", why: "the tool's input names this target" },
+  only_one: { g: "◐", w: "only one running", why: "the only tool call running in the effect's window; its input does not name the target" },
+  several: { g: "◌", w: "several running", why: "two or more tool calls were running and none names the target; none is picked" },
+  outside: { g: "○", w: "outside any tool call", why: "no tool call was running — usually your own edit, or a background process" },
+  harness: { g: "⚙", w: "harness", why: "the host is on Claude Code's own host list (telemetry, updates)" },
+};
+const CHANGE = { created: "+ created", modified: "~ modified", deleted: "− deleted" };
+const STATUS = (t) => (t.ok ? { g: "✓", w: "ok" } : { g: "✗", w: "failed" });
+
+// what a tool line says after the name
+function toolArg(t) {
+  const i = t.input || {};
+  switch (t.name) {
+    case "Bash": return i.command;
+    case "Read": return rel(i.file_path);
+    case "Edit": case "Write": return rel(i.file_path);
+    case "Grep": return `“${i.pattern}” in ${i.path || "."}`;
+    case "Glob": return i.pattern;
+    case "WebFetch": return i.url.replace(/^https?:\/\//, "");
+    case "Skill": return i.skill;
+    case "Agent": return `${i.subagent_type} · ${i.description}`;
+    default: return "";
+  }
+}
+const lineStat = (t) => (t.add != null && (t.name === "Edit" || t.name === "Write") && t.ok ? `+${t.add} −${t.del}` : "");
+const toolNo = (t) => (t.call ? `#${t.call}` : "");
+const toolRef = (t) => `${t.call ? `#${t.call} ` : ""}${t.name}${t.agent ? ` (${t.agent})` : ""}`;
+// toolShort tells parallel calls of one tool apart: "#16 Bash npm install"
+const toolShort = (t) => `${toolRef(t)} ${String(toolArg(t)).split(/\s+/).slice(0, 2).join(" ")}`;
+function labelTools(e) {
+  if (e.tool) return toolRef(tools.get(e.tool));
+  if (e.cands) return e.cands.map((id) => toolShort(tools.get(id))).join(", ");
+  if (e.client) return e.client;
+  return "";
+}
+function effectTarget(e) { return e.kind === "net" ? `${e.host}:${e.port}` : e.path; }
+function effectWhat(e) {
+  if (e.kind === "net") return { g: e.outcome === "ok" ? "⇄" : "✕", w: e.outcome === "ok" ? "connected" : e.outcome };
+  if (e.kind === "read") return e.search ? { g: "⌕", w: "searched" } : { g: "→", w: "read" };
+  return { g: CHANGE[e.change][0], w: e.change };
+}
+function effectStat(e) {
+  if (e.kind === "net") return `↑ ${bytes(e.up)} ↓ ${bytes(e.down)} · ${dur(e.dur)}`;
+  if (e.kind === "read") return e.detail;
+  if (e.binary) return `${bytes(e.size)} · binary`;
+  return e.add != null ? `+${e.add} −${e.del} · ${bytes(e.size)}` : bytes(e.size);
+}
+
+// ---------- session header facts: every number has a label ----------
+function sessionFacts() {
+  const all = [...effects.values()];
+  const c = counts(all);
+  const st = sessionTime();
+  const main = [...calls.values()].filter((x) => !x.side);
+  const sum = (k) => [...calls.values()].reduce((a, x) => a + (x[k] || 0), 0);
+  const allTools = [...tools.values()];
+  return {
+    groups: [
+      ["Activity", [["turns", turns.length], ["model calls", main.length], ["tool calls", allTools.length], ["tool errors", allTools.filter((t) => !t.ok).length]]],
+      ["Time", [["wall clock", dur(st.clock)], ["model time", dur(st.model)], ["tool time", dur(st.tool)]]],
+      ["Effects", [["files changed", c.changed], ["files read", c.read], ["sites", c.sites]]],
+      ["Tokens", [["input", num(sum("in"))], ["output", num(sum("out"))], ["cache write", num(sum("cw"))], ["cache read", num(sum("cr"))]]],
+    ],
+    started: clock(S.side[0].at), ended: clock(S.end),
+  };
+}
+
+// ---------- the details view: same content in every variant, placed differently ----------
+function pre(text) { return `<pre>${esc(text)}</pre>`; }
+function json(o) { return pre(JSON.stringify(o, null, 2)); }
+function dl(rows) { return `<dl class="facts">${rows.filter(Boolean).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")}</dl>`; }
+function sec(title, body, open = true) { return `<section class="dsec"><h3>${esc(title)}</h3>${body}</section>`; }
+function diffHTML(e) {
+  if (e.binary) return `<p class="muted">Binary file, ${bytes(e.size)}: no copy, no diff.</p>`;
+  if (e.diff) return `<div class="diff" role="group" aria-label="diff of ${esc(e.path)}">${e.diff.map((l) => {
+    const k = l[0] === "+" ? "add" : l[0] === "-" ? "del" : "ctx";
+    const g = k === "add" ? "+" : k === "del" ? "−" : " ";
+    return `<div class="${k}"><span class="dg" aria-hidden="true">${g}</span>${esc(l.slice(1))}</div>`;
+  }).join("")}</div>`;
+  if (e.content) return `<p class="muted">New file: full content.</p>${pre(e.content)}`;
+  return "";
+}
+function labelBadge(e) {
+  if (!e.label) return `<span class="lbl lbl-none">— no label</span>`;
+  const L = LABELS[e.label];
+  return `<span class="lbl lbl-${e.label}" title="${esc(L.why)}"><span aria-hidden="true">${L.g}</span> ${L.w}</span>`;
+}
+function effectRowFacts(e) {
+  return dl([
+    ["what", `${effectWhat(e).g} ${esc(effectWhat(e).w)}`],
+    [e.kind === "net" ? "host" : "path", `<span title="${esc(e.kind === "net" ? "" : full(e.path))}">${esc(effectTarget(e))}</span>`],
+    e.kind !== "net" && ["full path", `<code>${esc(full(e.path))}</code>`],
+    ["seen at", clock(e.at)],
+    e.kind === "net" && ["bytes", `↑ ${bytes(e.up)} sent · ↓ ${bytes(e.down)} received`],
+    e.kind === "net" && ["open for", dur(e.dur)],
+    e.kind === "net" && ["outcome", esc(e.outcome)],
+    e.kind === "change" && ["size", bytes(e.size)],
+    e.kind === "read" && ["range", esc(e.detail)],
+    ["attribution", `${labelBadge(e)} <span class="muted">${esc(LABELS[e.label] ? LABELS[e.label].why : "")}</span>`],
+    (e.tool || e.cands || e.client) && [e.cands ? "candidates" : e.client ? "client" : "tool", esc(labelTools(e))],
+  ]);
+}
+function detailEffect(e) {
+  return `<header class="dhead"><p class="kicker">${e.kind === "net" ? "Connection" : e.kind === "read" ? "File read" : "File change"}</p><h2>${labelBadge(e)} ${esc(effectTarget(e))}</h2></header>`
+    + sec("Facts", effectRowFacts(e))
+    + (e.kind === "change" ? sec(e.diff ? "Diff" : "Content", diffHTML(e)) : "")
+    + (e.kind === "net" ? sec("Note", `<p class="muted">HTTPS: host, port, bytes, timing and outcome only. Nothing is decrypted.</p>`) : "");
+}
+function effList(list) {
+  if (!list.length) return `<p class="muted">No files or connections.</p>`;
+  return `<ul class="elist">${list.map((e) => `<li><span class="elbl">${labelBadge(e)}</span><span>${effectWhat(e).g} ${esc(effectWhat(e).w)}</span><code title="${esc(e.kind === "net" ? "" : full(e.path))}">${esc(effectTarget(e))}</code><span class="muted">${esc(effectStat(e))}</span></li>`).join("")}</ul>`;
+}
+function detailTool(t) {
+  const s = STATUS(t);
+  const c = t.call ? calls.get(t.call) : null;
+  const files = t.effects.filter((e) => e.kind !== "net"), nets = t.effects.filter((e) => e.kind === "net");
+  return `<header class="dhead"><p class="kicker">Tool call · turn ${t.turn}${t.agent ? ` · sub-agent ${esc(t.agent)}` : ""}</p><h2><span class="st st-${s.w}">${s.g} ${s.w}</span> ${esc(t.name)} <span class="muted">${esc(toolArg(t))}</span></h2></header>`
+    + sec("Timings", dl([["asked by", c ? `model call #${c.n}${c.agent ? ` (${esc(c.agent)})` : ""}` : "no model call captured (seen by hooks only)"], ["started", clock(t.at)], ["ended", clock(t.at + t.dur)], ["run time", dur(t.dur)], t.spawns && ["note", "spawns a sub-agent: never an effect's candidate, and its span is not counted as tool time"]]))
+    + sec("Input", json(t.input))
+    + sec("Result", `<div class="${t.ok ? "" : "errbox"}">${t.ok ? "" : `<p class="st st-failed">✗ failed</p>`}${pre(t.result)}</div>`)
+    + sec(`Files (${files.length})`, files.length ? files.map((e) => `<div class="fileblock"><p>${labelBadge(e)} ${effectWhat(e).g} ${esc(effectWhat(e).w)} <code title="${esc(full(e.path))}">${esc(e.path)}</code> <span class="muted">${esc(effectStat(e))}</span></p>${e.kind === "change" ? diffHTML(e) : ""}</div>`).join("") : `<p class="muted">No file changes or reads attributed to this call.</p>`)
+    + sec(`Connections (${nets.length})`, nets.length ? effList(nets) : `<p class="muted">No connections attributed to this call.</p>`);
+}
+function detailCall(c) {
+  const ctx = c.in + c.cw + c.cr;
+  const prev = [...calls.values()].filter((x) => !x.side && !x.agent === !c.agent && x.n < c.n).pop();
+  const prevCtx = prev ? prev.in + prev.cw + prev.cr : null;
+  const asked = [...tools.values()].filter((t) => t.call === c.n);
+  return `<header class="dhead"><p class="kicker">Model call${c.side ? " · side call" : ""}${c.agent ? ` · sub-agent ${esc(c.agent)}` : ""}${c.turn ? ` · turn ${c.turn}` : ""}</p><h2>#${c.n} <span class="muted">${esc(S.model)}</span></h2></header>`
+    + sec("Timings", dl([["started", clock(c.at)], ["duration", dur(c.dur)], ["stop reason", esc(c.stop || (c.side ? c.statusText : "—"))]]))
+    + sec("Tokens", dl([["input", num(c.in)], ["output", num(c.out)], ["cache write", num(c.cw)], ["cache read", num(c.cr)], ["context size", `${num(ctx)} <span class="muted">(input + cache write + cache read)</span>`], ["change since previous call", prevCtx == null ? "first call of its thread" : `${ctx >= prevCtx ? "+" : "−"}${num(Math.abs(ctx - prevCtx))}`]]))
+    + (c.thinking ? sec("Thinking", `<details class="think"><summary>Show thinking (${num(Math.round(c.thinking.length / 4))} tokens)</summary>${pre(c.thinking)}</details>`) : "")
+    + (asked.length ? sec(`Tools asked (${asked.length})`, `<ul class="plain">${asked.map((t) => `<li>${STATUS(t).g} ${esc(t.name)} <span class="muted">${esc(toolArg(t))}</span></li>`).join("")}</ul>`) : "")
+    + (c.response ? sec("Response", pre(c.response)) : "")
+    + sec("Raw", `<p><a href="#" onclick="return false">request</a> · <a href="#" onclick="return false">response stream</a> · <a href="#" onclick="return false">headers</a> <span class="muted">(mock links)</span></p>`);
+}
+function detailTurn(t) {
+  const tt = turnTime(t), c = counts(t.effects);
+  return `<header class="dhead"><p class="kicker">Turn ${t.n} · ${clock(t.at)}</p><h2>${esc(t.prompt)}</h2></header>`
+    + sec("Time", t.hooksOnly ? `<p>No model calls captured. Tool time ${dur(tt.tool)}.</p>` : dl([["prompt to final answer", dur(tt.clock)], ["model time", dur(tt.model)], ["tool time", dur(tt.tool)], ["waiting", dur(tt.wait)]]))
+    + sec("Calls", t.calls.length ? `<p>${t.calls.map((x) => `#${x.n}${x.agent ? ` (${esc(x.agent)})` : ""} ${dur(x.dur)}`).join(" · ")}</p>` : `<p class="muted">no model calls captured</p>`)
+    + sec(`Effects · ${countsText(c)}`, effList(t.effects))
+    + (t.answer ? sec("Final answer", pre(t.answer)) : "");
+}
+function detailSide(s) {
+  return detailCall(calls.get(s.n));
+}
+function detail(kind, id) {
+  if (kind === "tool") return detailTool(tools.get(id));
+  if (kind === "call") return detailCall(calls.get(+id));
+  if (kind === "effect") return detailEffect(effects.get(+id));
+  if (kind === "turn") return detailTurn(turns[+id - 1]);
+  return "";
+}
+
+// walk is a turn's rows in reading order: each model call, the tools it asked for with
+// their effects beneath, a sub-agent's calls under its Agent tool, a "several running"
+// group after the parallel tools it names, effects no tool caused, then the answer.
+// A call and its tools share a depth; effects and sub-agent rows are one deeper.
+function walk(t) {
+  const out = [];
+  const asked = (c) => t.tools.filter((x) => x.call === c.n);
+  const emitTool = (x, d) => {
+    out.push({ type: "tool", t: x, depth: d });
+    for (const e of x.effects) out.push({ type: "effect", e, depth: d + 1 });
+    if (x.spawns) for (const c of t.calls.filter((c) => c.agent === x.spawns)) emitCall(c, d + 1);
+  };
+  const emitCall = (c, d) => {
+    out.push({ type: "call", c, depth: d });
+    const mine = asked(c);
+    for (const x of mine) emitTool(x, d);
+    const sev = t.several.filter((e) => e.cands.every((id) => tools.get(id).call === c.n));
+    if (sev.length) {
+      out.push({ type: "group", kind: "several", depth: d, effects: sev, title: `not pinned to one tool: ${sev[0].cands.map((id) => toolShort(tools.get(id))).join(" and ")} were running` });
+      for (const e of sev) out.push({ type: "effect", e, depth: d + 1 });
+    }
+  };
+  if (t.hooksOnly) {
+    out.push({ type: "note", text: "no model calls captured", depth: 0 });
+    for (const x of t.tools) emitTool(x, 0);
+  }
+  for (const c of t.calls.filter((c) => !c.agent)) emitCall(c, 0);
+  if (t.unpinned.length) {
+    out.push({ type: "group", kind: "loose", depth: 0, effects: t.unpinned, title: "not caused by a tool call" });
+    for (const e of t.unpinned) out.push({ type: "effect", e, depth: 1 });
+  }
+  if (t.answer) out.push({ type: "answer", text: t.answer, depth: 0 });
+  return out;
+}
+// during says which tool was running when an effect happened, for loose effects
+function during(e) {
+  const run = [...tools.values()].filter((x) => !x.spawns && x.at <= e.at && e.at <= x.at + x.dur);
+  return run.length ? `during ${run.map(toolRef).join(", ")}` : "";
+}
+
+// ---------- shared chrome ----------
+function themeInit() {
+  let t = "dark";
+  try { t = localStorage.getItem("gw016-theme") || "dark"; } catch {}
+  document.documentElement.dataset.theme = t;
+  document.querySelectorAll("[data-theme-btn]").forEach((b) => {
+    b.setAttribute("aria-pressed", String(b.dataset.themeBtn === t));
+    b.addEventListener("click", () => {
+      document.documentElement.dataset.theme = b.dataset.themeBtn;
+      try { localStorage.setItem("gw016-theme", b.dataset.themeBtn); } catch {}
+      document.querySelectorAll("[data-theme-btn]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    });
+  });
+}
+function themeButtons() {
+  return `<div class="seg" role="group" aria-label="Theme"><button type="button" data-theme-btn="dark">☾ Dark</button><button type="button" data-theme-btn="light">☀ Light</button></div>`;
+}
+function topbar(variantName) {
+  return `<header class="top"><a class="brand" href="index.html">Gateway</a><nav class="crumb" aria-label="Breadcrumb"><a href="sessions.html">Sessions</a><span aria-hidden="true">/</span><b title="${esc(S.title)}">${esc(S.title)}</b></nav><span class="vname">${esc(variantName)}</span><span class="spacer"></span>${themeButtons()}</header>`;
+}
+function sideToggle() {
+  return `<details class="side"><summary>${plural(S.side.length, "side call")}</summary><ul class="plain">${S.side.map((s) => `<li><button type="button" class="linkish" data-open="call:${s.n}">#${s.n} ${esc(s.kind)}</button> <span class="muted">${clock(s.at)} · ${dur(s.dur)} · ${esc(s.statusText)}</span></li>`).join("")}</ul><p class="muted small">The client's own calls. Never a turn, never counted as an error.</p></details>`;
+}
+function headerFacts(compact = false) {
+  const f = sessionFacts();
+  return `<div class="facts-groups${compact ? " compact" : ""}">${f.groups.map(([g, rows]) => `<div class="fg"><span class="fgname">${esc(g)}</span>${rows.map(([k, v]) => `<span class="fact"><b>${esc(v)}</b> ${esc(k)}</span>`).join("")}</div>`).join("")}</div>`;
+}
+function sessionMeta() {
+  const f = sessionFacts();
+  return `<p class="meta"><span title="${esc(S.id)}">claude-code</span> · ${esc(S.model)} · <span title="${esc(S.folder)}">~/code/shop-api</span> · ${f.started}–${f.ended} · ended · title from ${esc(S.titleFrom)}</p>`;
+}
+function unassignedNote() {
+  const u = S.unassigned[0];
+  return `<p class="muted small">Not in this session: <a href="sessions.html#unassigned">1 unassigned connection</a> at ${clock(u.at)}, after it ended (⚙ harness · ${esc(u.client)} · ${esc(u.host)}).</p>`;
+}
+function turnTimeText(t) {
+  if (t.hooksOnly) return "no model calls captured";
+  const x = turnTime(t);
+  return `${dur(x.clock)} · model ${dur(x.model)} · tools ${dur(x.tool)}`;
+}
+function railMeta(t) {
+  const c = counts(t.effects);
+  return `${t.hooksOnly ? "hooks only" : dur(t.end - t.at)} · ${plural(t.tools.length, "tool")} · ${countsText(c)}`;
+}
+
+return { S, T0, FOLDER, turns, tools, calls, effects, clock, dur, num, bytes, esc, rel, full, union, turnTime, sessionTime, counts, countsText, plural,
+  LABELS, CHANGE, STATUS, toolArg, lineStat, toolNo, toolRef, toolShort, labelTools, effectTarget, effectWhat, effectStat, labelBadge, diffHTML,
+  walk, during, detail, detailTurn, detailTool, detailCall, detailEffect, effList, sessionFacts, themeInit, themeButtons, topbar, sideToggle, headerFacts, sessionMeta, unassignedNote, turnTimeText, railMeta, pre, dl };
+})();
+</script>
+<script>
+"use strict";
+const { S, turns, tools, effects, calls, esc, dur, clock, plural, num } = G;
+document.getElementById("top").innerHTML = G.topbar("mockup 4 · story");
+
+// ---------- what the session touched ----------
+const allEff = [...effects.values()].sort((a, b) => a.at - b.at);
+const changes = allEff.filter((e) => e.kind === "change");
+const reads = allEff.filter((e) => e.kind === "read");
+const conns = allEff.filter((e) => e.kind === "net");
+const commands = [...tools.values()].filter((t) => t.name === "Bash").sort((a, b) => a.at - b.at);
+const failed = [...tools.values()].filter((t) => !t.ok);
+const outside = allEff.filter((e) => e.label === "outside");
+const several = allEff.filter((e) => e.label === "several");
+const hooksOnly = turns.filter((t) => t.hooksOnly);
+const groupBy = (list, key) => { const m = new Map(); for (const e of list) { const k = key(e); if (!m.has(k)) m.set(k, []); m.get(k).push(e); } return m; };
+const files = groupBy(changes, (e) => e.path);           // path → its changes, in time order
+const fileReads = reads.filter((e) => !e.search), searches = reads.filter((e) => e.search);
+const readsBy = groupBy(fileReads, (e) => e.path);
+const searchBy = groupBy(searches, (e) => `${e.path}|${e.detail}`);
+const sites = groupBy(conns, (e) => e.host);
+const where = (e) => (e.turn ? `turn ${e.turn}` : `between turns ${e.between} and ${e.between + 1}`);
+const split = (p) => { const i = p.replace(/\/$/, "").lastIndexOf("/"); return i < 0 ? ["", p] : [p.slice(0, i + 1), p.slice(i + 1)]; };
+const dirText = (d) => d || "project root";
+const cmdHead = (c) => { const w = c.split(/\s+/).slice(0, 3); while (w.length > 1 && w[w.length - 1].startsWith("-")) w.pop(); return w.join(" "); };
+const short = (t) => (t.name === "Bash" ? cmdHead(t.input.command) : `${t.name}${t.agent ? ` (${t.agent})` : ""}`);
+
+// who did it, in plain words
+function byText(e) {
+  const t = e.tool && tools.get(e.tool);
+  switch (e.label) {
+    case "named": return `by ${short(t)}`;
+    case "only_one": return `likely by ${short(t)}`;
+    case "several": return `by one of ${e.cands.length} commands running together`;
+    case "outside": return `with no tool running, likely you`;
+    case "harness": return `by Claude Code itself`;
+    default: return "";
+  }
+}
+function whySentence(e) {
+  const t = e.tool && tools.get(e.tool);
+  const what = e.kind === "net" ? "host" : "file";
+  switch (e.label) {
+    case "named": return `${short(t)} names this ${what} in its input.`;
+    case "only_one": return `${short(t)} was the only tool running at the time, but its input does not name this ${what}.`;
+    case "several": return `${e.cands.map((id) => short(tools.get(id))).join(" and ")} were running together and neither names this ${what}, so no single one is picked.`;
+    case "outside": return `No tool call was running. Most likely your own edit, or a background process.`;
+    case "harness": return `${e.host} is one of Claude Code's own hosts (updates, telemetry), not something a tool asked for.`;
+    default: return "";
+  }
+}
+const whyBlock = (e) => `<div class="why2">${G.labelBadge(e)}<span>${esc(whySentence(e))}</span></div>`;
+
+const fact = (l, v) => `<div class="mfact"><span class="l">${esc(l)}</span><span class="v">${v}</span></div>`;
+
+// ---------- left: turns ----------
+document.getElementById("toc").innerHTML = `<div class="colhead"><h2>Turns</h2><span class="sub">${plural(turns.length, "prompt")}</span></div><div class="scroll"><ol>` + turns.map((t) => {
+  const f = t.tools.filter((x) => !x.ok).length;
+  const c = G.counts(t.effects);
+  const b = S.between.find((x) => x.after === t.n);
+  return `<li><a href="#turn-${t.n}" data-turn="${t.n}" title="${esc(t.prompt)}"><span class="n">${t.n}</span><span class="p clamp clamp2">${esc(t.prompt)}</span><span class="m"><span>${t.hooksOnly ? "hooks only" : dur(t.end - t.at)}</span>${c.changed ? `<span>${plural(c.changed, "file")} changed</span>` : ""}${f ? `<span class="bad">✗ ${f} failed</span>` : ""}</span></a></li>`
+    + (b ? `<li class="btw"><a href="#between-${t.n}" data-turn="b${t.n}"><span class="n" aria-hidden="true">○</span><span class="p">you edited ${esc(b.effects.map((e) => e.path).join(", "))}</span></a></li>` : "");
+}).join("") + `</ol></div>`;
+
+// ---------- right: files, commands, sites ----------
+function fileRow(path) {
+  const list = files.get(path), last = list[list.length - 1];
+  const [dir, name] = split(path);
+  const add = list.reduce((a, e) => a + (e.add || 0), 0), del = list.reduce((a, e) => a + (e.del || 0), 0);
+  const right = last.binary ? "binary" : last.add != null ? `<span class="a">+${add}</span> <span class="d">−${del}</span>` : G.bytes(last.size);
+  const out = last.label === "outside" ? ` class="warn"` : "";
+  return `<li><button type="button" class="row" data-modal="file:${esc(path)}" title="${esc(G.full(path))}"><span class="ic" aria-hidden="true">${G.CHANGE[last.change][0]}</span><span class="t1">${esc(name)}</span><span class="r">${right}</span><span class="t2">${esc(dirText(dir))} · ${esc(last.change)} ${esc(where(last))} <span${out}>${esc(byText(last))}</span></span></button></li>`;
+}
+function cmdRow(t) {
+  const c = G.counts(t.effects);
+  const did = [c.changed && `${plural(c.changed, "file")} changed`, c.sites && plural(c.sites, "site")].filter(Boolean).join(" · ") || "nothing changed";
+  return `<li><button type="button" class="row" data-modal="tool:${t.id}"><span class="ic ${t.ok ? "ok" : "bad"}" aria-label="${t.ok ? "ok" : "failed"}">${t.ok ? "✓" : "✗"}</span><span class="t1"><code>${esc(t.input.command)}</code></span><span class="r">${dur(t.dur)}</span><span class="t2">turn ${t.turn} · ${esc(did)}${t.call ? "" : " · seen by hooks only"}</span></button></li>`;
+}
+function siteRow(host) {
+  const list = sites.get(host);
+  const down = list.reduce((a, e) => a + e.down, 0);
+  const ts = [...new Set(list.map((e) => e.turn))];
+  const who = list[0].label === "harness" ? "Claude Code itself" : [...new Set(list.flatMap((e) => (e.tool ? [short(tools.get(e.tool))] : (e.cands || []).map((id) => short(tools.get(id))))))].join(", ");
+  return `<li><button type="button" class="row" data-modal="site:${esc(host)}"><span class="ic" aria-hidden="true">${list[0].label === "harness" ? "⚙" : "⇄"}</span><span class="t1">${esc(host)}</span><span class="r">↓ ${G.bytes(down)}</span><span class="t2">${plural(list.length, "connection")} · ${ts.length > 1 ? "turns" : "turn"} ${ts.join(", ")} · ${esc(who)}</span></button></li>`;
+}
+const u = S.unassigned[0];
+const readFiles = [...readsBy.keys()];
+// context: input + cache write + cache read of a call, per thread
+const ctxOf = (c) => c.in + c.cw + c.cr;
+const thread = (agent) => [...calls.values()].filter((c) => !c.side && (c.agent || null) === agent).sort((a, b) => a.n - b.n);
+const mains = thread(null);
+const toolNames = (list) => { const m = new Map(); for (const t of list) m.set(t.name, (m.get(t.name) || 0) + 1); return [...m].map(([n, k]) => (k > 1 ? `${n} ×${k}` : n)).join(", "); };
+function growth(c) {
+  const th = thread(c.agent || null), i = th.indexOf(c);
+  if (i <= 0) return { delta: null, why: c.agent ? "first call of the sub-agent: its instructions and task" : "first call: system prompt, tool definitions and your prompt" };
+  const p = th[i - 1], res = [...tools.values()].filter((t) => t.call === p.n);
+  const parts = [`#${p.n}'s reply`];
+  if (res.length) parts.push(`${plural(res.length, "tool result")} (${toolNames(res)})`);
+  if (p.turn !== c.turn) parts.push("your next prompt");
+  return { delta: ctxOf(c) - ctxOf(p), why: `added ${parts.join(", ")}` };
+}
+const signed = (n) => (n == null ? "—" : `+${num(n)}`);
+const peak = mains.reduce((a, c) => Math.max(a, ctxOf(c)), 0);
+const subAgents = [...new Set([...calls.values()].filter((c) => c.agent).map((c) => c.agent))];
+function ctxRow(c) {
+  const g = growth(c);
+  return `<li><button type="button" class="row" data-modal="call:${c.n}"><span class="ic" aria-hidden="true">◆</span><span class="t1">#${c.n} · ${num(ctxOf(c))} tokens</span><span class="r">${signed(g.delta)}</span><span class="t2">${c.agent ? "sub-agent" : `turn ${c.turn}`} · ${esc(g.why)}</span></button></li>`;
+}
+document.getElementById("side").innerHTML = `
+  <div class="tabs" role="tablist" aria-label="Files, commands, sites and context">
+    <button type="button" class="tab" role="tab" id="tab-files" aria-controls="tp-files" aria-selected="true">Files<b>${files.size}</b></button>
+    <button type="button" class="tab" role="tab" id="tab-cmds" aria-controls="tp-cmds" aria-selected="false" tabindex="-1">Commands<b>${commands.length}</b></button>
+    <button type="button" class="tab" role="tab" id="tab-sites" aria-controls="tp-sites" aria-selected="false" tabindex="-1">Sites<b>${sites.size}</b></button>
+    <button type="button" class="tab" role="tab" id="tab-ctx" aria-controls="tp-ctx" aria-selected="false" tabindex="-1">Context</button>
+  </div>
+  <div class="scroll">
+    <div class="tabp" role="tabpanel" id="tp-files" aria-labelledby="tab-files">
+      <p class="lead">Every file that changed on disk. Open one to see its diff and who changed it.</p>
+      <ul class="rows">${[...files.keys()].map(fileRow).join("")}</ul>
+      <h3>Read by Claude · ${readFiles.length}</h3>
+      <ul class="rows">${readFiles.map((p) => { const l = readsBy.get(p); const [dir, name] = split(p); return `<li><button type="button" class="row" data-modal="file:${esc(p)}"><span class="ic" aria-hidden="true">→</span><span class="t1">${esc(name)}</span><span class="r">${l.length > 1 ? `${l.length}×` : ""}</span><span class="t2">${esc(dirText(dir))} · ${esc([...new Set(l.map(where))].join(", "))}</span></button></li>`; }).join("")}</ul>
+      <h3>Searched · ${searchBy.size}</h3>
+      <ul class="rows">${[...searchBy.values()].map(([e]) => { const t = tools.get(e.tool); return `<li><button type="button" class="row" data-modal="tool:${t.id}"><span class="ic" aria-hidden="true">⌕</span><span class="t1"><code>${esc(G.toolArg(t))}</code></span><span class="r">${esc(t.name)}</span><span class="t2">${esc(where(e))}${t.agent ? ` · sub-agent ${esc(t.agent)}` : ""}</span></button></li>`; }).join("")}</ul>
+    </div>
+    <div class="tabp" role="tabpanel" id="tp-cmds" aria-labelledby="tab-cmds" hidden>
+      <p class="lead">Every shell command, in the order it ran. Open one for its output and what it changed.</p>
+      <ul class="rows">${commands.map(cmdRow).join("")}</ul>
+      <p class="tabfoot"><code>cat</code> and <code>ls</code> read files too, but only Claude's Read, Grep and Glob are recorded as reads.</p>
+    </div>
+    <div class="tabp" role="tabpanel" id="tp-sites" aria-labelledby="tab-sites" hidden>
+      <p class="lead">Every host contacted through the gateway's proxy. HTTPS shows host, bytes and timing only.</p>
+      <ul class="rows">${[...sites.keys()].map(siteRow).join("")}</ul>
+      <p class="tabfoot">Not in this session: <a href="sessions.html#unassigned">1 unassigned connection</a> to ${esc(u.host)} at ${clock(u.at)}, by Claude Code itself.</p>
+    </div>
+    <div class="tabp" role="tabpanel" id="tp-ctx" aria-labelledby="tab-ctx" hidden>
+      <p class="lead">How much each model call sent: input + cache write + cache read tokens. It grows as replies, tool results and prompts pile up.</p>
+      <div class="mfacts ctxfacts">${fact("Now", num(ctxOf(mains[mains.length - 1])))}${fact("First call", num(ctxOf(mains[0])))}${fact("Grew by", signed(ctxOf(mains[mains.length - 1]) - ctxOf(mains[0])))}</div>
+      <div class="ctxchart" role="group" aria-label="Context per main-thread call, by turn">${turns.filter((t) => t.calls.some((c) => !c.agent)).map((t) => { const cs = mains.filter((c) => c.turn === t.n); return `<div class="ct" style="flex:${cs.length}"><div class="bars">${cs.map((c) => `<button type="button" data-modal="call:${c.n}" style="height:${(ctxOf(c) / peak) * 100}%" title="#${c.n} · ${num(ctxOf(c))} tokens" aria-label="call #${c.n}, ${num(ctxOf(c))} tokens"></button>`).join("")}</div><span class="tl2">T${t.n}</span></div>`; }).join("")}</div>
+      <h3>Main thread · ${plural(mains.length, "call")}</h3>
+      <ul class="rows">${mains.map(ctxRow).join("")}</ul>
+      ${subAgents.map((a) => `<h3>Sub-agent ${esc(a)} · its own context</h3><ul class="rows">${thread(a).map(ctxRow).join("")}</ul>`).join("")}
+      <p class="tabfoot">Side calls (quota probe, title) are separate requests and are left out. Turn 8 has no model calls captured.</p>
+    </div>
+  </div>`;
+function showTab(id, focus) {
+  document.querySelectorAll(".tab").forEach((t) => { const on = t.id === id; t.setAttribute("aria-selected", String(on)); t.tabIndex = on ? 0 : -1; document.getElementById(t.getAttribute("aria-controls")).hidden = !on; if (on && focus) t.focus(); });
+}
+
+// ---------- centre: overview ----------
+function overview() {
+  const st = G.sessionTime();
+  const items = [];
+  for (const t of failed) items.push(["bad", "✗", `${t.name} failed on ${G.toolArg(t)}`, `turn ${t.turn} · ${t.result.split("\n")[0]}`, `tool:${t.id}`, "Open"]);
+  for (const [p, l] of files) if (l.some((e) => e.label === "outside")) items.push(["warn", "○", `${p} changed with no tool running`, `${where(l[0])} · most likely your own edit`, `file:${p}`, "Open"]);
+  if (several.length) items.push(["info", "◌", `${[several.filter((e) => e.kind === "change").length && plural(several.filter((e) => e.kind === "change").length, "file change"), several.filter((e) => e.kind === "net").length && plural(several.filter((e) => e.kind === "net").length, "connection")].filter(Boolean).join(" and ")} can't be pinned to one command`, `turn ${several[0].turn}: two commands ran together`, `jump:sev-${several[0].turn}`, `Show in turn ${several[0].turn}`]);
+  for (const t of hooksOnly) items.push(["info", "◇", `Turn ${t.n} has no model calls captured`, "only the hooks saw it: its tool calls show, the conversation does not", `jump:turn-${t.n}`, `Show turn ${t.n}`]);
+  const longest = commands.reduce((a, t) => (t.dur > a.dur ? t : a));
+  const sum = (k) => [...calls.values()].reduce((a, x) => a + (x[k] || 0), 0);
+  const added = changes.reduce((a, e) => a + (e.add || 0), 0), removed = changes.reduce((a, e) => a + (e.del || 0), 0);
+  return `<section class="card hero" aria-label="Session overview">
+    <span class="status">● Ended</span>
+    <h1>${esc(S.title)}</h1>
+    <div class="meta"><span>Today ${clock(S.side[0].at, false)}–${clock(S.end, false)}</span><span title="${esc(S.folder)}">~/code/shop-api</span><span>${esc(S.model)}</span><span title="session ${esc(S.id)}">claude-code</span></div>
+    <div class="kpis">
+      <div class="kpi"><span class="l">Time</span><span class="v">${dur(st.clock)}</span><span class="s">model ${dur(st.model)} · tools ${dur(st.tool)}</span></div>
+      <button type="button" class="kpi" data-tab="tab-files"><span class="l">Files changed <i aria-hidden="true">→</i></span><span class="v">${files.size}</span><span class="s"><span class="a">+${added}</span> <span class="d">−${removed}</span> lines · ${readFiles.length} read</span></button>
+      <button type="button" class="kpi" data-tab="tab-cmds"><span class="l">Commands <i aria-hidden="true">→</i></span><span class="v">${commands.length}</span><span class="s">longest ${esc(longest.input.command.split(" ").slice(0, 2).join(" "))}, ${dur(longest.dur)}</span></button>
+      <button type="button" class="kpi" data-tab="tab-sites"><span class="l">Sites <i aria-hidden="true">→</i></span><span class="v">${sites.size}</span><span class="s">${plural(conns.length, "connection")}</span></button>
+      <button type="button" class="kpi" data-tab="tab-ctx"><span class="l">Context <i aria-hidden="true">→</i></span><span class="v">${num(ctxOf(mains[mains.length - 1]))}</span><span class="s">tokens in the last call</span></button>
+    </div>
+    ${items.length ? `<div class="attn"><h2>Needs a look</h2><ul>${items.map(([k, ic, t, s, to, go]) => `<li class="${k}"><button type="button" data-${to.startsWith("jump:") ? "jump" : "modal"}="${esc(to.replace(/^jump:/, ""))}"><span class="ic" aria-hidden="true">${ic}</span><span><span class="t">${esc(t)}</span><span class="s">${esc(s)}</span></span><span class="go">${esc(go)} →</span></button></li>`).join("")}</ul></div>` : ""}
+    <div class="foot"><span>Tokens: ${num(sum("in"))} input · ${num(sum("out"))} output · ${num(sum("cw"))} cache write · ${num(sum("cr"))} cache read</span>${G.sideToggle()}</div>
+  </section>`;
+}
+
+// ---------- centre: turns ----------
+function effLi(e) {
+  const w = G.effectWhat(e);
+  const key = e.kind === "net" ? `site:${e.host}` : e.search ? `tool:${e.tool}` : `file:${e.path}`;
+  const hasView = e.kind === "change" && (e.diff || e.content);
+  return `<li id="eff-${e.id}">${G.labelBadge(e)}<span>${w.g} ${esc(w.w)} <button type="button" class="linkish" data-modal="${esc(key)}"><code title="${esc(e.kind === "net" ? "" : G.full(e.path))}">${esc(G.effectTarget(e))}</code></button></span><span class="muted small">${esc(G.effectStat(e))}</span>${hasView ? `<button type="button" class="btn sm" data-modal="${esc(key)}">${e.diff ? "Diff" : "View"}</button>` : "<span></span>"}</li>`;
+}
+function toolLi(x) {
+  const s = G.STATUS(x);
+  return `<li><div class="tl${x.ok ? "" : " failed"}" id="tool-${x.id}"><span class="si ${s.w}">${s.g}${x.ok ? "" : " failed"}</span><button type="button" class="linkish nm" data-modal="tool:${x.id}">${esc(x.name)}</button>${x.agent ? `<span class="agent">${esc(x.agent)}</span>` : ""}<code>${esc(G.toolArg(x))}</code>${G.lineStat(x) ? `<span class="ls"><span class="a">+${x.add}</span> <span class="d">−${x.del}</span></span>` : ""}<span class="tm">${dur(x.dur)}</span></div>${x.ok ? "" : `<div class="why">${esc(x.result.split("\n")[0])}</div>`}${x.effects.length ? `<ul class="effs">${x.effects.map(effLi).join("")}</ul>` : ""}${x.spawns ? subAgent(x) : ""}</li>`;
+}
+function subAgent(x) {
+  const t = turns[x.turn - 1];
+  const cs = t.calls.filter((c) => c.agent === x.spawns);
+  return `<div class="subagent" role="group" aria-label="Sub-agent ${esc(x.spawns)}"><div class="say">Sub-agent ${esc(x.spawns)} · ${dur(x.dur)} · ${plural(cs.length, "model call")}</div><ol class="steps">${cs.map((c) => step(c, t)).join("")}</ol></div>`;
+}
+function step(c, t) {
+  const mine = t.tools.filter((x) => x.call === c.n);
+  const sev = t.several.filter((e) => e.cands.every((id) => tools.get(id).call === c.n));
+  const then = mine.length === 0 ? "" : mine.length === 1 ? ", then ran:" : `, then ran ${mine.length} at once:`;
+  return `<li class="step"><div class="say"><button type="button" class="linkish cn" data-modal="call:${c.n}">#${c.n}</button><span>${c.thinking ? "Thought and wrote" : mine.length ? "Wrote" : c.agent ? "Reported back to the main agent" : "Wrote the answer"} for ${dur(c.dur)}${then}</span>${c.thinking ? `<button type="button" class="linkish" data-modal="call:${c.n}">Read the thinking</button>` : ""}</div>${mine.length ? `<ul class="tools">${mine.map(toolLi).join("")}</ul>` : ""}${sev.length ? `<p class="grp" id="sev-${t.n}">◌ Not pinned to one command: ${esc(sev[0].cands.map((id) => short(tools.get(id))).join(" and "))} ran together</p><ul class="effs">${sev.map(effLi).join("")}</ul>` : ""}</li>`;
+}
+function turnCard(t) {
+  const tt = G.turnTime(t), c = G.counts(t.effects), f = t.tools.filter((x) => !x.ok).length;
+  const pills = [`${plural(t.tools.length, "tool call")}`, c.changed && `${plural(c.changed, "file")} changed`, c.read && `${c.read} read`, c.sites && plural(c.sites, "site")].filter(Boolean)
+    .map((p) => `<span class="pill">${esc(p)}</span>`).join("") + (f ? `<span class="pill bad">✗ ${f} failed</span>` : "");
+  const steps = t.hooksOnly
+    ? `<ol class="steps"><li class="step"><div class="say">No model calls captured. The hooks saw:</div><ul class="tools">${t.tools.map(toolLi).join("")}</ul></li></ol>`
+    : `<ol class="steps">${t.calls.filter((c) => !c.agent).map((c) => step(c, t)).join("")}</ol>`;
+  const loose = t.unpinned.length ? `<p class="grp">○ Not caused by a tool call</p><ul class="effs">${t.unpinned.map(effLi).join("")}</ul>` : "";
+  return `<article class="card turn" id="turn-${t.n}" aria-labelledby="h-${t.n}">
+    <header class="th"><div class="k"><b>Turn ${t.n}</b><span>${clock(t.at)}</span></div>
+      <div class="dur">${t.hooksOnly ? `<b>—</b><span>no model calls captured</span>` : `<b>${dur(tt.clock)}</b><span>model ${dur(tt.model)} · tools ${dur(tt.tool)}</span>`}</div>
+      <h2 id="h-${t.n}">${esc(t.prompt)}</h2></header>
+    <div class="tb"><div class="sum">${pills}</div>${steps}${loose}${t.answer ? `<div class="answer"><span class="who">Claude answered</span>${esc(t.answer)}</div>` : ""}</div></article>`;
+}
+document.getElementById("main").innerHTML = overview() + turns.map((t) => {
+  const b = S.between.find((x) => x.after === t.n);
+  return turnCard(t) + (b ? `<section class="card btwentry" id="between-${t.n}" aria-label="Between turns"><h2>Between turns ${t.n} and ${t.n + 1} · ${clock(b.effects[0].at)}</h2><p class="muted small" style="margin:0">A change while no tool call was running: most likely your own edit.</p><ul class="effs">${b.effects.map(effLi).join("")}</ul></section>` : "");
+}).join("");
+
+// ---------- modals: one shape for everything ----------
+const msec = (title, body, sub = "") => `<section class="ms"><h3>${title}${sub ? `<span class="sub">${sub}</span>` : ""}</h3>${body}</section>`;
+const goBtn = (target, label) => `<button type="button" class="btn sm" data-goto="${esc(target)}">${esc(label)} →</button>`;
+const shell = (kick, title, subt, body, goto) => ({ kick, title, subt, body, goto });
+
+function fileModal(path) {
+  const ch = files.get(path) || [], rd = readsBy.get(path) || [];
+  const [dir] = split(path);
+  const add = ch.reduce((a, e) => a + (e.add || 0), 0), del = ch.reduce((a, e) => a + (e.del || 0), 0);
+  let body = `<div class="ms"><div class="mfacts">${fact("Changed", ch.length ? plural(ch.length, "time") : "never")}${ch.length && !ch[ch.length - 1].binary ? fact("Lines", `<span class="a">+${add}</span> <span class="d">−${del}</span>`) : ""}${ch.length ? fact("Size now", G.bytes(ch[ch.length - 1].size)) : ""}${fact("Read by Claude", rd.length ? plural(rd.length, "time") : "never")}</div></div>`;
+  for (const e of ch) {
+    body += msec(`${e.change[0].toUpperCase()}${e.change.slice(1)} in ${where(e)}`, whyBlock(e) + (e.binary ? `<p class="muted-note">Binary file: no copy is kept, so there is no diff.</p>` : G.diffHTML(e)), `${clock(e.at)} ${goBtn(`eff-${e.id}`, `Show in ${where(e)}`)}`);
+  }
+  if (rd.length) body += msec("Reads", `<ul class="mlist">${rd.map((e) => { const t = tools.get(e.tool); return `<li><b>${esc(where(e)[0].toUpperCase() + where(e).slice(1))}</b><span class="muted">${esc(t.name)}${t.agent ? ` in sub-agent ${esc(t.agent)}` : ""} · ${esc(e.detail)} · ${clock(e.at)}</span>${goBtn(`eff-${e.id}`, "Show")}</li>`; }).join("")}</ul>`);
+  const first = ch[0] || rd[0];
+  return shell(ch.length ? "File changed" : "File read", `<code>${esc(path)}</code>`, esc(G.full(path)), body, first && [`eff-${first.id}`, `Show in ${where(first)}`]);
+}
+function toolModal(t) {
+  const c = t.call ? calls.get(t.call) : null;
+  const isCmd = t.name === "Bash";
+  const files2 = t.effects.filter((e) => e.kind !== "net"), nets = t.effects.filter((e) => e.kind === "net");
+  const touched = files2.length || nets.length
+    ? `<ul class="mlist">${files2.map((e) => `<li>${G.labelBadge(e)}<span>${G.effectWhat(e).g} ${esc(G.effectWhat(e).w)}</span><button type="button" class="linkish" data-modal="file:${esc(e.path)}"><code>${esc(e.path)}</code></button><span class="muted">${esc(G.effectStat(e))}</span></li>`).join("")}${nets.map((e) => `<li>${G.labelBadge(e)}<span>⇄ connected</span><button type="button" class="linkish" data-modal="site:${esc(e.host)}"><code>${esc(e.host)}:${e.port}</code></button><span class="muted">↑ ${G.bytes(e.up)} ↓ ${G.bytes(e.down)}</span></li>`).join("")}</ul>`
+    : `<p class="muted-note">Nothing seen on disk or on the network${t.spawns ? " (a sub-agent's own tools carry their effects)" : ""}.</p>`;
+  const status = t.ok ? `<span class="st st-ok">✓ ok</span>` : `<span class="st st-failed">✗ failed</span>`;
+  const body = `<div class="ms"><div class="mfacts">${fact("Result", status)}${fact("Ran for", dur(t.dur))}${fact("When", `${clock(t.at)}–${clock(t.at + t.dur)}`)}${fact("Asked by", c ? `<button type="button" class="linkish" data-modal="call:${c.n}">model call #${c.n}</button>${c.agent ? ` (${esc(c.agent)})` : ""}` : "hooks only")}</div>${t.input.description ? `<p class="muted-note">${esc(t.input.description)}</p>` : ""}</div>`
+    + msec("What it touched", touched)
+    + msec(isCmd ? "Output" : "Result", `<div class="${t.ok ? "" : "errbox"}">${G.pre(t.result)}</div>`)
+    + (isCmd ? "" : msec("Input", G.pre(JSON.stringify(t.input, null, 2))));
+  return shell(`${isCmd ? "Command" : "Tool call"} · turn ${t.turn}${t.agent ? ` · sub-agent ${esc(t.agent)}` : ""}`, isCmd ? `<code>$ ${esc(t.input.command)}</code>` : `${esc(t.name)} <code>${esc(G.toolArg(t))}</code>`, "", body, [`tool-${t.id}`, `Show in turn ${t.turn}`]);
+}
+function siteModal(host) {
+  const l = sites.get(host) || [];
+  const up = l.reduce((a, e) => a + e.up, 0), down = l.reduce((a, e) => a + e.down, 0);
+  let body = `<div class="ms"><div class="mfacts">${fact("Connections", l.length)}${fact("Downloaded", G.bytes(down))}${fact("Uploaded", G.bytes(up))}${fact("Port", l[0].port)}</div><p class="muted-note">HTTPS: the gateway sees host, bytes and timing, never the content.</p></div>`;
+  for (const e of l) body += msec(`Connection in ${where(e)}`, whyBlock(e) + `<div class="mfacts">${fact("Outcome", e.outcome === "ok" ? "✓ ok" : esc(e.outcome))}${fact("Open for", dur(e.dur))}${fact("Bytes", `↑ ${G.bytes(e.up)} ↓ ${G.bytes(e.down)}`)}</div>`, `${clock(e.at)} ${goBtn(`eff-${e.id}`, `Show in ${where(e)}`)}`);
+  return shell("Site", esc(host), `${plural(l.length, "connection")} in this session`, body, l[0] && [`eff-${l[0].id}`, `Show in ${where(l[0])}`]);
+}
+function callModal(n) {
+  const c = calls.get(n);
+  const ctx = c.in + c.cw + c.cr;
+  const asked = [...tools.values()].filter((t) => t.call === c.n);
+  const body = `<div class="ms"><div class="mfacts">${fact("Took", dur(c.dur))}${fact("Started", clock(c.at))}${fact("Stop reason", esc(c.stop || c.statusText || "—"))}${fact("Context size", num(ctx))}</div></div>`
+    + msec("Context", `<div class="mfacts">${fact("This call", num(ctx))}${fact("Change", signed(growth(c).delta))}</div><p class="muted-note">${esc(growth(c).why[0].toUpperCase() + growth(c).why.slice(1))}.</p>`)
+    + msec("Tokens", `<div class="mfacts">${fact("Input", num(c.in))}${fact("Output", num(c.out))}${fact("Cache write", num(c.cw))}${fact("Cache read", num(c.cr))}</div>`)
+    + (c.thinking ? msec("Thinking", G.pre(c.thinking)) : "")
+    + (asked.length ? msec("Then ran", `<ul class="mlist">${asked.map((t) => `<li>${t.ok ? "✓" : "✗"} <button type="button" class="linkish" data-modal="tool:${t.id}"><b>${esc(t.name)}</b></button><code>${esc(G.toolArg(t))}</code><span class="muted">${dur(t.dur)}</span></li>`).join("")}</ul>`) : "")
+    + (c.response ? msec("Response", G.pre(c.response)) : "");
+  return shell(`Model call${c.side ? " · side call" : ""}${c.agent ? ` · sub-agent ${esc(c.agent)}` : ""}${c.turn ? ` · turn ${c.turn}` : ""}`, `#${c.n} · ${esc(S.model)}`, "", body, c.turn && [`turn-${c.turn}`, `Show turn ${c.turn}`]);
+}
+function render(key) {
+  const i = key.indexOf(":"), k = key.slice(0, i), id = key.slice(i + 1);
+  if (k === "file") return fileModal(id);
+  if (k === "tool") return toolModal(tools.get(id));
+  if (k === "site") return siteModal(id);
+  if (k === "call") return callModal(+id);
+  return null;
+}
+const dlg = document.getElementById("dlg"), wrap = document.getElementById("mwrap");
+let stack = [], opener = null;
+function draw() {
+  const m = render(stack[stack.length - 1]);
+  wrap.innerHTML = `<header class="mh">${stack.length > 1 ? `<button type="button" class="x" data-back aria-label="Back">←</button>` : ""}<div class="tx"><span class="kick">${m.kick}</span><h2 id="mtitle">${m.title}</h2>${m.subt ? `<span class="subt">${m.subt}</span>` : ""}</div><button type="button" class="x" data-close aria-label="Close">×</button></header>
+    <div class="mb">${m.body}</div>
+    <footer class="mf"><span class="muted-note grow">Esc closes</span><button type="button" class="btn" data-close>Close</button>${m.goto ? `<button type="button" class="btn primary" data-goto="${esc(m.goto[0])}">${esc(m.goto[1])} →</button>` : ""}</footer>`;
+  wrap.querySelector(".mb").scrollTop = 0;
+}
+function openModal(key, from) {
+  if (!dlg.open) { stack = []; opener = from; }
+  stack.push(key);
+  draw();
+  if (!dlg.open) dlg.showModal();
+  (wrap.querySelector("[data-goto].primary") || wrap.querySelector("[data-close]")).focus();
+}
+dlg.addEventListener("close", () => { stack = []; if (opener && opener.isConnected) opener.focus(); });
+
+// ---------- jump to a place in the story ----------
+let lockUntilUserScrolls = false;
+function setCurrent(id) {
+  document.querySelectorAll(".toc a[data-turn]").forEach((a) => a.setAttribute("aria-current", String(a.getAttribute("href") === `#${id}`)));
+}
+function sectionOf(el) { return el.closest(".turn, .btwentry"); }
+function jump(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const sec = sectionOf(el);
+  if (sec) { setCurrent(sec.id); lockUntilUserScrolls = true; }
+  el.scrollIntoView({ behavior: "smooth", block: el === sec ? "start" : "center" });
+  const mark = el === sec ? el.querySelector(".th, h2") || el : el;
+  mark.classList.remove("flash"); void mark.offsetWidth; mark.classList.add("flash");
+}
+
+// the turn in view: the last section whose top has passed 30% of the window. A click on a
+// turn pins it until the user scrolls by hand, so the last turns can be selected even when
+// the page cannot scroll them to the top.
+const sections = [...document.querySelectorAll(".turn, .btwentry")];
+const story = document.getElementById("main");
+function onScroll() {
+  if (lockUntilUserScrolls) return;
+  const own = story.scrollHeight > story.clientHeight + 1;  // the story scrolls itself on wide screens
+  const box = own ? story.getBoundingClientRect() : { top: 0, height: innerHeight };
+  let cur = sections[0];
+  for (const s of sections) if (s.getBoundingClientRect().top <= box.top + box.height * 0.3) cur = s;
+  setCurrent(cur.id);
+}
+story.addEventListener("scroll", onScroll, { passive: true });
+for (const ev of ["wheel", "touchmove", "keydown"]) addEventListener(ev, (e) => { if (ev !== "keydown" || ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(e.key)) lockUntilUserScrolls = false; }, { passive: true });
+addEventListener("scroll", onScroll, { passive: true });
+onScroll();
+
+// ---------- clicks ----------
+document.body.addEventListener("click", (ev) => {
+  const t = ev.target;
+  const a = t.closest(".toc a[href^='#']");
+  if (a) { ev.preventDefault(); jump(a.getAttribute("href").slice(1)); history.replaceState(null, "", a.getAttribute("href")); return; }
+  if (t.closest("[data-close]")) { dlg.close(); return; }
+  if (t.closest("[data-back]")) { stack.pop(); draw(); return; }
+  const g = t.closest("[data-goto]");
+  if (g) { dlg.close(); jump(g.dataset.goto); return; }
+  const tab = t.closest("[data-tab]");
+  if (tab) { showTab(tab.dataset.tab, true); document.getElementById("side").classList.remove("flash"); void document.getElementById("side").offsetWidth; document.getElementById("side").classList.add("flash"); return; }
+  const tb = t.closest(".tab");
+  if (tb) { showTab(tb.id); return; }
+  const j = t.closest("[data-jump]");
+  if (j) { jump(j.dataset.jump); return; }
+  const m = t.closest("[data-modal]");
+  if (m) { openModal(m.dataset.modal, m); return; }
+  const o = t.closest("[data-open]");   // side calls in the shared header toggle
+  if (o) { openModal(`call:${o.dataset.open.split(":")[1]}`, o); }
+});
+document.querySelector(".tabs").addEventListener("keydown", (e) => {
+  if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+  const ts = [...document.querySelectorAll(".tab")], i = ts.findIndex((x) => x.getAttribute("aria-selected") === "true");
+  showTab(ts[(i + (e.key === "ArrowRight" ? 1 : ts.length - 1)) % ts.length].id, true);
+});
+document.addEventListener("animationend", (e) => e.target.classList.remove("flash"));
+G.themeInit();
+</script>
+</body>
+</html>

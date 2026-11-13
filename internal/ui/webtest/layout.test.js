@@ -18,39 +18,34 @@ function rule(sel) {
   return out;
 }
 
-// The turn rail is fixed from the header's bottom to the key bar's top, using their
-// measured heights, and scrolls on its own; the content is offset by its width. A sticky
-// rail misfit at the page's top and end (013 manual check, F7 then F7b). Below 760 px
-// wide the rail returns to normal flow, above the turns.
-test("railIsFixedBetweenHeaderAndKeyBar", () => {
-  const rail = rule(".rail");
-  assert.equal(rail.position, "fixed");
-  assert.equal(rail.top, "var(--head-h)");
-  assert.equal(rail.bottom, "var(--keybar-h)");
-  assert.equal(rail.width, "var(--rail-w)");
-  assert.equal(rail["overflow-y"], "auto");
-  assert.equal(rail["max-height"], undefined, "no computed height: top and bottom set it");
-  assert.equal(rule(".timeline-layout")["padding-left"], "calc(var(--rail-w) + 1rem)", "the content clears the rail");
-  const head = rule("header");
-  assert.equal(head.position, "sticky");
-  assert.equal(head.top, "0");
-  const root = rule(":root");
-  assert.match(root["--head-h"] || "", /^\d/, "a fallback header height before the shell measures it");
-  assert.match(root["--keybar-h"] || "", /^\d/, "a fallback key bar height");
-  assert.match(root["--rail-w"] || "", /^\d/, "the rail's width");
+// The session page fills the window below the header in three columns: the turn list, the
+// story and the right card. Only the story and the two side lists scroll (spec 016 AC3,
+// mockups/v4-story.html); room under the last turn lets any turn reach the top.
+test("storyScrollsAloneBetweenTheTwoCards", () => {
+  const body = rule('body[data-page="session"]');
+  assert.equal(body.height, "100vh");
+  assert.equal(body.overflow, "hidden");
+  const cols = rule(".cols");
+  assert.equal(cols.display, "grid");
+  assert.equal(cols["grid-template-areas"], '"toc story side"');
+  assert.equal(cols.height, "calc(100vh - var(--head-h))");
+  assert.equal(rule(".story").overflow, "auto");
+  assert.equal(rule(".toc, .sidebar").overflow, "hidden");
+  assert.match(rule(".scroll").overflow, /auto/);
+  assert.match(rule(".story::after").flex || "", /55vh/, "room under the last turn");
 });
 
-test("narrowWindowPutsTheRailBackInFlow", () => {
-  const m = css.match(/@media \(max-width: 760px\) \{([\s\S]*?)\n\}/);
-  assert.ok(m, "style.css has a 760px media block");
-  const inner = (sel) => {
-    const r = m[1].match(new RegExp(`${sel.replace(".", "\\.")}\\s*\\{([^}]*)\\}`));
-    assert.ok(r, `the media block styles ${sel}`);
-    return r[1];
-  };
-  assert.match(inner(".rail"), /position:\s*static/);
-  assert.match(inner(".rail"), /order:\s*-1/, "the rail comes before the turns");
-  assert.match(inner(".timeline-layout"), /padding-left:\s*0/);
+// Narrower windows fall back to one scrolling page with the turn list sticky on the left;
+// below 760 px the story and the right card stack.
+test("narrowWindowFallsBackToOnePage", () => {
+  const mid = css.match(/@media \(max-width: 1080px\) \{([\s\S]*?)\n\}/);
+  assert.ok(mid, "style.css has a 1080px media block");
+  assert.match(mid[1], /body\[data-page="session"\] \{ height: auto; overflow: auto; \}/);
+  assert.match(mid[1], /\.toc \{ position: sticky;/);
+  assert.match(mid[1], /\.story \{ overflow: visible; \}/);
+  const narrow = css.match(/@media \(max-width: 760px\) \{([\s\S]*?)\n\}/);
+  assert.ok(narrow, "style.css has a 760px media block");
+  assert.match(narrow[1], /grid-template-areas: "story" "side"/);
 });
 
 // The header and the key bar can wrap to two lines, so the shell measures them and

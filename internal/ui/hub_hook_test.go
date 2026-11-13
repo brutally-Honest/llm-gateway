@@ -223,25 +223,8 @@ func TestHub_HookRefreshAndCommitInSameWindowSendEachChangeOnce(t *testing.T) {
 	}
 }
 
-// webReplaceExchange and webReplaceHooks are the replace functions of web/entries.js, without
-// their sort; the test below pins that source, so the two cannot drift apart unnoticed.
-const webReplaceExchange = `export function replaceExchange(entries, list) {
-  if (!list || list.length === 0) return entries;
-  const ids = new Set(list.map((e) => e.exchange_id));
-  const out = entries.filter((e) => !ids.has(e.exchange_id));
-  out.push(...list);
-  out.sort(compareEntries);
-  return out;
-}`
-
-const webReplaceHooks = `export function replaceHooks(entries, list) {
-  const out = entries.filter((e) => e.kind !== "hook_event");
-  out.push(...(list || []));
-  out.sort(compareEntries);
-  return out;
-}`
-
-// applyEvent applies one stream event to the client's entries as app.js does.
+// applyEvent applies one stream event to a client's entries the way the 013 page did: a
+// hooks event replaces the hook group, any other event its exchanges.
 func applyEvent(entries []map[string]any, event string, list []map[string]any) []map[string]any {
 	if event == "hooks" {
 		var out []map[string]any
@@ -279,15 +262,11 @@ func hookLineIDs(entries []map[string]any) []string {
 	return out
 }
 
-// The web client replaces entries by their exchange_id. Hook lines travel with one and the
+// A stream client replaces entries by their exchange_id. Hook lines travel with one and the
 // same exchange_id in the timeline page, the connect snapshot and a live refresh, so a live
 // hook update replaces the lines it already holds instead of adding a second set. The server's
 // own names for them ("~hook" for paging, "hooks" for the sent-record) never reach the wire.
 func TestStream_LiveHookUpdateReplacesFirstSnapshotHookLines(t *testing.T) {
-	js := webFiles(t)["entries.js"]
-	if !strings.Contains(js, webReplaceExchange) || !strings.Contains(js, webReplaceHooks) {
-		t.Fatal("a replace function changed in web/entries.js: re-check that hook lines still replace, then update this test")
-	}
 	e := newStreamEnv(t, fastHooks)
 	e.toolSession(`{"a":1}`)
 	e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice, SourceName: "evt-a"}, 2)

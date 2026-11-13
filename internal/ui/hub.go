@@ -15,6 +15,7 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/capture"
 	"github.com/brutally-honest/llm-gateway/internal/logging"
 	"github.com/brutally-honest/llm-gateway/internal/store"
+	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
 
 const (
@@ -104,9 +105,12 @@ type pendingRefresh struct{ timer *time.Timer }
 // subscriber is one open stream. Its buffer is the only way the hub talks to it.
 type subscriber struct {
 	session string // "" for the global stream
-	ch      chan liveMsg
-	gone    chan struct{}
-	once    sync.Once
+	// view marks a session stream that wants the session view (spec 016), not entries:
+	// any message is only a poke to rebuild it, so the hub never reads entries for it.
+	view bool
+	ch   chan liveMsg
+	gone chan struct{}
+	once sync.Once
 }
 
 func (s *subscriber) drop() { s.once.Do(func() { close(s.gone) }) }
@@ -120,6 +124,8 @@ type Hub struct {
 	snap      snapFn
 	fresh     freshFn
 	effRead   effReadFn
+	// viewOf builds a session's view for a view stream; tests replace it.
+	viewOf    func(ctx context.Context, who sessIdent) (timeline.View, error)
 	heartbeat time.Duration
 	hookEvery time.Duration
 	effEvery  time.Duration
@@ -190,6 +196,12 @@ func newHub(d Deps, queue int) *Hub {
 	}
 	h.effRead = func(ctx context.Context, who sessIdent) (effectsEventJSON, error) {
 		return readEffectsEvent(ctx, d, who)
+	}
+	if d.Views == nil {
+		d.Views = NewViewCache()
+	}
+	h.viewOf = func(ctx context.Context, who sessIdent) (timeline.View, error) {
+		return d.cachedView(ctx, who, true)
 	}
 	return h
 }
@@ -268,11 +280,22 @@ func (h *Hub) refresh(who sessIdent, p *pendingRefresh) {
 	default:
 	}
 	id := who.id()
+	h.poke(id)
 	global, session := h.watchers(id)
 	if !global && !session {
 		return
 	}
 	h.readAndSend(who, nil, nil, global, session, true, false)
+}
+
+// poke tells every view stream of session id that the session changed; each rebuilds
+// its view once its debounce ends.
+func (h *Hub) poke(id string) {
+	for _, s := range h.targets(id, false) {
+		if s.view {
+			h.send(s, liveMsg{})
+		}
+	}
 }
 
 // Close stops the dispatcher and ends every open stream. It is safe to call twice.
@@ -294,7 +317,10 @@ func (h *Hub) Close() {
 }
 
 // subscribe registers a stream; session "" is the global stream.
-func (h *Hub) subscribe(session string) (*subscriber, error) {
+func (h *Hub) subscribe(session string) (*subscriber, error) { return h.subscribeView(session, false) }
+
+// subscribeView registers a stream; view marks a session view stream.
+func (h *Hub) subscribeView(session string, view bool) (*subscriber, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	select {
@@ -305,7 +331,7 @@ func (h *Hub) subscribe(session string) (*subscriber, error) {
 	if len(h.subs) >= maxStreams {
 		return nil, errTooManyStreams
 	}
-	s := &subscriber{session: session, ch: make(chan liveMsg, subscriberBuffer), gone: make(chan struct{})}
+	s := &subscriber{session: session, view: view, ch: make(chan liveMsg, subscriberBuffer), gone: make(chan struct{})}
 	h.subs[s] = struct{}{}
 	return s, nil
 }
@@ -353,10 +379,10 @@ func (h *Hub) watchers(id string) (global, session bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for s := range h.subs {
-		switch s.session {
-		case "":
+		switch {
+		case s.session == "":
 			global = true
-		case id:
+		case s.session == id && !s.view:
 			session = true
 		}
 	}
@@ -435,6 +461,7 @@ func (h *Hub) dispatch(batch []capture.Committed) {
 		default:
 		}
 		h.sendMu.Lock()
+		h.poke(g.who.id())
 		global, session := h.watchers(g.who.id())
 		if global || session {
 			h.readAndSend(g.who, g.ids, nil, global, session, false, false)

@@ -84,85 +84,6 @@ export function compareEntries(a, b) {
   return a.index - b.index;
 }
 
-// replaceExchange drops every entry of the exchange the list belongs to and inserts the
-// list at its sorted positions. `entries` and `exchange` events are applied the same way.
-export function replaceExchange(entries, list) {
-  if (!list || list.length === 0) return entries;
-  const ids = new Set(list.map((e) => e.exchange_id));
-  const out = entries.filter((e) => !ids.has(e.exchange_id));
-  out.push(...list);
-  out.sort(compareEntries);
-  return out;
-}
-
-// replaceHooks replaces the whole hook group: every hook_event entry is dropped, then the
-// list is inserted. An empty list removes the group.
-export function replaceHooks(entries, list) {
-  const out = entries.filter((e) => e.kind !== "hook_event");
-  out.push(...(list || []));
-  out.sort(compareEntries);
-  return out;
-}
-
-// liveEffect says what a stream event does to the session view: the patch to apply to
-// its state, or null when the event is dropped. A hooks event replaces the hook group only;
-// exchange and entries events replace their exchanges only. Every entries-changing event
-// except snapshot_error clears the snapshot error, since it proves the stream is fresh.
-export function liveEffect(name, data, entries) {
-  switch (name) {
-    case "snapshot_error":
-      return { snapshotError: data.error ? data.error.message : "unknown" };
-    case "session":
-      return { summary: data };
-    case "hooks":
-      return { entries: replaceHooks(entries, data), snapshotError: "" };
-    case "exchange":
-    case "entries":
-      return { entries: replaceExchange(entries, data), snapshotError: "" };
-    default:
-      return null;
-  }
-}
-
-// liveBatch applies a run of stream events ({ name, data }) in order, as liveEffect would one
-// by one, and returns the combined patch, or null when no event changes anything. Each run of
-// consecutive exchange and entries events is merged into one replaceExchange: a stream's
-// snapshot sends one event per exchange, and merging thousands one at a time re-sorts every
-// entry each time. Within a run a later event for an exchange wins, as it would in order.
-export function liveBatch(events, entries) {
-  let patch = null;
-  let cur = entries;
-  let run = new Map(); // exchange id -> its latest entries in this run
-  const flushRun = () => {
-    if (run.size === 0) return;
-    cur = replaceExchange(cur, [...run.values()].flat());
-    run = new Map();
-    patch = { ...patch, entries: cur, snapshotError: "" };
-  };
-  for (const { name, data } of events) {
-    if (name === "exchange" || name === "entries") {
-      if (!data || data.length === 0) {
-        patch = { ...patch, entries: cur, snapshotError: "" };
-        continue;
-      }
-      const byId = new Map();
-      for (const e of data) {
-        if (!byId.has(e.exchange_id)) byId.set(e.exchange_id, []);
-        byId.get(e.exchange_id).push(e);
-      }
-      for (const [id, list] of byId) run.set(id, list);
-      continue;
-    }
-    flushRun();
-    const p = liveEffect(name, data, cur);
-    if (!p) continue;
-    if (p.entries) cur = p.entries;
-    patch = { ...patch, ...p };
-  }
-  flushRun();
-  return patch;
-}
-
 // omittedNote is the note under a hook input that was cut short, or "" when nothing was.
 export function omittedNote(n) {
   return n > 0 ? `… ${n} bytes omitted` : "";
@@ -250,9 +171,4 @@ export function prettyJSON(text) {
 // counterText renders a token counter; null is unknown, never 0.
 export function counterText(n) {
   return n === null || n === undefined ? "unknown" : String(n);
-}
-
-// countText is "1 <one>" for a count of 1, else "<n> <many>".
-export function countText(n, one, many) {
-  return `${n} ${n === 1 ? one : many}`;
 }

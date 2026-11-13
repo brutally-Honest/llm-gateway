@@ -292,6 +292,31 @@ func (c *CtxReader) ListUnassigned(afterID int64, limit int) ([]EffectRow, error
 		afterID, limit)
 }
 
+// UnassignedConnsBetween lists up to limit connections with no session that started in
+// [from, to], in time order: the unassigned connections seen while a session ran.
+func (c *CtxReader) UnassignedConnsBetween(from, to int64, limit int) ([]EffectRow, error) {
+	return c.r.effects(c.ctx, effectSelect+` WHERE e.session_key IS NULL AND e.kind = 'net_conn'
+		AND e.at >= ? AND e.at <= ? ORDER BY e.at, e.id LIMIT ?`, from, to, limit)
+}
+
+// SessionEffects lists every effect of a session in id order.
+func (c *CtxReader) SessionEffects(session SessionIdent) ([]EffectRow, error) {
+	const page = 5000
+	var out []EffectRow
+	var after int64
+	for {
+		rows, err := c.ListEffects(session, after, page)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rows...)
+		if len(rows) < page {
+			return out, nil
+		}
+		after = rows[len(rows)-1].ID
+	}
+}
+
 // Effect reads one effect by id; a missing one is ErrNotFound.
 func (c *CtxReader) Effect(id int64) (EffectRow, error) {
 	rows, err := c.r.effects(c.ctx, effectSelect+` WHERE e.id = ?`, id)

@@ -50,3 +50,10 @@ const (
 type HarnessMapper interface {
 	MapHarness(body []byte) HarnessEvent
 }
+
+// PromptReader is an optional profile interface. A profile that implements it reads the
+// prompt the user typed out of a stored prompt hook payload, so a turn seen only by hooks
+// still has its prompt; the payload's field names live only in that profile.
+type PromptReader interface {
+	PromptOf(payload []byte) (string, bool)
+}

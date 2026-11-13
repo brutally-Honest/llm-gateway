@@ -78,6 +78,10 @@ export function mountShell({ head, bar, storage, root, theme }) {
     },
     setKeyBar(route, pos) {
       const kb = keyBar(route, pos);
+      if (!kb.level) {
+        bar.replaceChildren(); // no bar on this level; the footer hides when empty
+        return;
+      }
       const frag = document.createDocumentFragment();
       frag.append(el("strong", kb.level, "level"));
       if (kb.position) frag.append(el("span", kb.position, "position"));
