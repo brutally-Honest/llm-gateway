@@ -1,0 +1,3 @@
+Spec: specs/016-web-ui-v2 (AC1-AC15), docs/manual-checks/016-session-page.md
+Why: Karthik passed T016 after reviewing the 2026-11-11 GIF; the browser look re-checks the Time card, Commands clamp and Files wording changed since then.
+Verified by: Chrome on a throwaway gateway, both themes; contrast snippet dark min 6.24:1, light min 5.90:1 over 474 text nodes.
