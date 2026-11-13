@@ -4,12 +4,9 @@ What comes next, in order. PLAN.md §7 holds the phases; this is the short list 
 features. Update it when the order changes.
 
 ## Next
-1. **015 effect attribution**: name the tool call that most likely caused each file
-   change, file read and network connection (PLAN §7, C v2).
-2. **016 web UI v2**: the session page from a server-built view, in the chosen mockup's
-   layout and theme (`specs/016-web-ui-v2/`).
-3. **017 sessions list and call details**: the sessions list and the call details dialog
-   that replaces the 013 drawer, on 016's view and theme (split from 016).
+1. **017 sessions list and call details**: the sessions list and the call details dialog
+   that replaces the 013 drawer, on 016's view and theme (split from 016;
+   `specs/017-sessions-list-and-call-details/`: spec drafted, plan and tasks next).
 
 ## Later
 - The 014 Mac check: step 11 of `docs/manual-checks/014-effects.md`, the sandbox part of
