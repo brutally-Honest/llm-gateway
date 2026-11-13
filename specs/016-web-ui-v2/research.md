@@ -370,3 +370,23 @@ web test that now covers the same fact, or the AC that drops the feature.
 - 2026-11-13 — Manual check `docs/manual-checks/016-session-page.md` (T016): passed,
   Karthik's verdict after reviewing the GIF (`~/Downloads/016-session-page-2026-11-11.gif`).
 
+### Build log (folded in from the 2026-11-11 HANDOFF.md)
+- Commits, oldest first: `3a00587` Q1–Q5 and the 15 decisions folded in (spec v2, D14);
+  `ddb6fca` T001 `ToolSummarizer`, ADR 0016; `6ce4f4f` T002 seed; `0d5024d` T003–T005 in one
+  commit (`BuildView`, `CallFacts` move, `PromptReader`, `SideCallNamer`,
+  `effects.LineCounts`, store `SessionEffects`/`UnassignedConnsBetween`, `ui/view.go`);
+  `583987c` T006 view and tool endpoints, `ViewCache`, `?view=1` stream; `91bb7e6` T007 CLI;
+  `4ef923b` T008 theme and layout; `6ea5011` T009 story; `4388197` T010 side card; `22a27ad`
+  T011 dialog; `89c8b7d` T012, `eb76eea` T013, `0dd056a` T014 tests; `6517821` T015 manual
+  check; `dc421b1` dialog reopen fix; `7584cc3` T016 record. After it: `6e680d9`, `e1cd236`
+  (Time card), `320966f` (Commands clamp), `8b406f8` (Files wording).
+- Build rules (D14): `make verify` green after every commit, a git note per commit, PLAN §11
+  subjects, no AI attribution, no push without Karthik's OK, his gateway service never
+  restarted by the agent (commands printed instead).
+- A commit subject containing `: approve ` is blocked by the kit guard; approval is
+  recorded as D14 and the spec/plan approval fields stay empty (as in 015).
+- Purity check used in review: no "claude", "cursor", "tool_use" etc. in `internal/ui`
+  (web files included) or `internal/timeline`; a CSS `cursor:` starts its own line; click
+  handlers only on elements made as `el("button"|"a")` or with `fmt.js` `button()`.
+- Throwaway gateway recipe: `docs/manual-checks/016-session-page.md` Setup; seed scratch
+  repos collect under `~/llmgw-seed-session/` and are removed by hand.
