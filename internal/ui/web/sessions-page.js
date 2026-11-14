@@ -99,6 +99,42 @@ export function effectsCell(e) {
   return { text: `${e.changed} · ${e.read} · ${e.sites}`, title: `${e.changed} changed files · ${e.read} files read · ${e.sites} sites` };
 }
 
+// compact renders a counter shown in the list as 3.7k, 94.5k or 15.1M; "—" stays "—".
+// The exact value is kept for the cell's label.
+export function compact(text) {
+  const n = Number(text);
+  if (text === DASH || text === "" || Number.isNaN(n)) return text;
+  if (n < 1000) return String(n);
+  if (n < 1e6) return `${(n / 1e3).toFixed(n < 1e4 ? 1 : 0)}k`;
+  if (n < 1e9) return `${(n / 1e6).toFixed(1)}M`;
+  return `${(n / 1e9).toFixed(1)}B`;
+}
+
+// startText is a session's start as "Today 8:47 PM", "Yesterday 7:08 PM" or
+// "Nov 11, 7:12 PM" in the browser's time zone.
+export function startText(iso, now = new Date()) {
+  const d = new Date(iso || "");
+  if (Number.isNaN(d.getTime())) return DASH;
+  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((day(now) - day(d)) / 86400000);
+  if (days === 0) return `Today ${time}`;
+  if (days === 1) return `Yesterday ${time}`;
+  const date = d.toLocaleDateString(undefined, { month: "short", day: "numeric", ...(d.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}) });
+  return `${date}, ${time}`;
+}
+
+// effectsWords is a session's effect counts in words, "19 changed · 1 read · 6 sites",
+// leaving out the zeros; "—" when there are none.
+export function effectsWords(e) {
+  if (!e) return DASH;
+  const parts = [];
+  if (e.changed) parts.push(`${e.changed} changed`);
+  if (e.read) parts.push(`${e.read} read`);
+  if (e.sites) parts.push(`${e.sites} ${e.sites === 1 ? "site" : "sites"}`);
+  return parts.length ? parts.join(" · ") : DASH;
+}
+
 // unassignedText is the quiet link text for connections linked to no session; "" for none.
 export function unassignedText(n) {
   if (!n) return "";
@@ -167,9 +203,17 @@ function rowNode(id) {
   tr.dataset.id = id;
   const parts = { tr, cells: [], a: document.createElement("a"), key: {} };
   parts.a.href = `#/sessions/${encodeURIComponent(id)}`;
-  for (const cls of ["time", "title", "", "num", "chips", "num", "", "num", "num", "num", "num", "num"]) parts.cells.push(td(tr, null, cls));
+  parts.a.className = "stitle";
+  for (const cls of ["time", "title", "src", "num", "chips", "num", "", "num", "num", "num", "num", "effects"]) parts.cells.push(td(tr, null, cls));
   parts.cells[1].append(parts.a);
   return parts;
+}
+
+// setNum writes a compact counter and keeps the exact one for screen readers and hover.
+function setNum(cell, text) {
+  setText(cell, compact(text));
+  const full = text === DASH ? "not reported" : text;
+  if (cell.title !== full) cell.title = full;
 }
 
 // setText writes text only when it changed, so an unchanged cell is not touched.
@@ -185,7 +229,9 @@ function fillRow(parts, s, selected) {
   else tr.removeAttribute("aria-selected");
   if (key.start !== c.start) {
     key.start = c.start;
-    cells[0].replaceChildren(timeElement(c.start));
+    const t = timeElement(c.start);
+    t.textContent = startText(c.start);
+    cells[0].replaceChildren(t);
   }
   setText(a, c.title);
   setText(cells[2], c.sources);
@@ -193,34 +239,67 @@ function fillRow(parts, s, selected) {
   const chips = c.chips.map((ch) => `${ch.key}:${ch.count}`).join(" ");
   if (key.chips !== chips) {
     key.chips = chips;
-    cells[4].replaceChildren();
-    for (const ch of c.chips) cells[4].append(chipNode(ch), document.createTextNode(" "));
+    const line = document.createElement("span");
+    line.className = "tchips";
+    for (const ch of c.chips) line.append(chipNode(ch));
+    cells[4].replaceChildren(line);
   }
   setText(cells[5], String(c.errors));
-  cells[6].className = `status status-${c.status.key}`;
-  setText(cells[6], `${c.status.glyph} ${c.status.text}`);
-  setText(cells[7], c.input);
-  setText(cells[8], c.output);
-  setText(cells[9], c.cacheWrite);
-  setText(cells[10], c.cacheRead);
-  setText(cells[11], c.effects.text);
-  if (cells[11].title !== c.effects.title) cells[11].title = c.effects.title;
+  cells[5].className = c.errors ? "num bad" : "num zero";
+  cells[6].className = "status";
+  if (key.status !== c.status.key) {
+    key.status = c.status.key;
+    const pill = document.createElement("span");
+    pill.className = `spill spill-${c.status.key}`;
+    pill.textContent = `${c.status.glyph} ${c.status.text}`;
+    cells[6].replaceChildren(pill);
+  }
+  setNum(cells[7], c.input);
+  setNum(cells[8], c.output);
+  setNum(cells[9], c.cacheWrite);
+  setNum(cells[10], c.cacheRead);
+  setText(cells[11], effectsWords(s.effects));
 }
 
 const COLUMNS = [
-  ["Start"], ["Title"], ["Sources"], ["Calls", "num"], ["Tools"], ["Errors", "num"], ["Status"],
-  ["Input", "num"], ["Output", "num"], ["Cache write", "num"], ["Cache read", "num"], ["Effects", "num"],
+  ["Start", "time"], ["Title", "title"], ["Sources", "src"], ["Calls", "num"], ["Tools", "chips"], ["Errors", "num"], ["Status"],
+  ["Input", "num"], ["Output", "num"], ["Cache write", "num"], ["Cache read", "num"], ["Effects", "effects"],
 ];
+
+// loader is what the list shows until its first page arrives: a line saying so and a few
+// placeholder rows the size of real ones.
+function loader() {
+  const box = document.createElement("div");
+  box.className = "sp-loading";
+  box.setAttribute("role", "status");
+  const p = document.createElement("p");
+  p.className = "muted";
+  p.textContent = "Loading sessions…";
+  box.append(p);
+  for (let i = 0; i < 6; i++) {
+    const r = document.createElement("div");
+    r.className = "skel";
+    r.setAttribute("aria-hidden", "true");
+    box.append(r);
+  }
+  return box;
+}
 
 // createSessionsPage builds the landing page once; update(state) redraws the table, the
 // totals and the notes without touching the filter input, so typing keeps its focus.
-// state = { items, next_after, error, today, ungrouped: { items, next_after }, unassigned }.
+// state = { items, next_after, error, loaded, today, ungrouped: { items, next_after },
+// unassigned }; until the first page has loaded the list shows a loader.
 // handlers = { onMore }.
 export function createSessionsPage(handlers) {
   const el = document.createElement("section");
   el.className = "sessions-page";
+  const head = document.createElement("div");
+  head.className = "sp-head";
+  const h1 = document.createElement("h1");
+  h1.textContent = "Sessions";
   const today = document.createElement("p");
   today.className = "today";
+  head.append(h1, today);
   const bar = document.createElement("div");
   bar.className = "filter-bar";
   const input = document.createElement("input");
@@ -228,12 +307,14 @@ export function createSessionsPage(handlers) {
   input.placeholder = "Filter sessions";
   input.setAttribute("aria-label", "Filter sessions");
   const picker = document.createElement("span");
+  picker.className = "seg-group";
   picker.setAttribute("role", "group");
   picker.setAttribute("aria-label", "Show");
   const kinds = new Map();
   for (const k of FILTERS) {
     const b = document.createElement("button");
     b.type = "button";
+    b.className = "seg";
     b.textContent = FILTER_LABELS[k];
     b.addEventListener("click", () => {
       kind = k;
@@ -246,11 +327,13 @@ export function createSessionsPage(handlers) {
   const filterNote = document.createElement("p");
   filterNote.className = "muted";
   const list = document.createElement("div");
+  list.className = "sp-list";
   const foot = document.createElement("div");
-  el.append(today, bar, filterNote, list, foot);
+  foot.className = "sp-foot";
+  el.append(head, bar, filterNote, list, foot);
 
   let kind = "all";
-  let state = { items: [], next_after: null, error: "", today: null, ungrouped: { items: [], next_after: null }, unassigned: 0 };
+  let state = { items: [], next_after: null, error: "", loaded: true, today: null, ungrouped: { items: [], next_after: null }, unassigned: 0 };
   let selected = "";
   let shown = [];
   input.addEventListener("input", () => redraw());
@@ -295,11 +378,31 @@ export function createSessionsPage(handlers) {
   function redraw() {
     for (const [k, b] of kinds) b.setAttribute("aria-pressed", String(k === kind));
     const t = todayCells(state.today);
-    today.textContent = `Today: ${t.sessions} sessions, ${t.calls} calls — input ${t.input}, output ${t.output}, cache-write ${t.cacheWrite}, cache-read ${t.cacheRead}`;
+    today.replaceChildren();
+    const stat = (value, label, exact) => {
+      const sp = document.createElement("span");
+      sp.className = "stat";
+      const b = document.createElement("b");
+      b.textContent = value;
+      if (exact !== undefined && exact !== value) sp.title = exact;
+      sp.append(b, ` ${label}`);
+      today.append(sp);
+    };
+    today.append("Today");
+    stat(String(t.sessions), t.sessions === 1 ? "session" : "sessions");
+    stat(String(t.calls), t.calls === 1 ? "call" : "calls");
+    stat(compact(t.input), "input", t.input);
+    stat(compact(t.output), "output", t.output);
+    stat(compact(t.cacheWrite), "cache write", t.cacheWrite);
+    stat(compact(t.cacheRead), "cache read", t.cacheRead);
     foot.replaceChildren();
     filterNote.textContent = "";
     if (state.error) {
       list.replaceChildren(note("error", state.error));
+      return;
+    }
+    if (!state.loaded) {
+      list.replaceChildren(loader());
       return;
     }
     const f = filterSessions(state.items, { kind, text: input.value, hasMore: Boolean(state.next_after) });
@@ -320,7 +423,7 @@ export function createSessionsPage(handlers) {
       const a = document.createElement("a");
       a.className = "quiet";
       a.href = "#/ungrouped";
-      a.textContent = ug;
+      a.textContent = `${ug} →`;
       const p = document.createElement("p");
       p.append(a);
       foot.append(p);
@@ -330,7 +433,7 @@ export function createSessionsPage(handlers) {
       const a = document.createElement("a");
       a.className = "quiet";
       a.href = "#/effects/unassigned";
-      a.textContent = ua;
+      a.textContent = `${ua} →`;
       const p = document.createElement("p");
       p.append(a);
       foot.append(p);

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { countedChips, createSessionsPage, localMidnight, moveSelection, rowCells, todayCells, ungroupedText } from "../web/sessions-page.js";
+import { compact, countedChips, createSessionsPage, effectsWords, localMidnight, moveSelection, rowCells, startText, todayCells, ungroupedText } from "../web/sessions-page.js";
 import { StubElement, all, byTag, installDom } from "./dom-stub.js";
 import { upsertSession } from "../web/entries.js";
 import { filterSessions } from "../web/filters.js";
@@ -166,4 +166,42 @@ test("chromeSearchEventRestoresTheSessionList", () => {
   f.input.value = ""; // Chrome clears the box itself, then fires search
   f.input.fire("search");
   assert.ok(f.listed(), "the rows show again");
+});
+
+// The sessions list after its visual cleanup (2026-11-13): compact counters with the exact
+// value kept, starts as Today / Yesterday / a date, effects in words, a tool line on one
+// row, and a loader until the first page arrives.
+test("listFormatsForReading", () => {
+  assert.deepEqual(["—", "0", "999", "3707", "94487", "15074885", "2100000000"].map(compact), ["—", "0", "999", "3.7k", "94k", "15.1M", "2.1B"]);
+  const now = new Date(2026, 10, 13, 22, 0);
+  assert.match(startText(new Date(2026, 10, 13, 20, 47).toISOString(), now), /^Today \d/);
+  assert.match(startText(new Date(2026, 10, 12, 19, 8).toISOString(), now), /^Yesterday \d/);
+  assert.match(startText(new Date(2026, 10, 10, 6, 9).toISOString(), now), /^Nov 10, \d/);
+  assert.match(startText(new Date(2025, 10, 10, 6, 9).toISOString(), now), /2025/);
+  assert.equal(effectsWords({ changed: 19, read: 1, sites: 6 }), "19 changed · 1 read · 6 sites");
+  assert.equal(effectsWords({ changed: 0, read: 0, sites: 1 }), "1 site");
+  assert.equal(effectsWords({ changed: 0, read: 0, sites: 0 }), "—");
+
+  const p = livePage([session({ usage: { input: counter(3707), output: counter(null), cache_write: counter(0), cache_read: counter(15074885) }, effects: { changed: 2, read: 0, sites: 1 } })]);
+  const tds = byTag(p.row("s1"), "td");
+  assert.equal(tds[7].textContent, "3.7k");
+  assert.equal(tds[7].title, "3707", "the exact value is kept");
+  assert.equal(tds[8].textContent, "—");
+  assert.equal(tds[10].textContent, "15.1M");
+  assert.equal(tds[11].textContent, "2 changed · 1 site");
+  const line = all(tds[4]).find((e) => e.className === "tchips");
+  assert.equal(line.children.length, 3, "the tool states sit on one line");
+  assert.equal(tds[5].className, "num bad", "errors above zero stand out");
+});
+
+test("listShowsALoaderUntilItsFirstPage", () => {
+  installDom();
+  const page = createSessionsPage({ onMore() {} });
+  page.update({ loaded: false });
+  const text = () => all(page.el).map((e) => e.textContent).join(" ");
+  assert.match(text(), /Loading sessions…/);
+  assert.doesNotMatch(text(), /No sessions captured yet/, "an empty list is not claimed before it loads");
+  page.update({ loaded: true, items: [] });
+  assert.match(text(), /No sessions captured yet/);
+  assert.doesNotMatch(text(), /Loading sessions/);
 });

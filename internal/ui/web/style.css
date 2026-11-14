@@ -87,6 +87,50 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .qa-typed, .qa-notes { margin: 6px 0 0; color: var(--text); }
 .qa-notes { padding-left: 8px; border-left: 3px solid var(--accent-strong); }
 
+/* ---- the sessions list (visual cleanup, 2026-11-13) ---- */
+.sessions-page { max-width: 1600px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.sp-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 20px; }
+.sp-head h1 { margin: 0; font-size: 20px; font-weight: 700; color: var(--hi); letter-spacing: -.01em; }
+.sp-head .today { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+.sp-head .today .stat b { color: var(--hi); font-weight: 600; font-variant-numeric: tabular-nums; }
+.sessions-page .filter-bar { align-items: center; gap: 10px; padding: 0; }
+.sessions-page .filter-bar input { width: 18rem; max-width: 100%; padding: 6px 10px; }
+.seg-group { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--card); }
+.seg-group .seg { all: unset;
+  cursor: pointer; font-size: 13px; font-weight: 500; color: var(--muted); padding: 5px 12px; }
+.seg-group .seg + .seg { border-left: 1px solid var(--border); }
+.seg-group .seg:hover { color: var(--text); background: var(--panel); }
+.seg-group .seg[aria-pressed="true"] { color: var(--hi); background: var(--panel2); font-weight: 600; }
+.seg-group .seg:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: -2px; }
+.sp-list { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow-x: auto; }
+.sp-list table { min-width: 72rem; }
+.sp-list th { position: sticky; top: 0; background: var(--card); text-transform: uppercase; letter-spacing: .04em; font-size: 11px; padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.sp-list td { padding: 10px 12px; vertical-align: middle; font-size: 13px; }
+.sp-list tbody tr:last-child td { border-bottom: 0; }
+.sp-list tbody tr:hover td { background: var(--panel); }
+.sp-list tr.selected td { background: var(--accent-bg); }
+.sp-list td.time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.sp-list th.title, .sp-list td.title { width: 100%; max-width: 0; }
+.sp-list .stitle { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--hi); font-weight: 500; text-decoration: none; }
+.sp-list .stitle:hover { color: var(--accent); text-decoration: underline; }
+.sp-list td.src { color: var(--muted); white-space: nowrap; font-size: 12px; }
+.sp-list td.num.zero { color: var(--muted); }
+.sp-list td.num.bad { color: var(--bad); font-weight: 600; }
+.sp-list td.chips, .sp-list th.chips { white-space: nowrap; }
+.tchips { display: inline-flex; gap: 4px; }
+.tchips .chip { padding: 1px 6px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.spill { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-size: 12px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
+.spill-active { color: var(--ok); border-color: var(--ok); background: var(--ok-bg); }
+.sp-list td.effects, .sp-list th.effects { white-space: nowrap; color: var(--muted); font-size: 12px; }
+.sp-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; }
+.sp-foot p { margin: 0; }
+.sp-foot .quiet { color: var(--muted); font-size: 13px; text-decoration: none; }
+.sp-foot .quiet:hover { color: var(--accent); text-decoration: underline; }
+.sp-loading { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.sp-loading p { margin: 0 0 4px; }
+.skel { height: 18px; border-radius: 6px; background: linear-gradient(90deg, var(--panel) 0, var(--panel2) 40%, var(--panel) 80%); background-size: 200% 100%; animation: skel 1.2s ease-in-out infinite; }
+@keyframes skel { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
 .live { color: var(--ok); }
 .err-text { color: var(--bad); }
 .copy { padding: 0 .5rem; font-size: 12px; }
@@ -233,6 +277,28 @@ details.side ul { list-style: none; margin: 6px 0 2px; padding: 0; display: flex
 .sum { display: flex; flex-wrap: wrap; gap: 6px; }
 .pill { font-size: 12px; font-weight: 600; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 1px 9px; }
 .pill.bad { color: var(--bad); background: var(--bad-bg); }
+/* a turn's chips open their panels, one at a time (017 AC14–AC16) */
+.pill.chip { all: unset; box-sizing: border-box;
+  cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 1px 9px; }
+.pill.chip:hover { border-color: var(--muted); }
+.pill.chip:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+.pill.chip.bad { color: var(--bad); background: var(--bad-bg); }
+.pill.chip.on { color: var(--on-accent); background: var(--accent-strong); border-color: var(--accent-strong); }
+.pill.chip.bad.on { color: var(--bad-bg); background: var(--bad); border-color: var(--bad); }
+.turn-chips { display: flex; flex-direction: column; gap: 10px; }
+.chip-panel { padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
+/* a chip's narrowed timeline: one row per call, tool call or effect, in order, with its #n */
+ul.frows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.frow { display: grid; grid-template-columns: 3rem minmax(0, 1fr) auto; gap: 2px 10px; align-items: baseline; font-size: 13px; padding: 2px 4px; border-radius: 6px; }
+.frow:hover { background: var(--panel); }
+.frow .cn { font-variant-numeric: tabular-nums; }
+.frow .fw { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.frow .fw code { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: 12px; }
+.frow .r { white-space: nowrap; color: var(--muted); font-size: 12px; }
+.frow .why { grid-column: 2 / -1; margin: 0; }
+.frow .si { font-weight: 700; } .frow .si.ok { color: var(--ok); } .frow .si.failed { color: var(--bad); }
+.frow .err-word { color: var(--bad); font-weight: 700; }
+.frow.bad .fw { color: var(--bad); }
 /* the steps between the prompt and the answer: a stepper, one folded line per step */
 ol.steps { position: relative; list-style: none; margin: 0; padding: 0 0 0 20px; display: flex; flex-direction: column; gap: 8px; }
 ol.steps::before { content: ""; position: absolute; left: 5px; top: 8px; bottom: 8px; width: 2px; background: var(--border); }
@@ -322,28 +388,6 @@ ul.effs .linkish code { color: var(--accent); }
 .btn { all: unset; box-sizing: border-box;
   cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--hi); white-space: nowrap; }
 .btn:hover { background: var(--panel); }
-/* a turn's chips open their panels, one at a time (017 AC14–AC16) */
-.pill.chip { all: unset; box-sizing: border-box;
-  cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 1px 9px; }
-.pill.chip:hover { border-color: var(--muted); }
-.pill.chip:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
-.pill.chip.bad { color: var(--bad); background: var(--bad-bg); }
-.pill.chip.on { color: var(--on-accent); background: var(--accent-strong); border-color: var(--accent-strong); }
-.pill.chip.bad.on { color: var(--bad-bg); background: var(--bad); border-color: var(--bad); }
-.turn-chips { display: flex; flex-direction: column; gap: 10px; }
-.chip-panel { padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
-/* a chip's narrowed timeline: one row per call, tool call or effect, in order, with its #n */
-ul.frows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.frow { display: grid; grid-template-columns: 3rem minmax(0, 1fr) auto; gap: 2px 10px; align-items: baseline; font-size: 13px; padding: 2px 4px; border-radius: 6px; }
-.frow:hover { background: var(--panel); }
-.frow .cn { font-variant-numeric: tabular-nums; }
-.frow .fw { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.frow .fw code { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: 12px; }
-.frow .r { white-space: nowrap; color: var(--muted); font-size: 12px; }
-.frow .why { grid-column: 2 / -1; margin: 0; }
-.frow .si { font-weight: 700; } .frow .si.ok { color: var(--ok); } .frow .si.failed { color: var(--bad); }
-.frow .err-word { color: var(--bad); font-weight: 700; }
-.frow.bad .fw { color: var(--bad); }
 .btn.sm { font-size: 12px; padding: 3px 9px; border-radius: 6px; }
 .btn:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
 .flash { animation: flash 2.4s ease-out; }

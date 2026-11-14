@@ -45,6 +45,7 @@ async function load(kind, after) {
       [kind]: after ? addUnique(s[kind], page.items) : page.items,
       [`${kind}Next`]: page.next_after,
       [`${kind}Error`]: "",
+      [`${kind}Loaded`]: true,
       ...(kind === "sessions" && !after ? { unassigned: page.unassigned_connections || 0 } : {}),
     });
   } catch (e) {
@@ -148,6 +149,7 @@ async function showSession(id) {
   const drawer = createDrawer({
     nav,
     turnHeading: () => (page ? page.turnHeading() : null),
+    background: () => (page ? page.el : null),
     // a call's detail gets the view's single retry on 504; the drawer shows "loading…"
     background: () => (page ? page.el : null),
     // meanwhile (F9)
@@ -332,6 +334,7 @@ function showSessions() {
       items: s.sessions,
       next_after: s.sessionsNext,
       error: s.sessionsError,
+      loaded: Boolean(s.sessionsLoaded),
       today: s.today,
       ungrouped: s.ungroupedHead,
       unassigned: s.unassigned,
