@@ -64,7 +64,9 @@ func newStreamEnvRules(t *testing.T, tune func(*Hub), rules map[string]ClientRul
 	d.Hub = h
 	ts.Config.Handler = newRouter(d)
 	ts.Start()
-	t.Cleanup(func() { h.Close(); ts.Close() })
+	// Close cancels the hub's computes but does not wait for them: wait here, so none still
+	// reads the store while the reader closes and the temp dir is removed.
+	t.Cleanup(func() { h.Close(); ts.Close(); settle(t, h.Digests()); settleTimelines(t, h.Timelines()) })
 	return &streamEnv{apiEnv: &apiEnv{t: t, s: s, dir: dir, h: ts.Config.Handler}, hub: h, ts: ts, d: d}
 }
 
