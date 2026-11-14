@@ -149,6 +149,7 @@ async function showSession(id) {
     nav,
     turnHeading: () => (page ? page.turnHeading() : null),
     // a call's detail gets the view's single retry on 504; the drawer shows "loading…"
+    background: () => (page ? page.el : null),
     // meanwhile (F9)
     loadDetail: (callId) => retryOn504(() => getJSON(`exchanges/${enc(callId)}`), () => {}),
   });

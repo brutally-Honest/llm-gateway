@@ -3,14 +3,14 @@
 // the route the way app.js does. It lets the drawer's tests run without a session page.
 import { createDrawer } from "../web/drawer.js";
 
-export function createDrawerHost({ nav = { push() {}, replace() {}, back() {} }, loadDetail = async () => { throw new Error("no detail in this test"); } } = {}) {
+export function createDrawerHost({ nav = { push() {}, replace() {}, back() {} }, loadDetail = async () => { throw new Error("no detail in this test"); }, background } = {}) {
   const doc = globalThis.document;
   const root = doc.createElement("div");
   const links = doc.createElement("nav");
   const heading = doc.createElement("h2");
   heading.className = "turn-head";
   let drawer = null;
-  drawer = createDrawer({ nav, loadDetail, turnHeading: () => heading });
+  drawer = createDrawer({ nav, loadDetail, background, turnHeading: () => heading });
   root.append(heading, links, drawer.el);
   let drawn = { missing: false, index: 0, total: 0 };
   let ids = [];

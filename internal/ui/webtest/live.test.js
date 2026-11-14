@@ -33,7 +33,7 @@ test("drawerKeepsCallFocusAndScrollOnLiveData", async () => {
   const es = [call("a", 1), item("a", "tool_call", { name: "Bash", tool_call_id: "t", chip: "pending" }), call("b", 2, { prev: "a" })];
   p.render({ summary, entries: es, error: "", snapshotError: "", callId: "a", loaded: true });
   const drawer = withClass(p.el, "drawer")[0];
-  const body = drawer.children[1];
+  const body = withClass(drawer, "drawer-body")[0]; // the part that scrolls
   body.scrollTop = 120;
   const prev = drawer.children[0].children.find((c) => c.textContent.includes("next"));
   prev.focus();

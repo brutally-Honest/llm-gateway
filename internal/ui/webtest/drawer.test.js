@@ -309,3 +309,30 @@ test("closeAfterOpeningAnotherCallWhileOpenLandsOnSessionUrl", () => {
   restored.p.closeDrawer();
   assert.equal(restored.top(), null);
 });
+
+// The drawer is modal: the page behind it is inert while it is open, a click on the dimmed
+// page closes it, and its top (the call's context and message counts) stays while the
+// messages and later sections scroll (017, Karthik 2026-11-13).
+test("drawerIsModalWithAFixedTop", async () => {
+  const page = globalThis.document.createElement("div");
+  const navs = [];
+  const nav = { push: (r) => navs.push(["push", r]), replace: (r) => navs.push(["replace", r]), back: () => navs.push(["back"]) };
+  const p = createDrawerHost({ nav, loadDetail: async () => detailOf(), background: () => page });
+  const es = [call("a", 1), call("b", 2, { prev: "a" })];
+  p.render({ summary, entries: es, error: "", snapshotError: "", callId: "b", loaded: true });
+  await new Promise((r) => setTimeout(r, 0));
+  const drawer = withClass(p.el, "drawer")[0];
+  assert.equal(page.inert, true, "the page behind is inert while the drawer is open");
+  const top = withClass(drawer, "drawer-top")[0];
+  const body = withClass(drawer, "drawer-body")[0];
+  assert.match(textOf(top), /Context size/);
+  assert.match(textOf(top).replace(/\s+/g, " "), /2 carried over · 1 new/);
+  assert.equal(withClass(top, "drawer-messages").length, 0, "the messages are not in the top");
+  assert.equal(withClass(body, "drawer-messages").length, 1, "the messages scroll");
+  assert.match(textOf(body), /all done/, "later sections scroll too");
+
+  withClass(drawer, "drawer-scrim")[0].fire("click");
+  assert.deepEqual(navs.at(-1), ["replace", { name: "session", id: "s1", call: null }], "a click on the dimmed page closes the drawer");
+  p.render({ summary, entries: es, error: "", snapshotError: "", callId: null, loaded: true });
+  assert.equal(page.inert, false, "the page works again once the drawer closes");
+});

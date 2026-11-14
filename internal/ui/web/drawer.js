@@ -28,7 +28,9 @@ export function shouldFollow(drawerOpen, atBottom) {
 // so live data never moves it off its call; its element and step buttons are built once, so
 // focus and scroll survive every sync. turnHeading() gives the current turn's heading, the
 // place focus falls back to when the opener is gone (E11).
-export function createDrawer({ nav, turnHeading, loadDetail = (id) => getJSON(`exchanges/${encodeURIComponent(id)}`) }) {
+// background, when given, is the page behind the drawer: it is made inert while the drawer
+// is open, so nothing behind it can be clicked or reached by Tab (017, Karthik 2026-11-13).
+export function createDrawer({ nav, turnHeading, background = () => null, loadDetail = (id) => getJSON(`exchanges/${encodeURIComponent(id)}`) }) {
   const root = el("aside", "drawer");
   root.hidden = true;
   root.setAttribute("aria-label", "Call");
@@ -44,8 +46,17 @@ export function createDrawer({ nav, turnHeading, loadDetail = (id) => getJSON(`e
   close.type = "button";
   close.setAttribute("aria-label", "Close call");
   head.append(title, chips, prev, next, close);
+  // the top (the call's context and how many messages it saw) stays put; the messages and
+  // the sections after them scroll under it
+  const top = el("div", "drawer-top");
   const body = el("div", "drawer-body");
-  root.append(head, body);
+  // the dimmed page behind the drawer is one button that closes it; Close and Esc do the
+  // same from the keyboard, so it stays out of the Tab order
+  const scrim = el("button", "drawer-scrim");
+  scrim.type = "button";
+  scrim.setAttribute("aria-label", "Close call");
+  scrim.setAttribute("tabindex", "-1");
+  root.append(head, top, body, scrim);
 
   // detail is the open call's exchange detail: { id, state, data, error }. It is fetched
   // once per call; a failed fetch leaves the sections stating why, and the raw links work.
@@ -72,10 +83,19 @@ export function createDrawer({ nav, turnHeading, loadDetail = (id) => getJSON(`e
   prev.addEventListener("click", () => step(-1));
   next.addEventListener("click", () => step(1));
   close.addEventListener("click", closeNow);
+  scrim.addEventListener("click", closeNow);
+  const setInert = (on) => {
+    const bg = background();
+    if (!bg) return;
+    bg.inert = on;
+    if (on) bg.setAttribute("inert", "");
+    else bg.removeAttribute("inert");
+  };
 
   function hide() {
     if (!open()) return;
     root.hidden = true;
+    setInert(false);
     const target = opener && opener.isConnected !== false ? opener : turnHeading();
     opener = null;
     pendingOpener = null;
@@ -86,7 +106,15 @@ export function createDrawer({ nav, turnHeading, loadDetail = (id) => getJSON(`e
   }
 
   function draw(call) {
-    body.replaceChildren(...buildSections(call, lastEntries, detail));
+    const [context, saw, ...rest] = buildSections(call, lastEntries, detail);
+    // the "What the model saw" section's heading and counts join the top; its message
+    // list starts the scrolling part
+    const list = Array.from(saw.children).find((c) => c.tagName === "ul" || c.tagName === "UL");
+    const sawTop = el("section", "drawer-block");
+    const sawRest = el("section", "drawer-block");
+    for (const c of [...saw.children]) (list && (c === list || sawRest.children.length) ? sawRest : sawTop).append(c);
+    top.replaceChildren(context, sawTop);
+    body.replaceChildren(...(sawRest.children.length ? [sawRest] : []), ...rest);
   }
 
   function fetchDetail(call) {
@@ -110,6 +138,7 @@ export function createDrawer({ nav, turnHeading, loadDetail = (id) => getJSON(`e
       const a = globalThis.document.activeElement;
       opener = pendingOpener || (a && a !== globalThis.document.body ? a : null);
       root.hidden = false;
+      setInert(true);
       if (typeof title.focus === "function") title.focus();
     }
     if (current !== call.exchange_id) fetchDetail(call);

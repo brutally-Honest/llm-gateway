@@ -91,7 +91,19 @@ dl.facts dd { margin: 0; color: var(--hi); overflow-wrap: anywhere; }
   cursor: pointer; color: var(--accent); }
 
 /* ---- the 013 call drawer, kept until 017 ---- */
-.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(40rem, 100vw); overflow-y: auto; background: var(--card); color: var(--text); border-left: 1px solid var(--border); padding: .8rem 1rem; z-index: 30; box-shadow: var(--shadow); }
+/* the call drawer dims the page behind it, so it reads as on top, not as the page cut off */
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(48rem, 100vw); display: flex; flex-direction: column; overflow: hidden; background: none; color: var(--text); border-left: 1px solid var(--border); padding: .8rem 1rem; z-index: 30; box-shadow: var(--shadow); }
+/* the scrim covers the page behind the drawer: a click on it closes the drawer */
+.drawer-scrim { all: unset; position: fixed; inset: 0; z-index: -1; }
+/* button:hover would otherwise paint the whole scrim opaque */
+.drawer-scrim, .drawer-scrim:hover { background: var(--scrim); }
+/* the scrim sits inside the drawer, so it would dim the drawer's own background; the card
+   is painted by this later z-index -1 layer instead, above the scrim and under the content */
+.drawer::after { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--card); }
+.drawer-head, .drawer-top { flex: none; }
+.drawer-top { border-bottom: 1px solid var(--line); padding-bottom: .3rem; }
+.drawer-top .drawer-block { margin-bottom: .3rem; }
+.drawer-body { flex: 1; min-height: 0; overflow-y: auto; }
 .drawer[hidden] { display: none; }
 .drawer-head { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
 .drawer-title { flex: 1 1 auto; margin: 0; font-size: 1rem; color: var(--hi); }
