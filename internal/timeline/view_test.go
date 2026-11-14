@@ -928,3 +928,42 @@ func TestView_CallBodyNotStored(t *testing.T) {
 	eq(t, "context still built", i64(d.Context.Size), "20")
 	eq(t, "model still known", d.Facts.Model, "m1")
 }
+
+// 017 AC11: a reply longer than the cut says it is cut, with the raw response to open; a
+// call that failed says it has no reply because it failed, in words.
+func TestView_CallReplyCutOrFailed(t *testing.T) {
+	x := &fixture{f: newFake()}
+	f := x.f
+	long := strings.Repeat("all work and no play ", 200)
+	e := f.exchange("long", vat(1), "ok")
+	e.EndedAt, e.RequestBody, e.ResponseBody = vat(2), "req", "resp"
+	f.request("long", "m1")
+	f.msg("long", "user", "hi")
+	raw, _ := json.Marshal(map[string]string{"type": "text", "text": long})
+	reply, _ := json.Marshal(map[string]any{"role": "assistant", "stop_reason": "end_turn",
+		"blocks": []map[string]string{{"hash": f.put(string(raw)), "type": "text"}}})
+	f.add("long", store.EventRow{Kind: "message", Source: "response", ContentHash: hashOf("long reply"), Payload: reply})
+	f.usage("long", false, n(10), n(5), n(0), n(0))
+	bad := f.exchange("bad", vat(3), "ok")
+	bad.EndedAt, bad.Status, bad.RequestBody, bad.ResponseBody = vat(4), 500, "req2", "resp2"
+	ttfb := int64(1)
+	bad.TTFBNS = &ttfb
+	f.request("bad", "m1")
+	f.msg("bad", "user", "hi")
+	v := x.view(t, true)
+
+	in := x.callInput(t, "long")
+	det, err := timeline.ExchangeDetail(f, in.Exchange, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Detail = &det
+	d, _ := timeline.CallDetailsOf(v, "long", in)
+	if !d.Response.Truncated || len(d.Response.Text) > 100 {
+		t.Errorf("reply = %d bytes, truncated %v; want it cut at 100 and marked", len(d.Response.Text), d.Response.Truncated)
+	}
+	b := x.details(t, v, "bad")
+	if !strings.Contains(b.Response.Unavailable, "failed") || !strings.Contains(b.Response.Unavailable, "500 Internal Server Error") {
+		t.Errorf("failed call's reply = %q, want why there is none", b.Response.Unavailable)
+	}
+}

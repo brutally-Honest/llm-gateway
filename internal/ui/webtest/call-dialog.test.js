@@ -330,6 +330,11 @@ test("callDialogMissingDataSaysWhy", async () => {
   assert.doesNotMatch(t, /[+−-]\d+ since/);
   assert.equal(withClass(h.root, "bad").length, 1, "the error status is marked bad");
   assert.ok(byTag(h.root, "a").some((a) => a.href === "/api/exchanges/b/body?part=response"), "the stored response still links");
+  // a reply cut at the limit says so and links the whole raw response
+  const cut = await openOne(detail("b", { response: { text: "the start of it", truncated: true, stop_reason: "end turn" } }));
+  const more = byTag(cut.root, "a").find((a) => /cut short/.test(a.textContent));
+  assert.equal(more.href, "/api/exchanges/b/body?part=response");
+  assert.equal(byTag((await openOne(detail("a"))).root, "a").filter((a) => /cut short/.test(a.textContent)).length, 0, "a whole reply has no such link");
   const failed = host({ start: [null, "b"], load: async () => { throw new Error("boom"); } });
   await tick();
   assert.match(failed.text(), /Call details unavailable: boom/);

@@ -49,6 +49,7 @@ type SawMessage struct {
 // CallReply is what the call said: the reply's text and stop reason, or why it is missing.
 type CallReply struct {
 	Text        string `json:"text"`
+	Truncated   bool   `json:"truncated,omitempty"`
 	StopReason  string `json:"stop_reason,omitempty"`
 	Unavailable string `json:"unavailable,omitempty"`
 }
@@ -442,9 +443,12 @@ func callSaw(in CallInput) CallSaw {
 func callReply(in CallInput) CallReply {
 	ex := in.Exchange
 	if in.Detail == nil || !in.Detail.HasResponse {
+		if ex.Status >= 400 {
+			return CallReply{Unavailable: "The call failed (" + statusWord(ex.Status, "") + "), so there is no reply."}
+		}
 		return CallReply{Unavailable: reasonWords(UnavailableReason(ex, "response", ex.ResponseBody != "", ex.ResponseTruncated))}
 	}
-	return CallReply{Text: in.Detail.ResponseText, StopReason: words(in.Detail.StopReason)}
+	return CallReply{Text: in.Detail.ResponseText, Truncated: in.Detail.ResponseTruncated, StopReason: words(in.Detail.StopReason)}
 }
 
 func callRaw(ex store.ExchangeRow) CallRaw {

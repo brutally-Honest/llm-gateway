@@ -228,7 +228,10 @@ export function createCallDialog(ctx = {}) {
   function responseSection(d) {
     const r = d.response;
     if (r.unavailable) return section("Response", "", el("p", "muted-note", r.unavailable), fact("Response", "—"));
-    return section("Response", r.stop_reason ? `stop: ${r.stop_reason}` : "", textBlock("call-reply", "Response", r.text || ""));
+    const cutNote = r.truncated
+      ? (d.raw.response ? link(d.raw.response, "cut short — open the raw response", true) : el("p", "muted-note", "Cut short."))
+      : null;
+    return section("Response", r.stop_reason ? `stop: ${r.stop_reason}` : "", textBlock("call-reply", "Response", r.text || ""), cutNote);
   }
 
   function toolsSection(d) {
