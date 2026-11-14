@@ -5,12 +5,16 @@ feature: 017-sessions-list-and-call-details
 
 ## Open questions
 <!-- Answer by changing "(open)" to "(answered)" and writing the answer underneath. -->
-- **Q1** (open) spec — a turn with model calls but no tool calls has no tool-calls chip, so
+- **Q1** (answered) spec — a turn with model calls but no tool calls has no tool-calls chip, so
   its steps (016 AC7) cannot be opened — options: A) show "0 tool calls" as a chip anyway
   B) a "N model calls" chip that opens the same steps C) such a turn shows its steps open
-- **Q2** (open) spec — what do the failed, files-read and searches chips open — options:
+  - Answer (Karthik, 2026-11-13, recorded 2026-11-14): B — see D7; D10 later replaced "the
+    same steps" with an All chip and per-kind narrowed timelines.
+- **Q2** (answered) spec — what do the failed, files-read and searches chips open — options:
   A) failed opens the steps with failed calls unfolded; read and searches open their lists
   like files changed B) only tool calls, files changed and sites open; the rest stay labels
+  - Answer (Karthik, 2026-11-13, recorded 2026-11-14): A — see D8; D10 later made every
+    chip a narrowed timeline in order.
 
 ## Decisions
 - D1 (2026-11-10) — Split from 016 (016 research D3): the sessions list and the call details
@@ -59,5 +63,32 @@ feature: 017-sessions-list-and-call-details
   answers in its dialog (core.QuestionReader, read by the Claude Code profile; a new tool
   kind "ask" gives the line "N questions: headers"); (4) the sessions list: Karthik chose a
   visual cleanup now (same data) over the full AC1–AC4, plus a loader.
+- D15 (2026-11-14) — Karthik: the remaining work (AC1–AC12) is built by hand, outside the
+  agent-loop kit like the turn card (D9), in three slices recorded in tasks.md: sessions list
+  (AC1–AC4), call details dialog (AC5–AC11), other pages (AC12). Q1 and Q2 were marked
+  answered by hand on Karthik's instruction (no /al-answer run).
+- D16 (2026-11-14) — D12 (away-summary and prompt-suggestion requests shown as turns) stays
+  out of 017: it changes side-call detection in the Claude Code profile, not this UI. It
+  gets its own fix branch later.
+- D17 (2026-11-14) — Decided while writing tasks.md: AC3 says the "Today" line totals "all
+  stored sessions", but the label, the existing /api/today?since= endpoint and the page's
+  local-midnight refresh all mean since local midnight. Slice 1 keeps since-midnight and
+  extends that endpoint; AC3's wording is listed as a contradiction for Karthik.
+- D18 (2026-11-14) — Decided while writing tasks.md: AC5 opens a call from "a Context row or
+  bar", but AC20 (later, D13) made the bar one per turn that scrolls the list to its calls.
+  Slice 2 opens a call from a Context row only; a bar keeps AC20's behaviour.
+- D19 (2026-11-14) — Decided while writing tasks.md: AC21's modal drawer is replaced by
+  AC5's dialog in slice 2, which keeps AC21's promises (page dimmed and inert, a click
+  outside closes, the top fixed while the rest scrolls), and AC15's rows open the dialog in
+  place of the 013 drawer. The dialog is a native <dialog> opened with showModal(), which
+  gives the inert page and backdrop without the drawer's scrim layer.
+- D20 (2026-11-14) — The spec's own "Open questions" line ("plan and tasks are drafted once
+  016 is built") is resolved: 016 is merged (PR #44, #45) and tasks.md is drafted; the line
+  now points to D2 and D15. There is no plan.md: like the turn card work (D9), the build is
+  by hand and tasks.md carries the approach per task.
+- D21 (2026-11-14) — The spec's status was left at draft although Karthik asked for
+  approved: approval here is the approval script's validated stamp and commit, which is
+  human-only (AGENTS.md), and a hook blocks it for agents; writing `status: approved` by
+  hand would forge it. Karthik approves with /al-approve spec, or overrides this.
 
 ## Notes

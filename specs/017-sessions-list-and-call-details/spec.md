@@ -186,8 +186,8 @@ This changes earlier features:
 - `internal/core/` unchanged. Protocol and provider axes untouched.
 
 ## Open questions
-- [NEEDS CLARIFICATION: plan and tasks are drafted once 016 is built (016 research,
-  Decisions for Karthik 13)]
+- None. Plan and tasks waited for 016 (research D2); 016 is merged and tasks.md holds the
+  remaining work (research D15, D20).
 
 ## Changelog
 - v1 (2026-11-10) — first draft, split from 016 (016 research D3)
