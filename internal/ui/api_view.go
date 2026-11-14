@@ -81,6 +81,66 @@ func (d Deps) viewDeps() viewDeps { return viewDeps{rules: d.Rules, skew: d.Attr
 func mountView(api chi.Router, d Deps) {
 	api.Get("/sessions/{id}/view", d.getView)
 	api.Get("/sessions/{id}/tools/{tid}", d.getTool)
+	api.Get("/sessions/{id}/calls/{eid}", d.getCall)
+}
+
+// getCall serves one model call's details (spec 017 AC5–AC11): the session's view places
+// it, and its own exchange, usage, thread fact and stored events fill it in. A call that is
+// not in the session is a 404 (E3). Nothing here carries a header or a credential: the raw
+// links point at the endpoints that serve them.
+func (d Deps) getCall(w http.ResponseWriter, r *http.Request) {
+	principal, client, key, ok := parseSessionID(chi.URLParam(r, "id"))
+	eid := chi.URLParam(r, "eid")
+	if !ok || eid == "" {
+		writeErr(w, http.StatusNotFound, "not_found", "no such call")
+		return
+	}
+	ctx, cancel := storeCtx(r)
+	defer cancel()
+	c := d.Reader.WithContext(ctx)
+	ex, err := c.Exchange(eid)
+	if errors.Is(err, store.ErrNotFound) || (err == nil && (ex.PrincipalID != principal || ex.Client != client || ex.SessionKey != key)) {
+		writeErr(w, http.StatusNotFound, "not_found", "no such call in this session")
+		return
+	}
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	who := sessIdent{principal, client, key}
+	v, err := d.cachedView(ctx, who, false)
+	if err == nil && !timeline.HasCall(v, eid) {
+		// the call is newer than the view served so far: wait for one that has it
+		v, err = d.cachedView(ctx, who, true)
+	}
+	if errors.Is(err, errNoSession) {
+		writeErr(w, http.StatusNotFound, "not_found", "no such session")
+		return
+	}
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	evs, err := c.Events(ex.RequestID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	bs, err := d.drawerBuild(ctx, c, who, ex.RequestID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	in := timeline.CallInput{Exchange: ex, Usage: timeline.CallOf(ex, evs), Fact: bs.calls[ex.RequestID]}
+	if det, err := timeline.ExchangeDetail(c, ex, entryCut); err == nil {
+		in.Detail = &det
+	}
+	out, ok := timeline.CallDetailsOf(v, eid, in)
+	if !ok {
+		writeErr(w, http.StatusNotFound, "not_found", "no such call in this session")
+		return
+	}
+	writeJSON(w, out)
 }
 
 // errNoSession is a session with neither exchanges nor hook events.

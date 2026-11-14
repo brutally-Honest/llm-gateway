@@ -242,6 +242,14 @@ func ctxRowOf(v View, id string) (CtxRow, *CtxRow, bool) {
 	return CtxRow{}, nil, false
 }
 
+// HasCall says whether the view holds a model call, side calls included, with that
+// exchange id.
+func HasCall(v View, id string) bool {
+	places, _ := callPlaces(v)
+	_, ok := places[id]
+	return ok
+}
+
 // words turns a provider's stop reason into words: "end_turn" -> "end turn".
 func words(s string) string { return strings.ReplaceAll(s, "_", " ") }
 

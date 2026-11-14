@@ -264,3 +264,101 @@ func TestViewAPI_ToolQuestions(t *testing.T) {
 		t.Errorf("questions not omitted: %s", raw)
 	}
 }
+
+func getCall(t *testing.T, e *streamEnv, session, eid string) (int, map[string]any, string) {
+	t.Helper()
+	code, body := fetch(t, e, "/api/sessions/"+session+"/calls/"+eid)
+	var m map[string]any
+	_ = json.Unmarshal(body, &m)
+	return code, m, string(body)
+}
+
+// 017 AC5, AC6, AC9, AC10: a call's details are served by session and call: its facts,
+// context, what it saw, its tool calls, health, raw links and its place among the calls.
+func TestCallDetails_Served(t *testing.T) {
+	e, d := viewEnv(t)
+	d.callWith("a", 1, false, []toolSpec{{"Bash", `{"command":"npm test"}`}}, "user:fix the retry")
+	d.callWith("q", 2, false, nil, "user:quota")
+	d.callWith("b", 3, false, nil, "user:fix the retry", "assistant:Fixed.")
+	code, m, body := getCall(t, e, sid(), "b")
+	if code != 200 {
+		t.Fatalf("call = %d %s", code, body)
+	}
+	facts := m["facts"].(map[string]any)
+	if facts["model"] != "m1" || facts["thread"].(map[string]any)["kind"] != "main" {
+		t.Errorf("facts = %v", facts)
+	}
+	nav := m["nav"].(map[string]any)
+	if nav["index"] != 3.0 || nav["total"] != 3.0 || nav["prev"] != "q" || nav["next"] != "" {
+		t.Errorf("nav = %v, want the third of three after the side call", nav)
+	}
+	saw := m["saw"].(map[string]any)
+	if len(saw["messages"].([]any)) != 2 {
+		t.Errorf("saw = %v", saw)
+	}
+	raw := m["raw"].(map[string]any)
+	if raw["page"] != "#/exchanges/b" {
+		t.Errorf("raw = %v", raw)
+	}
+	_, a, _ := getCall(t, e, sid(), "a")
+	if tools := a["tools"].([]any); len(tools) != 1 || tools[0].(map[string]any)["id"] != "t-a-0" {
+		t.Errorf("tools = %v", a["tools"])
+	}
+	_, q, _ := getCall(t, e, sid(), "q")
+	if th := q["facts"].(map[string]any)["thread"].(map[string]any); th["kind"] != "side" {
+		t.Errorf("side call thread = %v", th)
+	}
+}
+
+// 017 E3: a call that is not in the session is a 404, whether the id is unknown or the
+// exchange belongs to another session.
+func TestCallDetails_NotInSession404(t *testing.T) {
+	e, d := viewEnv(t)
+	d.callWith("a", 1, false, nil, "user:hello")
+	d.save("other", "k2", "cc", 2)
+	for _, id := range []string{"nope", "other"} {
+		if code, m, body := getCall(t, e, sid(), id); code != 404 || m["error"] == nil {
+			t.Errorf("%s = %d %s, want a 404 error", id, code, body)
+		}
+	}
+	if code, _, _ := getCall(t, e, "not-a-session", "a"); code != 404 {
+		t.Errorf("bad session = %d", code)
+	}
+}
+
+// 017 AC9, PLAN §5: the call details carry no header and no credential; the raw links
+// point at the endpoints that serve the bodies.
+func TestCallDetails_NoAuthHeaders(t *testing.T) {
+	e, d := viewEnv(t)
+	d.callWith("a", 1, false, nil, "user:hello")
+	// an exchange whose stored headers hold a credential-looking value: capture redacts
+	// these, but the call details must not carry headers at all
+	ex := &core.Exchange{RequestID: "h", PrincipalID: core.PrincipalLocal, Protocol: "test", Client: "cc",
+		Auth: core.AuthAPIKey, Method: "POST", Path: "/v1/x", Status: 200, SessionKey: "k",
+		Start: baseTime.Add(2 * time.Second), End: baseTime.Add(3 * time.Second),
+		RequestHeader:  http.Header{"Authorization": {"Bearer sk-secret-xyz"}, "X-Test-Key": {"sk-secret-xyz"}},
+		ResponseHeader: http.Header{"Set-Cookie": {"sk-secret-xyz"}}}
+	if err := e.s.SaveExchange(t.Context(), ex); err != nil {
+		t.Fatal(err)
+	}
+	d.parse("h", "m1", `{"input_tokens":3}`)
+	code, hm, hbody := getCall(t, e, sid(), "h")
+	if code != 200 {
+		t.Fatalf("call h = %d %s", code, hbody)
+	}
+	if strings.Contains(hbody, "sk-secret-xyz") || strings.Contains(strings.ToLower(hbody), "authorization") {
+		t.Errorf("call details carry a stored header: %s", hbody)
+	}
+	if hm["raw"].(map[string]any)["headers"] != "#/exchanges/h" {
+		t.Errorf("headers link = %v", hm["raw"])
+	}
+	_, m, body := getCall(t, e, sid(), "a")
+	for _, bad := range []string{"authorization", "x-test-key", "request_headers", "response_headers", "Bearer"} {
+		if strings.Contains(strings.ToLower(body), strings.ToLower(bad)) {
+			t.Errorf("call details mention %q: %s", bad, body)
+		}
+	}
+	if m["raw"].(map[string]any)["headers"] != "#/exchanges/a" {
+		t.Errorf("headers link = %v", m["raw"])
+	}
+}
