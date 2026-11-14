@@ -473,6 +473,31 @@ dialog.details::backdrop { background: var(--scrim); }
 .errbox { border-left: 3px solid var(--bad); padding-left: 8px; }
 .mb pre { margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 12.5px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 26rem; overflow: auto; }
 .mb .copy { align-self: flex-end; margin-bottom: 4px; }
+/* the call details dialog (017 AC5–AC11): the 016 dialog, wider, with a fixed top */
+dialog.call-details { width: min(60rem, 96vw); max-height: 90vh; }
+.call-details .mh .btn { flex: none; }
+.call-details .mh .btn:disabled { opacity: .45; }
+.call-scrim { position: fixed; inset: 0; z-index: -1; border: 0; padding: 0; margin: 0; background: transparent; }
+.call-top { padding: 12px 20px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; background: var(--card); }
+.call-top .mfacts { grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); }
+.call-top .mfact { padding: 6px 9px; }
+.call-top .mfact .v { font-size: 13px; }
+.mfact .v.bad { color: var(--bad); }
+.call-line { margin: 0; font-size: 13px; color: var(--text); }
+.call-saw-counts { color: var(--muted); }
+.call-messages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.call-messages li { display: grid; grid-template-columns: auto auto 1fr; gap: 4px 8px; align-items: baseline; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; }
+.call-messages li.is-carried { opacity: .72; }
+.call-messages li.is-carried .badge { background: var(--panel); color: var(--muted); border-color: var(--border); }
+.call-messages .role { color: var(--muted); font-weight: 600; }
+.call-messages .msg { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12rem; overflow: auto; }
+.call-messages li > a { grid-column: 1 / -1; font-size: 12px; }
+.call-health { margin: 0; padding-left: 18px; font-size: 13px; }
+.call-health .tone-bad { color: var(--bad); }
+.call-health .tone-warn { color: var(--warn); }
+.call-raw { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; }
+.call-thinking { display: flex; flex-direction: column; gap: 6px; }
+.call-tools { margin: 0; padding: 0; list-style: none; }
 .st { font-weight: 700; } .st-ok { color: var(--ok); } .st-failed { color: var(--bad); }
 .diff { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: 12.5px; border: 1px solid var(--border); border-radius: 8px; overflow: auto; max-height: 26rem; background: var(--bg); }
 .diff div { padding: 2px 12px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); }

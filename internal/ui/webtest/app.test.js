@@ -49,10 +49,20 @@ const viewOf = (title, active) => ({
   files: { changed: [], read: [], searches: [], coverage: "" }, commands: { items: [], coverage: "" }, sites: { items: [], coverage: "" },
   context: { main: [], subs: [], coverage: "" },
 });
+// callOf is the server's call details (spec 017 T014) of call b, the second of two.
+const callOf = (id) => ({
+  n: 2, exchange_id: id, turn: 2,
+  facts: { model: "m", dur_ms: 1000, start: "2026-01-01T00:00:02Z", stop: { word: "end turn" }, thread: { kind: "main", label: "main" }, ctx: 10 },
+  context: { size: 10, delta: null, input: 10, cache_write: 0, cache_read: 0, output: 1 },
+  saw: { first: false, carried: 0, new: 0, messages: [] }, thinking: false, response: { text: "", stop_reason: "" }, tools: [],
+  health: { status: "200 OK", ok: true, items: [] },
+  raw: { headers: `#/exchanges/${id}`, page: `#/exchanges/${id}` },
+  nav: { index: 2, total: 2, prev: "a", next: "" },
+});
 const replies = {
   "/api/sessions/s1/view": viewOf("Seeded", true),
   "/api/sessions/s1/timeline": { entries, next_after: null },
-  "/api/exchanges/b": { id: "b", status: 200, session_id: "s1", messages: [], carried: 0, new_count: 0, response: { text: "", stop_reason: "" }, response_tool_call_ids: [] },
+  "/api/sessions/s1/calls/b": callOf("b"),
 };
 Object.assign(document, {
   getElementById: byId,
@@ -78,15 +88,16 @@ Object.assign(globalThis, {
 const settle = () => new Promise((r) => setImmediate(r));
 const liveText = () => all(byId("shell-head")).find((e) => e.attrs.role === "status").textContent;
 
-test("droppedSessionStreamKeepsDrawerAndHistoryAndShowsDisconnected", async (t) => {
+test("droppedSessionStreamKeepsCallDialogAndHistoryAndShowsDisconnected", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   await import("../web/app.js");
   await settle();
+  await settle();
   const page = byId("app");
-  const drawer = withClass(page, "drawer")[0];
+  const dialog = withClass(page, "call-details")[0];
   const held = () => {
-    assert.equal(drawer.hidden, false, "the drawer stays open");
-    assert.match(textOf(drawer), /Call #2/);
+    assert.equal(dialog.open, true, "the call dialog stays open");
+    assert.match(textOf(dialog), /Call #2/);
     assert.equal(withClass(page, "toc-item").length, 2, "the turns stay");
     assert.equal(withClass(page, "call-link").length, 2, "each turn's step keeps its call link");
   };
@@ -163,24 +174,7 @@ test("secondFailureShowsTheError", async () => {
   assert.doesNotMatch(r.text(), /building session/);
 });
 
-// The drawer's call list is the only paged load left (the page itself loads one view): its
-// first page gets the single 504 retry, a later page does not.
-test("laterPage504IsNotRetried", async () => {
-  const delays = [];
-  globalThis.__retryDelay = async (ms) => void delays.push(ms);
-  replies["/api/sessions/r3/view"] = viewOf("Seeded", false);
-  replies["/api/sessions/r3/timeline"] = { entries, next_after: "p2" };
-  plans["/api/sessions/r3/timeline"] = [200, 504];
-  asked.length = 0;
-  location.hash = "#/sessions/r3/call/b";
-  for (const fn of listeners.hashchange) fn();
-  for (let i = 0; i < 8; i++) await settle();
-  assert.deepEqual(delays, []);
-  assert.equal(asked.filter((u) => u.startsWith("/api/sessions/r3/timeline")).length, 2, "page 2 asked once");
-  assert.match(textOf(byId("app")), /store timed out/);
-});
-
-// A call's detail gets the same single retry on 504 as the session summary: the server
+// A call's details get the same single retry on 504 as the session's view: the server
 // answers 504 while a build runs past its store timeout, and a second later the cached
 // build serves it (013 manual check, F9).
 async function openCall(sid, plan) {
@@ -188,26 +182,27 @@ async function openCall(sid, plan) {
   globalThis.__retryDelay = async (ms) => void delays.push(ms);
   const path = `/api/sessions/${sid}`;
   replies[`${path}/view`] = viewOf("Seeded", false);
-  replies[`${path}/timeline`] = { entries, next_after: null };
-  plans["/api/exchanges/b"] = plan;
+  replies[`${path}/calls/b`] = callOf("b");
+  plans[`${path}/calls/b`] = plan;
   asked.length = 0;
   location.hash = `#/sessions/${sid}/call/b`;
   for (const fn of listeners.hashchange) fn();
   for (let i = 0; i < 8; i++) await settle();
-  const drawer = withClass(byId("app"), "drawer")[0];
-  return { delays, text: () => textOf(drawer), detailAsks: () => asked.filter((u) => u.startsWith("/api/exchanges/b")).length };
+  const dialog = withClass(byId("app"), "call-details")[0];
+  return { delays, text: () => textOf(dialog), detailAsks: () => asked.filter((u) => u.startsWith(`${path}/calls/b`)).length };
 }
 
 test("callDetailRetriesOnceAfter504", async () => {
   const r = await openCall("d1", [504]);
   assert.deepEqual(r.delays, [1000]);
-  assert.equal(r.detailAsks(), 2, "the detail is asked twice");
-  assert.doesNotMatch(r.text(), /detail unavailable/);
+  assert.equal(r.detailAsks(), 2, "the details are asked twice");
+  assert.doesNotMatch(r.text(), /unavailable/);
+  assert.match(r.text(), /Call #2/);
 });
 
 test("callDetailSecond504ShowsTheReason", async () => {
   const r = await openCall("d2", [504, 504]);
   assert.deepEqual(r.delays, [1000]);
   assert.equal(r.detailAsks(), 2, "one retry only");
-  assert.match(r.text(), /detail unavailable: store timed out/);
+  assert.match(r.text(), /Call details unavailable: store timed out/);
 });

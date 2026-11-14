@@ -1,4 +1,4 @@
-import { getJSON, loadAllPages, openStream } from "./api.js";
+import { getJSON, openStream } from "./api.js";
 import { effectsListNode } from "./drawer-sections.js";
 import { lastID } from "./effects.js";
 import { addUnique, upsertSession } from "./entries.js";
@@ -8,7 +8,7 @@ import { createSessionsPage, localMidnight, note, UNASSIGNED_SHOWN } from "./ses
 import { initTheme } from "./theme.js";
 import { buildRoute, parseRoute } from "./route.js";
 import { handleKey, isTextInput } from "./keys.js";
-import { createDrawer } from "./drawer.js";
+import { createCallDialog } from "./call-dialog.js";
 import { mountShell } from "./shell.js";
 import "./exchange-detail.js";
 import "./ungrouped-list.js";
@@ -32,9 +32,9 @@ const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "",
 let closeStream = null;
 let view = null;
 let page = null; // the Sessions page while it is shown
-let tpage = null; // the session page and its drawer while a session is shown
+let tpage = null; // the session page and its call dialog while a session is shown
 let todayTimer = null;
-let sessionSync = null; // the shown session, so a drawer URL change does not reload it
+let sessionSync = null; // the shown session, so a call URL change does not reload it
 
 async function load(kind, after) {
   const path = kind === "sessions" ? "sessions" : "ungrouped";
@@ -150,8 +150,8 @@ async function retryOn504(fn, onWait) {
 
 // showSession shows the session page (spec 016): it loads the server's view of the session
 // (one retry on 504 while the build runs), then, for an active session, opens the session's
-// view stream, whose events replace only the turns that changed. The 013 drawer stays until
-// 017: its call list and entries are loaded only when a call is opened.
+// view stream, whose events replace only the turns that changed. A call named in the URL
+// opens in the call details dialog (spec 017 AC5), which the server fills one call at a time.
 async function showSession(id) {
   const mine = ++seq;
   const enc = encodeURIComponent;
@@ -162,75 +162,44 @@ async function showSession(id) {
     back: () => history.back(),
   };
   let page = null;
-  const drawer = createDrawer({
+  const calls = createCallDialog({
     nav,
-    turnHeading: () => (page ? page.turnHeading() : null),
-    background: () => (page ? page.el : null),
-    // a call's detail gets the view's single retry on 504; the drawer shows "loading…"
-    background: () => (page ? page.el : null),
+    // a call's details get the view's single retry on 504; the dialog shows "Loading call…"
     // meanwhile (F9)
-    loadDetail: (callId) => retryOn504(() => getJSON(`exchanges/${enc(callId)}`), () => {}),
+    loadCall: (callId) => retryOn504(() => getJSON(`sessions/${enc(id)}/calls/${enc(callId)}`), () => {}),
+    // a tool the call asked for opens its 016 dialog over this one (research D39)
+    openTool: (toolId, from) => {
+      if (!page) return;
+      if (page.dialogOpen()) page.dialog.close();
+      page.dialog.open(`tool:${toolId}`, from);
+    },
+    callHref: (exchangeId) => buildRoute({ name: "session", id, call: exchangeId }),
+    turnHeading: () => (page ? page.turnHeading() : null),
+    onMissing: () => page && page.setStatus("No such call in this session.", "error"),
   });
   page = createSessionPage({
     callHref: (exchangeId) => buildRoute({ name: "session", id, call: exchangeId }),
-    noteOpener: (node) => drawer.noteOpener(node),
-    openCall: (exchangeId, from) => drawer.openCall(exchangeId, from),
+    noteOpener: (node) => calls.noteOpener(node),
+    openCall: (exchangeId, from) => calls.openCall(exchangeId, from),
     loadTool: (tid) => getJSON(`sessions/${enc(id)}/tools/${enc(tid)}`),
     loadDiff: (eid) => getJSON(`effects/${enc(eid)}/diff`),
     loadContent: (eid) => getJSON(`effects/${enc(eid)}/content`),
   });
-  app.replaceChildren(page.el, drawer.el);
-  tpage = { page, drawer };
+  app.replaceChildren(page.el, calls.el);
+  tpage = { page, calls };
 
-  // The drawer's entries: loaded on first open, and again after the session changed.
-  const calls = { entries: [], state: "none", callId: parseRoute(location.hash).call || null, error: "" };
-  const syncDrawer = () => {
-    const drawn = drawer.sync({ sessionId: id, callId: calls.callId, entries: calls.entries, loaded: calls.state === "ready" });
-    if (drawn.missing) page.setStatus("No such call in this session.", "error");
-  };
-  const loadEntries = async () => {
-    if (calls.state === "loading") return;
-    calls.state = "loading";
-    const got = [];
-    try {
-      let first = true;
-      const fetchPage = (after) => getJSON(`sessions/${enc(id)}/timeline`, { after, limit: 2000 });
-      await loadAllPages(
-        (after) => {
-          if (!first) return fetchPage(after); // later pages are not retried
-          first = false;
-          return retryOn504(() => fetchPage(after), () => {});
-        },
-        (p) => {
-          if (mine !== seq) return false;
-          got.push(...p.entries);
-          return true;
-        },
-      );
-      if (mine !== seq) return;
-      calls.entries = got;
-      calls.state = "ready";
-    } catch (e) {
-      if (mine !== seq) return;
-      calls.entries = got;
-      calls.state = "failed";
-      page.setStatus(e.message, "error");
-    }
-    syncDrawer();
-  };
-  const followDrawer = () => {
-    if (!calls.callId) {
-      syncDrawer();
-      return;
-    }
-    if (calls.state === "none" || calls.state === "stale") loadEntries();
-    else syncDrawer();
+  // followCall opens, moves or closes the call dialog to the call the URL names. The call
+  // dialog replaces an open tool dialog (one item dialog at a time, research D39).
+  let callId = parseRoute(location.hash).call || null;
+  const followCall = () => {
+    if (callId && page.dialogOpen()) page.dialog.close();
+    calls.sync({ sessionId: id, callId });
   };
   sessionSync = {
     id,
     apply: (call) => {
-      calls.callId = call || null;
-      followDrawer();
+      callId = call || null;
+      followCall();
     },
   };
 
@@ -245,7 +214,7 @@ async function showSession(id) {
   page.setStatus("");
   page.setView(view);
   shell.setRoute(parseRoute(location.hash), view.overview.title);
-  followDrawer();
+  followCall();
   if (view.overview.status.word !== "active") return;
   closeStream = openStream(
     (name, data) => {
@@ -257,10 +226,7 @@ async function showSession(id) {
       if (name !== "view") return;
       page.setStatus("");
       page.applyEvent(data);
-      if (calls.state === "ready" || calls.state === "failed") {
-        calls.state = "stale";
-        if (drawer.isOpen()) loadEntries();
-      }
+      calls.refresh(); // the open call stays; its details are fetched again (AC10)
     },
     (state) => shell.setLive(liveText(state)),
     `sessions/${enc(id)}/stream?view=1`,
@@ -421,14 +387,17 @@ window.addEventListener("keydown", (e) => {
     if (page.selectedId()) location.hash = `#/sessions/${encodeURIComponent(page.selectedId())}`;
   } else if (tpage && act.type === "turn") {
     // j/k step through turns; a dialog takes no turn keys (AC13)
-    if (tpage.page.dialogOpen() || tpage.drawer.isOpen()) return;
+    if (tpage.page.dialogOpen() || tpage.calls.isOpen()) return;
     e.preventDefault();
     tpage.page.moveTurn(act.delta);
   } else if (tpage && act.type === "call") {
+    // a tool dialog opened over the call takes the keys until it closes
+    if (tpage.page.dialogOpen()) return;
     e.preventDefault();
-    tpage.drawer.step(act.delta);
+    tpage.calls.step(act.delta);
   } else if (tpage && act.type === "close") {
-    tpage.drawer.close();
+    if (tpage.page.dialogOpen()) return;
+    tpage.calls.close();
   } else if (act.type === "filter") {
     const f = app.querySelector("input");
     if (f) {
