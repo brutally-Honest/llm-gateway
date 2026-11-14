@@ -188,7 +188,8 @@ func (b *builder) title(o *Overview, v *View) {
 
 // needsLook is the fixed set of things worth a second look (Decisions for Karthik 5):
 // failed tool calls, errored model calls outside side calls, changes with no tool
-// running, effects not pinned to one tool call, hooks-only turns and unmatched calls.
+// running, effects not pinned to one tool call, hooks-only turns (in a session that also
+// has model calls, D31) and unmatched calls.
 func (b *builder) needsLook(v *View) []LookItem {
 	var out []LookItem
 	var tools []ToolLine
@@ -291,8 +292,11 @@ func (b *builder) needsLook(v *View) []LookItem {
 			group(s)
 		}
 	}
+	// 017 D31: in a session with no exchanges every turn is hooks only, so none is
+	// singled out; hooks-only turns are listed only beside turns with model calls.
+	hooksSession := len(b.in.Exchanges) == 0
 	for _, t := range v.Turns {
-		if t.HooksOnly {
+		if t.HooksOnly && !hooksSession {
 			out = append(out, LookItem{Kind: LookHooksOnly, Tone: "info", Glyph: "◇", Title: "Turn " + strconv.Itoa(t.N) + " has no model calls captured",
 				Sub: "only the hooks saw it: its tool calls show, the conversation does not", Go: "Show turn " + strconv.Itoa(t.N),
 				Target: Target{Kind: "turn", Turn: t.N}})

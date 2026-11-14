@@ -696,3 +696,29 @@ func TestView_LookKinds(t *testing.T) {
 	eq(t, "look kinds", strings.Join(words, "; "), "failed_tool=1 1 failed tool call; outside_change=1 1 change with no tool running; "+
 		"unpinned=1 1 group of effects not pinned to one tool call; hooks_only_turn=1 1 hooks-only turn; unmatched=1 1 unmatched tool call")
 }
+
+// 017 AC2 narrowed (D31): a session that is hooks only has no hooks-only-turn item to look
+// at, since every turn is one; a session with model calls still lists its hooks-only turns.
+func TestView_HooksOnlyTurnLookOnlyBesideModelCalls(t *testing.T) {
+	kindsOf := func(v timeline.View) string {
+		var ks []string
+		for _, l := range v.Overview.NeedsLook {
+			ks = append(ks, l.Kind)
+		}
+		for _, k := range v.Overview.LookKinds {
+			ks = append(ks, "kinds:"+k.Kind)
+		}
+		return strings.Join(ks, ",")
+	}
+	hooks := &fixture{f: newFake()}
+	hooks.f.vhook(core.PhasePrompt, "", "", 1)
+	hooks.f.vhook(core.PhasePrompt, "", "", 5)
+	v := hooks.view(t, true)
+	eq(t, "hooks-only session turns", len(v.Turns), 2)
+	eq(t, "hooks-only session look", kindsOf(v), "")
+
+	mixed := seedFixture(true).view(t, true)
+	if k := kindsOf(mixed); !strings.Contains(k, "hooks_only_turn") || !strings.Contains(k, "kinds:hooks_only_turn") {
+		t.Errorf("session with model calls: look = %s, want its hooks-only turn", k)
+	}
+}
