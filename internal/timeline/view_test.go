@@ -679,3 +679,20 @@ func TestView_TurnCountsModelCalls(t *testing.T) {
 	eq(t, "turn 2 calls, its sub-agent's included", v.Turns[1].Counts.Calls, 4)
 	eq(t, "hooks-only calls", v.Turns[2].Counts.Calls, 0)
 }
+
+// 017 AC2: every "Needs a look" item has a kind, and the overview counts them by kind in a
+// fixed order, in words, the items past the shown eight included.
+func TestView_LookKinds(t *testing.T) {
+	v := seedFixture(true).view(t, true)
+	var kinds []string
+	for _, l := range v.Overview.NeedsLook {
+		kinds = append(kinds, l.Kind)
+	}
+	eq(t, "item kinds", strings.Join(kinds, ","), "failed_tool,outside_change,unpinned,hooks_only_turn,unmatched")
+	var words []string
+	for _, k := range v.Overview.LookKinds {
+		words = append(words, fmt.Sprintf("%s=%d %s", k.Kind, k.Count, k.Words))
+	}
+	eq(t, "look kinds", strings.Join(words, "; "), "failed_tool=1 1 failed tool call; outside_change=1 1 change with no tool running; "+
+		"unpinned=1 1 group of effects not pinned to one tool call; hooks_only_turn=1 1 hooks-only turn; unmatched=1 1 unmatched tool call")
+}

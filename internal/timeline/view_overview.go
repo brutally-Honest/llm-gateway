@@ -107,6 +107,7 @@ func (b *builder) overview(v *View) {
 
 	b.title(&o, v)
 	look := b.needsLook(v)
+	o.LookKinds = lookKinds(look)
 	if len(look) > maxLook {
 		o.MoreLook = len(look) - maxLook
 		look = look[:maxLook]
@@ -233,14 +234,14 @@ func (b *builder) needsLook(v *View) []LookItem {
 		if l.Summary != "" {
 			title += " on " + l.Summary
 		}
-		out = append(out, LookItem{Tone: "bad", Glyph: "✗", Title: title, Sub: sub, Go: "Open", Target: Target{Kind: "tool", ID: l.ID, Turn: l.Turn}})
+		out = append(out, LookItem{Kind: LookFailedTool, Tone: "bad", Glyph: "✗", Title: title, Sub: sub, Go: "Open", Target: Target{Kind: "tool", ID: l.ID, Turn: l.Turn}})
 	}
 	for _, s := range steps {
 		if !s.Errored {
 			continue
 		}
 		n := turnOf[s.ExchangeID]
-		out = append(out, LookItem{Tone: "bad", Glyph: "✗", Title: "Model call #" + strconv.Itoa(s.N) + " failed: " + s.Status,
+		out = append(out, LookItem{Kind: LookFailedCall, Tone: "bad", Glyph: "✗", Title: "Model call #" + strconv.Itoa(s.N) + " failed: " + s.Status,
 			Sub: where(n), Go: "Open", Target: Target{Kind: "call", ID: s.ExchangeID, Turn: n}})
 	}
 	seen := map[string]bool{}
@@ -250,7 +251,7 @@ func (b *builder) needsLook(v *View) []LookItem {
 				continue
 			}
 			seen[f.FullPath] = true
-			out = append(out, LookItem{Tone: "warn", Glyph: "○", Title: f.Path + " changed with no tool running",
+			out = append(out, LookItem{Kind: LookOutside, Tone: "warn", Glyph: "○", Title: f.Path + " changed with no tool running",
 				Sub: c.Where + " · most likely your own edit", Go: "Open", Target: Target{Kind: "file", ID: f.FullPath, Turn: c.Turn}})
 		}
 	}
@@ -273,7 +274,7 @@ func (b *builder) needsLook(v *View) []LookItem {
 				if conns > 0 {
 					what = append(what, plural(conns, "connection", "connections"))
 				}
-				out = append(out, LookItem{Tone: "info", Glyph: "◌", Title: strings.Join(what, " and ") + " can't be pinned to one tool call",
+				out = append(out, LookItem{Kind: LookUnpinned, Tone: "info", Glyph: "◌", Title: strings.Join(what, " and ") + " can't be pinned to one tool call",
 					Sub: where(t.N) + ": " + strings.Join(s.SeveralNames, " and ") + " ran together", Go: "Show in " + where(t.N),
 					Target: Target{Kind: "several", ID: s.ExchangeID, Turn: t.N}})
 			}
@@ -291,7 +292,7 @@ func (b *builder) needsLook(v *View) []LookItem {
 	}
 	for _, t := range v.Turns {
 		if t.HooksOnly {
-			out = append(out, LookItem{Tone: "info", Glyph: "◇", Title: "Turn " + strconv.Itoa(t.N) + " has no model calls captured",
+			out = append(out, LookItem{Kind: LookHooksOnly, Tone: "info", Glyph: "◇", Title: "Turn " + strconv.Itoa(t.N) + " has no model calls captured",
 				Sub: "only the hooks saw it: its tool calls show, the conversation does not", Go: "Show turn " + strconv.Itoa(t.N),
 				Target: Target{Kind: "turn", Turn: t.N}})
 		}
@@ -304,7 +305,7 @@ func (b *builder) needsLook(v *View) []LookItem {
 		if l.Summary != "" {
 			title += " " + l.Summary
 		}
-		out = append(out, LookItem{Tone: "info", Glyph: "?", Title: title + " ran with no captured call asking for it",
+		out = append(out, LookItem{Kind: LookUnmatched, Tone: "info", Glyph: "?", Title: title + " ran with no captured call asking for it",
 			Sub: where(l.Turn) + " · ? unmatched", Go: "Open", Target: Target{Kind: "tool", ID: l.ID, Turn: l.Turn}})
 	}
 	return out
