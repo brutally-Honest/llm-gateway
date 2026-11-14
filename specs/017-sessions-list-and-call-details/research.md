@@ -92,3 +92,7 @@ feature: 017-sessions-list-and-call-details
   hand would forge it. Karthik approves with /al-approve spec, or overrides this.
 
 ## Notes
+- Sessions list budget, before slice 1 (2026-11-14, T001): `BenchmarkSessionsList500`
+  (500 sessions × 20 calls, `-benchtime 5x`, two runs, AMD Ryzen 5 5600G, 12 threads):
+  first page of 50 cold (fresh digest cache) 130 ms/op, 26.4 MB, 370k allocs; cached
+  6.1–6.4 ms/op; `/api/today` over all 10,000 calls 920 ms/op, 102 MB.

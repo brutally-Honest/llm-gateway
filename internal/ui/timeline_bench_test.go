@@ -108,3 +108,97 @@ func BenchmarkTimeline_2000Calls(b *testing.B) {
 		}
 	})
 }
+
+// benchSessions and benchSessionCalls are the store of the 017 sessions-list budget
+// (spec 017 Constraints): 500 sessions of 20 calls, a prompt every 5 calls.
+const (
+	benchSessions     = 500
+	benchSessionCalls = 20
+)
+
+// seedBenchSessions stores benchSessions sessions of benchSessionCalls calls each, one second
+// apart, every call carrying its prompt and a reply, with usage.
+func seedBenchSessions(b *testing.B, s *store.Store) {
+	b.Helper()
+	for si := range benchSessions {
+		key := fmt.Sprintf("s%03d", si)
+		for i := range benchSessionCalls {
+			n := si*benchSessionCalls + i + 1
+			ex := &core.Exchange{RequestID: fmt.Sprintf("%s-%02d", key, i), PrincipalID: core.PrincipalLocal,
+				Protocol: "test", Client: "cc", Auth: core.AuthAPIKey, Method: "POST", Path: "/v1/x", Status: 200,
+				SessionKey: key, Start: baseTime.Add(time.Duration(n) * time.Second)}
+			ex.End = ex.Start.Add(time.Second)
+			if err := s.SaveExchange(b.Context(), ex); err != nil {
+				b.Fatal(err)
+			}
+			evs := []core.StoredEvent{{Seq: 0, Kind: core.KindRequest, Payload: []byte(`{"model":"m1"}`)}}
+			var contents []core.Content
+			for _, m := range []string{fmt.Sprintf("user:Prompt %d of %s.", i/5, key), fmt.Sprintf("assistant:Reply %d.", i)} {
+				role, txt, _ := strings.Cut(m, ":")
+				raw, _ := json.Marshal(map[string]string{"type": "text", "text": txt})
+				bh, mh := sha("b-"+m), sha("m-"+m)
+				contents = append(contents, core.Content{Hash: bh, Bytes: raw}, core.Content{Hash: mh, Bytes: []byte(mh)})
+				p, _ := json.Marshal(map[string]any{"role": role, "blocks": []map[string]string{{"hash": bh, "type": "text"}}})
+				evs = append(evs, core.StoredEvent{Seq: len(evs), Kind: core.KindMessage, ContentHash: mh, Payload: p})
+			}
+			evs = append(evs, core.StoredEvent{Seq: len(evs), Kind: core.KindUsage,
+				Payload: []byte(`{"input_tokens":300,"output_tokens":20,"cache_read_input_tokens":1000}`)})
+			if err := s.SaveParse(b.Context(), ex.RequestID, core.PrincipalLocal, core.ParseOK, evs, contents); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+}
+
+// BenchmarkSessionsList500 measures the sessions list's first page (50 rows) and today's
+// totals over a 500-session store: cold, with a fresh digest cache so every row is
+// computed, and cached. It is the before/after measurement of spec 017's Constraints
+// (research.md), not a behaviour test.
+func BenchmarkSessionsList500(b *testing.B) {
+	dir := b.TempDir()
+	s, err := store.Open(dir, zap.NewNop())
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	seedBenchSessions(b, s)
+	r, err := store.OpenReader(dir)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer func() { _ = r.Close() }()
+	deps := func() Deps {
+		return Deps{Addr: addr, Reader: r, Rules: map[string]ClientRules{"cc": testRules{}},
+			Digests: newDigestCache(1000), Now: func() time.Time { return baseTime.Add(time.Hour) }}
+	}
+	get := func(h http.Handler, path string) {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", "http://"+addr+path, nil))
+		if rec.Code != http.StatusOK {
+			b.Fatalf("%s = %d %s", path, rec.Code, rec.Body.String())
+		}
+	}
+	const list = "/api/sessions?limit=50"
+	b.Run("list-cold", func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			get(Handler(deps()), list)
+		}
+	})
+	b.Run("list-cached", func(b *testing.B) {
+		h := Handler(deps())
+		get(h, list)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for range b.N {
+			get(h, list)
+		}
+	})
+	b.Run("today", func(b *testing.B) {
+		h := Handler(deps())
+		b.ReportAllocs()
+		for range b.N {
+			get(h, "/api/today?since="+baseTime.UTC().Format(time.RFC3339))
+		}
+	})
+}
