@@ -10,9 +10,10 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
 
-// todayJSON is the totals over calls started since a time (AC4): sessions, model calls
-// with side calls included, and since spec 017 AC3 the files the sessions changed (distinct
-// per session) and the sites they connected to (distinct hosts).
+// todayJSON is the totals since a time (AC4): sessions with any activity (a model call or
+// a hook, 017 D30), model calls with side calls included, and since spec 017 AC3 the files
+// the sessions changed (distinct per session) and the sites they connected to (distinct
+// hosts).
 type todayJSON struct {
 	Sessions   int         `json:"sessions"`
 	Calls      int         `json:"calls"`
@@ -62,6 +63,15 @@ func (d Deps) getToday(w http.ResponseWriter, r *http.Request) {
 		if ex.SessionKey != "" {
 			seen[[3]string{ex.PrincipalID, ex.Client, ex.SessionKey}] = true
 		}
+	}
+	// 017 AC3 (D30): a session with only hooks since the time counts too.
+	hooked, err := c.HookSessionsSince(since.UnixNano())
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	for _, id := range hooked {
+		seen[[3]string{id.Principal, id.Client, id.Key}] = true
 	}
 	changed, sites, err := c.EffectTotalsSince(since.UnixNano())
 	if err != nil {

@@ -117,3 +117,19 @@ func TestToday_SessionSpanningMidnightCountsTodayCallsOnly(t *testing.T) {
 		t.Fatalf("today = %v", m)
 	}
 }
+
+// 017 AC3 (D30): Today's sessions are every session with any activity since the time,
+// a model call or a hook; a hooks-only session counts, a session with both counts once,
+// and a session whose hooks all came before the time does not.
+func TestToday_SessionsCountHooksOnlyActivity(t *testing.T) {
+	e := withRules(t)
+	e.call("a", 10, 0, 3, "user:hello")                                  // session k
+	e.hook("k", core.HarnessEvent{Phase: core.PhasePrompt}, 11)          // k again: still one
+	e.hook("hooks-only", core.HarnessEvent{Phase: core.PhasePrompt}, 12) // counts
+	e.hook("yesterday", core.HarnessEvent{Phase: core.PhasePrompt}, 1)   // before since
+	e.hook("", core.HarnessEvent{Phase: core.PhaseNotice}, 13)           // no session
+	m := e.today(sinceAt(5))
+	if m["sessions"] != float64(2) || m["calls"] != float64(1) {
+		t.Fatalf("today sessions = %v calls = %v, want 2 and 1", m["sessions"], m["calls"])
+	}
+}

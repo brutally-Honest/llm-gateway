@@ -343,6 +343,29 @@ func (c *CtxReader) EffectTotalsSince(since int64) (changed, sites int, err erro
 	return changed, sites, nil
 }
 
+// HookSessionsSince lists the sessions that received a hook from since (unix ns) on,
+// each once. Hooks with no session are left out.
+func (c *CtxReader) HookSessionsSince(since int64) ([]SessionIdent, error) {
+	rows, err := c.r.db.QueryContext(c.ctx, `SELECT DISTINCT principal_id, client, session_key
+		FROM hook_events WHERE session_key IS NOT NULL AND session_key != '' AND received_at >= ?`, since)
+	if err != nil {
+		return nil, fmt.Errorf("store %s: hook sessions since: %w", c.r.path, err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []SessionIdent
+	for rows.Next() {
+		var id SessionIdent
+		if err := rows.Scan(&id.Principal, &id.Client, &id.Key); err != nil {
+			return nil, fmt.Errorf("store %s: hook sessions since: %w", c.r.path, err)
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store %s: hook sessions since: %w", c.r.path, err)
+	}
+	return out, nil
+}
+
 // UnassignedConnections counts network effects with no session.
 func (c *CtxReader) UnassignedConnections() (int, error) {
 	var n int
