@@ -404,3 +404,24 @@ test("contextChartIsOneBarPerTurn", () => {
   assert.equal(many[0], "T1");
   assert.equal(many.at(-1), "T50");
 });
+
+// A tool that asked the user questions shows them in its dialog with the picked option
+// marked and the notes, before the raw result and input (2026-11-13).
+test("toolDialogShowsQuestionsAndAnswers", async () => {
+  const det = { ...toolDetails, questions: [
+    { header: "Layout", text: "Which layout?", options: [{ label: "Cards", description: "one card each" }, { label: "Table" }], answer: "Table", notes: "keep it short" },
+    { header: "Loose", text: "Where?", options: [{ label: "A" }, { label: "B" }], answer: "", notes: "like the stepper" },
+  ] };
+  const { page } = mount(fixture(), { loadTool: async () => det });
+  withClass(byId(page.el, "tool-t1"), "nm")[0].fire("click");
+  await settle();
+  const dlg = page.dialog.el;
+  const qa = withClass(dlg, "qa")[0];
+  assert.ok(qa, "a Questions section");
+  const items = qa.children;
+  assert.equal(textOf(items[0].children[0]).trim(), "Layout");
+  const opts = withClass(items[0], "qa-opts")[0].children;
+  assert.deepEqual(opts.map((o) => o.className), ["", "on"], "the picked option is marked");
+  assert.match(textOf(items[0]), /Notes: keep it short/);
+  assert.match(textOf(items[1]), /No option picked\..*Notes: like the stepper/s);
+});

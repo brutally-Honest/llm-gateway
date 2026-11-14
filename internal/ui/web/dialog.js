@@ -263,6 +263,7 @@ export function createDialog(ctx = {}) {
     out.push(section("Hooks", "", ...hooks));
     out.push(section("What it touched", "", touched(l.effects)));
     if (l.sub) out.push(section(`Sub-agent ${l.sub.label}`, "", el("p", "muted-note", `${plural(l.sub.calls, "model call")}; its tool calls carry their own effects.`)));
+    if (det && (det.questions || []).length) out.push(section("Questions", "and your answers", questionsNode(det.questions)));
     if (det) {
       const result = det.result === null || det.result === undefined ? null : det.result;
       const res = result === null ? el("p", "muted-note", "No result was captured.") : block(result, det.is_error ? "errbox" : "");
@@ -286,6 +287,33 @@ export function createDialog(ctx = {}) {
       kick: kickParts.join(" · "), title: isCmd && l.summary ? `$ ${l.summary}` : [l.name, l.summary].filter(Boolean).join(" "), code: isCmd, subt: "",
       body: out, goto: { id: `tool-${l.id}`, label: hit.turn ? `Show in turn ${hit.turn}` : "Show" },
     };
+  }
+
+  // questionsNode is each question a tool asked: its header, the question, the options
+  // with the picked one marked, and the notes the user added (017, 2026-11-13).
+  function questionsNode(qs) {
+    const ol = el("ol", "qa");
+    for (const q of qs) {
+      const li = el("li");
+      if (q.header) li.append(el("span", "qa-h", q.header));
+      li.append(el("p", "qa-q", q.text));
+      const picked = new Set(String(q.answer || "").split(", ").filter(Boolean));
+      const opts = el("ul", "qa-opts");
+      for (const o of q.options || []) {
+        const on = picked.has(o.label);
+        const item = el("li", on ? "on" : "");
+        item.append(el("span", "qa-mark", on ? "✓" : "○"), el("span", "qa-l", o.label));
+        if (o.description) item.append(el("span", "qa-d", o.description));
+        opts.append(item);
+      }
+      li.append(opts);
+      const known = (q.options || []).some((o) => picked.has(o.label));
+      if (!q.answer) li.append(el("p", "muted-note", "No option picked."));
+      else if (!known) li.append(el("p", "qa-typed", `Answered: ${q.answer}`));
+      if (q.notes) li.append(el("p", "qa-notes", `Notes: ${q.notes}`));
+      ol.append(li);
+    }
+    return ol;
   }
 
   function siteModel(host) {

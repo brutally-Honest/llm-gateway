@@ -227,3 +227,40 @@ func equalInts(a, b []int) bool {
 	}
 	return true
 }
+
+// askRules reads every "Ask" call as one question, the result as its answer.
+type askRules struct{ testRules }
+
+func (askRules) Questions(name string, input []byte, result string) ([]core.Question, bool) {
+	if name != "Ask" {
+		return nil, false
+	}
+	return []core.Question{{Header: "H", Text: string(input), Options: []core.QuestionOption{{Label: "A", Description: "first"}}, Answer: result, Notes: "n"}}, true
+}
+
+// A tool call's details carry its questions and answers when the profile reads them, and
+// leave them out otherwise: a profile without the reader, no result yet, or a cut input.
+func TestViewAPI_ToolQuestions(t *testing.T) {
+	res := "A"
+	out := toolJSON{Name: "Ask", Input: "Which?", Result: &res}
+	qs := toolQuestions(askRules{}, out)
+	if len(qs) != 1 || qs[0].Text != "Which?" || qs[0].Answer != "A" || qs[0].Notes != "n" || qs[0].Options[0].Description != "first" {
+		t.Fatalf("questions = %+v", qs)
+	}
+	if toolQuestions(testRules{}, out) != nil {
+		t.Error("a profile without the reader gave questions")
+	}
+	if toolQuestions(askRules{}, toolJSON{Name: "Ask", Input: "Which?"}) != nil {
+		t.Error("a call with no result gave questions")
+	}
+	if toolQuestions(askRules{}, toolJSON{Name: "Ask", Input: "Which?", Result: &res, InputTruncated: true}) != nil {
+		t.Error("a cut input gave questions")
+	}
+	if toolQuestions(askRules{}, toolJSON{Name: "Bash", Input: "x", Result: &res}) != nil {
+		t.Error("another tool gave questions")
+	}
+	raw, _ := json.Marshal(toolJSON{Name: "Bash", Hooks: []hookLineJSON{}})
+	if strings.Contains(string(raw), "questions") {
+		t.Errorf("questions not omitted: %s", raw)
+	}
+}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/brutally-honest/llm-gateway/internal/core"
 	"github.com/brutally-honest/llm-gateway/internal/store"
 	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
@@ -185,6 +186,46 @@ type toolJSON struct {
 	HookInput       string         `json:"hook_input,omitempty"`
 	HookOmitted     int            `json:"hook_omitted_bytes,omitempty"`
 	Hooks           []hookLineJSON `json:"hooks"`
+	// Questions are the questions the call put to the user with the answers, when the
+	// client's profile can read them (017, 2026-11-13); omitted otherwise.
+	Questions []questionJSON `json:"questions,omitempty"`
+}
+
+// questionJSON is one question a tool asked, its options and the user's answer and notes.
+type questionJSON struct {
+	Header  string               `json:"header,omitempty"`
+	Text    string               `json:"text"`
+	Multi   bool                 `json:"multi,omitempty"`
+	Options []questionOptionJSON `json:"options"`
+	Answer  string               `json:"answer"`
+	Notes   string               `json:"notes,omitempty"`
+}
+
+type questionOptionJSON struct {
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+}
+
+// toolQuestions reads a tool call's questions and answers through the client's profile;
+// nil when the profile cannot or the call has no result yet.
+func toolQuestions(rules ClientRules, out toolJSON) []questionJSON {
+	qr, ok := rules.(core.QuestionReader)
+	if !ok || out.Result == nil || out.InputTruncated {
+		return nil
+	}
+	qs, ok := qr.Questions(out.Name, []byte(out.Input), *out.Result)
+	if !ok {
+		return nil
+	}
+	res := make([]questionJSON, 0, len(qs))
+	for _, q := range qs {
+		j := questionJSON{Header: q.Header, Text: q.Text, Multi: q.Multi, Answer: q.Answer, Notes: q.Notes, Options: []questionOptionJSON{}}
+		for _, o := range q.Options {
+			j.Options = append(j.Options, questionOptionJSON{Label: o.Label, Description: o.Description})
+		}
+		res = append(res, j)
+	}
+	return res
 }
 
 func (d Deps) getTool(w http.ResponseWriter, r *http.Request) {
@@ -264,5 +305,6 @@ func (d Deps) getTool(w http.ResponseWriter, r *http.Request) {
 	if out.Chip == "" {
 		out.Chip = timeline.ChipNoHooks
 	}
+	out.Questions = toolQuestions(d.Rules[client], out)
 	writeJSON(w, out)
 }
