@@ -32,7 +32,8 @@ type toolInput struct {
 // SummarizeTool turns a Claude Code tool call into a line (spec 016 AC5): Bash its
 // command; Read, Write, Edit, MultiEdit and NotebookEdit their file, with the lines an
 // edit adds and removes; Grep its pattern and folder; Glob its pattern; WebFetch its URL
-// without the scheme; WebSearch its query; Skill its name; Agent its type and description.
+// without the scheme; WebSearch its query; Skill its name; Agent its type and description;
+// AskUserQuestion how many questions and their headers.
 // Any other tool is "other" with no argument, so it shows by name alone.
 func (Profile) SummarizeTool(name string, input []byte, workDir string) core.ToolSummary {
 	out := core.ToolSummary{Kind: core.ToolOther, Added: -1, Removed: -1}
@@ -81,6 +82,8 @@ func (Profile) SummarizeTool(name string, input []byte, workDir string) core.Too
 	case "Agent":
 		out.Kind = core.ToolAgent
 		out.Arg = strings.Join(nonEmpty(in.SubagentType, in.Description), " · ")
+	case askTool:
+		out.Kind, out.Arg = core.ToolAsk, askSummary(input)
 	}
 	return out
 }
