@@ -440,7 +440,9 @@ func callSaw(in CallInput) CallSaw {
 	fresh := NewMessages(len(msgs), carried)
 	s.Carried, s.New = &carried, &fresh
 	for i, m := range msgs {
-		s.Messages = append(s.Messages, SawMessage{Role: m.Role, Text: m.Text, Truncated: m.Truncated, New: i >= carried})
+		// a thinking or media block's placeholder is not text: thinking is never shown inline
+		text := strings.TrimSpace(stripPlaceholders(m.Text))
+		s.Messages = append(s.Messages, SawMessage{Role: m.Role, Text: text, Truncated: m.Truncated, New: i >= carried})
 	}
 	return s
 }
@@ -453,7 +455,8 @@ func callReply(in CallInput) CallReply {
 		}
 		return CallReply{Unavailable: reasonWords(UnavailableReason(ex, "response", ex.ResponseBody != "", ex.ResponseTruncated))}
 	}
-	return CallReply{Text: in.Detail.ResponseText, Truncated: in.Detail.ResponseTruncated, StopReason: words(in.Detail.StopReason)}
+	text := strings.TrimSpace(stripPlaceholders(in.Detail.ResponseText))
+	return CallReply{Text: text, Truncated: in.Detail.ResponseTruncated, StopReason: words(in.Detail.StopReason)}
 }
 
 func callRaw(ex store.ExchangeRow) CallRaw {

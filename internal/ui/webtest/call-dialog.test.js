@@ -280,7 +280,7 @@ test("callDialogShowsSawThinkingResponse", async () => {
     saw: { first: false, carried: 1, new: 1, messages: [{ role: "assistant", text: "", new: false }, { role: "user", text: "", new: true }] } }));
   assert.match(toolsOnly.text(), /No text in the reply: it asked for the tool calls below\./);
   assert.equal(withClass(toolsOnly.root, "call-reply").length, 0, "no empty Preview / Raw block");
-  assert.equal((toolsOnly.text().match(/no text: tool calls or tool results only/g) || []).length, 2);
+  assert.equal((toolsOnly.text().match(/no text: tool calls, tool results or thinking only/g) || []).length, 2);
   const toggle = byTag(h.root, "button").find((b) => b.textContent === "Show thinking");
   const box = withClass(h.root, "call-thinking")[0];
   assert.equal(box.hidden, true, "thinking starts folded");

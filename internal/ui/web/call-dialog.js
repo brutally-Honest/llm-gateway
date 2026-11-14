@@ -203,8 +203,8 @@ export function createCallDialog(ctx = {}) {
     const ul = el("ul", "call-messages");
     for (const m of s.messages) {
       const li = el("li", m.new ? "is-new" : "is-carried");
-      // a message of tool calls or tool results alone has no text to show
-      const text = m.text ? el("span", "msg", m.text) : el("span", "msg muted-note", "no text: tool calls or tool results only");
+      // a message of tool calls, tool results or thinking alone has no text to show
+      const text = m.text ? el("span", "msg", m.text) : el("span", "msg muted-note", "no text: tool calls, tool results or thinking only");
       li.append(el("span", "badge", m.new ? "new" : "carried"), el("span", "role", m.role), text);
       if (m.truncated) li.append(link(d.raw.request || d.raw.page, "cut short — open the raw request", Boolean(d.raw.request)));
       ul.append(li);

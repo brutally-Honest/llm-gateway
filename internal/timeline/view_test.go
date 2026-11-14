@@ -923,6 +923,21 @@ func TestView_CallBodyNotStored(t *testing.T) {
 	v := x.view(t, true)
 	d := x.details(t, v, "cut")
 	eq(t, "the reply still shows", d.Response.Text+" / "+d.Response.StopReason, "Done. / end turn")
+
+	// a thinking block's placeholder is not reply text, nor message text (016 AC7)
+	think, _ := json.Marshal(map[string]string{"type": "thinking", "thinking": "hmm"})
+	both, _ := json.Marshal(map[string]any{"role": "assistant", "stop_reason": "end_turn",
+		"blocks": []map[string]string{{"hash": f.put(string(think)), "type": "reasoning"}, {"hash": f.put(string(raw)), "type": "text"}}})
+	e2 := f.exchange("thought", vat(5), "ok")
+	e2.EndedAt, e2.RequestBody, e2.ResponseBody = vat(6), "req3", "resp3"
+	f.request("thought", "m1")
+	f.add("thought", store.EventRow{Kind: "message", ContentHash: hashOf("thought prior"), Payload: both})
+	f.add("thought", store.EventRow{Kind: "message", Source: "response", ContentHash: hashOf("thought reply"), Payload: both})
+	f.usage("thought", false, n(1), n(1), n(0), n(0))
+	v = x.view(t, true)
+	th := x.details(t, v, "thought")
+	eq(t, "reply without the placeholder", th.Response.Text, "Done.")
+	eq(t, "message without the placeholder", th.Saw.Messages[0].Text, "Done.")
 	eq(t, "stop reason as a fact", d.Facts.Stop.Word, "end turn")
 	if !strings.Contains(d.Saw.Unavailable, "request body was not stored") {
 		t.Errorf("saw = %+v, want why there are no messages", d.Saw)
