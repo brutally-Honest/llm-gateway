@@ -122,7 +122,8 @@ export function createCallDialog(ctx = {}) {
     } else {
       root.open = true;
     }
-    if (typeof title.focus === "function") title.focus();
+    // focus starts on Close, as in the 016 dialog; Tab reaches Previous and Next
+    if (typeof x.focus === "function") x.focus();
   }
 
   function hide() {
@@ -176,7 +177,8 @@ export function createCallDialog(ctx = {}) {
       fact("Context", num(f.ctx)),
     );
     const c = d.context;
-    const ctxLine = el("p", "call-line", `Context ${num(c.size)} · ${changeText(c)}`);
+    const change = changeText(c);
+    const ctxLine = el("p", "call-line", `Context ${num(c.size)}${change === "—" ? "" : ` · ${change}`}`);
     const sawLine = el("p", "call-line call-saw-counts", sawText(d.saw));
     return [facts, ctxLine, sawLine];
   }
@@ -201,7 +203,9 @@ export function createCallDialog(ctx = {}) {
     const ul = el("ul", "call-messages");
     for (const m of s.messages) {
       const li = el("li", m.new ? "is-new" : "is-carried");
-      li.append(el("span", "badge", m.new ? "new" : "carried"), el("span", "role", m.role), el("span", "msg", m.text));
+      // a message of tool calls or tool results alone has no text to show
+      const text = m.text ? el("span", "msg", m.text) : el("span", "msg muted-note", "no text: tool calls or tool results only");
+      li.append(el("span", "badge", m.new ? "new" : "carried"), el("span", "role", m.role), text);
       if (m.truncated) li.append(link(d.raw.request || d.raw.page, "cut short — open the raw request", Boolean(d.raw.request)));
       ul.append(li);
     }
@@ -227,11 +231,14 @@ export function createCallDialog(ctx = {}) {
 
   function responseSection(d) {
     const r = d.response;
-    if (r.unavailable) return section("Response", "", el("p", "muted-note", r.unavailable), fact("Response", "—"));
+    if (r.unavailable) return section("Response", "", el("p", "muted-note", r.unavailable));
     const cutNote = r.truncated
       ? (d.raw.response ? link(d.raw.response, "cut short — open the raw response", true) : el("p", "muted-note", "Cut short."))
       : null;
-    return section("Response", r.stop_reason ? `stop: ${r.stop_reason}` : "", textBlock("call-reply", "Response", r.text || ""), cutNote);
+    const reply = r.text
+      ? textBlock("call-reply", "Response", r.text)
+      : el("p", "muted-note", (d.tools || []).length ? "No text in the reply: it asked for the tool calls below." : "No text in the reply.");
+    return section("Response", r.stop_reason ? `stop: ${r.stop_reason}` : "", reply, cutNote);
   }
 
   function toolsSection(d) {

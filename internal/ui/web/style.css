@@ -423,7 +423,7 @@ dialog.details { width: min(46rem, 94vw); max-height: 86vh; padding: 0; border: 
 dialog.details[open] { display: flex; flex-direction: column; }
 dialog.details::backdrop { background: var(--scrim); }
 .mh { display: flex; gap: 12px; align-items: flex-start; padding: 16px 20px 14px; border-bottom: 1px solid var(--line); }
-.mh .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.mh .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; border: 0; border-radius: 0; padding: 0; }
 .mh .kick { font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .05em; }
 .mh h2 { margin: 0; font-size: 18px; line-height: 1.35; font-weight: 700; color: var(--hi); overflow-wrap: anywhere; }
 .mh .subt { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }

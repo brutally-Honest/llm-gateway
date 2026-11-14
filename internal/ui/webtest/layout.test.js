@@ -99,3 +99,11 @@ test("callScrimDimsOnlyThePageBehind", () => {
   assert.equal(rule(".call-scrim, .call-scrim:hover").background, "transparent", "hover keeps it clear");
   assert.equal(rule("dialog.details::backdrop").background, "var(--scrim)", "the backdrop dims the page");
 });
+
+// A dialog's title block is class "tx", as is a turn's prompt and answer box (017 AC13): the
+// box's border and padding must not reach the dialog head (seen in the 017 slice 2 check).
+test("dialogTitleBlockIsNotATextBox", () => {
+  const head = rule(".mh .tx");
+  assert.equal(head.border, "0");
+  assert.equal(head.padding, "0");
+});

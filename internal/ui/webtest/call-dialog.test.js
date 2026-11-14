@@ -129,6 +129,7 @@ test("callDialogIsModalWithAFixedTop", async () => {
     const h = host({ start: [null, "b"] });
     await tick();
     assert.equal(modal, 1, "opened with showModal, which makes the page behind inert");
+    assert.equal(globalThis.document.activeElement.attrs["aria-label"], "Close call", "focus starts on Close");
     const top = withClass(h.root, "call-top")[0];
     const body = withClass(h.root, "mb")[0];
     const topText = textOf(top).replace(/\s+/g, " ");
@@ -274,6 +275,12 @@ test("callDialogShowsSawThinkingResponse", async () => {
   assert.equal(withClass(h.root, "is-new").length, 1);
   assert.match(h.text(), /all done/);
   assert.match(h.text(), /stop: end turn/);
+  // a reply of tool calls alone, and messages with no text, say so instead of showing blank
+  const toolsOnly = await openOne(detail("b", { tools: [t1], response: { text: "", stop_reason: "tool use" },
+    saw: { first: false, carried: 1, new: 1, messages: [{ role: "assistant", text: "", new: false }, { role: "user", text: "", new: true }] } }));
+  assert.match(toolsOnly.text(), /No text in the reply: it asked for the tool calls below\./);
+  assert.equal(withClass(toolsOnly.root, "call-reply").length, 0, "no empty Preview / Raw block");
+  assert.equal((toolsOnly.text().match(/no text: tool calls or tool results only/g) || []).length, 2);
   const toggle = byTag(h.root, "button").find((b) => b.textContent === "Show thinking");
   const box = withClass(h.root, "call-thinking")[0];
   assert.equal(box.hidden, true, "thinking starts folded");
@@ -325,7 +332,8 @@ test("callDialogMissingDataSaysWhy", async () => {
   });
   const h = await openOne(d);
   const t = flat(h);
-  for (const re of [/Context —/, /Size —/, /Input —/, /Output —/, /Change —/, /No usage reported/, /request body was not stored/, /Messages: —/, /cut at the capture limit/, /Response —/]) assert.match(t, re);
+  for (const re of [/Context —/, /Size —/, /Input —/, /Output —/, /Change —/, /No usage reported/, /request body was not stored/, /Messages: —/, /cut at the capture limit/]) assert.match(t, re);
+  assert.doesNotMatch(textOf(withClass(h.root, "call-top")[0]), /— · —/, "the top line leaves out a change it does not know");
   assert.doesNotMatch(t, /Size 0|Input 0/);
   assert.doesNotMatch(t, /[+−-]\d+ since/);
   assert.equal(withClass(h.root, "bad").length, 1, "the error status is marked bad");
