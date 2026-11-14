@@ -155,6 +155,59 @@ feature: 017-sessions-list-and-call-details
 - D34 (2026-11-14, slice 1, Karthik at the UI check) — "no sessions match" is said once, in
   the list card; the filter note only says "filtering N loaded" (while more rows exist),
   also when nothing matches, so it still tells you only the loaded rows were searched.
+- D35 (2026-11-14, slice 2) — The call details are built on the server by a pure
+  `timeline.CallDetailsOf(view, id, input)`: the session's cached View places the call (its
+  step or side call, turn, sub-agent, Context row, the calls before and after it) and the
+  call's own exchange row, usage, thread fact and parsed events fill in the rest. Opening a
+  call costs one exchange read, as the drawer's detail did, and no second view build.
+  Thread kinds come from the view, so from the profile (SideCallNamer, the agent tool's
+  label); no client `if`. Rejected: a per-call section inside every View (sends every
+  call's details with each view and live event).
+- D36 (2026-11-14, slice 2) — The dialog is its own module, `call-dialog.js`, in 016's shape
+  (dialog.details, its head, facts, sections and footer; `toolNode` and `textBlock` reused)
+  rather than one more key in `dialog.js`'s item stack: a call is driven by the URL and
+  steps through calls, which the item dialog does not. Its tests are in their own file,
+  `call-dialog.test.js`, not `view.test.js` as tasks.md T015–T017 name; T018's
+  `everyCallLinkOpensTheDialog` is in `view.test.js` as named.
+- D37 (2026-11-14, slice 2) — "Its thinking behind a toggle" (AC8): the view never keeps a
+  call's thinking text (016 AC7), and the server sends a flag only (T013), so the toggle
+  says the call thought and links the raw response stream, where the thinking is.
+- D38 (2026-11-14, slice 2) — AC21's fixed top (title, context, message counts) also holds
+  the facts (AC6 "start with labelled facts"), one compact row; the Context and What the
+  model saw sections scroll with the rest.
+- D39 (2026-11-14, slice 2) — One item dialog at a time: a call opening (its URL) closes an
+  open tool, file or site dialog; a tool opened from the call dialog opens over it and takes
+  ↑/↓ and Esc until it closes. A click outside closes through a transparent scrim button
+  under the dialog's content (the UI's rule allows click handlers on buttons and links
+  only; the ::backdrop dims), and Esc closes through the URL, so history stays right.
+- D40 (2026-11-14, slice 2, T018) — What the 013 drawer showed that the call details dialog
+  does not, listed before the drawer was deleted:
+  1. The context plot: the main thread's per-call line with this call's dot marked. The
+     dialog gives the size, change and parts in words; the session's Context tab keeps its
+     one-bar-per-turn chart (AC20) and its per-call rows, each opening the dialog.
+  2. A tool call's asked → ran → reported chain with a glyph per step ("reported missing",
+     "not run (reason)"). The dialog lists each tool line with its state word; the tool's
+     own 016 dialog shows its state, reason, outcome and hook lines.
+  3. Health as yes/no rows (Client disconnected: no, Upstream aborted: no, Gateway error:
+     none). The dialog says what went wrong, or "No disconnect, abort or error.".
+  4. The session id in Health: the dialog does not show it (the page behind is that session).
+  5. The tool calls' state chips in the drawer's header: in the dialog they are the Tool
+     calls section's lines.
+  6. When the detail failed to load, the drawer still showed the context, computed in the
+     browser from the timeline entries. The dialog's facts and context come from the one
+     server answer, so a failed load shows the reason and the raw links only.
+  Tests removed with the code they tested, no new home: `laterPage504IsNotRetried` (the
+  drawer's paged `/timeline` load, gone: the dialog loads one call, whose single 504 retry
+  `callDetailRetriesOnceAfter504` still covers); `followOnlyWhenDrawerClosedAndAtBottom`
+  (`shouldFollow`, exported by drawer.js and used nowhere); the chain tests
+  `toolChainShowsThreeSteps` and `chainShowsRanWithReportedMissing` (item 2); the plot
+  assertions of `contextPartsAndDelta` (item 1); "Session: s1" and the yes/no rows of
+  `healthShowsDisconnectAbortError` (items 3, 4); the context-from-entries part of
+  `missingSectionStatesReason` (item 6). Every other drawer assertion moved to
+  `call-dialog.test.js`, `live.test.js`, `app.test.js` or `layout.test.js`. Left in place,
+  now unused by the UI: `model.js` and `plot.js` (`web_test.go` asserts on model.js, so
+  removing them changes a Go test) and `api.js`'s `loadAllPages` (its own tests) — for
+  Karthik to decide.
 
 ## Notes
 - Sessions list budget, before slice 1 (2026-11-14, T001): `BenchmarkSessionsList500`
