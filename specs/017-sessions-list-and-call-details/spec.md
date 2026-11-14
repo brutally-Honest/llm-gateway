@@ -2,7 +2,7 @@
 feature: 017-sessions-list-and-call-details
 kind: feat
 status: draft
-version: 6
+version: 7
 created: 2026-11-10
 supersedes:
 branch: feat/017-sessions-list-and-call-details
@@ -70,18 +70,19 @@ This changes earlier features:
   (016) shall say how many items and of what kinds as words, and the list shall show the
   unassigned connections in their own section with each one's label, client, host, bytes
   and time.
-- **AC3** — When the sessions list is shown, a "Today" line shall show labelled totals over
-  all stored sessions (sessions, model calls with side calls included, files changed, sites,
-  input and output tokens), computed on the server.
+- **AC3** — When the sessions list is shown, a "Today" line shall show labelled totals since
+  local midnight (sessions, model calls with side calls included, files changed, sites,
+  input and output tokens), computed on the server (amended 2026-11-14, research D17).
 - **AC4** — When the user types in the filter or picks All, Needs a look, Active or Hooks
   only, the list shall show the matching loaded rows, say "filtering N loaded" while more
   rows exist, and keep Load more.
 
 ### Call details dialog
-- **AC5** — When a model call is opened (from a step's `#n`, a Context row or bar, a tool's
+- **AC5** — When a model call is opened (from a step's `#n`, a Context row, a tool's
   "asked by", or a URL naming the call), the system shall show it in 016's dialog shape
   without leaving the session, and the URL shall name the session and call so a reload
-  restores it and Back closes it.
+  restores it and Back closes it. A Context bar keeps AC20's behaviour and opens no call
+  (amended 2026-11-14, research D18).
 - **AC6** — When the call details are shown, they shall start with labelled facts: model,
   duration, start, stop reason or error status as a word, thread (main, sub-agent name, side
   call kind) and context size.
@@ -119,7 +120,8 @@ This changes earlier features:
   calls (state, name, summary, lines, run time, first error); files changed, files read or
   sites (each change, read or connection with the tool that caused it, or "several running",
   or "not caused by a tool call"); searches; failures (the failed tool calls). Each row opens
-  its 016 details dialog or the 013 drawer for a call (amended 2026-11-13).
+  its 016 details dialog, or the call details dialog (AC5) for a call (amended 2026-11-13,
+  2026-11-14 research D19).
 - **AC16** — When a chip is clicked, at most one chip's panel per turn shall be open: another
   chip closes it, clicking the selected chip closes it, and every chip is a button reachable
   by Tab with its open state announced (016 AC13). "Show in turn" opens "All".
@@ -136,10 +138,11 @@ This changes earlier features:
   added since its first call, labelled by turn (every k-th past 24 turns, the first and
   last always); clicking a bar shall bring that turn's calls into view in the list
   (changes 016 AC10's bar per call; added 2026-11-13).
-- **AC21** — While the call drawer is open, the page behind it shall be dimmed and inert (no
-  click or Tab reaches it), a click on the dimmed page shall close the drawer, and the
-  drawer's top (title, context, message counts) shall stay while the messages and later
-  sections scroll (added 2026-11-13; AC5's dialog replaces the drawer later).
+- **AC21** — While the call details dialog (AC5) is open, the page behind it shall be dimmed
+  and inert (no click or Tab reaches it), a click on the dimmed page shall close the dialog,
+  and the dialog's top (title, context, message counts) shall stay while the messages and
+  later sections scroll (added 2026-11-13 for the 013 drawer; amended 2026-11-14 for the
+  dialog that replaces it, research D19).
 - **AC22** — When the turn list is hovered or focused, an entry shall keep its two-line
   prompt, with no tooltip; the story shall end at its last turn, with no empty space after
   it (changes 016 AC3; added 2026-11-13).
@@ -158,7 +161,7 @@ This changes earlier features:
 
 ## Edge cases
 - **E1** — Empty store → the list's empty note, today's totals 0, no unassigned section (AC1,
-  AC3).
+  AC2, AC3).
 - **E2** — A side call opened → its kind (quota probe, title generation) as the thread, its
   status not red (AC6).
 - **E3** — A URL naming a call not in the session → the session opens with a "no such call"
@@ -202,3 +205,7 @@ This changes earlier features:
   without hover expansion or tooltip, no space after the last turn (AC20–AC22; research D13)
 - v6 (2026-11-13) — questions and answers in a tool's dialog, a loader on the sessions list,
   a visual cleanup of the list ahead of AC1–AC4 (AC23, AC24; research D14)
+- v7 (2026-11-14) — the spec text follows the decisions taken while writing tasks.md: AC3's
+  "Today" totals are since local midnight (research D17); AC5 opens a call from a Context
+  row only, a bar keeps AC20 (D18); AC15 and AC21 name the call details dialog in place of
+  the 013 drawer, keeping AC21's behaviour (D19); E1 also cites AC2 (no unassigned section)
