@@ -46,10 +46,14 @@ test("rowShowsLabelledCounts", () => {
 
 // spec 017 E5: a hooks-only row says it has no model calls, and shows no token counts.
 test("hooksOnlyRowSaysNoModelCalls", () => {
-  const h = rowCells(session({ hooks_only: true, has_calls: false, usage: {}, models: [] }));
+  const h = rowCells(session({ hooks_only: true, has_calls: false, active: false, usage: {}, models: [] }));
   assert.equal(h.calls, "no model calls captured");
-  assert.deepEqual([h.status.glyph, h.status.text], ["◇", "hooks only"]);
+  assert.deepEqual([h.status.glyph, h.status.text], ["◇", "hooks only"], "a finished hooks-only session");
   assert.equal(h.sources, "⚑ hooks");
+  // D33: Status says whether it is still going; Sources already says hooks only
+  const live = rowCells(session({ hooks_only: true, has_calls: false, active: true, usage: {}, models: [] }));
+  assert.deepEqual([live.status.glyph, live.status.text], ["●", "active"], "an active hooks-only session");
+  assert.equal(live.sources, "⚑ hooks");
   assert.deepEqual([h.input, h.output, h.cacheRead], ["—", "—", "—"]);
   assert.equal(h.model, "");
 });
@@ -62,7 +66,10 @@ test("rowSaysWhatNeedsALook", () => {
   assert.equal(lookText({ needs_look: 3, look_kinds: kinds }), "3 need a look: 2 failed tool calls, 1 failed model call");
   assert.equal(lookText({ needs_look: 1, look_kinds: [kinds[1]] }), "1 needs a look: 1 failed model call");
   const p = livePage([session({ list: { ...session().list, needs_look: 3, look_kinds: kinds } })]);
-  assert.equal(withClass(p.row("s1"), "slook")[0].textContent, "3 need a look: 2 failed tool calls, 1 failed model call");
+  const line = withClass(p.row("s1"), "slook")[0];
+  assert.equal(line.textContent, "3 need a look: 2 failed tool calls, 1 failed model call");
+  // the line is cut with an ellipsis when long, so hovering it shows it whole
+  assert.equal(line.title, "3 need a look: 2 failed tool calls, 1 failed model call");
 });
 
 test("titleUpdatesWhenSessionEventArrives", () => {
@@ -129,17 +136,19 @@ test("filterSaysFilteringNLoaded", () => {
   assert.match(textOf(p.page.el), /filtering 2 loaded/);
 });
 
-// spec 017 E6: nothing matches → "no sessions match", and Load more stays while more exist.
+// spec 017 E6: nothing matches → "no sessions match" once, in the list (D34), and Load
+// more stays while more exist.
 test("filterMatchingNothingKeepsLoadMore", () => {
   const none = filterSessions([session()], { text: "zzz", hasMore: true });
-  assert.equal(none.note, "no sessions match");
+  assert.equal(none.note, "filtering 1 loaded");
   assert.equal(none.loadMore, true);
   const p = livePage([session()]);
   p.page.update({ next_after: "tok" });
   const input = byTag(p.page.el, "input")[0];
   input.value = "zzz";
   input.fire("input");
-  assert.match(textOf(p.page.el), /no sessions match/);
+  assert.equal(textOf(p.page.el).split("no sessions match").length - 1, 1, "said once, not in the note too");
+  assert.match(textOf(p.page.el), /filtering 1 loaded/);
   assert.ok(byTag(p.page.el, "button").some((b) => b.textContent === "Load more"), "Load more is kept");
 });
 

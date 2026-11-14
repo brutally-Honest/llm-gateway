@@ -51,8 +51,8 @@ function counter(c) {
 // statusOf names a session's status with a glyph, so colour is never the only signal; the
 // glyphs are the session page's (016).
 export function statusOf(s) {
-  if (s.hooks_only) return { key: "hooks-only", glyph: "◇", text: "hooks only" };
   if (s.active) return { key: "active", glyph: "●", text: "active" };
+  if (s.hooks_only) return { key: "hooks-only", glyph: "◇", text: "hooks only" };
   return { key: "ended", glyph: "■", text: "ended" };
 }
 
@@ -259,6 +259,7 @@ function fillRow(parts, s, selected) {
   setText(place, [c.folder, c.model].filter(Boolean).join(" · "));
   setTitle(place, c.folderFull);
   setText(look, c.look);
+  setTitle(look, c.look);
   setText(cells[2], c.sources);
   if (key.status !== c.status.key) {
     key.status = c.status.key;
@@ -383,7 +384,7 @@ export function createSessionsPage(handlers) {
   }
   bar.append(input, picker);
   const filterNote = document.createElement("p");
-  filterNote.className = "muted";
+  filterNote.className = "muted sp-filter-note";
   const list = document.createElement("div");
   list.className = "sp-list";
   const foot = document.createElement("div");

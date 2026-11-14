@@ -19,8 +19,8 @@ function rowText(s) {
 }
 
 // filterSessions narrows loaded rows by kind (all, look, active, hooks) and text. The note
-// reads "filtering N loaded" while more rows exist, "no sessions match" when nothing does;
-// loadMore says whether to offer Load more, which a filter never hides (E6).
+// reads "filtering N loaded" while a filter is on and more rows exist (when nothing
+// matches, the list itself says so, not the note, D34); loadMore says whether to offer Load more, which a filter never hides (E6).
 export function filterSessions(rows, { kind = "all", text = "", hasMore = false } = {}) {
   const q = text.trim().toLowerCase();
   const out = rows.filter((s) => {
@@ -30,8 +30,6 @@ export function filterSessions(rows, { kind = "all", text = "", hasMore = false 
     return !q || rowText(s).includes(q);
   });
   const filtering = kind !== "all" || q !== "";
-  let note = "";
-  if (!out.length && filtering) note = "no sessions match";
-  else if (filtering && hasMore) note = `filtering ${rows.length} loaded`;
+  const note = filtering && hasMore ? `filtering ${rows.length} loaded` : "";
   return { rows: out, note, loadMore: hasMore };
 }

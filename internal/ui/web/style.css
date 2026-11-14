@@ -103,6 +103,9 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .seg-group .seg[aria-pressed="true"] { color: var(--hi); background: var(--panel2); font-weight: 600; }
 .seg-group .seg:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: -2px; }
 .sp-list { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow-x: auto; }
+.sp-list > .empty, .sp-list > .error { margin: 0; padding: 1.5rem 1.25rem; }
+.sp-filter-note { margin: -6px 0 -4px; font-size: 12.5px; }
+.sp-filter-note:empty { display: none; }
 .sp-list table { min-width: 72rem; }
 .sp-list th { position: sticky; top: 0; background: var(--card); text-transform: uppercase; letter-spacing: .04em; font-size: 11px; padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .sp-list td { padding: 10px 12px; vertical-align: middle; font-size: 13px; }

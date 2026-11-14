@@ -37,11 +37,12 @@ test("filterTextMatchesLoadedRows", () => {
   assert.equal(filterSessions(rows, {}).note, "");
 });
 
-// E6: nothing matches → "no sessions match", Load more kept while more rows exist.
+// E6: nothing matches → Load more kept while more rows exist; the note still says what
+// was searched, and "no sessions match" is the list's own message (D34), never the note's.
 test("noMatchNoteWithLoadMore", () => {
   const r = filterSessions([row("a")], { text: "zzz", hasMore: true });
   assert.equal(r.rows.length, 0);
-  assert.equal(r.note, "no sessions match");
+  assert.equal(r.note, "filtering 1 loaded");
   assert.equal(r.loadMore, true);
-  assert.equal(filterSessions([row("a")], { kind: "look", hasMore: true }).note, "no sessions match");
+  assert.equal(filterSessions([row("a")], { kind: "look", hasMore: false }).note, "");
 });
