@@ -345,3 +345,50 @@ test("sideCallIsNotRed", async () => {
   assert.match(h.text(), /429 Too Many Requests/);
   assert.equal(withClass(h.root, "bad").length, 0, "not marked bad");
 });
+
+// AC10 (carries arrowsStepAndEscReturnsFocus's steps): ↑/↓ and Previous/Next move through the
+// session's calls in order, replacing the URL so Back still closes the dialog.
+test("arrowsStepThroughCalls", async () => {
+  const h = host();
+  h.clickTo(1);
+  await tick();
+  h.dialog.step(1);
+  assert.deepEqual(h.hist.moves.at(-1), ["replace", { name: "session", id: "s1", call: "c" }]);
+  await tick();
+  assert.match(h.text(), /Call #3/);
+  h.btn("Previous").fire("click");
+  await tick();
+  h.btn("Previous").fire("click");
+  await tick();
+  assert.deepEqual(h.hist.moves.at(-1), ["replace", { name: "session", id: "s1", call: "a" }]);
+  assert.match(h.text(), /Call #1/);
+  assert.equal(h.hist.moves.filter((m) => m[0] === "push").length, 0, "a step never adds history");
+  h.dialog.close();
+  assert.equal(h.top(), null, "Back-style close still lands on the session");
+});
+
+// E4 (carries firstAndLastStepDisabled): Previous is disabled on the first call and Next on
+// the last; a step past either end does nothing.
+test("stepsDisabledAtTheEnds", async () => {
+  const h = host({ start: [null, "a"] });
+  await tick();
+  assert.equal(h.btn("Previous").disabled, true);
+  assert.equal(h.btn("Next").disabled, false);
+  const n = h.hist.moves.length;
+  h.dialog.step(-1);
+  assert.equal(h.hist.moves.length, n);
+  h.dialog.step(1);
+  await tick();
+  h.dialog.step(1);
+  await tick();
+  assert.match(h.text(), /Call #3/);
+  assert.equal(h.btn("Next").disabled, true);
+  assert.equal(h.btn("Previous").disabled, false);
+  const m = h.hist.moves.length;
+  h.dialog.step(1);
+  assert.equal(h.hist.moves.length, m);
+  // while a call loads, neither step works: its place is not known yet
+  const slow = host({ start: [null, "b"], load: () => new Promise(() => {}) });
+  assert.equal(slow.btn("Previous").disabled, true);
+  assert.equal(slow.btn("Next").disabled, true);
+});
