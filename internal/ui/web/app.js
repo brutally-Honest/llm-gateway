@@ -162,6 +162,7 @@ async function showSession(id) {
     back: () => history.back(),
   };
   let page = null;
+  let missingNoted = false; // the "no such call" note is up; the next call URL clears it
   const calls = createCallDialog({
     nav,
     // a call's details get the view's single retry on 504; the dialog shows "Loading call…"
@@ -175,7 +176,11 @@ async function showSession(id) {
     },
     callHref: (exchangeId) => buildRoute({ name: "session", id, call: exchangeId }),
     turnHeading: () => (page ? page.turnHeading() : null),
-    onMissing: () => page && page.setStatus("No such call in this session.", "error"),
+    onMissing: () => {
+      if (!page) return;
+      missingNoted = true;
+      page.setStatus("No such call in this session.", "error");
+    },
   });
   page = createSessionPage({
     callHref: (exchangeId) => buildRoute({ name: "session", id, call: exchangeId }),
@@ -192,6 +197,10 @@ async function showSession(id) {
   // dialog replaces an open tool dialog (one item dialog at a time, research D39).
   let callId = parseRoute(location.hash).call || null;
   const followCall = () => {
+    if (missingNoted) {
+      missingNoted = false;
+      page.setStatus("");
+    }
     if (callId && page.dialogOpen()) page.dialog.close();
     calls.sync({ sessionId: id, callId });
   };

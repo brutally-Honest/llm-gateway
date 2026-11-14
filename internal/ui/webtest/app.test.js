@@ -202,3 +202,22 @@ test("callDetailSecond504ShowsTheReason", async () => {
   assert.equal(r.detailAsks(), 2, "one retry only");
   assert.match(r.text(), /Call details unavailable: store timed out/);
 });
+
+// E3: a URL naming a call the session does not have shows the "no such call" note and no
+// dialog; the next call URL clears the note and opens its call.
+test("noSuchCallNoteClearsOnTheNextCall", async () => {
+  const path = "/api/sessions/m1";
+  replies[`${path}/view`] = viewOf("Seeded", false);
+  replies[`${path}/calls/b`] = callOf("b");
+  location.hash = "#/sessions/m1/call/zzz";
+  for (const fn of listeners.hashchange) fn();
+  for (let i = 0; i < 8; i++) await settle();
+  const app = byId("app");
+  assert.match(textOf(app), /No such call in this session\./);
+  assert.equal(withClass(app, "call-details")[0].open, false, "no dialog");
+  location.hash = "#/sessions/m1/call/b";
+  for (const fn of listeners.hashchange) fn();
+  for (let i = 0; i < 8; i++) await settle();
+  assert.doesNotMatch(textOf(app), /No such call/);
+  assert.match(textOf(withClass(app, "call-details")[0]), /Call #2/);
+});
