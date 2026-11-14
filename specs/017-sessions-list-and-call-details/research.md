@@ -90,9 +90,63 @@ feature: 017-sessions-list-and-call-details
   approved: approval here is the approval script's validated stamp and commit, which is
   human-only (AGENTS.md), and a hook blocks it for agents; writing `status: approved` by
   hand would forge it. Karthik approves with /al-approve spec, or overrides this.
+- D21a (2026-11-14) — Correction to D21: Karthik approved spec v7 with /al-approve spec
+  (67c86da).
+- D22 (2026-11-14, slice 1) — A row's counts come from the session's own view, built inside
+  the digest memo (one compute per session version, from the events it already loads) and
+  kept as compact row facts: prompts = numbered turns, model calls = the view's calls minus
+  its side calls, commands, wall clock (first to last activity), folder, needs-a-look kinds.
+  So the list counts in the session page's terms. Files changed and sites stay on the
+  store's fresh effect counts (distinct paths, distinct hosts — the view's terms too). The
+  memo is versioned by exchanges and hooks, not effects, so needs-a-look items that depend
+  on effects (changes with no tool running, unpinned groups) refresh with the session's
+  next exchange or hook. Rejected: a lighter separate counter (would duplicate needsLook
+  and drift), cachedView per row (thrashes the 4-entry view cache the session page uses).
+- D23 (2026-11-14, slice 1) — A row's title is now 016's title rule (AC1): generated, else
+  the first prompt cut at 120 runes, else "No prompt · <folder>" / "Hooks only · <folder>"
+  (or client and start). Four list tests that asserted the old rule (80 runes, "" for no
+  prompt) now assert the new one. The view called a session with a stored but unparsed
+  exchange "Hooks only"; it is "No prompt" now (fixed in the view, so the session page
+  agrees).
+- D24 (2026-11-14, slice 1) — "Tool calls with failures" (AC1) is the sum of the server's
+  per-state tool counts (captured and hook-seen calls) with the failed state apart; the old
+  Errors column and tool-state chips are gone. Failed model calls show through "needs a
+  look" (AC2), which already leaves side calls out.
+- D25 (2026-11-14, slice 1) — Today's files changed counts each file once per session that
+  changed it since midnight; sites count distinct hosts any session connected to;
+  unassigned connections count in neither. effects has no index on `at`, so the query scans
+  the table; no migration for it unless T010's measurement says so.
+- D26 (2026-11-14, slice 1) — AC4's filters (All, Needs a look, Active, Hooks only) replace
+  013's Has errors and Has gaps; Needs a look reads `list.needs_look`, Active the server's
+  active flag (last activity under 5 minutes). Their tests were rewritten to the new kinds,
+  keeping each old concern (side calls never match, hooks-only rows match, Load more kept).
+- D27 (2026-11-14, slice 1) — The unassigned section lists the first 10 connections the API
+  returns (oldest first, as the unassigned page does) and links to that page for the rest.
+  The effects API now names each effect's stored client; a harness label names the real
+  client, shown in its place.
+- D28 (2026-11-14, slice 1) — TestHub_HookEventPushesSessionsList was already flaky before
+  slice 1 (3 of 150 runs at HEAD: "TempDir RemoveAll cleanup: directory not empty"), and the
+  heavier memo compute made it about 5%. Hub.Close cancels computes without waiting; the
+  stream test env now waits for in-flight digest and timeline computes in its cleanup
+  (0 of 150 after).
+- D29 (2026-11-14, slice 1) — Row cells carry their labels in words and group as Work
+  (prompts · calls · side), Tools (tool calls · failed), Changes (files changed · commands ·
+  sites), Time and Tokens (in · out · cache read), with folder · model and the needs-a-look
+  line under the title, so the table stays readable at 1,400 px. Status glyphs follow the
+  session page (■ ended, ● active, ◇ hooks only); sources are ⇄ API and ⚑ hooks.
 
 ## Notes
 - Sessions list budget, before slice 1 (2026-11-14, T001): `BenchmarkSessionsList500`
   (500 sessions × 20 calls, `-benchtime 5x`, two runs, AMD Ryzen 5 5600G, 12 threads):
   first page of 50 cold (fresh digest cache) 130 ms/op, 26.4 MB, 370k allocs; cached
   6.1–6.4 ms/op; `/api/today` over all 10,000 calls 920 ms/op, 102 MB.
+- Sessions list budget, after slice 1 (2026-11-14, T010), same benchmark and machine, two
+  runs: first page cold 207–208 ms/op (+60%), 46.4 MB, 556k allocs — each row's memo now
+  also builds the session's view (D22); cached 6.3–6.9 ms/op (unchanged: rows come from
+  the memo); `/api/today` 930–939 ms/op (unchanged; the benchmark store has no effects, so
+  the new effects query costs nothing here). Judgement: within budget — the cost is paid
+  once per session version, off the request once a row is cached, and the cached page,
+  which live updates and every reload after the first use, did not move. What would flip
+  it: a cold first page past about 1 s on a real store, or the hub's recomputes of active
+  sessions showing in the live list; then reuse the timeline cache's build for the memo.
+  `/api/today` at ~0.9 s for 10,000 calls in a day predates slice 1 and is not changed by it.
