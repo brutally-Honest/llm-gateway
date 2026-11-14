@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { StubElement, all, installDom, textOf, withClass } from "./dom-stub.js";
-import { call, item } from "./fixtures.js";
 
 // E16 through the real app.js and api.js: only the browser is stubbed, so the stream's
 // error event travels the same path it does in a page.
@@ -37,7 +36,6 @@ class FakeEventSource {
   }
 }
 const session = { id: "s1", title: "Seeded", client: "c", models: ["m"], first_at: "2026-01-01T00:00:00Z", last_at: "2026-01-01T00:01:00Z", exchange_count: 2, model_calls: 2, main_errors: 0, active: true, usage: {}, tool_states: {} };
-const entries = [call("a", 1), item("a", "user_prompt", { role: "user", text: "one" }), call("b", 2, { prev: "a" })];
 // viewOf is the server's session view (spec 016) of the two calls above, one turn each.
 const step = (n, id) => ({ n, exchange_id: id, at: "2026-01-01T00:00:0" + n + "Z", dur_ms: 1000, did: "wrote the answer", tools: [] });
 const turn = (n, id, prompt) => ({ n, hash: `h${n}`, prompt, reminders: [], at: step(n, id).at, clock_ms: 1000, counts: { calls: 1 }, steps: [step(n, id)], hook_tools: [], loose: [] });
@@ -61,7 +59,6 @@ const callOf = (id) => ({
 });
 const replies = {
   "/api/sessions/s1/view": viewOf("Seeded", true),
-  "/api/sessions/s1/timeline": { entries, next_after: null },
   "/api/sessions/s1/calls/b": callOf("b"),
 };
 Object.assign(document, {
@@ -132,7 +129,6 @@ async function openSession(sid, plan) {
   globalThis.__retryDelay = async (ms) => void delays.push(ms);
   const path = `/api/sessions/${sid}/view`;
   replies[path] = viewOf("Seeded", false);
-  replies[`/api/sessions/${sid}/timeline`] ||= { entries, next_after: null };
   Object.assign(plans, plan(path));
   asked.length = 0;
   location.hash = `#/sessions/${sid}`;

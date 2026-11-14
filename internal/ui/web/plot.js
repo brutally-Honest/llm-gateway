@@ -12,7 +12,8 @@ function svg(tag, attrs = {}) {
 
 // contextPlotNode draws a contextPlot() result: a baseline, the polyline and a dot per
 // call with its value on hover. Colours and stroke come from style.css classes. The call
-// named by markId, the drawer's own, gets a larger dot and says so on hover.
+// named by markId gets a larger dot and says so on hover. Unused since the 013 drawer was
+// retired (spec 017 T018, research D40).
 export function contextPlotNode(plot, markId = "") {
   const root = svg("svg", { viewBox: `0 0 ${plot.width} ${PLOT_HEIGHT}`, role: "img", "aria-label": plot.label });
   root.setAttribute("class", "ctx-svg");

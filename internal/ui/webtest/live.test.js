@@ -81,10 +81,3 @@ test("callDialogKeepsItsCallOnLiveData", async () => {
   assert.match(textOf(failing.el), /Call #2/);
   assert.doesNotMatch(textOf(failing.el), /unavailable/);
 });
-
-test("followOnlyWhenDrawerClosedAndAtBottom", async () => {
-  const { shouldFollow } = await import("../web/drawer.js");
-  assert.equal(shouldFollow(false, true), true);
-  assert.equal(shouldFollow(true, true), false);
-  assert.equal(shouldFollow(false, false), false);
-});

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildRoute, parseRoute } from "../web/route.js";
 
-test("drawerUrlRoundTrips", () => {
+test("callUrlRoundTrips", () => {
   const r = { name: "session", id: "s 1/x", call: "ex#2" };
   const h = buildRoute(r);
   assert.equal(h, "#/sessions/s%201%2Fx/call/ex%232");

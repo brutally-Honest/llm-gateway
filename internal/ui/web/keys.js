@@ -2,7 +2,7 @@
 export const SHORTCUTS = {
   SESSIONS: [["↑/↓", "select"], ["Enter", "open"], ["/", "filter"]],
   // The session page has no key bar (spec 016 AC13, Q4): j/k step through turns, the tabs
-  // take arrow keys, Esc closes a dialog or the call drawer, and every action is a button
+  // take arrow keys, Esc closes a dialog or the call details, and every action is a button
   // or link reachable by Tab and Enter.
   TURNS: [],
   CALL: [],

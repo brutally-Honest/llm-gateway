@@ -1,4 +1,4 @@
-// Hash routes. A drawer URL is #/sessions/{id}/call/{exchangeId}.
+// Hash routes. A call's URL is #/sessions/{id}/call/{exchangeId} (spec 017 AC5).
 const enc = encodeURIComponent;
 
 // parseRoute turns a location hash into { name, id?, call? }; anything else is "unknown".

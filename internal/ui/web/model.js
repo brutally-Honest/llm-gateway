@@ -1,12 +1,14 @@
 import { compareEntries } from "./entries.js";
 
-// Pure model over timeline entries for the 013 drawer: chips, call numbers and context. The
-// browser never classifies by message text; every fact comes from the API fields.
+// Pure model over timeline entries, written for the 013 drawer: chips, call numbers and
+// context. The drawer is retired (spec 017 T018); nothing in the UI imports this now but
+// plot.js, and it stays for Karthik to decide (research D40). The browser never classifies
+// by message text; every fact comes from the API fields.
 
 // callNumbers maps each model call's exchange id to its #n: its position among the
 // session's calls in start order, counting every thread, with the exchange id breaking a
 // tie. The server sends only that order key, so a late commit renumbers the calls here
-// without resending them. Links and drawer URLs stay keyed by exchange id.
+// without resending them. Links and call URLs stay keyed by exchange id.
 export function callNumbers(entries) {
   const calls = entries.filter((e) => e.kind === "model_call").sort(compareEntries);
   return new Map(calls.map((e, i) => [e.exchange_id, i + 1]));

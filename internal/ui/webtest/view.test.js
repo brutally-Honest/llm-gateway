@@ -425,3 +425,46 @@ test("toolDialogShowsQuestionsAndAnswers", async () => {
   assert.match(textOf(items[0]), /Notes: keep it short/);
   assert.match(textOf(items[1]), /No option picked\..*Notes: like the stepper/s);
 });
+
+// 017 AC5, AC15 (T018): every place a model call is named opens the call details dialog
+// through the call's URL, noting the link it was opened from: a step's #n, a chip row, a
+// Context row, a tool dialog's "Asked by", and a "needs a look" target.
+test("everyCallLinkOpensTheDialog", async () => {
+  const noted = [];
+  const { page, opened } = mount(fixture(), { noteOpener: (node) => noted.push(node) });
+  const href = (id) => `#/sessions/s1/call/${id}`;
+  const t1 = byId(page.el, "turn-1");
+
+  // a step's #n
+  const chip = (id) => withClass(t1, "chip").find((b) => b.dataset.chip === id);
+  chip("all").fire("click");
+  const step = withClass(byId(t1, "cp-1-all"), "call-link")[0];
+  assert.equal(step.href, href("e3"));
+  step.fire("click");
+  assert.equal(noted.at(-1), step);
+
+  // a chip row's #n (AC15)
+  chip("calls").fire("click");
+  const chipRow = withClass(byId(t1, "cp-1-calls"), "call-link")[1];
+  assert.equal(chipRow.href, href("e4"));
+  chipRow.fire("click");
+  assert.equal(noted.at(-1), chipRow);
+
+  // a Context row (a Context bar keeps AC20 and opens no call)
+  const ctxRows = byTag(byId(page.el, "tp-context"), "a").filter((a) => a.href.startsWith("#/sessions/"));
+  assert.deepEqual(ctxRows.map((a) => a.href), [href("e3"), href("e6")]);
+  ctxRows[1].fire("click");
+  assert.equal(noted.at(-1), ctxRows[1]);
+  assert.equal(byTag(withClass(page.el, "bars")[0], "a").length, 0, "a bar is not a call link");
+
+  // a tool dialog's "Asked by"
+  withClass(byId(page.el, "tool-t1"), "nm")[0].fire("click");
+  await settle();
+  const asked = byTag(page.dialog.el, "a").find((a) => /model call #3/.test(a.textContent));
+  assert.equal(asked.href, href("e3"));
+
+  // a target naming a call (needs a look, AC2)
+  const from = globalThis.document.createElement("button");
+  page.open({ kind: "call", id: "e5" }, from);
+  assert.deepEqual(opened, ["e5"]);
+});

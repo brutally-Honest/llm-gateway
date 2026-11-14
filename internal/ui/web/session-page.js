@@ -34,7 +34,8 @@ export function mergeView(held, ev) {
 
 // createSessionPage builds the page once; setView(view) and applyEvent(event) redraw it.
 // ctx: { sessionId, callHref(exchangeId), loadTool(id), loadDiff(id), loadContent(id),
-// noteOpener(node) } — callHref links a model call to the 013 drawer until 017.
+// noteOpener(node), openCall(exchangeId, opener) } — callHref links a model call to the call
+// details dialog (spec 017 AC5).
 export function createSessionPage(ctx = {}) {
   const root = el("div", "cols");
   const toc = el("nav", "toc card");
@@ -101,7 +102,7 @@ export function createSessionPage(ctx = {}) {
   root.append(side.el, dialog.el);
 
   // open handles a target from the overview, the story or a list: a tool, file or site
-  // opens the dialog; a call opens the 013 drawer; a turn, between block or several group
+  // opens the dialog; a call opens the call details dialog; a turn, between block or several group
   // is shown in the story (AC2, AC11).
   function open(target, opener) {
     switch (target.kind) {

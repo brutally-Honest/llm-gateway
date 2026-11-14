@@ -1,5 +1,5 @@
 import { getJSON, openStream } from "./api.js";
-import { effectsListNode } from "./drawer-sections.js";
+import { effectsListNode } from "./effects-list.js";
 import { lastID } from "./effects.js";
 import { addUnique, upsertSession } from "./entries.js";
 import { createStore } from "./store.js";

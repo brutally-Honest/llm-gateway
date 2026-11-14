@@ -2,7 +2,7 @@ import { button, bytes, clock, dur, el, num, plural } from "./fmt.js";
 
 // The right card (spec 016 AC9, AC10): the session's Files, Commands, Sites and Context
 // as four tabs. Every row, count and sentence comes from the view; rows open the details
-// dialog, and a model call opens the 013 drawer until 017.
+// dialog, and a model call opens the call details dialog (spec 017 AC5).
 // ctx: { open(key, opener), callHref(exchangeId), noteOpener(node) }.
 
 const TABS = [
@@ -26,7 +26,7 @@ function icon(glyph, cls = "ic") {
   return s;
 }
 
-// linkRow is a row linking a model call to the 013 drawer.
+// linkRow is a row linking a model call to the call details dialog.
 function linkRow(ctx, href) {
   const a = el("a", "row");
   a.href = href;

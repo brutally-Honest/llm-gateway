@@ -86,16 +86,16 @@ test("shellPublishesHeaderAndKeyBarHeights", async () => {
   }
 });
 
-// The call drawer's scrim is a button inside the drawer at z-index -1, so it paints over the
-// drawer's own background: the drawer itself was dimmed and only its buttons stayed bright.
-// The drawer's card is painted by a later z-index -1 layer, above the scrim. The global
-// button:hover rule also turned the whole scrim opaque on hover (Karthik, 2026-11-14).
-test("drawerScrimDimsOnlyThePageBehind", () => {
-  assert.equal(rule(".drawer").background, "none", "the drawer's card is its ::after layer, not its own background");
-  const card = rule(".drawer::after");
-  assert.equal(card.position, "absolute");
-  assert.equal(card.inset, "0");
-  assert.equal(card["z-index"], "-1");
-  assert.equal(card.background, "var(--card)");
-  assert.equal(rule(".drawer-scrim, .drawer-scrim:hover").background, "var(--scrim)", "hover keeps the scrim");
+// The call dialog's scrim is a button inside the dialog at z-index -1, under its content. The
+// 013 drawer's scrim, painted the same way, dimmed the drawer itself and turned opaque under
+// the global button:hover rule (Karthik, 2026-11-14). The dialog's ::backdrop does the
+// dimming, so its scrim paints nothing, hovered or not, and the dialog's card stays bright.
+test("callScrimDimsOnlyThePageBehind", () => {
+  const scrim = rule(".call-scrim");
+  assert.equal(scrim.all, "unset");
+  assert.equal(scrim.position, "fixed");
+  assert.equal(scrim.inset, "0");
+  assert.equal(scrim["z-index"], "-1");
+  assert.equal(rule(".call-scrim, .call-scrim:hover").background, "transparent", "hover keeps it clear");
+  assert.equal(rule("dialog.details::backdrop").background, "var(--scrim)", "the backdrop dims the page");
 });

@@ -12,7 +12,7 @@ const run = (ctx, target, opener) => {
   if (ctx && ctx.open) ctx.open(target, opener);
 };
 
-// callLink is a model call's "#n": it opens the 013 drawer until 017 ships.
+// callLink is a model call's "#n": it opens the call details dialog (spec 017 AC5).
 function callLink(ctx, exchangeId, text, cls) {
   const a = el("a", cls, text);
   a.href = ctx && ctx.callHref ? ctx.callHref(exchangeId) : "#";

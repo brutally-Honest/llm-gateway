@@ -1,5 +1,5 @@
 // Effects (spec 014): pure helpers that name each effect status with a glyph and a word,
-// for the drawer and the unassigned list. The server computes every fact; this only
+// for the unassigned list. The server computes every fact; this only
 // labels them.
 
 // COVERAGE is the line at the top of every effects list: what is and is not seen (AC15).
