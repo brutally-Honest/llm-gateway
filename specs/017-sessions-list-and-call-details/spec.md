@@ -2,7 +2,7 @@
 feature: 017-sessions-list-and-call-details
 kind: feat
 status: draft
-version: 1
+version: 6
 created: 2026-11-10
 supersedes:
 branch: feat/017-sessions-list-and-call-details
@@ -36,10 +36,19 @@ This changes earlier features:
   by AC2 and AC12.
 - **016 AC7, AC10** (`#n` and Context rows open the 013 drawer until 017): now open the call
   details dialog (AC5).
+- **016 AC4** (the prompt as the turn's heading; the counts): the prompt is a labelled block
+  like the answer, and the counts are chips that open panels (AC13–AC16).
+- **016 AC7** (step lines always shown): the steps move behind the tool-calls chip (AC14).
+- **016 AC3** (room under the last turn) and **016 AC10** (a bar per call): changed by AC22
+  and AC20.
+- **016 AC9** (Sites lists connections, bytes, turns and tools per host): the Sites tab
+  lists hosts only; the rest stays in the site's dialog (AC17).
 
 ## Goal
 - The sessions list says, per session and in labelled words, what it did (prompts, calls,
   tool calls, files changed, commands, sites), whether it needs a look, and how long it ran.
+- A turn reads as prompt → chips → final answer: prompt and answer rendered as Markdown by
+  default with the raw text one click away, and the steps, files and sites behind chips.
 - A model call opens in the same dialog shape as files, commands and sites, and answers what
   the call saw, what it said, what it cost in tokens and how the context grew.
 
@@ -93,6 +102,55 @@ This changes earlier features:
   parse failed, no usage), it shall say why and show "—" for numbers, while the other
   sections and raw links still work.
 
+### Turn card (changes 016)
+- **AC13** — When a turn's prompt or final answer is shown, it shall be a labelled block
+  ("Prompt", "Final answer") with a Preview / Raw switch, Preview by default: Preview renders
+  the text as Markdown (headings, emphasis, inline code, code blocks, lists, links, quotes,
+  tables) and Raw shows the stored text as is. The last choice is remembered in the browser.
+- **AC14** — When a turn is shown, it shall show the prompt, then its chips, then the final
+  answer, with no steps in between. The chips are "All", then the turn's counts (model calls,
+  tool calls, files changed, files read, searches, sites, failures); clicking "All" shall mark
+  it selected and open the turn's whole stepper in order as 016 AC5–AC8 show it (each step's
+  tool calls folded, the effects no tool call caused after the steps), or the hooks-only tool
+  list for a hooks-only turn (amended 2026-11-13).
+- **AC15** — When any other chip is clicked, it shall be marked selected and open the same
+  timeline narrowed to its kind, in the order things happened, each row carrying the `#n` of
+  its call: model calls (one line each: what it did, how long, how many tool calls); tool
+  calls (state, name, summary, lines, run time, first error); files changed, files read or
+  sites (each change, read or connection with the tool that caused it, or "several running",
+  or "not caused by a tool call"); searches; failures (the failed tool calls). Each row opens
+  its 016 details dialog or the 013 drawer for a call (amended 2026-11-13).
+- **AC16** — When a chip is clicked, at most one chip's panel per turn shall be open: another
+  chip closes it, clicking the selected chip closes it, and every chip is a button reachable
+  by Tab with its open state announced (016 AC13). "Show in turn" opens "All".
+- **AC17** — When the Sites tab is shown, each host shall be one row with its name alone
+  (`host:port` when the port is not 443), like the Files tab's rows; connections, bytes,
+  turns and tools stay in the site's dialog (016 AC11).
+- **AC18** — When the prompt and the final answer are shown, they shall use the same body
+  text size and weight, neither as a heading, and each shall be shown whole, never folded
+  (amended 2026-11-13).
+- **AC19** — When a side-card tab is hovered, focused or selected, its highlight shall keep
+  space on both sides of the label and count, so the label never touches its edges.
+- **AC20** — When the Context tab is shown, its chart shall be one bar per turn: the context
+  at the turn's last main-thread call over the peak, with a darker cap for what the turn
+  added since its first call, labelled by turn (every k-th past 24 turns, the first and
+  last always); clicking a bar shall bring that turn's calls into view in the list
+  (changes 016 AC10's bar per call; added 2026-11-13).
+- **AC21** — While the call drawer is open, the page behind it shall be dimmed and inert (no
+  click or Tab reaches it), a click on the dimmed page shall close the drawer, and the
+  drawer's top (title, context, message counts) shall stay while the messages and later
+  sections scroll (added 2026-11-13; AC5's dialog replaces the drawer later).
+- **AC22** — When the turn list is hovered or focused, an entry shall keep its two-line
+  prompt, with no tooltip; the story shall end at its last turn, with no empty space after
+  it (changes 016 AC3; added 2026-11-13).
+- **AC23** — When a tool call that asked the user questions is opened, and the client's
+  profile can read them, its dialog shall show each question with its header, its options
+  with the picked one marked, a typed answer or "No option picked", and the user's notes,
+  before the raw result and input; its line shall say how many questions and their headers
+  (added 2026-11-13).
+- **AC24** — Until the sessions list's first page arrives, the list shall show a loader, not
+  "No sessions captured yet" (added 2026-11-13).
+
 ### Other pages
 - **AC12** — When the ungrouped exchanges page, the unassigned connections page or the full
   exchange page is shown, it shall use 016's theme, labelled counts and glyph-and-word
@@ -108,6 +166,12 @@ This changes earlier features:
 - **E4** — The first or last call → Previous or Next disabled (AC10).
 - **E5** — A hooks-only session → no call to open; the list row shows "no model calls
   captured" in place of call counts (AC1).
+- **E7** — A prompt or answer holding HTML or `<script>` → shown as text in both modes,
+  never run or rendered as HTML; a link only works for `http`/`https` (AC13).
+- **E8** — Markdown the renderer does not know → shown as plain text, nothing dropped (AC13).
+- **E9** — A turn with no files changed or no sites → no such chip (AC14, AC15).
+- **E10** — Live updates while a chip's panel is open → the panel stays open and updates
+  (AC14, 016 AC12).
 - **E6** — A filter matching nothing → "no sessions match", Load more kept while more rows
   exist (AC4).
 
@@ -115,7 +179,7 @@ This changes earlier features:
 - Every count, title and "needs a look" kind comes from the server; the browser formats only.
 - The sessions list answers within today's budget for a store of 500 sessions (measured in
   017's research.md before and after).
-- No new dependency.
+- No new dependency: the Markdown renderer is the UI's own code (research D3).
 
 ## Agnosticism check
 - Client axis: side-call kinds and titles come from the profile (013, 016); nothing new.
@@ -127,3 +191,14 @@ This changes earlier features:
 
 ## Changelog
 - v1 (2026-11-10) — first draft, split from 016 (016 research D3)
+- v2 (2026-11-13) — turn card and side card changes from the 016 review: Markdown
+  preview, chips that open panels, Sites tab hosts only, prompt and answer type, tab
+  padding (AC13–AC19, E7–E10; research D3–D6)
+- v3 (2026-11-13) — a model-calls chip opens the steps; the failures, files-read and
+  searches chips open panels (AC14, AC15; research D7, D8)
+- v4 (2026-11-13) — an "All" chip opens the whole stepper; the other chips narrow it to their
+  kind in order; prompt and answer shown whole (AC14–AC16, AC18; research D10, D11)
+- v5 (2026-11-13) — Context chart one bar per turn, modal drawer with a fixed top, turn list
+  without hover expansion or tooltip, no space after the last turn (AC20–AC22; research D13)
+- v6 (2026-11-13) — questions and answers in a tool's dialog, a loader on the sessions list,
+  a visual cleanup of the list ahead of AC1–AC4 (AC23, AC24; research D14)
