@@ -78,10 +78,38 @@ type sessionSummary struct {
 	// Effects are the session's effect counts (spec 014); absent for an ungrouped
 	// exchange. They are read fresh with every summary, never memoised with the digest.
 	Effects *effectCountsJSON `json:"effects,omitempty"`
+	// List is what the sessions list shows from the session's view (spec 017 AC1, AC2);
+	// absent for an ungrouped exchange.
+	List *listJSON `json:"list,omitempty"`
 	// Version and EventPosition are the store version the summary's digest was read at
 	// and how far into the store it reaches; absent for an ungrouped exchange.
 	Version       *versionJSON       `json:"version,omitempty"`
 	EventPosition *eventPositionJSON `json:"event_position,omitempty"`
+}
+
+// listJSON is a sessions-list row's counts in the session page's terms (spec 017 AC1,
+// AC2): prompts (numbered turns), model calls with side calls apart, commands, the
+// wall-clock time from first to last activity, the folder, and how many items need a
+// look, by kind.
+type listJSON struct {
+	Prompts    int                 `json:"prompts"`
+	MainCalls  int                 `json:"main_calls"`
+	SideCalls  int                 `json:"side_calls"`
+	Commands   int                 `json:"commands"`
+	ClockMS    int64               `json:"clock_ms"`
+	Folder     string              `json:"folder,omitempty"`
+	FolderFull string              `json:"folder_full,omitempty"`
+	NeedsLook  int                 `json:"needs_look"`
+	LookKinds  []timeline.LookKind `json:"look_kinds"`
+}
+
+func listToJSON(f rowFacts) *listJSON {
+	kinds := f.lookKinds
+	if kinds == nil {
+		kinds = []timeline.LookKind{}
+	}
+	return &listJSON{Prompts: f.prompts, MainCalls: f.mainCalls, SideCalls: f.sideCalls, Commands: f.commands,
+		ClockMS: f.clockMS, Folder: f.folder, FolderFull: f.folderFull, NeedsLook: f.look, LookKinds: kinds}
 }
 
 type listPage struct {
@@ -229,15 +257,24 @@ func sessionIdent(row store.SessionRow) store.SessionIdent {
 // digestCompute computes a session's memo on bctx through the server's reader, so it
 // still lands in the cache when the request that asked for it has timed out.
 func (d Deps) digestCompute(row store.SessionRow) func(context.Context) (digestMemo, error) {
-	rules := d.Rules[row.Client]
+	vd := d.viewDeps()
 	return func(bctx context.Context) (digestMemo, error) {
-		return computeMemo(d.Reader.WithContext(bctx), rules, row)
+		return computeMemo(d.Reader.WithContext(bctx), vd, row)
 	}
 }
 
-// computeMemo computes a session's stats and digest from one read of its exchanges, with
-// each exchange's events loaded once for both.
-func computeMemo(src timeline.Source, rules ClientRules, row store.SessionRow) (digestMemo, error) {
+// memoSource is what a memo compute reads. *store.CtxReader satisfies it.
+type memoSource interface {
+	timeline.Source
+	viewReader
+	HookEvents(principal, client, key string) ([]store.HookRow, error)
+}
+
+// computeMemo computes a session's stats, digest and list-row facts from one read of its
+// exchanges, with each exchange's events loaded once for all three. The row facts come
+// from the session's view, so the list counts in the session page's terms (spec 017 AC1).
+func computeMemo(src memoSource, vd viewDeps, row store.SessionRow) (digestMemo, error) {
+	rules := vd.rules[row.Client]
 	exs, err := src.SessionExchanges(row.PrincipalID, row.Client, row.SessionKey)
 	if err != nil {
 		return digestMemo{}, err
@@ -251,7 +288,21 @@ func computeMemo(src timeline.Source, rules ClientRules, row store.SessionRow) (
 	if err != nil {
 		return digestMemo{}, err
 	}
-	return digestMemo{digest: dg, stats: st}, nil
+	who := sessIdent{row.PrincipalID, row.Client, row.SessionKey}
+	bs, err := buildFrom(once, who, exs, rules, entryCut)
+	if err != nil {
+		return digestMemo{}, err
+	}
+	hooks, err := src.HookEvents(row.PrincipalID, row.Client, row.SessionKey)
+	if err != nil {
+		return digestMemo{}, err
+	}
+	// the facts read here do not depend on the active flag
+	v, err := vd.sessionView(src, who, bs, hooks, false, "")
+	if err != nil {
+		return digestMemo{}, err
+	}
+	return digestMemo{digest: dg, stats: st, row: rowFactsOf(v)}, nil
 }
 
 // summarizeRows builds the summaries of rows (ids[i] is rows[i]'s id). The versions of
@@ -287,10 +338,15 @@ func (d Deps) summarizeRows(ctx context.Context, c *store.CtxReader, ids []strin
 				stale = append(stale, idents[i])
 				ver = hit.ver
 			}
-		} else if memo, err = computeMemo(c, d.Rules[row.Client], row); err != nil {
+		} else if memo, err = computeMemo(c, d.viewDeps(), row); err != nil {
 			return nil, nil, err
 		}
 		sum := buildSummary(ids[i], row, memo.stats, memo.digest, now)
+		// a session's title follows 016's rule, so a row never shows its key (017 AC1)
+		if memo.row.title != "" {
+			sum.Title = memo.row.title
+		}
+		sum.List = listToJSON(memo.row)
 		vj, pj := versionToJSON(ver), positionOf(ver)
 		sum.Version, sum.EventPosition = &vj, &pj
 		n := counts[idents[i]]

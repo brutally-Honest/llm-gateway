@@ -169,7 +169,8 @@ func (b *builder) title(o *Overview, v *View) {
 		}
 	}
 	kind, src := "No prompt", "no_prompt"
-	if len(b.calls) == 0 {
+	// an exchange stored but not yet parsed is a call, not hooks only
+	if len(b.calls) == 0 && len(b.in.Exchanges) == 0 {
 		kind, src = "Hooks only", "hooks_only"
 	}
 	o.TitleSource = src

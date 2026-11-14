@@ -259,7 +259,7 @@ func TestComputeMemo_LoadsEventsOnce(t *testing.T) {
 	e.call("b", 2, 0, 1, "user:start", "assistant:ok", "user:next")
 	src := &countingSource{CtxReader: e.d.Reader.WithContext(t.Context()), reads: map[string]int{}}
 	row := store.SessionRow{PrincipalID: core.PrincipalLocal, Client: "cc", SessionKey: "k"}
-	m, err := computeMemo(src, testRules{}, row)
+	m, err := computeMemo(src, viewDeps{rules: map[string]ClientRules{"cc": testRules{}}}, row)
 	if err != nil {
 		t.Fatal(err)
 	}
