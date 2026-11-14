@@ -722,3 +722,130 @@ func TestView_HooksOnlyTurnLookOnlyBesideModelCalls(t *testing.T) {
 		t.Errorf("session with model calls: look = %s, want its hooks-only turn", k)
 	}
 }
+
+// callInput is what the server reads for one fixture call beyond the view: its exchange,
+// usage, thread fact and stored events.
+func (x *fixture) callInput(t *testing.T, id string) timeline.CallInput {
+	t.Helper()
+	f := x.f
+	var ex store.ExchangeRow
+	for _, e := range f.exchanges {
+		if e.RequestID == id {
+			ex = e
+		}
+	}
+	in := timeline.CallInput{Exchange: ex, Usage: timeline.CallOf(ex, f.events[id])}
+	det, err := timeline.ExchangeDetail(f, ex, 1<<16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Detail = &det
+	return in
+}
+
+func (x *fixture) details(t *testing.T, v timeline.View, id string) timeline.CallDetails {
+	t.Helper()
+	d, ok := timeline.CallDetailsOf(v, id, x.callInput(t, id))
+	if !ok {
+		t.Fatalf("no call %s in the view", id)
+	}
+	return d
+}
+
+func i64(p *int64) string {
+	if p == nil {
+		return "—"
+	}
+	return fmt.Sprint(*p)
+}
+
+// 017 AC6, AC10: a call's labelled facts, and its place among the session's calls, side
+// calls included, in call order.
+func TestView_CallFacts(t *testing.T) {
+	x := seedFixture(true)
+	v := x.view(t, true)
+	d := x.details(t, v, "a2")
+	eq(t, "n", d.N, 4)
+	eq(t, "turn", d.Turn, 1)
+	eq(t, "model", d.Facts.Model, "m1")
+	eq(t, "duration", i64(d.Facts.DurMS), "1000")
+	eq(t, "start", d.Facts.Start, time.Unix(0, vat(5)).UTC().Format(time.RFC3339Nano))
+	eq(t, "thread", d.Facts.Thread.Kind+" "+d.Facts.Thread.Label, "main main")
+	eq(t, "ctx", i64(d.Facts.Ctx), "250")
+	eq(t, "nav", fmt.Sprintf("%d/%d %s %s", d.Nav.Index, d.Nav.Total, d.Nav.Prev, d.Nav.Next), "4/9 a1 a3")
+	eq(t, "health", fmt.Sprintf("%s %v %d", d.Health.Status, d.Health.OK, len(d.Health.Items)), "200 OK true 0")
+
+	first := x.details(t, v, "q")
+	eq(t, "first call has no previous", first.Nav.Prev+"|"+first.Nav.Next, "|ttl")
+	last := x.details(t, v, "b2")
+	eq(t, "last call has no next", last.Nav.Next, "")
+
+	sub := x.details(t, v, "s1")
+	eq(t, "sub-agent thread", sub.Facts.Thread.Kind+" "+sub.Facts.Thread.Label, "sub sub-agent Explore")
+	eq(t, "sub-agent turn", sub.Turn, 2)
+
+	if _, ok := timeline.CallDetailsOf(v, "nope", timeline.CallInput{}); ok {
+		t.Error("a call not in the view was found (E3)")
+	}
+}
+
+// 017 AC7: the context, its change since the previous call of its thread and why, and the
+// three counters it is made of.
+func TestView_CallContextDelta(t *testing.T) {
+	x := seedFixture(true)
+	v := x.view(t, true)
+	a1 := x.details(t, v, "a1")
+	eq(t, "first of thread", a1.Context.First, true)
+	eq(t, "first size", i64(a1.Context.Size), "100")
+	if a1.Context.Why == "" {
+		t.Error("the thread's first call says why it is that size")
+	}
+	a2 := x.details(t, v, "a2")
+	eq(t, "delta", i64(a2.Context.Delta), "150")
+	eq(t, "since", a2.Context.PrevN, 3)
+	eq(t, "parts", i64(a2.Context.Input)+" "+i64(a2.Context.CacheWrite)+" "+i64(a2.Context.CacheRead), "100 50 100")
+	if a2.Context.Why == "" {
+		t.Error("the change says what was added, in words")
+	}
+	s2 := x.details(t, v, "s2")
+	eq(t, "sub-agent delta is against its own thread", i64(s2.Context.Delta)+" #"+fmt.Sprint(s2.Context.PrevN), "60 #7")
+}
+
+// 017 E2: a side call's thread is its kind from the client's profile, and its failure is
+// not marked bad.
+func TestView_SideCallThread(t *testing.T) {
+	x := seedFixture(true)
+	v := x.view(t, true)
+	v.SideCalls[0].Name, v.SideCalls[0].Status = "quota probe", "429 Too Many Requests"
+	d := x.details(t, v, "q")
+	eq(t, "side thread", d.Facts.Thread.Kind+" "+d.Facts.Thread.Label, "side quota probe")
+	eq(t, "status word", d.Facts.Stop.Word, "429 Too Many Requests")
+	eq(t, "not bad", d.Facts.Stop.Bad, false)
+	if d.Context.Delta != nil || d.Context.Why == "" {
+		t.Errorf("side call context = %+v, want no delta and a reason", d.Context)
+	}
+}
+
+// 017 AC11: a call with no usage shows "—" for every count and says why; a failed call's
+// status is a word, marked bad, and its health says so.
+func TestView_CallMissingUsage(t *testing.T) {
+	x := &fixture{f: newFake()}
+	f := x.f
+	f.call(vcallSpec{id: "ok", from: 1, to: 2, msgs: []string{"u:hello"}, in: 10})
+	e := f.exchange("bad", vat(3), "ok")
+	e.EndedAt, e.Status = vat(4), 500
+	ttfb := int64(1)
+	e.TTFBNS = &ttfb
+	f.request("bad", "m1")
+	f.msg("bad", "user", "hello")
+	v := x.view(t, true)
+	d := x.details(t, v, "bad")
+	eq(t, "counts", i64(d.Context.Size)+" "+i64(d.Context.Input)+" "+i64(d.Context.Output), "— — —")
+	if !strings.Contains(d.Context.Note, "failed") {
+		t.Errorf("note = %q, want why there is no usage", d.Context.Note)
+	}
+	eq(t, "stop", d.Facts.Stop.Word+" bad="+fmt.Sprint(d.Facts.Stop.Bad), "500 Internal Server Error bad=true")
+	if d.Health.OK || len(d.Health.Items) == 0 || d.Health.Items[0].Tone != "bad" {
+		t.Errorf("health = %+v", d.Health)
+	}
+}
