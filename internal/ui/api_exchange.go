@@ -80,15 +80,7 @@ type responseJSON struct {
 
 // unavailableReason says why an exchange's events hold nothing to show.
 func unavailableReason(ex store.ExchangeRow, body string, bodyStored, truncated bool) string {
-	switch {
-	case ex.Parse == "failed" || ex.Parse == "skipped" || ex.Parse == "unsupported_encoding":
-		return "parse_" + ex.Parse
-	case !bodyStored:
-		return body + "_body_not_stored"
-	case truncated:
-		return "capture_truncated"
-	}
-	return "nothing_parsed"
+	return timeline.UnavailableReason(ex, body, bodyStored, truncated)
 }
 
 func ms(ns int64) float64 { return float64(ns) / 1e6 }

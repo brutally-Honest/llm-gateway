@@ -735,6 +735,16 @@ func (x *fixture) callInput(t *testing.T, id string) timeline.CallInput {
 		}
 	}
 	in := timeline.CallInput{Exchange: ex, Usage: timeline.CallOf(ex, f.events[id])}
+	sess := store.SessionRow{PrincipalID: "p", Client: "c", SessionKey: "k"}
+	entries, err := timeline.Build(f, sess, timeline.Options{Full: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts, err := timeline.CallFacts(f, entries, viewRules{}, f.events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Fact = facts[id]
 	det, err := timeline.ExchangeDetail(f, ex, 1<<16)
 	if err != nil {
 		t.Fatal(err)
@@ -848,4 +858,73 @@ func TestView_CallMissingUsage(t *testing.T) {
 	if d.Health.OK || len(d.Health.Items) == 0 || d.Health.Items[0].Tone != "bad" {
 		t.Errorf("health = %+v", d.Health)
 	}
+}
+
+// 017 AC8: what a call saw, each message marked carried over from the previous call of its
+// thread or new, with the counts; its thinking flag, its reply and the tool calls it asked
+// for.
+func TestView_CallSawCarriedAndNew(t *testing.T) {
+	x := seedFixture(true)
+	v := x.view(t, true)
+	d := x.details(t, v, "a2")
+	var marks []string
+	for _, m := range d.Saw.Messages {
+		marks = append(marks, fmt.Sprintf("%s:%v", m.Role, m.New))
+	}
+	eq(t, "messages", strings.Join(marks, " "), "user:false assistant:false assistant:true")
+	eq(t, "counts", fmt.Sprintf("%d carried %d new", *d.Saw.Carried, *d.Saw.New), "2 carried 1 new")
+	eq(t, "not first", d.Saw.First, false)
+	var tools []string
+	for _, l := range d.Tools {
+		tools = append(tools, l.ID+" "+l.Name)
+	}
+	eq(t, "tools asked for", strings.Join(tools, ", "), "t2 Edit, t3 Edit")
+
+	raw := d.Raw
+	if raw.Page != "#/exchanges/a2" || raw.Headers == "" {
+		t.Errorf("raw = %+v", raw)
+	}
+}
+
+// 017 AC8: a thread's first call is marked as such: the main thread's and a sub-agent's.
+func TestView_FirstCallOfThread(t *testing.T) {
+	x := seedFixture(true)
+	v := x.view(t, true)
+	eq(t, "main thread's first call", x.details(t, v, "a1").Saw.First, true)
+	eq(t, "sub-agent's first call", x.details(t, v, "s1").Saw.First, true)
+	eq(t, "sub-agent's second call", x.details(t, v, "s2").Saw.First, false)
+}
+
+// 017 AC11: a body that was not stored says so where it is missing, and the other sections
+// and the raw links still work.
+func TestView_CallBodyNotStored(t *testing.T) {
+	x := &fixture{f: newFake()}
+	f := x.f
+	f.call(vcallSpec{id: "a", from: 1, to: 2, msgs: []string{"u:hello"}, in: 10})
+	e := f.exchange("cut", vat(3), "ok")
+	e.EndedAt, e.ResponseBody = vat(4), "resp-hash"
+	f.request("cut", "m1")
+	raw, _ := json.Marshal(map[string]string{"type": "text", "text": "Done."})
+	reply, _ := json.Marshal(map[string]any{"role": "assistant", "stop_reason": "end_turn",
+		"blocks": []map[string]string{{"hash": f.put(string(raw)), "type": "text"}}})
+	f.add("cut", store.EventRow{Kind: "message", Source: "response", ContentHash: hashOf("reply"), Payload: reply})
+	f.usage("cut", false, n(20), n(5), n(0), n(0))
+	v := x.view(t, true)
+	d := x.details(t, v, "cut")
+	eq(t, "the reply still shows", d.Response.Text+" / "+d.Response.StopReason, "Done. / end turn")
+	eq(t, "stop reason as a fact", d.Facts.Stop.Word, "end turn")
+	if !strings.Contains(d.Saw.Unavailable, "request body was not stored") {
+		t.Errorf("saw = %+v, want why there are no messages", d.Saw)
+	}
+	if d.Saw.Carried != nil || d.Saw.New != nil {
+		t.Errorf("counts = %v %v, want — for both", d.Saw.Carried, d.Saw.New)
+	}
+	if d.Raw.Request != "" || !strings.Contains(d.Raw.RequestMissing, "not stored") {
+		t.Errorf("raw request = %+v", d.Raw)
+	}
+	if d.Raw.Response == "" || d.Raw.Page == "" {
+		t.Errorf("the stored response and the page still link: %+v", d.Raw)
+	}
+	eq(t, "context still built", i64(d.Context.Size), "20")
+	eq(t, "model still known", d.Facts.Model, "m1")
 }

@@ -1,6 +1,7 @@
 package timeline
 
 import (
+	"net/url"
 	"sort"
 	"strings"
 
@@ -17,8 +18,84 @@ type CallDetails struct {
 	Turn       int         `json:"turn,omitempty"`
 	Facts      CallFactsV  `json:"facts"`
 	Context    CallContext `json:"context"`
+	Saw        CallSaw     `json:"saw"`
+	Thinking   bool        `json:"thinking"`
+	Response   CallReply   `json:"response"`
+	Tools      []ToolLine  `json:"tools"`
 	Health     CallHealth  `json:"health"`
+	Raw        CallRaw     `json:"raw"`
 	Nav        CallNav     `json:"nav"`
+}
+
+// CallSaw is what the call saw (AC8): its request's messages, each marked carried over
+// from the previous call of its thread or new, with the counts; First marks a thread's
+// first call. Unavailable says why there are no messages to show.
+type CallSaw struct {
+	First       bool         `json:"first"`
+	Carried     *int         `json:"carried"`
+	New         *int         `json:"new"`
+	Messages    []SawMessage `json:"messages"`
+	Unavailable string       `json:"unavailable,omitempty"`
+}
+
+// SawMessage is one request message, cut like the timeline.
+type SawMessage struct {
+	Role      string `json:"role"`
+	Text      string `json:"text"`
+	Truncated bool   `json:"truncated,omitempty"`
+	New       bool   `json:"new"`
+}
+
+// CallReply is what the call said: the reply's text and stop reason, or why it is missing.
+type CallReply struct {
+	Text        string `json:"text"`
+	StopReason  string `json:"stop_reason,omitempty"`
+	Unavailable string `json:"unavailable,omitempty"`
+}
+
+// CallRaw links the stored request, the response stream, the headers and the full exchange
+// page. A body that was not stored has no link and says so.
+type CallRaw struct {
+	Request         string `json:"request,omitempty"`
+	RequestMissing  string `json:"request_missing,omitempty"`
+	Response        string `json:"response,omitempty"`
+	ResponseMissing string `json:"response_missing,omitempty"`
+	Headers         string `json:"headers"`
+	Page            string `json:"page"`
+}
+
+// UnavailableReason is the code for why an exchange's events hold nothing to show for one
+// part ("request" or "response"): parse_failed, parse_skipped, parse_unsupported_encoding,
+// <part>_body_not_stored, capture_truncated or nothing_parsed.
+func UnavailableReason(ex store.ExchangeRow, part string, bodyStored, truncated bool) string {
+	switch {
+	case ex.Parse == "failed" || ex.Parse == "skipped" || ex.Parse == "unsupported_encoding":
+		return "parse_" + ex.Parse
+	case !bodyStored:
+		return part + "_body_not_stored"
+	case truncated:
+		return "capture_truncated"
+	}
+	return "nothing_parsed"
+}
+
+// reasonWords says an UnavailableReason code in words.
+func reasonWords(code string) string {
+	switch code {
+	case "parse_failed":
+		return "The stored body could not be parsed."
+	case "parse_skipped":
+		return "The stored body was not parsed."
+	case "parse_unsupported_encoding":
+		return "The stored body uses an encoding the gateway cannot read."
+	case "request_body_not_stored":
+		return "The request body was not stored."
+	case "response_body_not_stored":
+		return "The response body was not stored."
+	case "capture_truncated":
+		return "The stored body is cut at the capture limit, so it could not be read in full."
+	}
+	return "Nothing could be read from the stored body."
 }
 
 // CallFactsV are the call's labelled facts (AC6).
@@ -187,6 +264,13 @@ func CallDetailsOf(v View, id string, in CallInput) (CallDetails, bool) {
 	d.Context = callContext(v, id, p, in)
 	d.Facts.Ctx = d.Context.Size
 	d.Health = callHealth(in.Exchange)
+	d.Saw, d.Response = callSaw(in), callReply(in)
+	d.Tools = []ToolLine{}
+	if p.step != nil {
+		d.Thinking = p.step.Thinking
+		d.Tools = append(d.Tools, p.step.Tools...)
+	}
+	d.Raw = callRaw(in.Exchange)
 	return d, true
 }
 
@@ -320,4 +404,53 @@ func callHealth(ex store.ExchangeRow) CallHealth {
 	}
 	h.OK = len(h.Items) == 0
 	return h
+}
+
+func callSaw(in CallInput) CallSaw {
+	ex := in.Exchange
+	s := CallSaw{Messages: []SawMessage{}}
+	if f := in.Fact; f != nil && f.Thread >= 0 && f.PrevID == "" {
+		s.First = true
+	}
+	if in.Detail == nil || len(in.Detail.Messages) == 0 {
+		s.Unavailable = reasonWords(UnavailableReason(ex, "request", ex.RequestBody != "", ex.RequestTruncated))
+		return s
+	}
+	msgs := in.Detail.Messages
+	carried := 0
+	if in.Fact != nil {
+		// The carried count covers the reply too, which the next request resends; only the
+		// request's own messages are listed.
+		carried = min(in.Fact.Carried, len(msgs))
+	}
+	fresh := NewMessages(len(msgs), carried)
+	s.Carried, s.New = &carried, &fresh
+	for i, m := range msgs {
+		s.Messages = append(s.Messages, SawMessage{Role: m.Role, Text: m.Text, Truncated: m.Truncated, New: i >= carried})
+	}
+	return s
+}
+
+func callReply(in CallInput) CallReply {
+	ex := in.Exchange
+	if in.Detail == nil || !in.Detail.HasResponse {
+		return CallReply{Unavailable: reasonWords(UnavailableReason(ex, "response", ex.ResponseBody != "", ex.ResponseTruncated))}
+	}
+	return CallReply{Text: in.Detail.ResponseText, StopReason: words(in.Detail.StopReason)}
+}
+
+func callRaw(ex store.ExchangeRow) CallRaw {
+	id := url.PathEscape(ex.RequestID)
+	r := CallRaw{Headers: "#/exchanges/" + id, Page: "#/exchanges/" + id}
+	if ex.RequestBody != "" {
+		r.Request = "/api/exchanges/" + id + "/body?part=request"
+	} else {
+		r.RequestMissing = reasonWords("request_body_not_stored")
+	}
+	if ex.ResponseBody != "" {
+		r.Response = "/api/exchanges/" + id + "/body?part=response"
+	} else {
+		r.ResponseMissing = reasonWords("response_body_not_stored")
+	}
+	return r
 }
