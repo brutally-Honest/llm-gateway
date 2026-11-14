@@ -235,3 +235,113 @@ test("contextAndCountWords", () => {
   assert.equal(sawText({ first: true, carried: 0, new: 3 }), "First call of its thread · 3 new");
   assert.equal(sawText({ carried: null, new: null }), "Messages: —");
 });
+
+// open shows one call's details in a fresh dialog and waits for them to land.
+async function openOne(d, extra = {}) {
+  const h = host({ start: [null, d.exchange_id], load: async () => d, ...extra });
+  await tick();
+  return h;
+}
+const flat = (h) => h.text().replace(/:\s+/g, ": ");
+
+// AC6, AC7 (carries contextPartsAndDelta, newThreadMarked): the facts, then Context with its
+// size, change since the previous call of its thread, why, and the three counters.
+test("callDialogShowsFactsAndContext", async () => {
+  const h = await openOne(detail("b"));
+  const t = h.text();
+  for (const re of [/Model m1/, /Duration 1\.0s/, /Ended end turn/, /Thread main/, /Context 160/]) assert.match(t, re);
+  assert.match(t, /Model call · turn 1/);
+  assert.match(t, /Call #2/);
+  assert.match(t, /2 of 3 · main/);
+  const ctx = byTag(h.root, "section").find((s) => /^Context/.test(textOf(s).trim()));
+  const c = textOf(ctx).replace(/\s+/g, " ");
+  for (const re of [/Size 160/, /Change \+60 since #1/, /Input 120/, /Cache write 30/, /Cache read 10/, /Output 5/, /added #1's reply/]) assert.match(c, re);
+  const first = await openOne(detail("a"));
+  assert.match(first.text(), /first call of its thread/);
+  assert.match(first.text(), /First call of its thread · 1 new/);
+});
+
+// AC8 (carries messagesMarkedCarriedOrNew): what the call saw, marked carried or new with
+// the counts; thinking behind a toggle; the response; each tool call opens its tool dialog.
+test("callDialogShowsSawThinkingResponse", async () => {
+  const opened = [];
+  const t1 = { id: "t1", name: "Bash", kind: "command", state: { glyph: "✓", word: "ok" }, chip: "ok", summary: "npm test", dur_ms: 400 };
+  const d = detail("b", { thinking: true, tools: [t1] });
+  const h = host({ start: [null, "b"], load: async () => d });
+  await tick();
+  assert.match(h.text(), /2 carried over · 1 new/);
+  assert.equal(withClass(h.root, "is-carried").length, 2);
+  assert.equal(withClass(h.root, "is-new").length, 1);
+  assert.match(h.text(), /all done/);
+  assert.match(h.text(), /stop: end turn/);
+  const toggle = byTag(h.root, "button").find((b) => b.textContent === "Show thinking");
+  const box = withClass(h.root, "call-thinking")[0];
+  assert.equal(box.hidden, true, "thinking starts folded");
+  toggle.fire("click");
+  assert.equal(box.hidden, false);
+  assert.match(textOf(box), /raw response/);
+  // a tool the call asked for opens its 016 tool dialog
+  const g = host({ start: [null, "b"], load: async () => d });
+  await tick();
+  const dlg = createCallDialog({ nav: { push() {}, replace() {}, back() {} }, loadCall: async () => d, openTool: (id, from) => opened.push([id, from]) });
+  dlg.sync({ sessionId: "s1", callId: "b" });
+  await tick();
+  const name = byTag(dlg.el, "button").find((b) => b.textContent === "Bash");
+  name.fire("click");
+  assert.deepEqual(opened.map((o) => o[0]), ["t1"]);
+  assert.equal(opened[0][1], name, "the tool dialog returns focus to its row");
+  assert.match(textOf(g.root), /1 asked for/);
+});
+
+// AC9 (carries healthShowsDisconnectAbortError, rawLinksAndFullPageLink): health in words,
+// and the raw request, response stream, headers and full page linked.
+test("callDialogHealthAndRaw", async () => {
+  const sick = detail("b", { health: { status: "200 OK", ok: false, items: [
+    { tone: "warn", text: "The client disconnected before the reply finished." },
+    { tone: "bad", text: "The provider's reply stopped before it finished." },
+    { tone: "bad", text: "Gateway error: upstream_timeout." },
+  ] } });
+  const h = await openOne(sick);
+  for (const re of [/client disconnected/, /reply stopped/, /Gateway error: upstream_timeout/, /Status 200 OK/]) assert.match(h.text(), re);
+  assert.equal(withClass(h.root, "tone-bad").length, 2);
+  const hrefs = byTag(h.root, "a").map((a) => a.href);
+  for (const want of ["/api/exchanges/b/body?part=request", "/api/exchanges/b/body?part=response", "#/exchanges/b"]) assert.ok(hrefs.includes(want), want);
+  assert.match(h.text(), /Headers/);
+  assert.match(h.text(), /Full exchange page/);
+  const well = await openOne(detail("a"));
+  assert.match(well.text(), /No disconnect, abort or error/);
+});
+
+// AC11 (carries missingSectionStatesReason, noUsageCallShowsDashesAndNoDelta): a section
+// without data says why and shows "—"; the other sections and the raw links still work; a
+// failed load leaves the raw links.
+test("callDialogMissingDataSaysWhy", async () => {
+  const d = detail("b", {
+    facts: { model: "m1", dur_ms: 1000, start: "2026-01-01T00:00:01Z", stop: { word: "500 Internal Server Error", bad: true }, thread: { kind: "main", label: "main" }, ctx: null },
+    context: { size: null, delta: null, first: false, input: null, cache_write: null, cache_read: null, output: null, note: "No usage reported: the call failed before the provider counted tokens." },
+    saw: { first: false, carried: null, new: null, messages: [], unavailable: "The request body was not stored." },
+    response: { unavailable: "The stored body is cut at the capture limit, so it could not be read in full." },
+    raw: { request_missing: "The request body was not stored.", response: "/api/exchanges/b/body?part=response", headers: "#/exchanges/b", page: "#/exchanges/b" },
+  });
+  const h = await openOne(d);
+  const t = flat(h);
+  for (const re of [/Context —/, /Size —/, /Input —/, /Output —/, /Change —/, /No usage reported/, /request body was not stored/, /Messages: —/, /cut at the capture limit/, /Response —/]) assert.match(t, re);
+  assert.doesNotMatch(t, /Size 0|Input 0/);
+  assert.doesNotMatch(t, /[+−-]\d+ since/);
+  assert.equal(withClass(h.root, "bad").length, 1, "the error status is marked bad");
+  assert.ok(byTag(h.root, "a").some((a) => a.href === "/api/exchanges/b/body?part=response"), "the stored response still links");
+  const failed = host({ start: [null, "b"], load: async () => { throw new Error("boom"); } });
+  await tick();
+  assert.match(failed.text(), /Call details unavailable: boom/);
+  assert.ok(byTag(failed.root, "a").some((a) => a.href === "#/exchanges/b"), "the raw links need only the id");
+});
+
+// E2: a side call shows its kind as its thread, and its failure is a word, not red.
+test("sideCallIsNotRed", async () => {
+  const d = detail("a", { turn: 0, facts: { model: "m1", dur_ms: 100, start: "", stop: { word: "429 Too Many Requests" }, thread: { kind: "side", label: "quota probe" }, ctx: 10 } });
+  const h = await openOne(d);
+  assert.match(h.text(), /Side call/);
+  assert.match(h.text(), /Thread quota probe/);
+  assert.match(h.text(), /429 Too Many Requests/);
+  assert.equal(withClass(h.root, "bad").length, 0, "not marked bad");
+});
