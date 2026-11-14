@@ -16,6 +16,11 @@ features. Update it when the order changes.
 - The speed follow-ups, re-measured after 016.
   - Cold view build for large sessions (2.3 s server build at 2,000 calls; 016 research
     2026-11-13).
+  - `/api/today` takes ~930 ms at 500 sessions (10,000 calls), unchanged from before 017;
+    the hook_events scan slice 1 added to it (017 D30) is not measured yet
+    (`specs/017-sessions-list-and-call-details/research.md`, Notes).
+  - The today query scans the effects table, which has no index on time (017 D25).
+  - These two may share one fix (a time index, or running totals); neither is chosen.
 - Gateway stop takes 90 s and ends in SIGKILL: open proxy tunnels are only closed after
   the shutdown timeout runs out. Close them as soon as shutdown starts, and set
   `TimeoutStopSec` in the systemd unit in `docs/clients/claude-code.md` (and the launchd
