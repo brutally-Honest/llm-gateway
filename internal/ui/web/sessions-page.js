@@ -1,6 +1,6 @@
 import { timeElement } from "./entries.js";
 import { filterSessions, FILTERS } from "./filters.js";
-import { CHIP_KEYS, chipOf } from "./model.js";
+import { bytes, dur, plural } from "./fmt.js";
 
 export const NO_TITLE = "no prompt captured";
 const DASH = "—";
@@ -48,55 +48,71 @@ function counter(c) {
   return c && typeof c.value === "number" ? String(c.value) : DASH;
 }
 
-// countedChips turns tool_states, the server's per-chip counts, into the chips with a
-// count above zero, in display order. It only reads the counts.
-export function countedChips(toolStates) {
-  const out = [];
-  for (const key of CHIP_KEYS) {
-    const count = (toolStates || {})[key];
-    if (typeof count === "number" && count > 0) {
-      const chip = chipOf({ chip: key });
-      out.push({ key, glyph: chip.glyph, text: chip.text, title: chip.title, count });
-    }
-  }
-  return out;
-}
-
-// statusOf names a session's status with a glyph, so colour is never the only signal.
+// statusOf names a session's status with a glyph, so colour is never the only signal; the
+// glyphs are the session page's (016).
 export function statusOf(s) {
   if (s.hooks_only) return { key: "hooks-only", glyph: "◇", text: "hooks only" };
   if (s.active) return { key: "active", glyph: "●", text: "active" };
-  return { key: "ended", glyph: "○", text: "ended" };
+  return { key: "ended", glyph: "■", text: "ended" };
 }
 
-// rowCells is everything a list row shows, as plain data. Errors read main_errors.
+// sourcesOf is how a session was captured, as glyph and word: API calls, hook events.
+export function sourcesOf(s) {
+  const out = [];
+  if (s.has_calls) out.push("⇄ API");
+  if (s.has_hooks || s.hooks_only) out.push("⚑ hooks");
+  return out.join(" + ") || DASH;
+}
+
+// lookText says how many items need a look and of what kinds, in the server's words
+// (spec 017 AC2); "" when nothing does.
+export function lookText(l) {
+  const n = (l || {}).needs_look || 0;
+  if (!n) return "";
+  const kinds = ((l || {}).look_kinds || []).map((k) => k.words).join(", ");
+  return `${n} ${n === 1 ? "needs" : "need"} a look${kinds ? `: ${kinds}` : ""}`;
+}
+
+// toolCounts is a session's tool calls (captured or hook-seen, every state) and the failed
+// ones, from the server's per-state counts.
+function toolCounts(states) {
+  let total = 0;
+  for (const v of Object.values(states || {})) if (typeof v === "number") total += v;
+  return { total, failed: (states || {}).failed || 0 };
+}
+
+// rowCells is everything a list row shows, as plain words (spec 017 AC1). A hooks-only
+// session has no model calls to count (E5).
 export function rowCells(s) {
   const u = s.usage || {};
-  const sources = [];
-  if (s.has_calls) sources.push("API");
-  if (s.has_hooks || s.hooks_only) sources.push("hooks");
+  const l = s.list || {};
+  const models = s.models || [];
+  const tools = toolCounts(s.tool_states);
+  const e = s.effects || {};
+  const hooksOnly = Boolean(s.hooks_only) || (!s.has_calls && Boolean(s.has_hooks));
+  let calls = plural(l.main_calls ?? s.model_calls ?? 0, "call");
+  if (l.side_calls) calls += ` · ${l.side_calls} side`;
   return {
     id: s.id,
     start: s.first_at,
     title: s.title || NO_TITLE,
-    sources: sources.join(" + "),
-    calls: s.model_calls ?? 0,
-    chips: countedChips(s.tool_states),
-    errors: s.main_errors ?? 0,
+    key: s.session_key || "",
+    folder: l.folder || "",
+    folderFull: l.folder_full || l.folder || "",
+    model: models.length ? models[0] + (models.length > 1 ? ` +${models.length - 1}` : "") : "",
+    sources: sourcesOf(s),
     status: statusOf(s),
-    input: counter(u.input),
-    output: counter(u.output),
-    cacheWrite: counter(u.cache_write),
-    cacheRead: counter(u.cache_read),
-    effects: effectsCell(s.effects),
+    prompts: plural(l.prompts ?? 0, "prompt"),
+    calls: hooksOnly ? "no model calls captured" : calls,
+    tools: plural(tools.total, "tool call"),
+    failed: tools.failed,
+    changes: [plural(e.changed ?? 0, "file changed", "files changed"), plural(l.commands ?? 0, "command"), plural(e.sites ?? 0, "site")].join(" · "),
+    time: dur(l.clock_ms ?? null),
+    input: hooksOnly ? DASH : counter(u.input),
+    output: hooksOnly ? DASH : counter(u.output),
+    cacheRead: hooksOnly ? DASH : counter(u.cache_read),
+    look: lookText(l),
   };
-}
-
-// effectsCell is a session's effect counts, "changed · read · sites", with a title naming
-// each; "—" when the session has none.
-export function effectsCell(e) {
-  if (!e || (e.changed === 0 && e.read === 0 && e.sites === 0)) return { text: DASH, title: "no effects" };
-  return { text: `${e.changed} · ${e.read} · ${e.sites}`, title: `${e.changed} changed files · ${e.read} files read · ${e.sites} sites` };
 }
 
 // compact renders a counter shown in the list as 3.7k, 94.5k or 15.1M; "—" stays "—".
@@ -124,33 +140,32 @@ export function startText(iso, now = new Date()) {
   return `${date}, ${time}`;
 }
 
-// effectsWords is a session's effect counts in words, "19 changed · 1 read · 6 sites",
-// leaving out the zeros; "—" when there are none.
-export function effectsWords(e) {
-  if (!e) return DASH;
-  const parts = [];
-  if (e.changed) parts.push(`${e.changed} changed`);
-  if (e.read) parts.push(`${e.read} read`);
-  if (e.sites) parts.push(`${e.sites} ${e.sites === 1 ? "site" : "sites"}`);
-  return parts.length ? parts.join(" · ") : DASH;
+// unassignedRow is one unassigned connection as the list's section shows it (spec 017
+// AC2): its label, the client (the harness label names one), host, bytes each way and time.
+export function unassignedRow(e) {
+  const a = e.attribution || null;
+  const port = e.port && e.port !== 443 ? `:${e.port}` : "";
+  return {
+    id: e.id,
+    label: a ? a.label : "unassigned",
+    client: (a && a.client) || e.client || DASH,
+    host: `${e.host || DASH}${port}`,
+    bytes: `↑ ${bytes(e.bytes_up ?? null)} · ↓ ${bytes(e.bytes_down ?? null)}`,
+    at: e.at,
+  };
 }
 
-// unassignedText is the quiet link text for connections linked to no session; "" for none.
-export function unassignedText(n) {
-  if (!n) return "";
-  return `${n} unassigned ${n === 1 ? "connection" : "connections"}`;
-}
-
-// todayCells is the totals line from /api/today; 0 sessions and calls when nothing ran.
+// todayCells is the totals line from /api/today, since local midnight (spec 017 AC3); 0
+// for every count when nothing ran (E1).
 export function todayCells(t) {
   const x = t || {};
   return {
     sessions: x.sessions ?? 0,
     calls: x.calls ?? 0,
+    changed: x.changed ?? 0,
+    sites: x.sites ?? 0,
     input: counter(x.input),
     output: counter(x.output),
-    cacheWrite: counter(x.cache_write),
-    cacheRead: counter(x.cache_read),
   };
 }
 
@@ -177,7 +192,7 @@ export function moveSelection(index, delta, total) {
 
 // ---- the page ----
 
-const FILTER_LABELS = { all: "All", errors: "Has errors", gaps: "Has gaps", hooks: "Hooks only" };
+const FILTER_LABELS = { all: "All", look: "Needs a look", active: "Active", hooks: "Hooks only" };
 
 function td(tr, text, cls) {
   const c = document.createElement("td");
@@ -187,13 +202,11 @@ function td(tr, text, cls) {
   return c;
 }
 
-function chipNode(c) {
-  const s = document.createElement("span");
-  s.className = `chip chip-${c.key}`;
-  s.title = c.title;
-  s.textContent = `${c.glyph} ${c.count}`;
-  s.setAttribute("aria-label", `${c.count} ${c.text}`);
-  return s;
+function span(cls, text) {
+  const e = document.createElement("span");
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
 }
 
 // rowNode builds a session's row once; fillRow writes its values. A live update refills the
@@ -201,19 +214,16 @@ function chipNode(c) {
 function rowNode(id) {
   const tr = document.createElement("tr");
   tr.dataset.id = id;
-  const parts = { tr, cells: [], a: document.createElement("a"), key: {} };
+  const parts = { tr, cells: [], a: document.createElement("a"), place: span("splace"), look: span("slook"), key: {} };
   parts.a.href = `#/sessions/${encodeURIComponent(id)}`;
   parts.a.className = "stitle";
-  for (const cls of ["time", "title", "src", "num", "chips", "num", "", "num", "num", "num", "num", "effects"]) parts.cells.push(td(tr, null, cls));
-  parts.cells[1].append(parts.a);
+  for (const cls of COLUMNS.map((c) => c[1])) parts.cells.push(td(tr, null, cls));
+  parts.cells[1].append(parts.a, parts.place, parts.look);
+  parts.tokens = [span("tok"), span("tok"), span("tok")];
+  parts.cells[8].append(...parts.tokens);
+  parts.tools = [span(""), span("bad")];
+  parts.cells[5].append(...parts.tools);
   return parts;
-}
-
-// setNum writes a compact counter and keeps the exact one for screen readers and hover.
-function setNum(cell, text) {
-  setText(cell, compact(text));
-  const full = text === DASH ? "not reported" : text;
-  if (cell.title !== full) cell.title = full;
 }
 
 // setText writes text only when it changed, so an unchanged cell is not touched.
@@ -221,9 +231,20 @@ function setText(e, text) {
   if (e.textContent !== text) e.textContent = text;
 }
 
+// setTitle writes the hover text only when it changed; "" shows none.
+function setTitle(e, text) {
+  if (e.title !== (text || "")) e.title = text || "";
+}
+
+// setToken writes "3.7k in": the compact counter, its label, and the exact value on hover.
+function setToken(e, text, label) {
+  setText(e, `${compact(text)} ${label}`);
+  setTitle(e, text === DASH ? `${label}: not reported` : `${label}: ${text}`);
+}
+
 function fillRow(parts, s, selected) {
   const c = rowCells(s);
-  const { tr, cells, a, key } = parts;
+  const { tr, cells, a, place, look, key } = parts;
   tr.className = selected ? "selected" : "";
   if (selected) tr.setAttribute("aria-selected", "true");
   else tr.removeAttribute("aria-selected");
@@ -234,37 +255,74 @@ function fillRow(parts, s, selected) {
     cells[0].replaceChildren(t);
   }
   setText(a, c.title);
+  setTitle(a, c.key ? `session key ${c.key}` : "");
+  setText(place, [c.folder, c.model].filter(Boolean).join(" · "));
+  setTitle(place, c.folderFull);
+  setText(look, c.look);
   setText(cells[2], c.sources);
-  setText(cells[3], String(c.calls));
-  const chips = c.chips.map((ch) => `${ch.key}:${ch.count}`).join(" ");
-  if (key.chips !== chips) {
-    key.chips = chips;
-    const line = document.createElement("span");
-    line.className = "tchips";
-    for (const ch of c.chips) line.append(chipNode(ch));
-    cells[4].replaceChildren(line);
-  }
-  setText(cells[5], String(c.errors));
-  cells[5].className = c.errors ? "num bad" : "num zero";
-  cells[6].className = "status";
   if (key.status !== c.status.key) {
     key.status = c.status.key;
-    const pill = document.createElement("span");
-    pill.className = `spill spill-${c.status.key}`;
-    pill.textContent = `${c.status.glyph} ${c.status.text}`;
-    cells[6].replaceChildren(pill);
+    const pill = span(`spill spill-${c.status.key}`, `${c.status.glyph} ${c.status.text}`);
+    cells[3].replaceChildren(pill);
   }
-  setNum(cells[7], c.input);
-  setNum(cells[8], c.output);
-  setNum(cells[9], c.cacheWrite);
-  setNum(cells[10], c.cacheRead);
-  setText(cells[11], effectsWords(s.effects));
+  setText(cells[4], `${c.prompts} · ${c.calls}`);
+  setText(parts.tools[0], c.tools);
+  setText(parts.tools[1], c.failed ? ` · ${c.failed} failed` : "");
+  setText(cells[6], c.changes);
+  setText(cells[7], c.time);
+  setToken(parts.tokens[0], c.input, "in");
+  setToken(parts.tokens[1], c.output, "out");
+  setToken(parts.tokens[2], c.cacheRead, "cache read");
 }
 
+// COLUMNS are the list's headers and each column's class; every count carries its own label
+// in words (spec 017 AC1).
 const COLUMNS = [
-  ["Start", "time"], ["Title", "title"], ["Sources", "src"], ["Calls", "num"], ["Tools", "chips"], ["Errors", "num"], ["Status"],
-  ["Input", "num"], ["Output", "num"], ["Cache write", "num"], ["Cache read", "num"], ["Effects", "effects"],
+  ["Start", "time"], ["Session", "title"], ["Sources", "src"], ["Status", "status"], ["Work", "work"],
+  ["Tools", "tools"], ["Changes", "changes"], ["Time", "dur"], ["Tokens", "tokens"],
 ];
+
+// unassignedShown is how many unassigned connections the list's section lists; the rest are
+// on the unassigned connections page.
+export const UNASSIGNED_SHOWN = 10;
+
+// unassignedSection lists the unassigned connections (spec 017 AC2): label, client, host,
+// bytes and time, with a link to the full page when there are more. null when none.
+function unassignedSection(count, items) {
+  if (!count) return null;
+  const box = document.createElement("section");
+  box.className = "sp-unassigned";
+  const h = document.createElement("h2");
+  h.textContent = `Unassigned connections (${count})`;
+  const p = note("muted", "Connections through the gateway's proxy that no session could be linked to.");
+  const { table, body } = tableWithHead([["Label", "label"], ["Client", "client"], ["Host", "host"], ["Bytes", "bytes"], ["Time", "time"]]);
+  for (const e of (items || []).slice(0, UNASSIGNED_SHOWN)) {
+    const r = unassignedRow(e);
+    const tr = document.createElement("tr");
+    td(tr, r.label, "label");
+    td(tr, r.client, "client");
+    td(tr, r.host, "host");
+    td(tr, r.bytes, "bytes");
+    const t = timeElement(r.at);
+    t.textContent = startText(r.at);
+    td(tr, null, "time").append(t);
+    body.append(tr);
+  }
+  const list = document.createElement("div");
+  list.className = "sp-list";
+  list.append(table);
+  box.append(h, p, list);
+  if (count > Math.min(UNASSIGNED_SHOWN, (items || []).length)) {
+    const a = document.createElement("a");
+    a.className = "quiet";
+    a.href = "#/effects/unassigned";
+    a.textContent = `All ${count} unassigned connections →`;
+    const more = document.createElement("p");
+    more.append(a);
+    box.append(more);
+  }
+  return box;
+}
 
 // loader is what the list shows until its first page arrives: a line saying so and a few
 // placeholder rows the size of real ones.
@@ -288,7 +346,7 @@ function loader() {
 // createSessionsPage builds the landing page once; update(state) redraws the table, the
 // totals and the notes without touching the filter input, so typing keeps its focus.
 // state = { items, next_after, error, loaded, today, ungrouped: { items, next_after },
-// unassigned }; until the first page has loaded the list shows a loader.
+// unassigned, unassignedItems }; until the first page has loaded the list shows a loader.
 // handlers = { onMore }.
 export function createSessionsPage(handlers) {
   const el = document.createElement("section");
@@ -330,10 +388,11 @@ export function createSessionsPage(handlers) {
   list.className = "sp-list";
   const foot = document.createElement("div");
   foot.className = "sp-foot";
-  el.append(head, bar, filterNote, list, foot);
+  const unassigned = document.createElement("div");
+  el.append(head, bar, filterNote, list, foot, unassigned);
 
   let kind = "all";
-  let state = { items: [], next_after: null, error: "", loaded: true, today: null, ungrouped: { items: [], next_after: null }, unassigned: 0 };
+  let state = { items: [], next_after: null, error: "", loaded: true, today: null, ungrouped: { items: [], next_after: null }, unassigned: 0, unassignedItems: [] };
   let selected = "";
   let shown = [];
   input.addEventListener("input", () => redraw());
@@ -384,17 +443,18 @@ export function createSessionsPage(handlers) {
       sp.className = "stat";
       const b = document.createElement("b");
       b.textContent = value;
-      if (exact !== undefined && exact !== value) sp.title = exact;
+      if (exact !== undefined && exact !== value) sp.title = exact === DASH ? "not reported" : exact;
       sp.append(b, ` ${label}`);
       today.append(sp);
     };
     today.append("Today");
+    today.title = "since local midnight";
     stat(String(t.sessions), t.sessions === 1 ? "session" : "sessions");
-    stat(String(t.calls), t.calls === 1 ? "call" : "calls");
+    stat(String(t.calls), t.calls === 1 ? "model call" : "model calls", "side calls included");
+    stat(String(t.changed), t.changed === 1 ? "file changed" : "files changed");
+    stat(String(t.sites), t.sites === 1 ? "site" : "sites");
     stat(compact(t.input), "input", t.input);
     stat(compact(t.output), "output", t.output);
-    stat(compact(t.cacheWrite), "cache write", t.cacheWrite);
-    stat(compact(t.cacheRead), "cache read", t.cacheRead);
     foot.replaceChildren();
     filterNote.textContent = "";
     if (state.error) {
@@ -428,16 +488,9 @@ export function createSessionsPage(handlers) {
       p.append(a);
       foot.append(p);
     }
-    const ua = unassignedText(state.unassigned);
-    if (ua) {
-      const a = document.createElement("a");
-      a.className = "quiet";
-      a.href = "#/effects/unassigned";
-      a.textContent = `${ua} →`;
-      const p = document.createElement("p");
-      p.append(a);
-      foot.append(p);
-    }
+    const ua = unassignedSection(state.unassigned, state.unassignedItems);
+    if (ua) unassigned.replaceChildren(ua);
+    else unassigned.replaceChildren();
   }
 
   redraw();

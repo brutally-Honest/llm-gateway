@@ -1,33 +1,31 @@
-// Pure list and timeline filters over the loaded rows. Nothing here fetches: a filter
-// only narrows what is already loaded (AC6, AC14).
+// Pure list filters over the loaded rows. Nothing here fetches: a filter only narrows what
+// is already loaded (spec 017 AC4), and reads only flags and counts the server sent.
 
-export const FILTERS = ["all", "errors", "gaps", "hooks"];
-
-const count = (n) => (typeof n === "number" ? n : 0);
-
-// hasGaps: a tool call in the "? unmatched" state, or a call with missing or partial usage.
-function hasGaps(s) {
-  const u = s.usage || {};
-  return count((s.tool_states || {}).unmatched) > 0 || count(u.missing) > 0 || count(u.partial) > 0;
-}
+export const FILTERS = ["all", "look", "active", "hooks"];
 
 function hooksOnly(s) {
   return Boolean(s.hooks_only) || (Boolean(s.has_hooks) && !s.has_calls);
 }
 
-function rowText(s) {
-  return [s.title, s.client, s.session_key, s.id, ...(s.models || [])].filter(Boolean).join("\n").toLowerCase();
+// needsLook is the server's count of the session's "Needs a look" items (spec 017 AC2).
+function needsLook(s) {
+  const n = (s.list || {}).needs_look;
+  return typeof n === "number" && n > 0;
 }
 
-// filterSessions narrows loaded rows by kind (all, errors, gaps, hooks) and text. Errors
-// reads main_errors, so side calls never match. The note reads "filtering N loaded" while
-// more rows exist, "no sessions match" when nothing does; loadMore says whether to offer
-// Load more.
+function rowText(s) {
+  const l = s.list || {};
+  return [s.title, s.client, s.session_key, s.id, l.folder, l.folder_full, ...(s.models || [])].filter(Boolean).join("\n").toLowerCase();
+}
+
+// filterSessions narrows loaded rows by kind (all, look, active, hooks) and text. The note
+// reads "filtering N loaded" while more rows exist, "no sessions match" when nothing does;
+// loadMore says whether to offer Load more, which a filter never hides (E6).
 export function filterSessions(rows, { kind = "all", text = "", hasMore = false } = {}) {
   const q = text.trim().toLowerCase();
   const out = rows.filter((s) => {
-    if (kind === "errors" && count(s.main_errors) <= 0) return false;
-    if (kind === "gaps" && !hasGaps(s)) return false;
+    if (kind === "look" && !needsLook(s)) return false;
+    if (kind === "active" && !s.active) return false;
     if (kind === "hooks" && !hooksOnly(s)) return false;
     return !q || rowText(s).includes(q);
   });

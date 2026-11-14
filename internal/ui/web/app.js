@@ -4,7 +4,7 @@ import { lastID } from "./effects.js";
 import { addUnique, upsertSession } from "./entries.js";
 import { createStore } from "./store.js";
 import { createSessionPage } from "./session-page.js";
-import { createSessionsPage, localMidnight, note } from "./sessions-page.js";
+import { createSessionsPage, localMidnight, note, UNASSIGNED_SHOWN } from "./sessions-page.js";
 import { initTheme } from "./theme.js";
 import { buildRoute, parseRoute } from "./route.js";
 import { handleKey, isTextInput } from "./keys.js";
@@ -28,7 +28,7 @@ const shell = mountShell({
   root,
   theme: initTheme(storage, root),
 });
-const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "", ungrouped: [], ungroupedNext: null, ungroupedError: "", ungroupedHead: { items: [], next_after: null }, today: null, unassigned: 0 });
+const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "", ungrouped: [], ungroupedNext: null, ungroupedError: "", ungroupedHead: { items: [], next_after: null }, today: null, unassigned: 0, unassignedItems: [] });
 let closeStream = null;
 let view = null;
 let page = null; // the Sessions page while it is shown
@@ -48,8 +48,24 @@ async function load(kind, after) {
       [`${kind}Loaded`]: true,
       ...(kind === "sessions" && !after ? { unassigned: page.unassigned_connections || 0 } : {}),
     });
+    if (kind === "sessions" && !after) loadUnassigned(page.unassigned_connections || 0);
   } catch (e) {
     store.set({ [`${kind}Error`]: e.message });
+  }
+}
+
+// loadUnassigned reads the first unassigned connections for the list's own section
+// (spec 017 AC2); none are read when there are none.
+async function loadUnassigned(count) {
+  if (!count) {
+    store.set({ unassignedItems: [] });
+    return;
+  }
+  try {
+    const p = await getJSON("effects/unassigned", { limit: UNASSIGNED_SHOWN });
+    store.set({ unassignedItems: p.effects || [] });
+  } catch {
+    // the section still says how many there are and links to the full page
   }
 }
 
@@ -338,6 +354,7 @@ function showSessions() {
       today: s.today,
       ungrouped: s.ungroupedHead,
       unassigned: s.unassigned,
+      unassignedItems: s.unassignedItems,
     });
     shell.setKeyBar(r, page.position());
   };
