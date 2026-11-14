@@ -7,7 +7,9 @@ automated parts are `internal/ui/api_sessions_test.go`, `api_today_test.go`,
 `api_effects_test.go`, `internal/timeline/view_test.go` and
 `internal/ui/webtest/sessions-page.test.js`. Run each section with the `ui-check` skill
 (`/ui-check 017-sessions-and-calls`); record expected against seen in the spec's
-research.md.
+research.md. §2's automated parts are `internal/timeline/view_test.go` (TestView_Call*,
+TestView_SideCallThread, TestView_FirstCallOfThread), `internal/ui/api_view_test.go`
+(TestCallDetails_*) and `internal/ui/webtest/call-dialog.test.js`.
 
 ## Setup
 
@@ -106,3 +108,70 @@ research.md.
     loaded" and Load more stays; a filter matching nothing ("zzz") says "no sessions match"
     once, in the list (the note still says "filtering 50 loaded", D34), and Load more is
     still there. Load more adds the next rows.
+
+## §2 Call details dialog (slice 2)
+
+Setup: the same throwaway gateway as §1 (a fresh data folder is fine). Seed the §1 session
+that needs a look (`seed-session.mjs`, as in Setup step 3), then the call kinds:
+
+```sh
+# a plain call, a streamed call, a call with a very long request and reply, an errored call
+node docs/manual-checks/seed-call-kinds.mjs --gateway http://127.0.0.1:17297 \
+  --ui http://127.0.0.1:17299 --stub-port 17296
+```
+
+Check every step in the light theme, then in dark.
+
+2.1 **Open, URL, reload, Back (AC5).** Open the seed session. Click a step's `#n`: the call
+    details open as a dialog over the session page (the page stays behind it), and the URL
+    becomes `#/sessions/{id}/call/{exchange id}`. Reload: the same call opens again. Back:
+    the dialog closes and the URL is the session's again, with focus back where it was.
+    Open the same call from a Context tab row, from a tool dialog's "Asked by" link and by
+    pasting the call URL into a new tab: each opens this dialog. A Context bar still only
+    scrolls the list to its turn's calls (AC20).
+
+2.2 **Facts (AC6).** The dialog starts with labelled facts: model, duration, start, stop
+    (the provider's stop reason in words, such as "end turn" or "tool use", or the error
+    status), thread ("main", "sub-agent Explore" or the side call's kind) and context size.
+
+2.3 **Side call (E2).** Open the seed's quota probe (the side calls control on the session
+    page): its thread is "quota probe", its "429 Too Many Requests" is a word, not red.
+
+2.4 **Context (AC7).** The Context section shows the size, the change since the previous
+    call of its thread ("+1,234 since #3", or "first call of its thread"), the reason in
+    words (016's Context rows), and input, cache write and cache read. A sub-agent's call
+    compares with the sub-agent's own previous call.
+
+2.5 **What it saw, thinking, response, tools (AC8).** "What the model saw" shows the counts
+    ("12 carried over · 2 new"; a thread's first call says so) and the messages, each marked
+    carried or new. A call that thought shows "Thinking" behind a toggle. The response shows
+    as Markdown with a Raw toggle. Each tool call the call asked for opens its 016 tool
+    dialog.
+
+2.6 **Health and raw (AC9).** Health says in words what went wrong, or "No disconnect, abort
+    or error." Raw links the request body, the response stream, the headers and the full
+    exchange page; each link opens.
+
+2.7 **Step through calls (AC10, E4).** With the dialog open, ↓ and ↑ (and Next and
+    Previous) move to the next and previous call of the session, side calls included; the
+    URL follows without adding history (Back still closes the dialog). On the first call
+    Previous is disabled; on the last, Next.
+
+2.8 **Live updates (AC10).** Run `seed-call-kinds.mjs --live` (or `seed-session.mjs --live`)
+    with a call open: new calls arrive in the session behind the dialog, and the dialog
+    stays on its call, its scroll and focus kept; Next becomes enabled once a later call
+    exists.
+
+2.9 **Missing data (AC11).** The errored call: facts say the error status in words (red),
+    Context shows "—" for every count with why ("No usage reported: …"), the response says
+    why it is missing, Health says what failed, and the raw links still open. The very long
+    call: its messages and reply are cut, each saying so, with the raw links for the whole
+    body. The streamed call: its reply is the streamed text assembled.
+
+2.10 **A URL naming no call (E3).** Edit the call id in the URL to one that does not exist:
+    the session opens with a "No such call in this session." note and no dialog.
+
+2.11 **Modal (AC21).** While the dialog is open the page behind is dimmed and nothing behind
+    it can be clicked or reached with Tab; a click on the dimmed page closes it; the top
+    (title, the facts, the context line and the message counts) stays while the messages
+    and later sections scroll.
