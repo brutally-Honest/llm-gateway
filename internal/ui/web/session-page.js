@@ -189,12 +189,10 @@ export function createSessionPage(ctx = {}) {
       const n = el("span", "n", "○");
       n.setAttribute("aria-hidden", "true");
       btn.append(n, el("span", "p", `${b.effects.length === 1 ? "you edited" : "edits"} ${b.effects.map((e) => e.path).join(", ")}`));
-      btn.title = b.text;
     };
     if (between.has(0)) btwEntry(between.get(0));
     for (const t of view.turns || []) {
       const b = entry(turnId(t.n), "toc-item");
-      b.title = t.prompt;
       const meta = el("span", "m");
       meta.append(el("span", "", t.hooks_only ? "hooks only" : dur(t.clock_ms ?? 0)));
       const c = t.counts || {};

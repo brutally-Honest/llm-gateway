@@ -40,7 +40,7 @@ const session = { id: "s1", title: "Seeded", client: "c", models: ["m"], first_a
 const entries = [call("a", 1), item("a", "user_prompt", { role: "user", text: "one" }), call("b", 2, { prev: "a" })];
 // viewOf is the server's session view (spec 016) of the two calls above, one turn each.
 const step = (n, id) => ({ n, exchange_id: id, at: "2026-01-01T00:00:0" + n + "Z", dur_ms: 1000, did: "wrote the answer", tools: [] });
-const turn = (n, id, prompt) => ({ n, hash: `h${n}`, prompt, reminders: [], at: step(n, id).at, clock_ms: 1000, counts: {}, steps: [step(n, id)], hook_tools: [], loose: [] });
+const turn = (n, id, prompt) => ({ n, hash: `h${n}`, prompt, reminders: [], at: step(n, id).at, clock_ms: 1000, counts: { calls: 1 }, steps: [step(n, id)], hook_tools: [], loose: [] });
 const viewOf = (title, active) => ({
   version: "v1",
   overview: { title, status: active ? { glyph: "●", word: "active" } : { glyph: "■", word: "ended" }, client: "c", key: "k", models: ["m"],

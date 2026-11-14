@@ -20,7 +20,8 @@ function rule(sel) {
 
 // The session page fills the window below the header in three columns: the turn list, the
 // story and the right card. Only the story and the two side lists scroll (spec 016 AC3,
-// mockups/v4-story.html); room under the last turn lets any turn reach the top.
+// mockups/v4-story.html); the story ends at its last turn, with no empty space after it
+// (Karthik, 2026-11-13).
 test("storyScrollsAloneBetweenTheTwoCards", () => {
   const body = rule('body[data-page="session"]');
   assert.equal(body.height, "100vh");
@@ -32,7 +33,7 @@ test("storyScrollsAloneBetweenTheTwoCards", () => {
   assert.equal(rule(".story").overflow, "auto");
   assert.equal(rule(".toc, .storycol, .sidebar").overflow, "hidden", "the story sits in a card like the two side columns");
   assert.match(rule(".scroll").overflow, /auto/);
-  assert.match(rule(".story::after").flex || "", /55vh/, "room under the last turn");
+  assert.ok(!/\.story::after/.test(css), "no empty space under the last turn");
 });
 
 // Narrower windows fall back to one scrolling page with the turn list sticky on the left;
