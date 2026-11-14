@@ -38,7 +38,7 @@ function fixture() {
         ],
         loose: [harness],
       }),
-      turn(2, { prompt: "prompt 2", steps: [step(6, { did: "wrote the answer" })] }),
+      turn(2, { prompt: "prompt 2", models: ["m1", "m2"], steps: [step(6, { did: "wrote the answer" })] }),
       turn(3, { hooks_only: true, prompt: "", clock_ms: 0, hook_tools: [tool({ id: "h1", name: "Bash", kind: "command", state: mark("?", "unmatched"), chip: "unmatched", summary: "ls", added: 0, removed: 0, call_n: 0, turn: 3 })] }),
     ],
     between: [{ after: 1, at: "2026-11-10T10:00:09Z", title: "Seen between turns 1 and 2", text: "A change while no tool call was running: most likely your own edit.", effects: [outside] }],
@@ -118,12 +118,12 @@ test("rendersTurnsTabsAndDialogFromTheView", async () => {
   // the right card: counts and rows from the view's lists
   const tabs = withClass(page.el, "tab");
   assert.deepEqual(tabs.map((t) => `${t.textContent}${t.children[0].textContent}`), ["Files2", "Commands1", "Sites1", "Context"]);
-  // the Files tab words an attribution as the story does: the label's glyph and word, then
-  // the tool call it points at
-  const rows = withClass(byId(page.el, "tp-files"), "row").map((r) => textOf(r).replace(/\s+/g, " "));
-  assert.match(rows[0], /a\.js .*modified turn 1 · ● named · #4 Edit src\/a\.js/);
-  assert.match(rows[1], /notes\.md .*○ outside any tool call/);
-  assert.doesNotMatch(rows[1], /·\s*$/);
+  // a changed file in the Files tab is its name and its lines alone; the folder, turn and
+  // attribution are in its dialog, the full path on hover (research 2026-11-13)
+  const fileRows = withClass(byId(page.el, "tp-files"), "row").filter((r) => r.className.split(" ").includes("file"));
+  const rows = fileRows.map((r) => textOf(r).replace(/\s+/g, " ").trim());
+  assert.deepEqual(rows, ["a.js +2 −1", "notes.md"]);
+  assert.equal(fileRows[0].title, "/w/src/a.js");
   assert.match(textOf(byId(page.el, "eff-1")).replace(/\s+/g, " "), /● named/);
   assert.match(textOf(byId(page.el, "eff-4")).replace(/\s+/g, " "), /○ outside any tool call/);
   tabs[3].fire("click");
@@ -229,4 +229,66 @@ test("twoThousandCallViewRendersUnderBudget", () => {
   const took = performance.now() - start;
   assert.equal(withClass(page.el, "call-link").length, 2000);
   assert.ok(took < 2000, `rendering 2,000 calls took ${Math.round(took)} ms`);
+});
+
+// shown is true when no node from n up to the page is hidden.
+function shown(n) {
+  for (; n; n = n.parentNode) if (n.hidden) return false;
+  return true;
+}
+
+// A turn shows its prompt and its answer; every step between is one line in a stepper,
+// folded until opened, and stays as the user left it across a live redraw (research
+// 2026-11-13, Karthik's feedback).
+test("stepsAreFoldedBetweenPromptAndAnswer", () => {
+  const { page } = mount();
+  const t1 = byId(page.el, "turn-1");
+  assert.ok(shown(byId(t1, "h-1")), "the prompt is shown");
+  assert.ok(shown(withClass(t1, "answer")[0]), "the answer is shown");
+  const body = byId(t1, "steps-e3");
+  assert.equal(body.hidden, true, "a step's tool lines start folded");
+  assert.equal(shown(byId(t1, "tool-t1")), false);
+  const toggle = withClass(t1, "fold").find((b) => b.attrs["aria-controls"] === "steps-e3");
+  assert.equal(toggle.attrs["aria-expanded"], "false");
+  assert.match(textOf(toggle).replace(/\s+/g, " "), /Thought|Wrote|wrote/i);
+  assert.match(textOf(toggle), /✗ Bash npm test/, "the folded line names its tools");
+  assert.equal(withClass(t1, "call-link").length, 3, "every step keeps its #n in the stepper");
+  assert.equal(byId(t1, "steps-e5"), undefined, "a step with nothing under it has no fold");
+  assert.ok(body.parentNode.className.split(" ").includes("bad"), "a step whose tool failed is marked on the stepper");
+  assert.ok(!byId(t1, "steps-e4").parentNode.className.split(" ").includes("bad"));
+  const loose = withClass(t1, "fold").find((b) => /Not caused by a tool call/.test(textOf(b)));
+  assert.equal(loose.attrs["aria-expanded"], "false", "the effects no tool call caused are folded too");
+  assert.equal(shown(byId(t1, "eff-3")), false);
+
+  toggle.fire("click");
+  assert.equal(body.hidden, false);
+  assert.equal(toggle.attrs["aria-expanded"], "true");
+  assert.ok(shown(byId(t1, "tool-t1")));
+
+  // a live event rebuilding turn 1 keeps its opened step open
+  const v = fixture();
+  page.applyEvent({ ...v, full: false, order: [1, 2, 3], turns: [{ ...v.turns[0], hash: "h1b" }] });
+  const again = byId(page.el, "turn-1");
+  assert.notEqual(again, t1);
+  assert.equal(byId(again, "steps-e3").hidden, false);
+  assert.equal(byId(again, "steps-e4").hidden, true);
+});
+
+// "Show in turn" opens the folds around the row it shows.
+test("showInTurnOpensTheFoldAroundTheRow", async () => {
+  const { page } = mount();
+  assert.equal(byId(page.el, "steps-e4").hidden, true);
+  page.dialog.open("file:/w/src/a.js");
+  await settle();
+  withClass(page.dialog.el, "primary")[0].fire("click");
+  assert.equal(byId(page.el, "steps-e4").hidden, false, "the step holding the change opened");
+  assert.ok(shown(byId(page.el, "eff-1")));
+});
+
+// Each turn names the models its calls used, from the view (AC4 as amended).
+test("turnHeaderNamesItsModels", () => {
+  const { page } = mount();
+  const head = withClass(byId(page.el, "turn-2"), "th")[0];
+  assert.equal(withClass(head, "mdl")[0].textContent, "m1, m2");
+  assert.equal(withClass(withClass(byId(page.el, "turn-1"), "th")[0], "mdl").length, 0, "no models, no tag");
 });

@@ -1,6 +1,6 @@
 ---
 feature: 016-web-ui-v2
-status: draft
+status: done
 version: 1
 approved:
 approved-by:

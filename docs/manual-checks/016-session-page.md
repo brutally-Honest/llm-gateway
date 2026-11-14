@@ -43,8 +43,9 @@ the `ui-check` skill; record expected against seen, and the contrast figures, in
 
 ### Layout (AC3)
 3. Open the link in a window at least 1,400 px wide. Three columns: the turn list on the
-   left, the story in the middle, the Files/Commands/Sites/Context card on the right. Only
-   the story scrolls; the two side cards stay put. At about 1,000 px the page falls back to
+   left, the story in the middle, the Files/Commands/Sites/Context card on the right, each a
+   card. Only the story scrolls, with its scrollbar inside its card; the two side cards stay
+   put. At about 1,000 px the page falls back to
    one scrolling page with the turn list sticky on the left.
 
 ### Overview (AC2)
@@ -71,9 +72,13 @@ the `ui-check` skill; record expected against seen, and the contrast figures, in
 ### The story (AC4–AC8)
 9. For each `turn N` line the seed printed, the turn shows exactly that: heading = prompt
    (reminder behind "+1 reminder", which toggles), start time, clock time with
-   model · tools · waiting, the pills, then one step per model call (`#n`, what it did and
-   for how long, "then ran N at once:"). An errored call says its status as a word in red.
-   Thinking never shows inline: "Read the thinking" is a link.
+   model · tools · waiting, the model tag after the start time, the pills, then one step per
+   model call on a stepper (`#n`, what it did and for how long, "then ran N at once:", and
+   the tools in one line). Only the prompt and the final answer are open: a step's tools and
+   effects show when its line is clicked, and a step whose tool failed has a red dot. An
+   errored call says its status as a word in red. Thinking never shows inline: "Read the
+   thinking" is a link. Open a fold, wait for a live update of that turn: it stays open.
+   Steps 10–12 below need their steps opened.
 10. Tool lines: `✓` alone for ok, glyph and word otherwise; name, summary (`npm test`,
     `src/app.js +1 −1`, `pdf`), run time (`≈` when approximate), a failed call's first
     error line under it. Turn 7's Agent line holds its sub-agent block with its own steps
@@ -85,11 +90,12 @@ the `ui-check` skill; record expected against seen, and the contrast figures, in
     `○ Not caused by a tool call` group holds the harness connection with "during #n Bash".
 12. The between block after turn 7 reads "Seen between turns 7 and 8", holds
     `notes/review.md` with `○ outside any tool call`, and appears in neither turn. Turn 8
-    says "No model calls captured. The hooks saw:" and its command has no `#n`.
+    says "No model calls captured. The hooks saw: 1 tool call" and its command has no `#n`.
 13. Every `#n` opens the 013 call drawer for that call; Esc closes it.
 
 ### Tabs (AC9, AC10)
-14. Files: changed files grouped by path with lines and who changed them in words, then
+14. Files: each changed file as its name and lines (its size for the PDF), full path on
+    hover; its row opens the dialog with the folder, turn and who changed it. Then
     "Read" and "Searched" apart (Grep is a search, not a read). Commands: every shell
     command in run order with state, time and what it changed; turn 8's says "seen by hooks
     only". Sites: one row per host with connections, bytes and who; the footer names the

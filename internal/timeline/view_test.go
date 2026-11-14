@@ -88,12 +88,17 @@ type vcallSpec struct {
 	tools      [][3]string
 	results    [][2]string
 	in, cw, cr int64
+	model      string // "m1" when empty
 }
 
 func (f *fake) call(c vcallSpec) {
 	x := f.exchange(c.id, vat(c.from), "ok")
 	x.EndedAt = vat(c.to)
-	f.request(c.id, "m1")
+	model := c.model
+	if model == "" {
+		model = "m1"
+	}
+	f.request(c.id, model)
 	for _, m := range c.msgs {
 		role := "user"
 		if m[0] == 'a' {
@@ -630,4 +635,39 @@ func TestView_CommandLineCountsLeaveOutSeveral(t *testing.T) {
 		t.Fatalf("several = %+v", step.Several)
 	}
 	eq(t, "several lines", fmt.Sprint(step.Several[0].Added, step.Several[0].Removed), "5 2")
+}
+
+// AC4 (research 2026-11-13, Karthik's feedback): each turn names the models its calls used,
+// sub-agents included, in first-use order; a side call's model is left out. The CLI's turn
+// line carries them too.
+func TestView_TurnModels(t *testing.T) {
+	f := newFake()
+	x := &fixture{f: f}
+	one, two := "Fix it", "And the docs"
+	f.call(vcallSpec{id: "q", from: 0.2, to: 0.3, msgs: []string{"u:quota"}, model: "small"})
+	f.vhook(core.PhasePrompt, "", "", 0.9)
+	f.call(vcallSpec{id: "a1", from: 1, to: 2, msgs: []string{"u:" + one}, model: "big"})
+	f.call(vcallSpec{id: "a2", from: 3, to: 4, msgs: []string{"u:" + one, "a:Fixed."}, model: "mid"})
+	f.vhook(core.PhasePrompt, "", "", 4.9)
+	f.call(vcallSpec{id: "b1", from: 5, to: 6, msgs: []string{"u:" + one, "a:Fixed.", "u:" + two, "a:Done."}, model: "mid"})
+	v := x.view(t, true)
+
+	if len(v.Turns) != 2 {
+		t.Fatalf("turns = %d, want 2", len(v.Turns))
+	}
+	eq(t, "turn 1 models", strings.Join(v.Turns[0].Models, ","), "big,mid")
+	eq(t, "turn 2 models", strings.Join(v.Turns[1].Models, ","), "mid")
+	var out strings.Builder
+	if err := timeline.RenderViewText(&out, v, time.UTC); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, ln := range strings.Split(out.String(), "\n") {
+		if strings.HasPrefix(ln, "Turn 1 · ") && strings.HasSuffix(ln, ") · big, mid") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("CLI turn 1 line has no models:\n%s", out.String())
+	}
 }

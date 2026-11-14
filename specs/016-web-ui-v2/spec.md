@@ -1,7 +1,7 @@
 ---
 feature: 016-web-ui-v2
 kind: feat
-status: draft
+status: done
 version: 2
 created: 2026-11-10
 supersedes:
@@ -96,11 +96,13 @@ This changes earlier features (each AC listed is replaced or narrowed as said):
   files-changed count and failure count, plus one entry per between-turn block; selecting an
   entry shall scroll the story to it and mark it current, scrolling shall move the mark to
   the turn in view, and the last turns shall be selectable even when they cannot reach the
-  top of the story.
+  top of the story. The turn list, the story and the right card shall each be a card that
+  scrolls inside its own frame (amended 2026-11-13).
 
 ### The story
 - **AC4** — When a turn is shown, it shall show the prompt as its heading (reminders behind a
-  "+N reminders" toggle), its start time, its clock time from the prompt to the final answer
+  "+N reminders" toggle), its start time, the models its calls used (amended 2026-11-13),
+  its clock time from the prompt to the final answer
   split into model, tool and waiting time, and its counts (tool calls, files changed, files
   read, searches, sites, failures); a turn with no final answer shall show its end state as
   glyph and word: running (session active), interrupted, or ended by error.
@@ -120,16 +122,21 @@ This changes earlier features (each AC listed is replaced or narrowed as said):
   (`#n`, what it did and for how long, how many tools it ran at once), an errored call shall
   show its status as a word in red, thinking shall never appear inline but behind a "Read the
   thinking" control, the turn shall end with the final answer, and a hooks-only turn shall
-  say "no model calls captured" and show its tools without `#n`.
+  say "no model calls captured" and show its tools without `#n`. Only the prompt and the
+  final answer shall be shown open: the steps between sit in order on a stepper, each step's
+  tool calls and effects (and a turn's hooks-only tools and "not caused by a tool call"
+  group) folded behind its line until opened; a fold stays as the user left it across live
+  updates and opens when the page shows something inside it (amended 2026-11-13).
 - **AC8** — When a file change is labelled `outside` and its checkpoint window starts before
   the next turn's prompt, it shall be shown in its own block between those two turns, worded
   "seen between turns N and N+1", and not inside either turn.
 
 ### Side card and details
 - **AC9** — When a session is open, the right card shall offer Files, Commands, Sites and
-  Context tabs with their counts: Files lists each changed file once (all its changes, lines
-  added and removed, the turn, who changed it in words) then the files read and the
-  searches; Commands lists every shell command in order with its state, turn, run time and
+  Context tabs with their counts: Files lists each changed file once by its name and its
+  lines added and removed (its size when the lines are unknown; full path on hover; its
+  changes, turn and who changed it in words in its dialog, amended 2026-11-13) then the
+  files read and the searches; Commands lists every shell command in order with its state, turn, run time and
   what it changed; Sites lists each host once with its connections, bytes, turns and the
   tools that made them, and names an unassigned connection seen while the session ran with a
   link to the unassigned list; each tab states what it covers and what is not seen (014's

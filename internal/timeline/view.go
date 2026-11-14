@@ -201,7 +201,8 @@ type Turn struct {
 	PromptTruncated bool         `json:"prompt_truncated,omitempty"`
 	Reminders       []string     `json:"reminders,omitempty"`
 	At              string       `json:"at"`
-	End             *Mark        `json:"end,omitempty"` // set when the turn has no final answer
+	Models          []string     `json:"models,omitempty"` // models of the turn's calls, in first-use order
+	End             *Mark        `json:"end,omitempty"`    // set when the turn has no final answer
 	ClockMS         int64        `json:"clock_ms"`
 	ModelMS         int64        `json:"model_ms"`
 	ToolMS          int64        `json:"tool_ms"`

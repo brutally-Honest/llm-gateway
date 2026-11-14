@@ -69,8 +69,26 @@ func (b *builder) renderTurn(vt *vturn) {
 	for _, e := range vt.loose {
 		t.Loose = append(t.Loose, e.line)
 	}
+	t.Models = turnModels(vt.calls)
 	b.turnTimes(vt, mains)
 	t.Counts = countTurn(t)
+}
+
+// turnModels is the models a turn's calls used, sub-agents included, in the order they
+// were first used; side calls and calls whose model is unknown are left out.
+func turnModels(calls []*vcall) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, c := range calls {
+		if c.usage == nil || c.usage.Model == UnknownModel || c.usage.Model == "" || (c.fact != nil && c.fact.SideCall) {
+			continue
+		}
+		if !seen[c.usage.Model] {
+			seen[c.usage.Model] = true
+			out = append(out, c.usage.Model)
+		}
+	}
+	return out
 }
 
 // step is one model call's line, with the tool calls it asked for.
