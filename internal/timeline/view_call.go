@@ -272,7 +272,7 @@ func CallDetailsOf(v View, id string, in CallInput) (CallDetails, bool) {
 	}
 	d.Context = callContext(v, id, p, in)
 	d.Facts.Ctx = d.Context.Size
-	d.Health = callHealth(in.Exchange)
+	d.Health = callHealth(in.Exchange, p.side != nil)
 	d.Saw, d.Response = callSaw(in), callReply(in)
 	d.Tools = []ToolLine{}
 	if p.step != nil {
@@ -377,14 +377,19 @@ func sumCtx(parts ...*int64) *int64 {
 	return &n
 }
 
-func callHealth(ex store.ExchangeRow) CallHealth {
+// callHealth words the call's health; a side call's error status is a warning, not bad (E2).
+func callHealth(ex store.ExchangeRow, side bool) CallHealth {
 	h := CallHealth{Status: "—", Items: []HealthItem{}}
 	if ex.Status > 0 {
 		h.Status = statusWord(ex.Status, "")
 	}
 	add := func(tone, text string) { h.Items = append(h.Items, HealthItem{Tone: tone, Text: text}) }
 	if ex.Status >= 400 {
-		add("bad", "The provider answered "+h.Status+".")
+		tone := "bad"
+		if side {
+			tone = "warn"
+		}
+		add(tone, "The provider answered "+h.Status+".")
 	}
 	if ex.GatewayError != "" {
 		add("bad", "Gateway error: "+ex.GatewayError+".")

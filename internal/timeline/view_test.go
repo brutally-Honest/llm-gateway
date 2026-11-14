@@ -834,6 +834,17 @@ func TestView_SideCallThread(t *testing.T) {
 	if d.Context.Delta != nil || d.Context.Why == "" {
 		t.Errorf("side call context = %+v, want no delta and a reason", d.Context)
 	}
+	// its health says what the provider answered, as a warning, not in red
+	x.f.exchanges[0].Status = 429
+	d = x.details(t, v, "q")
+	for _, i := range d.Health.Items {
+		if i.Tone == "bad" {
+			t.Errorf("side call health item %q is bad", i.Text)
+		}
+	}
+	if len(d.Health.Items) == 0 {
+		t.Error("the side call's 429 is in its health")
+	}
 }
 
 // 017 AC11: a call with no usage shows "—" for every count and says why; a failed call's
