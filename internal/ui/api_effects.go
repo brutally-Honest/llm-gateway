@@ -22,8 +22,11 @@ const (
 // effectJSON is one effect as the web UI reads it. Facts are computed here; the browser
 // only places and displays them.
 type effectJSON struct {
-	ID         int64  `json:"id"`
-	Kind       string `json:"kind"`
+	ID   int64  `json:"id"`
+	Kind string `json:"kind"`
+	// Client is the client the effect was stored under: "unknown" for a connection the
+	// proxy could link to no session (spec 017 AC2).
+	Client     string `json:"client"`
 	At         string `json:"at"`
 	Path       string `json:"path,omitempty"`
 	Change     string `json:"change,omitempty"`
@@ -162,7 +165,7 @@ func hasDiff(e store.EffectRow) bool {
 
 func (d Deps) effectToJSON(e store.EffectRow) effectJSON {
 	out := effectJSON{
-		ID: e.ID, Kind: e.Kind, At: nsTime(e.At), Path: e.Path, Change: e.Change,
+		ID: e.ID, Kind: e.Kind, Client: e.Client, At: nsTime(e.At), Path: e.Path, Change: e.Change,
 		HasCopy: d.hasContent(e), HasDiff: hasDiff(e), Detail: e.Detail,
 		Host: e.Host, Port: e.Port, Via: e.Via, Outcome: e.Outcome,
 	}
