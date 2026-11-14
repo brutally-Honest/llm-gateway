@@ -331,8 +331,8 @@ func TestView_Turns(t *testing.T) {
 	eq(t, "step 5 did", t1.Steps[2].Did, "wrote the answer")
 	eq(t, "turn 1 answer", t1.Answer, "Fixed the retry.")
 	eq(t, "turn 1 answer call", t1.AnswerCall, 5)
-	eq(t, "turn 1 counts", fmt.Sprintf("%+v", t1.Counts), "{Tools:3 Changed:2 Read:0 Searched:0 Sites:2 Failed:1}")
-	eq(t, "turn 2 counts", fmt.Sprintf("%+v", t2.Counts), "{Tools:2 Changed:0 Read:0 Searched:1 Sites:0 Failed:0}")
+	eq(t, "turn 1 counts", fmt.Sprintf("%+v", t1.Counts), "{Calls:3 Tools:3 Changed:2 Read:0 Searched:0 Sites:2 Failed:1}")
+	eq(t, "turn 2 counts", fmt.Sprintf("%+v", t2.Counts), "{Calls:4 Tools:2 Changed:0 Read:0 Searched:1 Sites:0 Failed:0}")
 
 	bash := mustTool(t, v, "t1")
 	eq(t, "t1 state", bash.State.Glyph+" "+bash.State.Word, "✗ failed")
@@ -670,4 +670,12 @@ func TestView_TurnModels(t *testing.T) {
 	if !found {
 		t.Errorf("CLI turn 1 line has no models:\n%s", out.String())
 	}
+}
+
+// 017 AC14: a turn counts its model calls, sub-agents' included; a hooks-only turn has none.
+func TestView_TurnCountsModelCalls(t *testing.T) {
+	v := seedFixture(true).view(t, true)
+	eq(t, "turn 1 calls", v.Turns[0].Counts.Calls, 3)
+	eq(t, "turn 2 calls, its sub-agent's included", v.Turns[1].Counts.Calls, 4)
+	eq(t, "hooks-only calls", v.Turns[2].Counts.Calls, 0)
 }

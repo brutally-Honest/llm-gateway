@@ -280,8 +280,8 @@ func (b *builder) turnTimes(vt *vturn, mains []*vcall) {
 	t.WaitMS = max(0, t.ClockMS-busy)
 }
 
-// countTurn is a turn's pills: tool calls, distinct files changed and read, searches,
-// distinct sites, failed tool calls.
+// countTurn is a turn's chips: model calls, tool calls, distinct files changed and read,
+// searches, distinct sites, failed tool calls.
 func countTurn(t *Turn) TurnCounts {
 	var c TurnCounts
 	changed, read, sites := map[string]bool{}, map[string]bool{}, map[string]bool{}
@@ -315,6 +315,7 @@ func countTurn(t *Turn) TurnCounts {
 		}
 	}
 	walkStep = func(s Step) {
+		c.Calls++
 		for _, l := range s.Tools {
 			walkTool(l)
 		}

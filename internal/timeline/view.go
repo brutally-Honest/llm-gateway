@@ -217,8 +217,10 @@ type Turn struct {
 	atNS            int64
 }
 
-// TurnCounts are a turn's pills.
+// TurnCounts are a turn's chips (017 AC14); Calls counts its model calls, sub-agents'
+// included.
 type TurnCounts struct {
+	Calls    int `json:"calls"`
 	Tools    int `json:"tools,omitempty"`
 	Changed  int `json:"changed"`
 	Read     int `json:"read"`
