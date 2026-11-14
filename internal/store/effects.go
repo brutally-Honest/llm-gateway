@@ -329,6 +329,20 @@ func (c *CtxReader) Effect(id int64) (EffectRow, error) {
 	return rows[0], nil
 }
 
+// EffectTotalsSince counts the effects of sessions from since (unix ns) on: the distinct
+// files each session changed, summed over sessions, and the distinct hosts any session
+// connected to. Unassigned connections are not counted.
+func (c *CtxReader) EffectTotalsSince(since int64) (changed, sites int, err error) {
+	err = c.r.db.QueryRowContext(c.ctx, `SELECT
+		COUNT(DISTINCT CASE WHEN kind = 'file_change' THEN principal_id || char(31) || client || char(31) || session_key || char(31) || path END),
+		COUNT(DISTINCT CASE WHEN kind = 'net_conn' THEN host END)
+		FROM effects WHERE session_key IS NOT NULL AND at >= ?`, since).Scan(&changed, &sites)
+	if err != nil {
+		return 0, 0, fmt.Errorf("store %s: effect totals: %w", c.r.path, err)
+	}
+	return changed, sites, nil
+}
+
 // UnassignedConnections counts network effects with no session.
 func (c *CtxReader) UnassignedConnections() (int, error) {
 	var n int

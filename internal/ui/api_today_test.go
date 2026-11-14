@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"testing"
 	"time"
+
+	"github.com/brutally-honest/llm-gateway/internal/core"
 )
 
 func sinceAt(sec int) string {
@@ -59,6 +61,40 @@ func TestToday_EmptyStoreZeros(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &m)
 	if m["calls"] != float64(0) || m["sessions"] != float64(0) || counter(t, m, "input") != nil {
 		t.Fatalf("today = %v", m)
+	}
+	// 017 E1: the totals spec 017 added are 0 too
+	if m["changed"] != float64(0) || m["sites"] != float64(0) {
+		t.Fatalf("today effects = %v", m)
+	}
+}
+
+// 017 AC3: today's totals count the files sessions changed since the time (distinct per
+// session) and the sites they connected to (distinct hosts); older effects and unassigned
+// connections are left out.
+func TestToday_FilesAndSites(t *testing.T) {
+	e := withRules(t)
+	at := func(s int) time.Time { return baseTime.Add(time.Duration(s) * time.Second) }
+	file := func(key, path string, s int) core.Effect {
+		return core.Effect{Kind: core.EffectFileChange, At: at(s), Principal: core.PrincipalLocal, Client: "cc",
+			SessionKey: key, Root: "/w", Path: path, Change: core.FileModified, Mode: "git"}
+	}
+	conn := func(key, host string, s int) core.Effect {
+		return core.Effect{Kind: core.EffectNetConn, At: at(s), EndedAt: at(s + 1), Principal: core.PrincipalLocal,
+			Client: "cc", SessionKey: key, Host: host, Port: 443, Via: "connect", Outcome: core.NetOK}
+	}
+	effs := []core.Effect{
+		file("k", "/w/old.go", 1), // before since
+		file("k", "/w/a.go", 10), file("k", "/w/a.go", 11), file("k", "/w/b.go", 12),
+		file("k2", "/w/a.go", 13), // the same path in another session counts again
+		conn("k", "api.example", 10), conn("k2", "api.example", 11), conn("k2", "cdn.example", 12),
+		conn("", "lost.example", 12), // unassigned
+	}
+	if err := e.s.SaveEffects(t.Context(), effs, nil); err != nil {
+		t.Fatal(err)
+	}
+	m := e.today(sinceAt(5))
+	if m["changed"] != float64(3) || m["sites"] != float64(2) {
+		t.Fatalf("today changed = %v sites = %v, want 3 and 2", m["changed"], m["sites"])
 	}
 }
 
