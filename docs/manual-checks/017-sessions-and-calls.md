@@ -62,14 +62,16 @@ research.md.
     "— in" where no call reported it. Every count has its word next to it.
 
 1.2 **Hooks-only row (AC1, E5).** The `fx017-hooks-only` row shows `◇ hooks only` as its
-    status, `⚑ hooks` as its source, Work "1 prompt · no model calls captured" and Tokens
-    "— in · — out · — cache read"; its title is "Hooks only · ~/llmgw-hooks-only", never
-    `fx017-hooks-only`.
+    status once it has ended (`● active` while its last hook is under 5 minutes old, D33), `⚑ hooks` as its source, Work "1 prompt · no model calls captured" and Tokens
+    "— in · — out · — cache read"; its title is its first prompt, "hooks only" (016's title
+    rule), never `fx017-hooks-only`. It has no needs-a-look line: a session that is hooks
+    only has no hooks-only turn to single out (research D31).
 
 1.3 **Needs a look (AC2).** Under the seed session's title, a line in the warning colour
     says how many items need a look and of what kinds, in words (for example "6 need a
-    look: 1 failed tool call, 1 failed model call, 1 change with no tool running, …"). The
-    calls-only session's row has no such line.
+    look: 1 failed tool call, 1 failed model call, 1 change with no tool running, …");
+    hovering it shows the whole line when it is cut. The calls-only and hooks-only
+    sessions' rows have no such line.
 
 1.4 **Unassigned connections (AC2).** Under the list, an "Unassigned connections (N)"
     section lists the seed's unassigned connection with its label (unassigned, or harness),
@@ -78,7 +80,8 @@ research.md.
 
 1.5 **Today (AC3).** The "Today" line (hover: "since local midnight") shows labelled totals:
     sessions, model calls (hover: side calls included), files changed, sites, input and
-    output tokens. They cover what ran since local midnight.
+    output tokens. They cover what ran since local midnight; sessions counts every session
+    with a model call or a hook since then, hooks-only sessions included (research D30).
 
 1.6 **Empty store (E1).** Before seeding: the list first shows "Loading sessions…", then
     "No sessions captured yet."; the Today line reads "0 sessions 0 model calls 0 files
@@ -86,7 +89,8 @@ research.md.
 
 1.7 **Filters (AC4).** Type part of the seed session's title: only matching rows stay; Esc
     clears it. Click each of All, Needs a look, Active, Hooks only in turn: each is marked
-    pressed and shows only its rows — Needs a look: the seed session; Active: sessions
+    pressed and shows only its rows — Needs a look: the seed session, not the hooks-only
+    ones; Active: sessions
     whose last activity is under 5 minutes old; Hooks only: the hooks-only sessions.
 
 1.8 **Filtering loaded rows and Load more (AC4, E6).** Make more than 50 sessions so the
@@ -100,4 +104,5 @@ research.md.
 
     Reload. Load more shows under the list. With a filter on, a note says "filtering 50
     loaded" and Load more stays; a filter matching nothing ("zzz") says "no sessions match"
-    and Load more is still there. Load more adds the next rows.
+    once, in the list (the note still says "filtering 50 loaded", D34), and Load more is
+    still there. Load more adds the next rows.

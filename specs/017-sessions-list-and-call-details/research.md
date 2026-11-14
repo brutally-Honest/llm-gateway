@@ -134,6 +134,27 @@ feature: 017-sessions-list-and-call-details
   sites), Time and Tokens (in · out · cache read), with folder · model and the needs-a-look
   line under the title, so the table stays readable at 1,400 px. Status glyphs follow the
   session page (■ ended, ● active, ◇ hooks only); sources are ⇄ API and ⚑ hooks.
+- D30 (2026-11-14, slice 1, Karthik at the UI check) — The Today line's "sessions" counts
+  every session with any activity since local midnight: a model call or a hook. Before, it
+  counted only sessions with a model call since then (013), so hooks-only sessions were
+  left out although AC3 says sessions; the label stays "sessions". A hook with no session
+  counts nowhere. /api/today reads the sessions that got a hook since the time from
+  hook_events (no new index: hook_events_session leads with the session, so this scans).
+- D31 (2026-11-14, slice 1, Karthik at the UI check) — Narrows AC2: in a session that is
+  hooks only (no exchanges) every turn is a hooks-only turn, so none is listed under needs a
+  look and the session does not match the Needs a look filter; a session that also has
+  model calls still lists its hooks-only turns. This applies in the view, so the session
+  page's Needs a look agrees with the list. spec.md is not edited now: the AC2 wording
+  change goes in at close-out with one re-approval (Karthik).
+- D32 (2026-11-14, slice 1, UI check) — The empty and error notes inside the sessions card
+  get their own padding (the shared `.empty` rule has none sideways), and the filter note
+  takes no room while it is empty, which left a gap between the filters and the list.
+- D33 (2026-11-14, slice 1, Karthik at the UI check) — A hooks-only session still going
+  shows `● active` as its status; a finished one keeps `◇ hooks only`. Status answers
+  whether it is still going, and Sources (`⚑ hooks`) already says it is hooks only.
+- D34 (2026-11-14, slice 1, Karthik at the UI check) — "no sessions match" is said once, in
+  the list card; the filter note only says "filtering N loaded" (while more rows exist),
+  also when nothing matches, so it still tells you only the loaded rows were searched.
 
 ## Notes
 - Sessions list budget, before slice 1 (2026-11-14, T001): `BenchmarkSessionsList500`
@@ -150,3 +171,17 @@ feature: 017-sessions-list-and-call-details
   it: a cold first page past about 1 s on a real store, or the hub's recomputes of active
   sessions showing in the live list; then reuse the timeline cache's build for the memo.
   `/api/today` at ~0.9 s for 10,000 calls in a day predates slice 1 and is not changed by it.
+- Sessions list budget, re-measured after the UI check fixes (2026-11-14, T010, D30–D34),
+  same benchmark and machine, two runs: first page cold 206–210 ms/op, 46.4 MB, 556k
+  allocs; cached 6.1–6.6 ms/op; `/api/today` 932–938 ms/op. Unchanged from the first after
+  run: the fixes add no per-row work, and the benchmark store has no hooks, so the new
+  hook-sessions query in `/api/today` (D30) costs nothing here; it scans hook_events from
+  midnight on a real store. Judgement unchanged: within budget.
+- Slice 1 manual check (2026-11-14, T010, `/ui-check 017-sessions-and-calls` §1 in Chrome,
+  light and dark, 1,440 px): Karthik accepted 1.1–1.8. Rejected on the way and fixed:
+  the empty note had no inner padding and an empty filter note left a gap (D32); 1.2's
+  expected title was wrong in the check doc (the prompt is the title); the needs-a-look line
+  was cut with no hover text; Today counted only sessions with model calls (D30); hooks-only
+  sessions needed a look for their own turns (D31); an active hooks-only session did not say
+  active (D33); "no sessions match" showed twice (D34). Not exercised: 1.6's "Loading
+  sessions…" (the empty store answered too fast to see it; the loader has its web test).
