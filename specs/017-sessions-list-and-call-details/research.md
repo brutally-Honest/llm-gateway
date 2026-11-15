@@ -257,6 +257,16 @@ feature: 017-sessions-list-and-call-details
   lives in `effects-list.js` (the unassigned list's module since T018), which tasks.md
   calls `effects.js`. Check-doc commits use `docs(spec)` (Karthik's slice 3 rule) where
   tasks.md's Commit lines say `docs(docs)`.
+- D49 (2026-11-15, slice 3, Karthik at the T024 re-check) — At a real 1,440 px window the
+  sessions list's Session column shrank to about 150 px, because every count column stayed
+  on one line, and titles, folders and needs-a-look lines were cut far shorter than at
+  2,560. The Session column now has a 20rem minimum; below the page's full width (1,600 px)
+  Work and Changes wrap onto two lines, only at their " · " separators; at 1,600 px and
+  wider they stay on one line. The needs-a-look line may still be cut: its hover holds the
+  whole line. The slice 1 check (T010, noted as "1,440 px") most likely ran at 2,560: the
+  test browser's window sits maximised on a 2,560 px screen, and in this session the resize
+  to 1,440 snapped back once before it held, unnoticed until the screenshots' width was
+  checked. The 1,440 px claims in the slice 1 and slice 2 records should be read as 2,560.
 
 ## Notes
 - Sessions list budget, before slice 1 (2026-11-14, T001): `BenchmarkSessionsList500`
