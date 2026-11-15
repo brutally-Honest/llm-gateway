@@ -2,6 +2,7 @@ package timeline
 
 import (
 	"github.com/brutally-honest/llm-gateway/internal/core"
+	"github.com/brutally-honest/llm-gateway/internal/cost"
 	"github.com/brutally-honest/llm-gateway/internal/store"
 )
 
@@ -169,6 +170,8 @@ type TokenLine struct {
 	CacheWrite *int64 `json:"cache_write"`
 	CacheRead  *int64 `json:"cache_read"`
 	Incomplete bool   `json:"incomplete"`
+	// Cost is the session's API-equivalent cost, side calls included (spec 020 AC7, AC8).
+	Cost cost.TotalJSON `json:"cost"`
 }
 
 // LookItem is one "Needs a look" entry; Target says what it opens or where it scrolls.

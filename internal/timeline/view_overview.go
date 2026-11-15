@@ -90,7 +90,7 @@ func (b *builder) overview(v *View) {
 
 	sum := Summarize(usages).Total
 	o.Tokens = TokenLine{Input: sum.Input.Value, Output: sum.Output.Value, CacheWrite: sum.CacheWrite.Value,
-		CacheRead: sum.CacheRead.Value, Incomplete: sum.Incomplete()}
+		CacheRead: sum.CacheRead.Value, Incomplete: sum.Incomplete(), Cost: sum.Cost.JSON()}
 
 	v.SideCalls = []SideCall{}
 	namer, _ := b.in.Rules.(SideCallNamer)
