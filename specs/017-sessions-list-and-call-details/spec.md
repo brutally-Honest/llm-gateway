@@ -1,15 +1,16 @@
 ---
 feature: 017-sessions-list-and-call-details
 kind: feat
-status: approved
-version: 7
+status: draft
+version: 8
 created: 2026-11-10
 supersedes:
 branch: feat/017-sessions-list-and-call-details
-approved: 2026-11-14T04:59:10Z
-approved-by: human
-sha256: 7cdeb2976ec520cde1705c05fc17a598e00f67506c3631076759e851f1476737
-fingerprint: 87d17017fd544fec788306052110ba31595f1fef94cd6657265edbddec3d3c52
+approved:
+approved-by:
+sha256:
+fingerprint:
+previous: 67c86da
 ---
 # Sessions list and call details
 
@@ -231,3 +232,4 @@ This changes earlier features:
   complete call keeps its body on live updates (D42); AC12, the exchange page's breadcrumb
   names its session and call, or Ungrouped (D47); AC21, the facts join the fixed top (D38);
   E6, "no sessions match" is said once and the filter note stays (D34)
+- v8 (2026-11-15) — reopened: v8 aligns AC text with D-entries D27, D30, D31, D33, D34, D37, D38, D41, D42, D43, D47 from slices 1-3
