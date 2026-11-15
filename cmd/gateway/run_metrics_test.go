@@ -264,6 +264,9 @@ func TestRun_MetricsAfterRequest(t *testing.T) {
 			t.Errorf("no %s%v", w.name, w.labels)
 		}
 	}
+	if hasSeries(fams, "gateway_http_requests_total", map[string]string{"listener": "ui", "proxied": "true"}) {
+		t.Error("a ui proxied=true series exists; the UI never proxies")
+	}
 	if _, ok := fams["gateway_last_shutdown_duration_seconds"]; ok {
 		t.Error("last shutdown metrics before any recorded stop")
 	}

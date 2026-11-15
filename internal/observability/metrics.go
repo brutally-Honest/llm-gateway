@@ -127,12 +127,13 @@ func NewMetrics(version string, protocols ...string) *Metrics {
 // each metric before its first observation: an error panel reads 0, not "no data", and
 // a dashboard query of a renamed metric fails its test.
 func (m *Metrics) initSeries(protocols []string) {
-	for _, l := range []string{ListenerAPI, ListenerUI} {
+	// Only the API listener proxies; the UI's requests are never proxied=true.
+	for _, s := range []struct{ listener, proxied string }{
+		{ListenerAPI, "true"}, {ListenerAPI, "false"}, {ListenerUI, "false"},
+	} {
 		for _, class := range []string{"2xx", "3xx", "4xx", "5xx"} {
-			for _, p := range []string{"true", "false"} {
-				m.requests.WithLabelValues(l, class, p)
-				m.requestTime.WithLabelValues(l, class, p)
-			}
+			m.requests.WithLabelValues(s.listener, class, s.proxied)
+			m.requestTime.WithLabelValues(s.listener, class, s.proxied)
 		}
 	}
 	for _, proto := range protocols {
