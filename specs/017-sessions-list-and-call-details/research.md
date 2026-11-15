@@ -312,3 +312,18 @@ feature: 017-sessions-list-and-call-details
   page with the header tables, the API key `[REDACTED]`, D43); with that call open, its body
   scrolled about halfway and a message box scrolled inside, calls added to the session left
   both scrolls, the open call and focus where they were ("3 of 8" became "3 of 11").
+- Slice 3 manual check (2026-11-15, T024, `/ui-check 017-sessions-and-calls` §3 and a full
+  pass of every page in Chrome, light and dark, fresh throwaway gateway seeded per §1 and
+  §3): Karthik accepted 3.1–3.3. Seen and matched: the ungrouped page ("Sessions /
+  Ungrouped", "2 exchanges · 1 failed", `✓ ok` / `✗ failed`, labelled tokens); the
+  unassigned page ("○ unassigned", `✓ ok`, bytes, duration, request); the full exchange page
+  from a call ("Sessions / Fix flaky checkout tests / Call #16", red `✗ 500 Internal Server
+  Error`, labelled fact cards, header tables with the key `[REDACTED]`, bodies opening) and
+  from Ungrouped ("Sessions / Ungrouped / Exchange"); the call dialog's Headers link landing
+  on "Request headers", focused (D43). Contrast scanned on all seven views in both themes:
+  lowest 5.34:1 light, 5.26:1 dark, nothing under 4.5. Fixed on the way, each in its own
+  commit: the two header tables now line up (eda5bda); a new page starts at its top (df21577);
+  the sessions list's Session column keeps 20rem at 1,440 px (9db720c, D49). The full pass
+  was re-run at a confirmed 1,440 px viewport and at 2,560 (D49): apart from the sessions
+  list, which the fix covers, no page wraps, cuts or scrolls sideways differently between
+  the two; the session page reflows within its cards.
