@@ -315,7 +315,7 @@ export function createCallDialog(ctx = {}) {
   // rawFor is the Raw section when the details did not load: the links need only the id.
   function rawFor(id) {
     const e = encodeURIComponent(id);
-    return rawSection({ request: `/api/exchanges/${e}/body?part=request`, response: `/api/exchanges/${e}/body?part=response`, headers: `#/exchanges/${e}`, page: `#/exchanges/${e}` });
+    return rawSection({ request: `/api/exchanges/${e}/body?part=request`, response: `/api/exchanges/${e}/body?part=response`, headers: `#/exchanges/${e}/headers`, page: `#/exchanges/${e}` });
   }
 
   // drawNav is the call's place among the session's calls, all in the head: its number

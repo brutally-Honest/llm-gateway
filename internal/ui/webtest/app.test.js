@@ -253,3 +253,39 @@ test("ungroupedPageUsesLabelsAndBreadcrumb", async () => {
   const crumbs = textOf(all(byId("shell-head")).find((e) => e.tagName === "nav")).replace(/\s+/g, " ").trim();
   assert.equal(crumbs, "Sessions / Ungrouped");
 });
+
+// AC12, research D43: the full exchange page sits in the sessions list's column, titled with
+// its call's number, its status as glyph and word and its facts labelled; the breadcrumb
+// names its session and call, or Ungrouped for an exchange no session claims; the call
+// dialog's Headers link (#/exchanges/{id}/headers) lands on the request headers.
+test("exchangePageUsesLabelsAndBreadcrumb", async () => {
+  const base = { method: "POST", path: "/v1/messages", protocol: "test", client: "c", stream: false, parse: "ok", started_at: "2026-01-01T00:00:00Z", ended_at: "2026-01-01T00:00:01Z", ttfb_ms: 120, duration_ms: 1000, request_body_stored: true, response_body_stored: true, request_headers: { "X-Test-Key": ["[REDACTED]"] }, response_headers: {} };
+  replies["/api/exchanges/x1"] = { ...base, id: "x1", status: 200, status_word: "200 OK", model: "m1", session_id: "s1", session_title: "Seeded", call_n: 2, usage: { has_usage: true, input: 42, output: 7, cache_write: 0, cache_read: null } };
+  replies["/api/exchanges/x2"] = { ...base, id: "x2", status: 500, status_word: "500 Internal Server Error", client: "unknown", usage: null };
+  const go = async (hash) => {
+    location.hash = hash;
+    for (const fn of listeners.hashchange) fn();
+    for (let i = 0; i < 6; i++) await settle();
+  };
+  const crumbs = () => all(byId("shell-head")).find((e) => e.tagName === "nav");
+  await go("#/exchanges/x1/headers");
+  const page = withClass(byId("app"), "exchange-page")[0];
+  assert.ok(page && page.className.split(" ").includes("page"), "the sessions list's column");
+  assert.equal(textOf(crumbs()).replace(/\s+/g, " ").trim(), "Sessions / Seeded / Call #2");
+  assert.equal(all(crumbs()).find((e) => e.tagName === "a" && e.textContent === "Seeded").href, "#/sessions/s1");
+  const head = withClass(page, "sp-head")[0];
+  assert.match(textOf(head), /Call #2/);
+  assert.equal(withClass(head, "st-ok")[0].textContent, "✓ 200 OK");
+  const facts = withClass(page, "mfact").map((f) => textOf(f).replace(/\s+/g, " ").trim());
+  for (const want of ["Input tokens 42", "Output tokens 7", "Cache write 0", "Cache read —", "Parse ✓ ok", "Time to first byte 120 ms"]) assert.ok(facts.includes(want), want);
+  const headers = page.children.find((c) => c.id === "headers");
+  assert.equal(headers.textContent, "Request headers");
+  assert.equal(globalThis.document.activeElement, headers, "the Headers link lands on the request headers");
+  assert.match(textOf(page), /\[REDACTED\]/);
+  await go("#/exchanges/x2");
+  assert.equal(textOf(crumbs()).replace(/\s+/g, " ").trim(), "Sessions / Ungrouped / Exchange");
+  const page2 = withClass(byId("app"), "exchange-page")[0];
+  assert.match(textOf(withClass(page2, "sp-head")[0]), /Exchange/);
+  assert.equal(withClass(page2, "st-failed")[0].textContent, "✗ 500 Internal Server Error");
+  assert.ok(withClass(page2, "mfact").some((f) => /Tokens\s*not a model call/.test(textOf(f))));
+});

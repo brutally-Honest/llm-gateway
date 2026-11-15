@@ -2,8 +2,10 @@ import { THEMES, pickTheme } from "./theme.js";
 import { keyBar } from "./keys.js";
 
 // breadcrumb returns the header trail: "Sessions" first (a link back to the list once
-// inside a view), then the session title inside a session. The last part has no href.
-export function breadcrumb(route, title) {
+// inside a view), then the session title inside a session. The last part has no href. On
+// the full exchange page, trail = { sessionId, sessionTitle, callN } names the session and
+// call it belongs to; an exchange no session claims sits under Ungrouped (017 AC12).
+export function breadcrumb(route, title, trail = null) {
   const root = { text: "Sessions", href: "#/" };
   switch (route.name) {
     case "sessions":
@@ -15,7 +17,9 @@ export function breadcrumb(route, title) {
     case "unassigned":
       return [root, { text: "Unassigned connections" }];
     case "exchange":
-      return [root, { text: "Exchange" }];
+      if (!trail) return [root, { text: "Exchange" }];
+      if (!trail.sessionId) return [root, { text: "Ungrouped", href: "#/ungrouped" }, { text: "Exchange" }];
+      return [root, { text: trail.sessionTitle || "Session", href: `#/sessions/${encodeURIComponent(trail.sessionId)}` }, { text: trail.callN ? `Call #${trail.callN}` : "Exchange" }];
     default:
       return [root];
   }
@@ -59,9 +63,9 @@ export function mountShell({ head, bar, storage, root, theme }) {
   }
 
   return {
-    setRoute(route, title) {
+    setRoute(route, title, trail = null) {
       const frag = document.createDocumentFragment();
-      breadcrumb(route, title).forEach((p, i) => {
+      breadcrumb(route, title, trail).forEach((p, i) => {
         if (i > 0) frag.append(el("span", " / ", "muted"));
         if (p.href) {
           const a = el("a", p.text);

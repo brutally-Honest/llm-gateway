@@ -10,7 +10,7 @@ import { buildRoute, parseRoute } from "./route.js";
 import { handleKey, isTextInput } from "./keys.js";
 import { createCallDialog } from "./call-dialog.js";
 import { mountShell } from "./shell.js";
-import "./exchange-detail.js";
+import { createExchangePage } from "./exchange-detail.js";
 import { createUngroupedPage } from "./ungrouped-list.js";
 
 const app = document.getElementById("app");
@@ -282,16 +282,19 @@ async function showUnassigned() {
 }
 
 // showExchange loads one exchange's detail; its bodies load only when their sections open.
-async function showExchange(id) {
+// Once it lands, the breadcrumb names its session and call, or Ungrouped (017 AC12).
+async function showExchange(r) {
   const mine = ++seq;
-  const el = document.createElement("exchange-detail");
-  app.replaceChildren(el);
-  el.render({ exchange: null, error: "" });
+  const pg = createExchangePage();
+  app.replaceChildren(pg.el);
+  pg.render({ exchange: null });
   try {
-    const exchange = await getJSON(`exchanges/${encodeURIComponent(id)}`);
-    if (mine === seq) el.render({ exchange, error: "" });
+    const exchange = await getJSON(`exchanges/${encodeURIComponent(r.id)}`);
+    if (mine !== seq) return;
+    shell.setRoute(r, "", { sessionId: exchange.session_id || "", sessionTitle: exchange.session_title || "", callN: exchange.call_n || 0 });
+    pg.render({ exchange, focus: r.focus || "" });
   } catch (e) {
-    if (mine === seq) el.render({ exchange: null, error: e.message });
+    if (mine === seq) pg.render({ exchange: null, error: e.message });
   }
 }
 
@@ -360,7 +363,7 @@ function route() {
   } else if (r.name === "session") {
     showSession(r.id);
   } else if (r.name === "exchange") {
-    showExchange(r.id);
+    showExchange(r);
   } else if (r.name === "unassigned") {
     showUnassigned();
   } else {

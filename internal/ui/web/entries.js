@@ -151,8 +151,3 @@ export function prettyJSON(text) {
     return text;
   }
 }
-
-// counterText renders a token counter; null is unknown, never 0.
-export function counterText(n) {
-  return n === null || n === undefined ? "unknown" : String(n);
-}

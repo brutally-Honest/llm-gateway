@@ -349,7 +349,7 @@ func TestCallDetails_NoAuthHeaders(t *testing.T) {
 	if strings.Contains(hbody, "sk-secret-xyz") || strings.Contains(strings.ToLower(hbody), "authorization") {
 		t.Errorf("call details carry a stored header: %s", hbody)
 	}
-	if hm["raw"].(map[string]any)["headers"] != "#/exchanges/h" {
+	if hm["raw"].(map[string]any)["headers"] != "#/exchanges/h/headers" {
 		t.Errorf("headers link = %v", hm["raw"])
 	}
 	_, m, body := getCall(t, e, sid(), "a")
@@ -358,7 +358,44 @@ func TestCallDetails_NoAuthHeaders(t *testing.T) {
 			t.Errorf("call details mention %q: %s", bad, body)
 		}
 	}
-	if m["raw"].(map[string]any)["headers"] != "#/exchanges/a" {
+	if m["raw"].(map[string]any)["headers"] != "#/exchanges/a/headers" {
 		t.Errorf("headers link = %v", m["raw"])
+	}
+}
+
+// 017 AC12, research D43: the full exchange page's breadcrumb and title come from the
+// server: a model call in a session carries its session's title and its #n; every exchange
+// carries its status in words; an exchange no session claims carries neither.
+func TestExchange_SessionTitleCallNumberAndStatusWord(t *testing.T) {
+	e, d := viewEnv(t)
+	d.callWith("a", 1, false, nil, "user:fix the retry")
+	d.callWith("b", 2, false, nil, "user:fix the retry", "assistant:Fixed.")
+	_, body := fetch(t, e, "/api/exchanges/b")
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m["session_title"] != "fix the retry" || m["call_n"] != 2.0 || m["status_word"] != "200 OK" {
+		t.Errorf("exchange b = title %v, n %v, status %v", m["session_title"], m["call_n"], m["status_word"])
+	}
+	ex := &core.Exchange{RequestID: "u", PrincipalID: core.PrincipalLocal, Protocol: "test", Client: "unknown",
+		Auth: core.AuthAPIKey, Method: "POST", Path: "/v1/x", Status: 500,
+		Start: baseTime.Add(5 * time.Second), End: baseTime.Add(6 * time.Second)}
+	if err := e.s.SaveExchange(t.Context(), ex); err != nil {
+		t.Fatal(err)
+	}
+	_, body = fetch(t, e, "/api/exchanges/u")
+	m = nil
+	if err := json.Unmarshal(body, &m); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m["session_title"]; ok {
+		t.Errorf("an ungrouped exchange has no session title: %v", m["session_title"])
+	}
+	if _, ok := m["call_n"]; ok {
+		t.Errorf("an ungrouped exchange has no call number: %v", m["call_n"])
+	}
+	if m["status_word"] != "500 Internal Server Error" {
+		t.Errorf("status word = %v", m["status_word"])
 	}
 }

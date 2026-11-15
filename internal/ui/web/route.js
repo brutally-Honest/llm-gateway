@@ -8,7 +8,12 @@ export function parseRoute(hash) {
     if (h === "#/" || h === "#") return { name: "sessions" };
     if (h === "#/ungrouped") return { name: "ungrouped" };
     if (h === "#/effects/unassigned") return { name: "unassigned" };
-    if (h.startsWith("#/exchanges/")) return { name: "exchange", id: decodeURIComponent(h.slice(12)) };
+    if (h.startsWith("#/exchanges/")) {
+      // #/exchanges/{id}/headers lands on the page's headers (research D43)
+      const rest = h.slice(12);
+      if (rest.endsWith("/headers")) return { name: "exchange", id: decodeURIComponent(rest.slice(0, -8)), focus: "headers" };
+      return { name: "exchange", id: decodeURIComponent(rest) };
+    }
     if (h.startsWith("#/sessions/")) {
       const rest = h.slice(11);
       const i = rest.indexOf("/call/");
@@ -31,7 +36,7 @@ export function buildRoute(r) {
     case "unassigned":
       return "#/effects/unassigned";
     case "exchange":
-      return `#/exchanges/${enc(r.id)}`;
+      return `#/exchanges/${enc(r.id)}${r.focus === "headers" ? "/headers" : ""}`;
     case "session":
       return r.call ? `#/sessions/${enc(r.id)}/call/${enc(r.call)}` : `#/sessions/${enc(r.id)}`;
     default:

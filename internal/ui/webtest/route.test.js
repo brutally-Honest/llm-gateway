@@ -9,6 +9,14 @@ test("callUrlRoundTrips", () => {
   assert.deepEqual(parseRoute(h), r);
 });
 
+// research D43: a call's Headers link lands on the full exchange page's headers.
+test("exchangeHeadersUrlRoundTrips", () => {
+  const r = { name: "exchange", id: "e 1", focus: "headers" };
+  const h = buildRoute(r);
+  assert.equal(h, "#/exchanges/e%201/headers");
+  assert.deepEqual(parseRoute(h), r);
+});
+
 test("oldRoutesStillParse", () => {
   assert.deepEqual(parseRoute(""), { name: "sessions" });
   assert.deepEqual(parseRoute("#/"), { name: "sessions" });

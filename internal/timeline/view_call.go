@@ -251,6 +251,25 @@ func HasCall(v View, id string) bool {
 	return ok
 }
 
+// CallNumber is a call's #n in its session's view, steps (sub-agents' included) and side
+// calls alike; false when the view has no such call.
+func CallNumber(v View, id string) (int, bool) {
+	places, _ := callPlaces(v)
+	p, ok := places[id]
+	switch {
+	case !ok:
+		return 0, false
+	case p.step != nil:
+		return p.step.N, true
+	case p.side != nil:
+		return p.side.N, true
+	}
+	return 0, false
+}
+
+// StatusWord is an exchange's HTTP status in words: "200 OK", "500 Internal Server Error".
+func StatusWord(status int) string { return statusWord(status, "") }
+
 // words turns a provider's stop reason into words: "end_turn" -> "end turn".
 func words(s string) string { return strings.ReplaceAll(s, "_", " ") }
 
@@ -461,7 +480,8 @@ func callReply(in CallInput) CallReply {
 
 func callRaw(ex store.ExchangeRow) CallRaw {
 	id := url.PathEscape(ex.RequestID)
-	r := CallRaw{Headers: "#/exchanges/" + id, Page: "#/exchanges/" + id}
+	// the Headers link lands on the full exchange page's headers (research D43)
+	r := CallRaw{Headers: "#/exchanges/" + id + "/headers", Page: "#/exchanges/" + id}
 	if ex.RequestBody != "" {
 		r.Request = "/api/exchanges/" + id + "/body?part=request"
 	} else {
