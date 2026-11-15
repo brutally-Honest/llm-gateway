@@ -127,3 +127,32 @@ all protocol `anthropic`:
 - 1,421 calls have a prompt above 200k tokens (largest 639,839): no tier applies to
   Opus 5.5 (D4).
 - No model without a price: the manual check seeds one in a throwaway gateway.
+
+### Check on the real gateway (2026-11-15)
+`docs/manual-checks/020-cost.md`, Chrome, the real service on this branch's build
+(`~/.local/bin/gateway`, the old binary kept as `gateway.bak-020`) and a throwaway gateway
+for the seeded session. Karthik accepted the 2,560 px pass (with D15) and asked for the
+header alignment, the fast-mode check (D16) and the 1,440 pass.
+
+- 2,560 px (`innerWidth` 2560), light and dark, build bbffe91: every step of §1–§3 as
+  expected after D14; the first run of §1 found the cost column cut off (D14).
+- 1,440 px (`innerWidth` 1440; a 1,464 px window, 24 px of frame), light and dark, build
+  83675a6: the Session column at its 20rem (280 px); every row's Tokens cell has its
+  "$X API-eq." line; the Today line ends "$75.90 API-eq. cost"; the overview foot reads
+  "API-equivalent cost: ≥ $47.98"; the dialog's cost table fits the dialog with Count,
+  Price and Amount right-aligned over their numbers; the seeded session reads
+  "≥ $0.22 API-eq." with no horizontal scroll.
+- At 1,440 px the real list's table is 1,430 px in a 1,377 px frame, so its Tokens column
+  is cut at the right edge (the list scrolls sideways). Not caused by this branch: hiding
+  the cost lines leaves the width at 1,430 px, and main's build (b. 9777fb1) on a copy of
+  the same store measures the same 1,430 in 1,377. The real store's token counts grew past
+  what 017 D49's "Tokens stays on one line" fits ("209.4M cache read"). Left on the
+  roadmap.
+- Arithmetic, "Pending and completed tasks" (536 calls), summed from the store with exact
+  decimals: 12,385 input × $4 + 0 × $5 + 1,299,387 1h writes × $8 + 148,184,385 reads ×
+  $0.20 + 395,088 output × $20 per MTok = $0.04954 + $0 + $10.395096 + $29.636877 +
+  $7.90176 = $47.983273; the API's `usd` is "47.983273", shown "≥ $47.98" (2 cut calls
+  left out). One main call: 2 × $4 + 45,677 × $8 + 221 × $20 per MTok = $0.369844, shown
+  $0.37; one side call (title generation): 1,172 × $4 + 18 × $20 = $0.005048, shown $0.01.
+- GIFs: `~/Downloads/020-cost-2026-11-15.gif` (2,560 px),
+  `~/Downloads/020-cost-1440-2026-11-15.gif` (1,440 px).
