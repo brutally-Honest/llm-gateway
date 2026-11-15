@@ -74,6 +74,19 @@ feature: 020-api-equivalent-cost
   elsewhere; the hover: "What these tokens would cost at Anthropic's published API
   prices — not what was charged" names no provider in the page code: the provider's
   name comes from the book (`source` in the API).
+- D12 (2026-11-15) — 013 AC35 said no view shows cost or money, and
+  `TestWeb_NoCostOrContextPercent` held every web file to it. This spec reverses the money
+  half on purpose (Phase 9), so the test is replaced, not loosened past its intent:
+  `TestWeb_NoContextPercentAndMoneyOnlyFromCost` keeps the context-percentage ban for
+  every file, allows money only in `cost.js` (no other file writes a currency sign, a
+  `$`-amount or reads an amount field), and requires `cost.js` to label amounts
+  "API-equivalent … not what was charged" and every file that reads a cost to go through
+  it. Flagged to Karthik in the report, since it edits an older feature's check.
+- D13 (2026-11-15) — Sessions list: the cost is a column of its own after Tokens, "API-eq.
+  cost", one line, its header hover saying what the amount is. The page overview puts
+  "API-equivalent cost: $X" in its foot after the tokens line; the Today line ends with
+  "$X API-eq. cost"; the dialog has the cost in its top facts and an "API-equivalent cost"
+  section after Context, with one row per token kind (5m and 1h apart) and the total.
 
 ## Notes
 ### Evidence: models in the real store (2026-11-15)
