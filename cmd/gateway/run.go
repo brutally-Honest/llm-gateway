@@ -263,11 +263,23 @@ func run(ctx context.Context, d deps) int {
 	var uiSrv *http.Server
 	var uiErr <-chan error // nil, so never ready, when the UI is off
 	if uiLn != nil {
+		deps := capt.uiDeps(ctx, uiLn.Addr().String(), log)
 		uiSrv = &http.Server{
-			Handler:           ui.Handler(capt.uiDeps(ctx, uiLn.Addr().String(), log)),
+			Handler:           ui.Handler(deps),
 			ReadHeaderTimeout: 10 * time.Second,
 		}
-		uiErr = logging.Go(log, "ui_serve", func() error { return uiSrv.Serve(uiLn) })
+		srvUI := uiSrv
+		// Spec 019: the sessions list is built before the UI accepts, so the first page
+		// load after a restart answers instead of timing out on a cold build; a page that
+		// connects meanwhile waits in the listen queue. The proxy serves from the start.
+		uiErr = logging.Go(log, "ui_serve", func() error {
+			start := time.Now()
+			if err := ui.Warm(ctx, deps); err != nil && ctx.Err() == nil {
+				log.Warn("ui warm-up failed; the list builds on first use", zap.Error(err))
+			}
+			log.Info("ui ready", zap.Int64("warm_ms", time.Since(start).Milliseconds()))
+			return srvUI.Serve(uiLn)
+		})
 		log.Info("ui started", zap.String("addr", uiLn.Addr().String()))
 	}
 

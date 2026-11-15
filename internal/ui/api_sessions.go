@@ -392,6 +392,27 @@ func mountSessions(api chi.Router, d Deps) {
 	api.Get("/sessions/{id}", d.getSession)
 }
 
+// Warm builds the sessions list's first page into d's caches (spec 019). The gateway runs
+// it once at start, before the UI accepts connections: cold, that page can take longer
+// than one request's store timeout, which made the first page load after a restart
+// fail. ctx bounds it; on an error the caches keep what was built so far.
+func Warm(ctx context.Context, d Deps) error {
+	if d.Reader == nil {
+		return nil
+	}
+	c := d.Reader.WithContext(ctx)
+	rows, err := c.SessionPage(nil, defaultListLimit+1)
+	if err != nil {
+		return err
+	}
+	ids := make([]string, len(rows))
+	for i, row := range rows {
+		ids[i] = sessionID(row)
+	}
+	_, _, err = d.summarizeRows(ctx, c, ids, rows, d.now())
+	return err
+}
+
 func (d Deps) listSessions(w http.ResponseWriter, r *http.Request) {
 	limit, ok := parseLimit(r, defaultListLimit, maxListLimit)
 	if !ok {
