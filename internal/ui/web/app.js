@@ -1,5 +1,5 @@
 import { getJSON, openStream } from "./api.js";
-import { effectsListNode } from "./effects-list.js";
+import { createUnassignedPage } from "./effects-list.js";
 import { lastID } from "./effects.js";
 import { addUnique, upsertSession } from "./entries.js";
 import { createStore } from "./store.js";
@@ -252,39 +252,33 @@ function setPage(name) {
   }
 }
 
-// showUnassigned lists the connections linked to no session (spec 014, AC15).
+// showUnassigned lists the connections linked to no session (spec 014 AC15, 017 AC12).
 async function showUnassigned() {
   const mine = ++seq;
-  const box = document.createElement("section");
-  box.className = "unassigned-page";
-  const h = document.createElement("h1");
-  h.textContent = "Unassigned connections";
-  const why = note("muted", "Connections made while no session, or more than one, was active.");
-  const body = document.createElement("div");
-  box.append(h, why, body);
-  app.replaceChildren(box);
   const open = new Set();
-  let items = [];
-  const draw = () => {
-    body.replaceChildren(effectsListNode(items, {
-      isOpen: (k) => open.has(k),
-      setOpen: (k, on) => (on ? open.add(k) : open.delete(k)),
-      getJSON,
-      redraw: draw,
-    }));
-  };
-  draw();
+  let state = { items: [], loading: true, error: "" };
+  const pg = createUnassignedPage({
+    isOpen: (k) => open.has(k),
+    setOpen: (k, on) => (on ? open.add(k) : open.delete(k)),
+    getJSON,
+    redraw: () => pg.render(state),
+  });
+  app.replaceChildren(pg.el);
+  pg.render(state);
   try {
+    let items = [];
     for (;;) {
       const p = await getJSON("effects/unassigned", { after: lastID(items), limit: 5000 });
       if (mine !== seq) return;
       items = items.concat(p.effects);
-      draw();
       if (p.effects.length < 5000) break;
     }
+    state = { items, loading: false, error: "" };
   } catch (e) {
-    if (mine === seq) body.replaceChildren(note("error", e.message));
+    if (mine !== seq) return;
+    state = { items: [], loading: false, error: e.message };
   }
+  pg.render(state);
 }
 
 // showExchange loads one exchange's detail; its bodies load only when their sections open.

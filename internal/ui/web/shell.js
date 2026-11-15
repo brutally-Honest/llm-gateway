@@ -12,6 +12,8 @@ export function breadcrumb(route, title) {
       return [root, { text: title || route.id }];
     case "ungrouped":
       return [root, { text: "Ungrouped" }];
+    case "unassigned":
+      return [root, { text: "Unassigned connections" }];
     case "exchange":
       return [root, { text: "Exchange" }];
     default:

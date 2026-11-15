@@ -127,6 +127,11 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .sp-list td.tokens .tok + .tok::before { content: " · "; color: var(--muted); }
 .sp-list td.status { white-space: nowrap; }
 .page .sp-list table { min-width: 0; }
+.page > .muted { margin: 0; font-size: 13px; }
+.page-sub { margin: 6px 0 0; font-size: 15px; font-weight: 700; color: var(--hi); }
+.page .sp-list .effects-files { list-style: none; margin: 0; padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.unassigned-page td.request { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.unassigned-page td.bytes, .unassigned-page td.dur { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .sp-unassigned { display: flex; flex-direction: column; gap: 8px; }
 .sp-unassigned h2 { margin: 6px 0 0; font-size: 15px; font-weight: 700; color: var(--hi); }
 .sp-unassigned > p { margin: 0; }
@@ -163,7 +168,6 @@ dl.facts dd { margin: 0; color: var(--hi); overflow-wrap: anywhere; }
 .effect-block { margin: .3rem 0 .8rem; }
 .effect-section { margin: .6rem 0 .3rem; font-size: .9rem; color: var(--muted); }
 .effect-reason { margin: 0 0 .3rem; font-size: .8rem; }
-.effects-list ul { list-style: none; padding-left: 0.5rem; margin: 0.25rem 0; }
 .effect-row { overflow-wrap: anywhere; }
 .effect-body { max-height: 24rem; }
 
