@@ -51,6 +51,14 @@ feature: 019-fast-shutdown
   10m: room for the grace, the cut and the drain. Karthik's own config file sets
   `shutdown_timeout: 10m` (copied from the old example); it is changed to 10s for the
   real-gateway check, with a backup beside it.
+- D9 (2026-11-15) — Karthik: the v1 order after 019 is Phase 9 cost, API-equivalent (from
+  captured tokens and published prices, no API key needed), then Phase 8
+  self-observability. PLAN.md §7 still said Phase 9 "needs API billing to verify" and
+  must match the provider console, which disagrees, and PLAN wins over the roadmap, so
+  its Phase 9 row and v1 order line change with the roadmap. AC44 (the API-key smoke)
+  moves to the roadmap's Later: it needs a Console account and prepaid credits. The
+  roadmap's "Not now: OpenTelemetry" is left as it is, read as OTel ingestion from
+  harnesses (Phase 6), not Phase 8's own tracing.
 
 ## Notes
 ### Evidence: timed stops (2026-11-15)
@@ -75,3 +83,20 @@ Main, on a copy of the real store (`.backup`, blobs hard-linked), effects off:
 `/api/sessions` at 5.01 s, 10.01 s and 15.01 s → 504 `the store did not answer in time`,
 then 200 at 17.09 s (2.08 s), then 0.03 s. This branch: the first `/api/sessions` waits in
 the listen queue and answers 200 at 16.35 s.
+
+### Check on the real gateway (2026-11-15)
+- Config: `shutdown_timeout` 10m → 10s in `~/.config/llm-gateway/config.yaml` (backup
+  `config.yaml.bak-2026-11-15-019`). The first restart onto this build still took 90.2 s:
+  the old binary was the one stopping.
+- Measured restart, build bd80a4e stopping and starting, with this Claude Code session
+  and its session page open in Chrome (established before: 2 tunnels on 7198, 3 UI
+  connections, 2 API connections): `systemctl --user restart llm-gateway` 0.64 s; the
+  stop, "shutting down" 14:50:23.988 to "gateway stopped" 14:50:24.533, 0.54 s; no
+  timeout and no SIGKILL in the journal; `capture stopped` undrained 0, store_failed 0.
+- The two tunnels (bridge.claudeusercontent.com and api.anthropic.com) were stored closed
+  early at 14:50:23, linked to the session; the session page shows them in turn 27 with
+  ✕ beside ⇄ for the finished ones, light and dark, and its live stream reconnected
+  ("live").
+- After the start, `ui ready` came with warm_ms 17670: the UI answered from then on; the
+  API served from 14:50:24.65.
+
