@@ -68,6 +68,9 @@ feature: 018-side-call-turns
   (OAW4BFWX) answered both; the first build let a call take one notice, leaving the other
   as a background hooks-only turn. A call now takes every notice in its one-second window
   (a background turn's text is their notices, in order); the gateway test sends two at once.
+  If an answering call ever starts outside the one-second window, the notice falls back to
+  a background turn with no needs-a-look, which is the accepted failure mode (Karthik,
+  2026-11-15).
 
 ## Notes
 ### Evidence: the captured calls (2026-11-15, the real store, read-only)
@@ -102,3 +105,23 @@ Found by the content hash of each marker's user message:
 - Effect today, session 9980399c (121 calls): 13 turns, of which turns 3, 8, 10 and 13 are
   away summaries and turn 12 a suggestion; its row counts 13 prompts, 119 main calls and 2
   side calls (quota probe, title generation).
+- Wrap-up (2026-11-15). Karthik accepted both fixes after the real-store checks in Chrome,
+  light and dark (the old build 3b41bf7 on a copy of the store beside the fixed build on
+  the real gateway). Built by hand, no agent-loop kit (D1); spec.md stays a draft.
+  - Side calls (AC1–AC6): 30 away summaries and 11 prompt suggestions in 10 sessions are
+    side calls named "away summary" and "prompt suggestion"; no turn's prompt starts with
+    either marker in any of them (e.g. 3afa9114: 23 turns to 13, 2 side calls to 12).
+  - Task notifications (AC7–AC11): all 21 notices in 4 sessions arrived during an open turn
+    and now go with it; none is a hooks-only turn or a prompt any more. 9980399c: 13 turns
+    to 7 (5 side calls, and its turn 7 was already a false hooks-only notice before 018),
+    needs a look 6 to 5; f478826f: 11 turns to 7, needs a look 7 to 6. No background turn
+    exists in the store: the "after the turn ended" case is covered by tests only (D7).
+  - Coverage: AC1, AC2, AC4 `TestRules_AwaySummaryAndPromptSuggestionAreSideCalls`,
+    `TestRules_TurnsBesideSideCallsAreNotSideCalls`, `TestRules_SideCallNames`; AC3, AC6
+    `TestRun_AwaySummaryAndPromptSuggestionAreSideCalls`; AC5 D5 and the restart check;
+    AC7, AC8, AC10, AC11 `TestRun_TaskNotificationsStayWithTheirCalls`,
+    `TestProfile_TaskNotificationIsBackgroundPrompt`; AC9 web
+    `backgroundTurnIsMarkedAndNotCountedAsAPrompt`. Each Go test was run against the code
+    without its fix and failed (commit notes).
+  - Each real-gateway restart took about 90 s and ended in SIGKILL (the roadmap's shutdown
+    item, now next as 019).
