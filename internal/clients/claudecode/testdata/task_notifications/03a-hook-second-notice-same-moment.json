@@ -1,0 +1,8 @@
+{
+ "session_id": "SESSION",
+ "cwd": "/w",
+ "prompt_id": "redacted",
+ "permission_mode": "auto",
+ "hook_event_name": "UserPromptSubmit",
+ "prompt": "<task-notification>\n<task-id>bslow0003</task-id>\n<tool-use-id>toolu_01Background0000000003</tool-use-id>\n<output-file>/tmp/tasks/bslow0003.output</output-file>\n<status>completed</status>\n<summary>Background command \"Lint the docs\" completed (exit code 0)</summary>\n</task-notification>"
+}

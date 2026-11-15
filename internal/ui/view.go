@@ -72,6 +72,7 @@ func (vd viewDeps) sessionView(c viewReader, who sessIdent, bs builtSession, hoo
 	}
 	in.Summarizer, _ = rules.(core.ToolSummarizer)
 	in.Prompts, _ = rules.(core.PromptReader)
+	in.Background, _ = rules.(core.BackgroundPromptReader)
 	in.Home, _ = os.UserHomeDir()
 
 	if from, to := activityRange(bs, hooks); from > 0 {

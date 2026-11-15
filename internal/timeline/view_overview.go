@@ -57,7 +57,7 @@ func (b *builder) overview(v *View) {
 	o.Calls = len(b.calls)
 	var inTurns int64 // the clock the turns cover
 	for _, t := range v.Turns {
-		if t.N > 0 {
+		if t.N > 0 && !t.Background { // a background task's turn is no user prompt (018)
 			o.Turns++
 		}
 		o.Time.ModelMS += t.ModelMS
@@ -163,7 +163,7 @@ func (b *builder) title(o *Overview, v *View) {
 		}
 	}
 	for _, t := range v.Turns {
-		if t.N > 0 && strings.TrimSpace(t.Prompt) != "" {
+		if t.N > 0 && !t.Background && strings.TrimSpace(t.Prompt) != "" {
 			o.Title, o.TitleSource = cutRunes(strings.Join(strings.Fields(t.Prompt), " "), titleRunes), "prompt"
 			return
 		}
@@ -296,7 +296,7 @@ func (b *builder) needsLook(v *View) []LookItem {
 	// singled out; hooks-only turns are listed only beside turns with model calls.
 	hooksSession := len(b.in.Exchanges) == 0
 	for _, t := range v.Turns {
-		if t.HooksOnly && !hooksSession {
+		if t.HooksOnly && !t.Background && !hooksSession { // a lone notice is no lost turn (018)
 			out = append(out, LookItem{Kind: LookHooksOnly, Tone: "info", Glyph: "◇", Title: "Turn " + strconv.Itoa(t.N) + " has no model calls captured",
 				Sub: "only the hooks saw it: its tool calls show, the conversation does not", Go: "Show turn " + strconv.Itoa(t.N),
 				Target: Target{Kind: "turn", Turn: t.N}})

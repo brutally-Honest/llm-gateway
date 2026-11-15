@@ -260,6 +260,7 @@ details.side ul { list-style: none; margin: 6px 0 2px; padding: 0; display: flex
 .th .k h2 { margin: 0; font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; }
 .th .end { font-weight: 600; color: var(--warn); }
 .th .k .mdl { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-weight: 600; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 0 6px; }
+.th .k .bg { border: 1px dashed var(--border); border-radius: 6px; padding: 0 6px; }
 .th .end.bad { color: var(--bad); }
 .th .dur { grid-column: 2; grid-row: 1 / span 2; align-self: start; text-align: right; }
 .th .dur b { display: block; font-size: 18px; font-weight: 700; color: var(--hi); font-variant-numeric: tabular-nums; }
