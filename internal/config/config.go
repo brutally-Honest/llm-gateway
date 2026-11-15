@@ -22,6 +22,7 @@ type Config struct {
 	RateLimit       RateLimit
 	UI              UI
 	Effects         Effects
+	Tracing         Tracing
 }
 
 // Options says where Load looks.
@@ -95,6 +96,7 @@ func Defaults() Config {
 		RateLimit:       defaultRateLimit(),
 		UI:              defaultUI(),
 		Effects:         defaultEffects(),
+		Tracing:         defaultTracing(),
 	}
 }
 
@@ -120,6 +122,7 @@ func settingsFor(specs []UpstreamSpec) []setting {
 	s = append(s, hooksSettings()...)
 	s = append(s, uiSettings()...)
 	s = append(s, effectsSettings()...)
+	s = append(s, tracingSettings()...)
 	return append(s, ratelimitSettings()...)
 }
 

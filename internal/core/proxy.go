@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
 	"github.com/brutally-honest/llm-gateway/internal/config"
@@ -34,6 +35,7 @@ type Proxy struct {
 	log        *zap.Logger
 	principal  PrincipalResolver
 	capture    *captureConfig // nil: capture off, the proxy is 001's
+	tracer     trace.Tracer   // nil: tracing off (spec 021)
 }
 
 // NewProxy builds the proxy for adapter a in front of up, with capture off. identify
@@ -59,6 +61,11 @@ func newProxy(a Adapter, up config.Upstream, identify func(*http.Request) string
 			// it above, where redaction hides its value.
 			pr.Out.Header.Del(gatewayKeyHeader)
 			watchRequestBody(pr)
+			// Rewrite runs on the handler's goroutine just before the transport.
+			if m := MetaFrom(pr.Out.Context()); m != nil {
+				m.dispatched = time.Now()
+				m.trace.sent(m.dispatched)
+			}
 		},
 		ModifyResponse: modifyResponse,
 		ErrorHandler:   p.handleError,
@@ -80,6 +87,13 @@ const (
 	// reasonShutdown marks a call the gateway cut because its shutdown grace period ran
 	// out (spec 019): neither the client nor upstream ended it.
 	reasonShutdown = "gateway_shutdown"
+)
+
+// The upstream reasons, exported for the gateway's own metrics (spec 021), which count
+// them as upstream errors; client_body and gateway_shutdown are not upstream's.
+const (
+	GatewayErrorUpstreamTimeout     = reasonUpstreamTimeout
+	GatewayErrorUpstreamUnreachable = reasonUpstreamUnreachable
 )
 
 // ErrShutdown is the cause the gateway cancels in-flight requests with when its
@@ -106,6 +120,7 @@ func (p *Proxy) handleError(w http.ResponseWriter, r *http.Request, err error) {
 	status, reason := classify(r.Context(), m, err)
 	if m != nil {
 		m.Status = status
+		m.trace.failed(status, reason)
 	}
 	if reason == "" {
 		if m != nil {
@@ -171,6 +186,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.Auth = p.adapter.AuthKind(r.Header)
 		m.PrincipalID = p.principal.Resolve(r)
 		m.start = time.Now()
+		if p.tracer != nil {
+			m.trace = startCallTrace(p.tracer, m, r)
+		}
 		w = p.capture.startCapture(m, w, r)
 		// Observing is off unless the middleware asked for it (rate limiting off
 		// means no wrapper), and independent of capture: it wraps the tee, not the
@@ -236,6 +254,7 @@ func modifyResponse(res *http.Response) error {
 		m.TTFB = time.Since(m.start)
 		m.HasTTFB = true
 		res.Body = m.watchResponseBody(res.Body)
+		m.trace.answered(res.StatusCode, m.Stream)
 	}
 	return nil
 }

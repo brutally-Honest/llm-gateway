@@ -1,0 +1,26 @@
+# Linux (Docker Engine) override for compose.yml, added by `make observability-up` on
+# Linux. The gateway listens on the host's 127.0.0.1, which a container on a bridge
+# network cannot reach: host-gateway resolves to the bridge address (172.17.0.1), where
+# nothing listens (spec 021 research D12). So Prometheus and Grafana share the host's
+# network and bind 127.0.0.1 themselves; Jaeger stays on the bridge with loopback ports.
+services:
+  prometheus:
+    network_mode: host
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.listen-address=127.0.0.1:9090
+    volumes: !override
+      - ./prometheus/prometheus.linux.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus:/prometheus
+    extra_hosts: !reset []
+    ports: !reset []
+
+  grafana:
+    network_mode: host
+    environment:
+      GF_SERVER_HTTP_ADDR: 127.0.0.1
+      GF_SERVER_HTTP_PORT: ${GRAFANA_PORT:-3030}
+      PROMETHEUS_URL: http://127.0.0.1:9090
+    ports: !reset []

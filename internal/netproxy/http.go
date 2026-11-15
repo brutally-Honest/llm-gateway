@@ -73,6 +73,14 @@ func (p *Proxy) open(host string, port int, via, detail string) *tunnel {
 	return t
 }
 
+// Open is how many tunnels and forwarded requests are open now (spec 021,
+// gateway_proxy_tunnels_open).
+func (p *Proxy) Open() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.tunnels)
+}
+
 // finish records t with outcome, once, and forgets it.
 func (p *Proxy) finish(t *tunnel, outcome core.NetOutcome) {
 	t.once.Do(func() {

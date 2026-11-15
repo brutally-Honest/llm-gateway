@@ -3,11 +3,28 @@
 What comes next, in order. PLAN.md §7 holds the phases; this is the short list of
 features. Update it when the order changes.
 
+v1 is complete (PLAN §7: every phase in the v1 order is done) apart from the Later items
+below and AC44, the API-key smoke test of Phase 1.
+
 ## Next
-1. **Phase 8 self-observability** (PLAN §7): Prometheus, OTel → Jaeger, Grafana; the
-   gateway's own p50/p99 overhead visible.
+1. **Persistent view cache** (first after v1): the UI's start-up warm-up keeps growing
+   with the store, 17.7 s after 019 (warm_ms 17670) and 23.4 s on 2026-11-15 (warm_ms
+   23429, 021's real-gateway check; `gateway_ui_warmup_seconds` now tracks it). The UI
+   waits that long after every start. Likely fix: a sessions-list and view cache that
+   persists across restarts. The 500-session benchmark (~210 ms) misses it by shape, not
+   size: it seeds 500 sessions × 20 calls × 4 events (~40k events), while the real store
+   had 14 sessions, 2,337 calls (up to 661 in one) and ~510 events per call (each call
+   re-sends the conversation), 1.18M events, at 019; seeding that shape takes minutes a
+   run, so the benchmark was left as it is (`internal/ui/timeline_bench_test.go`).
 
 ## Done
+- **021 self-observability** (`specs/021-self-observability/`, Phase 8): Prometheus
+  `/metrics` on the API and UI listeners (requests, upstream latency and errors, gateway
+  overhead, capture and store, tunnels and UI streams, UI build times, warm-up, the last
+  stop, build info) with low-cardinality labels; OTel spans of each proxied call to
+  Jaeger, off by default, rate-limited warnings when the collector is down; a compose
+  stack (`make observability-up`) with Prometheus, Grafana and its provisioned dashboard,
+  and Jaeger, all on loopback (`docs/observability.md`).
 - **020 API-equivalent cost** (`specs/020-api-equivalent-cost/`, Phase 9): every model
   call priced on read from its stored usage and a checked-in table of Anthropic's
   published prices (effective dates, the 5m/1h cache-write split, Haiku 5.5's tier), in
@@ -29,13 +46,6 @@ features. Update it when the order changes.
 ## Later
 - Fast-mode and US-only inference prices (020 D6, D16): nothing captured uses them yet;
   a `speed` column in the price table when something does.
-- Cold sessions-list build takes ~17 s on the real store (warm_ms 17670 after 019), versus
-  ~210 ms in the 500-session benchmark; the UI waits that long after every start. Likely
-  fix: a view cache that persists across restarts. The benchmark misses it by shape, not
-  size: it seeds 500 sessions × 20 calls × 4 events (~40k events), while the real store
-  has 14 sessions, 2,337 calls (up to 661 in one) and ~510 events per call (each call
-  re-sends the conversation), 1.18M events; seeding that shape takes minutes a run, so the
-  benchmark is left as it is (`internal/ui/timeline_bench_test.go`).
 - AC44, the API-key smoke test of Phase 1 (Claude Code in API-key mode through the
   gateway; `specs/001-core-and-anthropic-passthrough/research.md` Q4): needs a Console
   account and prepaid credits.
@@ -62,5 +72,7 @@ features. Update it when the order changes.
   (`specs/015-effect-attribution/research.md`, 2026-11-10).
 
 ## Not now
-- OpenTelemetry
+- OpenTelemetry ingestion from harnesses (taking a client's own OTel events as ground
+  truth, Phase 6). This is not the gateway's own tracing, which Phase 8 built
+  (`docs/observability.md`).
 - Other harnesses

@@ -27,6 +27,7 @@ type fileConfig struct {
 	RateLimit ratelimitFile           `yaml:"ratelimit"`
 	UI        uiFile                  `yaml:"ui"`
 	Effects   effectsFile             `yaml:"effects"`
+	Tracing   tracingFile             `yaml:"tracing"`
 }
 
 // upstreamFile is one upstreams.<name> block. Like fileConfig, its tags are the known
@@ -89,6 +90,9 @@ func fileValues(f *fileConfig) map[string]*string {
 		values[uiKey(field)] = p
 	}
 	effectsValues(&f.Effects, values)
+	for field, p := range stringFields(&f.Tracing) {
+		values[tracingKey(field)] = p
+	}
 	return values
 }
 
@@ -357,6 +361,16 @@ func parseFile(path string, data []byte, specs []UpstreamSpec) (map[string]*stri
 		}
 		return walkFields(v, uiKey, stringFields(&uiFile{}))
 	}
+	// walkTracing checks the block under `tracing`: one level of fields.
+	walkTracing := func(k, v *yaml.Node) error {
+		if isNull(v) {
+			return nil
+		}
+		if v.Kind != yaml.MappingNode {
+			return fail(k.Value, reasonInvalidType, k.Line)
+		}
+		return walkFields(v, tracingKey, stringFields(&tracingFile{}))
+	}
 	// walkEffects checks the block under `effects`: enabled, then files and network.
 	walkEffects := func(k, v *yaml.Node) error {
 		if isNull(v) {
@@ -374,6 +388,7 @@ func parseFile(path string, data []byte, specs []UpstreamSpec) (map[string]*stri
 		"ratelimit": walkRateLimit,
 		"ui":        walkUI,
 		"effects":   walkEffects,
+		"tracing":   walkTracing,
 	}
 	if root := documentRoot(&doc); root != nil {
 		if root.Kind != yaml.MappingNode {

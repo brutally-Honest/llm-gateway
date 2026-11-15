@@ -60,9 +60,16 @@ var defaultHooksWant = Hooks{QueueSize: 256, Workers: 1, MemoryLimit: 32 << 20}
 // defaultUIWant is the ui block with no file and no env (spec 009, Config).
 var defaultUIWant = UI{Enabled: true, ListenAddr: "127.0.0.1:7199"}
 
+// defaultTracingWant is the tracing block with no file and no env (spec 021, AC10):
+// off, pointed at a local OTLP/HTTP collector.
+func defaultTracingWant() Tracing {
+	u, _ := url.Parse("http://127.0.0.1:4318")
+	return Tracing{OTLPEndpoint: u}
+}
+
 // AC5: with no config, the listen address is loopback on 7197.
 func TestDefaults(t *testing.T) {
-	want := Config{ListenAddr: "127.0.0.1:7197", LogLevel: "info", ShutdownTimeout: 10 * time.Second, Capture: defaultCaptureWant, Hooks: defaultHooksWant, RateLimit: defaultRateLimitWant, UI: defaultUIWant, Effects: defaultEffects()}
+	want := Config{ListenAddr: "127.0.0.1:7197", LogLevel: "info", ShutdownTimeout: 10 * time.Second, Capture: defaultCaptureWant, Hooks: defaultHooksWant, RateLimit: defaultRateLimitWant, UI: defaultUIWant, Effects: defaultEffects(), Tracing: defaultTracingWant()}
 	if got := Defaults(); !reflect.DeepEqual(got, want) {
 		t.Errorf("Defaults() = %+v, want %+v", got, want)
 	}
@@ -138,7 +145,7 @@ func TestLoad_Precedence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Config{ListenAddr: "127.0.0.1:2", LogLevel: "warn", ShutdownTimeout: 7 * time.Second, Capture: defaultCaptureWant, Hooks: defaultHooksWant, RateLimit: defaultRateLimitWant, UI: defaultUIWant, Effects: defaultEffects()}
+	want := Config{ListenAddr: "127.0.0.1:2", LogLevel: "warn", ShutdownTimeout: 7 * time.Second, Capture: defaultCaptureWant, Hooks: defaultHooksWant, RateLimit: defaultRateLimitWant, UI: defaultUIWant, Effects: defaultEffects(), Tracing: defaultTracingWant()}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("Load() = %+v, want %+v", cfg, want)
 	}

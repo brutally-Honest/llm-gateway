@@ -336,6 +336,13 @@ func (h *Hub) subscribeView(session string, view bool) (*subscriber, error) {
 	return s, nil
 }
 
+// Streams is how many SSE streams are open now (spec 021, gateway_ui_streams_open).
+func (h *Hub) Streams() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.subs)
+}
+
 // unsubscribe removes s and stops the refresh timer of every session nobody watches now.
 func (h *Hub) unsubscribe(s *subscriber) {
 	h.mu.Lock()

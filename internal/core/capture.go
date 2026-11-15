@@ -8,6 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Budget is the process-wide memory bound on captured bytes: in-flight tee copies and
@@ -213,6 +215,10 @@ type Exchange struct {
 	Parser            Parser   // nil: parse skipped
 	Excluded          []string // the parser's HashExcludedFields
 
+	// Trace is the exchange's capture span (spec 021); nil with tracing off. The worker
+	// ends it with TraceEnd once the exchange is stored.
+	Trace trace.Span
+
 	res *reservation
 }
 
@@ -324,6 +330,7 @@ func (m *Meta) finishCapture() {
 		c.res.release()
 		c.cfg.Budget.dropped.Add(1)
 		m.Capture = CaptureDroppedMemory
+		(&Exchange{Trace: m.trace.capture()}).TraceEnd(CaptureDroppedMemory)
 		return
 	}
 	status := c.resTee.status
@@ -356,12 +363,16 @@ func (m *Meta) finishCapture() {
 		Response:           resBody,
 		Parser:             c.cfg.parser,
 		Excluded:           slices.Clone(c.cfg.excluded),
+		Trace:              m.trace.capture(),
 		res:                c.res,
 	}
+	// Once queued, ex is the sink's: only the refused path may touch it again.
+	span := ex.Trace
 	if c.cfg.Sink.Submit(ex) {
 		m.Capture = CaptureQueued
 		return
 	}
 	ex.Release() // the sink has released it already; Release is idempotent
 	m.Capture = CaptureDroppedQueueFull
+	(&Exchange{Trace: span}).TraceEnd(CaptureDroppedQueueFull)
 }

@@ -58,3 +58,10 @@ What it shows:
 
 The page only reads. It cannot change or delete captured data, and nothing in it can slow down
 or fail proxying or capture.
+
+## Self-observability
+
+The gateway serves Prometheus metrics about its own health at `/metrics` and can trace
+proxied calls to Jaeger; `make observability-up` starts Prometheus, Grafana (with a
+dashboard) and Jaeger on loopback. How to start and stop it, the tracing keys and where
+everything is: `docs/observability.md`.

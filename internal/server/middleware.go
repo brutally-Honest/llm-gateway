@@ -12,6 +12,7 @@ import (
 
 	"github.com/brutally-honest/llm-gateway/internal/core"
 	"github.com/brutally-honest/llm-gateway/internal/logging"
+	"github.com/brutally-honest/llm-gateway/internal/observability"
 )
 
 // requestIDHeader is the response header that carries the request ID.
@@ -44,7 +45,7 @@ func requestID(next http.Handler) http.Handler {
 // so a handler that ends in http.ErrAbortHandler (the proxy's only abort) still gets
 // its line; the panic carries on to net/http untouched. The proxy fields are added
 // only when a proxy set Meta.Protocol, so every other line is exactly 000's.
-func accessLog(log *zap.Logger) func(http.Handler) http.Handler {
+func accessLog(log *zap.Logger, metrics *observability.Metrics) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
@@ -65,6 +66,7 @@ func accessLog(log *zap.Logger) func(http.Handler) http.Handler {
 					zap.String("remote_addr", r.RemoteAddr),
 				}
 				log.Info("request", append(fields, proxyFields(meta)...)...)
+				recordMetrics(metrics, meta, ww.Status(), time.Since(start))
 			}()
 			next.ServeHTTP(ww, r)
 		})
@@ -101,6 +103,49 @@ func proxyFields(m *core.Meta) []zap.Field {
 		f = append(f, zap.String("capture", m.Capture))
 	}
 	return f
+}
+
+// recordMetrics counts one API request and, for a proxied call, its upstream timings
+// and error (spec 021). Labels come from fixed sets and the protocol name only.
+func recordMetrics(metrics *observability.Metrics, m *core.Meta, status int, d time.Duration) {
+	if metrics == nil {
+		return
+	}
+	proxied := m.Protocol != ""
+	metrics.Request(observability.ListenerAPI, status, proxied, d)
+	if !proxied {
+		return
+	}
+	overhead, sent := m.Overhead()
+	metrics.Proxied(observability.Upstream{
+		Protocol:    m.Protocol,
+		Stream:      m.Stream,
+		Answered:    m.HasTTFB,
+		TTFB:        m.TTFB,
+		Total:       m.Elapsed(),
+		Overhead:    overhead,
+		HasOverhead: sent,
+		ErrorKind:   upstreamErrorKind(m),
+	})
+}
+
+// upstreamErrorKind is what went wrong upstream, or "": a timeout or no connection
+// before headers, a response cut mid-body, or upstream answering 429 or 5xx. A client
+// that left, a bad client body and a shutdown cut are not upstream's.
+func upstreamErrorKind(m *core.Meta) string {
+	switch {
+	case m.GatewayError == core.GatewayErrorUpstreamTimeout:
+		return observability.UpstreamTimeout
+	case m.GatewayError == core.GatewayErrorUpstreamUnreachable:
+		return observability.UpstreamUnreachable
+	case m.UpstreamAborted:
+		return observability.UpstreamAborted
+	case m.HasTTFB && m.Status == http.StatusTooManyRequests:
+		return observability.UpstreamRateLimited
+	case m.HasTTFB && m.Status >= 500 && m.Status <= 599:
+		return observability.UpstreamStatus5xx
+	}
+	return ""
 }
 
 // millis is d in milliseconds with microsecond precision.

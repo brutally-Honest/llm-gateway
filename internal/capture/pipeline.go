@@ -1,10 +1,17 @@
 package capture
 
 import (
+	"context"
+	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
 	"github.com/brutally-honest/llm-gateway/internal/core"
 	"github.com/brutally-honest/llm-gateway/internal/logging"
+	"github.com/brutally-honest/llm-gateway/internal/observability"
 )
 
 // The stages a capture_failed line names.
@@ -22,8 +29,12 @@ const (
 // exchange's memory is released whatever the outcome.
 func (s *Sink) process(ex *core.Exchange) {
 	defer ex.Release()
-	if err := s.store.SaveExchange(s.ctx, ex); err != nil {
+	err := s.write(ex, observability.StoreOpExchange, func(ctx context.Context) error {
+		return s.store.SaveExchange(ctx, ex)
+	})
+	if err != nil {
 		s.storeFailure(ex.RequestID, err)
+		ex.TraceEnd(core.CaptureFailed)
 		return
 	}
 
@@ -49,10 +60,64 @@ func (s *Sink) process(ex *core.Exchange) {
 			zap.String("reason", reason))
 	}
 
-	if err := s.store.SaveParse(s.ctx, ex.RequestID, ex.PrincipalID, status, stored, contents); err != nil {
+	err = s.write(ex, observability.StoreOpParse, func(ctx context.Context) error {
+		return s.store.SaveParse(ctx, ex.RequestID, ex.PrincipalID, status, stored, contents)
+	})
+	outcome := core.CaptureStored
+	if err != nil {
 		s.storeFailure(ex.RequestID, err)
+		outcome = core.CaptureFailed
+	}
+	if ex.Trace != nil {
+		ex.TraceEnd(outcome, captureAttrs(status, res.Events)...)
 	}
 	s.commit(ex)
+}
+
+// write runs one store call for ex, timed for the metrics and, when ex is traced, inside
+// a store_write span under its capture span (spec 021).
+func (s *Sink) write(ex *core.Exchange, op string, call func(context.Context) error) error {
+	ctx := s.ctx
+	var span trace.Span
+	if ex.Trace != nil {
+		ctx, span = ex.Trace.TracerProvider().Tracer(tracerName).Start(
+			trace.ContextWithSpan(ctx, ex.Trace), core.SpanStoreWrite,
+			trace.WithAttributes(attribute.String(core.AttrStoreOp, op)))
+	}
+	start := time.Now()
+	err := call(ctx)
+	s.metrics.StoreWrite(op, err == nil, time.Since(start))
+	if span != nil {
+		if err != nil {
+			span.SetStatus(codes.Error, "store failed")
+		}
+		span.End()
+	}
+	return err
+}
+
+// tracerName names the tracer of the store_write spans; it is the instrumentation scope
+// Jaeger shows.
+const tracerName = "github.com/brutally-honest/llm-gateway"
+
+// maxModelAttr bounds the model attribute: the value comes from the client.
+const maxModelAttr = 128
+
+// captureAttrs are the capture span's parse status and the model the request named,
+// read from the canonical request event; never content.
+func captureAttrs(status core.ParseStatus, events []core.Event) []attribute.KeyValue {
+	attrs := []attribute.KeyValue{attribute.String(core.AttrParseStatus, string(status))}
+	for _, e := range events {
+		if e.Kind == core.KindRequest && e.Request != nil && e.Request.Model != "" {
+			model := e.Request.Model
+			if len(model) > maxModelAttr {
+				model = model[:maxModelAttr]
+			}
+			attrs = append(attrs, attribute.String(core.AttrModel, model))
+			break
+		}
+	}
+	return attrs
 }
 
 // commit calls the committed callback for ex, whose row is stored. A panic in the
