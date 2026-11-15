@@ -4,13 +4,17 @@ What comes next, in order. PLAN.md §7 holds the phases; this is the short list 
 features. Update it when the order changes.
 
 ## Next
-1. **019 fast shutdown**: the gateway's stop takes 90 s and ends in SIGKILL, because open
-   proxy tunnels are only closed after the shutdown timeout runs out. Close them as soon as
-   shutdown starts, and set `TimeoutStopSec` in the systemd unit in
-   `docs/clients/claude-code.md` (and the launchd equivalent, `ExitTimeOut`, in the plist
-   there).
+1. **Phase 9 cost, API-equivalent** (PLAN §7): each model call and session priced from
+   its captured tokens (the four Phase 4 counters) and the published prices, as what it
+   would cost on the API; no API key needed. Unknown models show `unknown`.
+2. **Phase 8 self-observability** (PLAN §7): Prometheus, OTel → Jaeger, Grafana; the
+   gateway's own p50/p99 overhead visible.
 
 ## Done
+- **019 fast shutdown** (`specs/019-fast-shutdown/`, fix): a stop takes under a second with
+  nothing in flight (was 90 s and a SIGKILL): proxy tunnels and UI streams close at once,
+  in-flight model calls get 10 s and are then cut and stored as cut by the gateway; the
+  UI builds the sessions list before it accepts after a start.
 - **018 side-call turns** (`specs/018-side-call-turns/`, fix): Claude Code's away
   summaries and prompt suggestions are side calls (017 D12), and its background-task
   notices stay with the calls that answer them instead of showing as false hooks-only
@@ -20,6 +24,9 @@ features. Update it when the order changes.
   the ungrouped, unassigned and full exchange pages on 016's theme.
 
 ## Later
+- AC44, the API-key smoke test of Phase 1 (Claude Code in API-key mode through the
+  gateway; `specs/001-core-and-anthropic-passthrough/research.md` Q4): needs a Console
+  account and prepaid credits.
 - 017 E10 has no test for a live update that changes the very turn whose chip panel is
   open (the code keeps the choice, `story.js` chipsNode; only the unchanged-turn case is
   tested).
@@ -43,6 +50,5 @@ features. Update it when the order changes.
   (`specs/015-effect-attribution/research.md`, 2026-11-10).
 
 ## Not now
-- Cost (Phase 9)
 - OpenTelemetry
 - Other harnesses
