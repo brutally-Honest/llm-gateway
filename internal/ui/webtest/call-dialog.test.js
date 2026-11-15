@@ -341,8 +341,16 @@ test("replyIsCappedWithShowAll", async () => {
     dlg.sync({ sessionId: "s1", callId: "b" });
     await tick();
     assert.equal(all().hidden, true, "a reply that fits has no toggle");
+    // switching to Raw measures again: taller there, the toggle shows
     scroll = 900;
+    byTag(reply(), "button").find((b) => b.textContent === "Raw").fire("click");
+    assert.equal(all().hidden, false, "Raw taller than the cap shows the toggle");
+    byTag(reply(), "button").find((b) => b.textContent === "Preview").fire("click");
+    scroll = 100;
     dlg.sync({ sessionId: "s1", callId: "a" });
+    await tick();
+    scroll = 900;
+    dlg.sync({ sessionId: "s1", callId: "b" });
     await tick();
     assert.equal(all().hidden, false, "a reply taller than its cap keeps the toggle");
   } finally {

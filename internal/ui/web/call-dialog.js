@@ -258,7 +258,8 @@ export function createCallDialog(ctx = {}) {
     }
     // the reply is capped like a message box; "Show all" expands it in place, and stays
     // expanded through live redraws of the same call (the turn card stays whole, D11)
-    const reply = textBlock(replyAll ? "call-reply" : "call-reply is-capped", "Response", r.text);
+    // Preview and Raw differ in height: measure again after a switch
+    const reply = textBlock(replyAll ? "call-reply" : "call-reply is-capped", "Response", r.text, [], () => replyFit());
     const all = button("btn sm call-reply-all", replyAll ? "Show less" : "Show all", () => {
       replyAll = !replyAll;
       reply.className = replyAll ? "tx call-reply" : "tx call-reply is-capped";
@@ -267,9 +268,6 @@ export function createCallDialog(ctx = {}) {
     });
     all.setAttribute("aria-expanded", String(replyAll));
     replyFit = () => fitReply(reply, all);
-    // Preview and Raw differ in height: measure again after a switch
-    const mode = childWith(childWith(reply, "tx-h"), "mode");
-    if (mode) mode.addEventListener("click", () => replyFit());
     return section("Response", r.stop_reason ? `stop: ${r.stop_reason}` : "", reply, all, cutNote);
   }
 

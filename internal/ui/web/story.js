@@ -254,7 +254,8 @@ function saveMode(m) {
 
 // textBlock is a turn's prompt or final answer (AC13, AC18): its label, the Preview / Raw
 // switch and the whole text. Only the shown mode is built.
-export function textBlock(cls, label, text, extra = []) {
+// onMode, if given, runs after a switch between Preview and Raw (their heights differ).
+export function textBlock(cls, label, text, extra = [], onMode = null) {
   const box = el("section", `tx ${cls}`);
   const head = el("div", "tx-h");
   head.append(el("span", "who", label));
@@ -274,6 +275,7 @@ export function textBlock(cls, label, text, extra = []) {
       mode = m;
       saveMode(m);
       show();
+      if (onMode) onMode();
     });
     b.dataset.mode = m;
     sw.append(b);
