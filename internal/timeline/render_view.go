@@ -177,7 +177,12 @@ func (p *viewPrinter) turn(t Turn) {
 	if t.N == 0 {
 		name = "Before the first prompt"
 	}
+	if t.Background {
+		name += " · background task"
+	}
 	switch {
+	case t.HooksOnly && t.Background:
+		p.line(0, "%s · %s · no model call answered it", name, p.clock(t.At))
 	case t.HooksOnly:
 		p.line(0, "%s · %s · hooks only: no model calls captured", name, p.clock(t.At))
 	default:

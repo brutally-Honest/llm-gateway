@@ -3,6 +3,7 @@ package claudecode
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 
 	"github.com/brutally-honest/llm-gateway/internal/core"
 )
@@ -78,3 +79,16 @@ func (Profile) PromptOf(payload []byte) (string, bool) {
 }
 
 var _ core.PromptReader = Profile{}
+
+// taskNotification opens the prompt Claude Code submits itself when a background task
+// (a background Bash command, a sub-agent) finishes; the model reads it as a system
+// message (018 research D7).
+const taskNotification = "<task-notification>"
+
+// IsBackgroundPrompt reports whether a prompt is a task notification, not text the user
+// typed.
+func (Profile) IsBackgroundPrompt(prompt string) bool {
+	return strings.HasPrefix(strings.TrimSpace(prompt), taskNotification)
+}
+
+var _ core.BackgroundPromptReader = Profile{}

@@ -1,0 +1,8 @@
+{
+ "session_id": "SESSION",
+ "cwd": "/w",
+ "prompt_id": "redacted",
+ "permission_mode": "auto",
+ "hook_event_name": "UserPromptSubmit",
+ "prompt": "Run the slow check in the background, then read the config."
+}

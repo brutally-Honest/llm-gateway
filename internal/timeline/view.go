@@ -58,6 +58,9 @@ type ViewInput struct {
 	Rules      ViewRules
 	Summarizer core.ToolSummarizer
 	Prompts    core.PromptReader
+	// Background tells a background task's prompt from a typed one; nil reads every
+	// prompt as typed.
+	Background core.BackgroundPromptReader
 	// Content reads stored content by hash (hook tool inputs and prompt payloads); nil
 	// reads nothing.
 	Content func(hash string) []byte
@@ -243,26 +246,29 @@ type SideCall struct {
 
 // Turn is one prompt and what followed it (AC4).
 type Turn struct {
-	N               int          `json:"n"`
-	Hash            string       `json:"hash"`
-	Prompt          string       `json:"prompt"`
-	PromptTruncated bool         `json:"prompt_truncated,omitempty"`
-	Reminders       []string     `json:"reminders,omitempty"`
-	At              string       `json:"at"`
-	Models          []string     `json:"models,omitempty"` // models of the turn's calls, in first-use order
-	End             *Mark        `json:"end,omitempty"`    // set when the turn has no final answer
-	ClockMS         int64        `json:"clock_ms"`
-	ModelMS         int64        `json:"model_ms"`
-	ToolMS          int64        `json:"tool_ms"`
-	WaitMS          int64        `json:"wait_ms"`
-	HooksOnly       bool         `json:"hooks_only,omitempty"`
-	Counts          TurnCounts   `json:"counts"`
-	Steps           []Step       `json:"steps,omitempty"`
-	HookTools       []ToolLine   `json:"hook_tools,omitempty"`
-	Loose           []EffectLine `json:"loose,omitempty"`
-	Answer          string       `json:"answer,omitempty"`
-	AnswerCall      int          `json:"answer_call,omitempty"`
-	atNS            int64
+	N               int      `json:"n"`
+	Hash            string   `json:"hash"`
+	Prompt          string   `json:"prompt"`
+	PromptTruncated bool     `json:"prompt_truncated,omitempty"`
+	Reminders       []string `json:"reminders,omitempty"`
+	At              string   `json:"at"`
+	Models          []string `json:"models,omitempty"` // models of the turn's calls, in first-use order
+	End             *Mark    `json:"end,omitempty"`    // set when the turn has no final answer
+	ClockMS         int64    `json:"clock_ms"`
+	ModelMS         int64    `json:"model_ms"`
+	ToolMS          int64    `json:"tool_ms"`
+	WaitMS          int64    `json:"wait_ms"`
+	HooksOnly       bool     `json:"hooks_only,omitempty"`
+	// Background marks a turn the client started itself to hand the model a finished
+	// background task's result: its prompt is that notice, not text the user typed (018).
+	Background bool         `json:"background,omitempty"`
+	Counts     TurnCounts   `json:"counts"`
+	Steps      []Step       `json:"steps,omitempty"`
+	HookTools  []ToolLine   `json:"hook_tools,omitempty"`
+	Loose      []EffectLine `json:"loose,omitempty"`
+	Answer     string       `json:"answer,omitempty"`
+	AnswerCall int          `json:"answer_call,omitempty"`
+	atNS       int64
 }
 
 // TurnCounts are a turn's chips (017 AC14); Calls counts its model calls, sub-agents'

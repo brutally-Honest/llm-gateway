@@ -480,11 +480,12 @@ export function turnNode(t, ctx) {
   const h = el("h2", "", t.n ? `Turn ${t.n}` : "Before the first prompt");
   h.id = `h-${t.n}`;
   k.append(h, el("span", "", clock(t.at)));
+  if (t.background) k.append(el("span", "bg", "background task"));
   if ((t.models || []).length) k.append(el("span", "mdl", t.models.join(", ")));
   if (t.end) k.append(el("span", `end${t.end.word === "ended by error" ? " bad" : ""}`, markText(t.end)));
   const d = el("div", "dur");
   if (t.hooks_only) {
-    d.append(el("b", "", "—"), el("span", "", "no model calls captured"));
+    d.append(el("b", "", "—"), el("span", "", t.background ? "no model call answered it" : "no model calls captured"));
   } else {
     d.append(el("b", "", dur(t.clock_ms ?? 0)), el("span", "", `model ${dur(t.model_ms ?? 0)} · tools ${dur(t.tool_ms ?? 0)} · waiting ${dur(t.wait_ms ?? 0)}`));
   }
@@ -496,7 +497,8 @@ export function turnNode(t, ctx) {
     const extra = [];
     if (t.prompt_truncated) extra.push(el("p", "muted small", "The prompt was cut when it was stored."));
     if ((t.reminders || []).length) extra.push(remindersNode(t.reminders));
-    body.append(textBlock("prompt", "Prompt", t.prompt || "(no prompt text)", extra));
+    // a background turn's text is the client's notice of a finished task, not a prompt (018)
+    body.append(textBlock("prompt", t.background ? "Background task" : "Prompt", t.prompt || "(no prompt text)", extra));
   }
   const chips = chipsNode(t, ctx);
   if (chips) body.append(chips);

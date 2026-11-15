@@ -57,3 +57,10 @@ type HarnessMapper interface {
 type PromptReader interface {
 	PromptOf(payload []byte) (string, bool)
 }
+
+// BackgroundPromptReader is an optional profile interface. A profile that implements it
+// tells a prompt the client submitted on its own, to hand the model a background task's
+// result, from one the user typed: such a prompt is never counted as a user prompt.
+type BackgroundPromptReader interface {
+	IsBackgroundPrompt(prompt string) bool
+}

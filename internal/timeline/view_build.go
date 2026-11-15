@@ -64,9 +64,10 @@ type vturn struct {
 
 // promptHook is one prompt hook event.
 type promptHook struct {
-	at   int64
-	text string
-	used bool
+	at         int64
+	text       string
+	used       bool
+	background bool // a background task's notice, not a typed prompt (018)
 }
 
 // builder holds one BuildView run.
@@ -293,33 +294,15 @@ func (t *vtool) isAgent() bool { return t.sum.Kind == core.ToolAgent }
 // buildTurns splits the calls into turns by the 013 rule: a main-thread call with a
 // prompt of its own starts a turn, side calls are folded apart, every other call joins the
 // open turn. A prompt hook no call turn answers starts a hooks-only turn (AC7, 013 AC18).
+//
+// A background task's notice (018 research D7) is never a typed prompt. The main call that
+// answers it, starting within a second of its hook, joins the open turn while that turn is
+// still running; once the turn has ended (its last main call answered with no tool call)
+// it starts a background turn. Either way the notice's hook goes with that call's turn; a
+// notice no call answers is a background hooks-only turn.
 func (b *builder) buildTurns() {
-	var callTurns []*vturn
-	var before *vturn
-	var open *vturn
-	for _, c := range b.calls {
-		switch {
-		case c.fact.SideCall:
-			b.side = append(b.side, c)
-			continue
-		case c.fact.Main && c.prompt != nil:
-			open = &vturn{at: c.start, prompt: c.prompt}
-			callTurns = append(callTurns, open)
-		case open == nil:
-			if before == nil {
-				before = &vturn{at: c.start}
-			}
-			before.calls = append(before.calls, c)
-			c.turn = before
-			continue
-		}
-		open.calls = append(open.calls, c)
-		c.turn = open
-	}
-
-	// Prompt hooks: each call turn takes the latest one received before its first call
-	// (a second of skew allowed); the rest start hooks-only turns.
-	var hooks []*promptHook
+	const skew = int64(time.Second)
+	var hooks, notices []*promptHook
 	for _, h := range sortHooks(b.in.Hooks) {
 		if core.HarnessPhase(h.Phase) != core.PhasePrompt {
 			continue
@@ -330,11 +313,73 @@ func (b *builder) buildTurns() {
 				ph.text = text
 			}
 		}
+		if b.in.Background != nil && ph.text != "" && b.in.Background.IsBackgroundPrompt(ph.text) {
+			ph.background = true
+			notices = append(notices, ph)
+			continue
+		}
 		hooks = append(hooks, ph)
 	}
-	const skew = int64(time.Second)
+	// answered marks used every unused background notice whose hook came at most a second
+	// before a call starting at start (one call may answer several tasks that finished
+	// together) and returns them, in order.
+	answered := func(start int64) []*promptHook {
+		var out []*promptHook
+		for _, h := range notices {
+			if !h.used && h.at <= start && start-h.at <= skew {
+				h.used = true
+				out = append(out, h)
+			}
+		}
+		return out
+	}
+
+	var callTurns []*vturn
+	var before *vturn
+	var open *vturn
+	var lastMain *vcall // the open turn's latest main call
+	for _, c := range b.calls {
+		switch {
+		case c.fact.SideCall:
+			b.side = append(b.side, c)
+			continue
+		case c.fact.Main && c.prompt != nil:
+			open = &vturn{at: c.start, prompt: c.prompt}
+			callTurns = append(callTurns, open)
+			lastMain = nil
+		case open == nil:
+			if before == nil {
+				before = &vturn{at: c.start}
+			}
+			before.calls = append(before.calls, c)
+			c.turn = before
+			continue
+		case c.fact.Main:
+			if hs := answered(c.start); len(hs) > 0 && lastMain != nil && !lastMain.errored && len(lastMain.tools) == 0 {
+				texts := make([]string, len(hs))
+				for i, h := range hs {
+					texts[i] = h.text
+				}
+				open = &vturn{at: hs[0].at, hookText: strings.Join(texts, "\n\n"), t: Turn{Background: true}}
+				callTurns = append(callTurns, open)
+				lastMain = nil
+			}
+		}
+		open.calls = append(open.calls, c)
+		c.turn = open
+		if c.fact.Main {
+			lastMain = c
+		}
+	}
+
+	// Prompt hooks: each call turn started by a typed prompt takes the latest one received
+	// before its first call (a second of skew allowed); the rest start hooks-only turns.
 	prev := int64(-1 << 62)
 	for i, t := range callTurns {
+		if t.t.Background {
+			prev = t.calls[0].start
+			continue
+		}
 		limit := t.at + skew
 		if i+1 < len(callTurns) {
 			limit = min(limit, callTurns[i+1].at-1)
@@ -352,9 +397,9 @@ func (b *builder) buildTurns() {
 		prev = t.calls[0].start
 	}
 	turns := callTurns
-	for _, h := range hooks {
+	for _, h := range append(hooks, notices...) {
 		if !h.used {
-			turns = append(turns, &vturn{at: h.at, hookText: h.text, t: Turn{HooksOnly: true}})
+			turns = append(turns, &vturn{at: h.at, hookText: h.text, t: Turn{HooksOnly: true, Background: h.background}})
 		}
 	}
 	sort.SliceStable(turns, func(i, j int) bool { return turns[i].at < turns[j].at })

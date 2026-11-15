@@ -468,3 +468,18 @@ test("everyCallLinkOpensTheDialog", async () => {
   page.open({ kind: "call", id: "e5" }, from);
   assert.deepEqual(opened, ["e5"]);
 });
+
+// 018 AC9: a background task's turn says so in its header, in the turn list and on its
+// text, and the turn list counts it as no prompt.
+test("backgroundTurnIsMarkedAndNotCountedAsAPrompt", () => {
+  const v = fixture();
+  v.turns = [turn(1), turn(2, { background: true, prompt: "<task-notification>done</task-notification>" })];
+  const { page } = mount(v);
+  const t2 = byId(page.el, "turn-2");
+  assert.equal(withClass(withClass(t2, "th")[0], "bg")[0].textContent, "background task");
+  assert.equal(withClass(t2, "who")[0].textContent, "Background task");
+  assert.equal(withClass(byId(page.el, "turn-1"), "who")[0].textContent, "Prompt");
+  assert.equal(withClass(withClass(byId(page.el, "turn-1"), "th")[0], "bg").length, 0, "a typed prompt has no tag");
+  assert.ok(withClass(page.el, "toc-item").some((e) => textOf(e).includes("background task")));
+  assert.equal(withClass(page.el, "sub").find((e) => /prompt/.test(e.textContent)).textContent, "1 prompt");
+});

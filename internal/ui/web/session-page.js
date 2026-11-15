@@ -195,6 +195,7 @@ export function createSessionPage(ctx = {}) {
     for (const t of view.turns || []) {
       const b = entry(turnId(t.n), "toc-item");
       const meta = el("span", "m");
+      if (t.background) meta.append(el("span", "", "background task"));
       meta.append(el("span", "", t.hooks_only ? "hooks only" : dur(t.clock_ms ?? 0)));
       const c = t.counts || {};
       if (c.changed) meta.append(el("span", "", `${plural(c.changed, "file")} changed`));
@@ -205,7 +206,8 @@ export function createSessionPage(ctx = {}) {
     }
     entries = next;
     tocList.replaceChildren(...items);
-    tocSub.textContent = plural((view.turns || []).filter((t) => t.n > 0).length, "prompt");
+    // a background task's turn is no prompt the user typed (018)
+    tocSub.textContent = plural((view.turns || []).filter((t) => t.n > 0 && !t.background).length, "prompt");
     if (current >= entries.length) current = Math.max(0, entries.length - 1);
     entries.forEach((e, j) => e.button.setAttribute("aria-current", String(j === current)));
   }

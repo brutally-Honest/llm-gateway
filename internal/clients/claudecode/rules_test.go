@@ -1,6 +1,11 @@
 package claudecode
 
-import "testing"
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestRules_QuotaProbeIsSideCall(t *testing.T) {
 	if !(Profile{}).IsSideCall([]string{"quota"}) {
@@ -69,5 +74,96 @@ func TestRules_SplitReminders(t *testing.T) {
 	body, rs = (Profile{}).SplitReminders("hi <system-reminder>cut")
 	if body != "hi" || len(rs) != 1 || rs[0] != "<system-reminder>cut" {
 		t.Fatalf("unclosed: %q %q", body, rs)
+	}
+}
+
+// fixtureTexts is the user texts of a side_calls fixture's request, as the timeline reads
+// them: each user message's text blocks joined, a plain-string content as one text.
+func fixtureTexts(t *testing.T, name string) []string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("testdata", "side_calls", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req struct {
+		Messages []struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(b, &req); err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, m := range req.Messages {
+		if m.Role != "user" {
+			continue
+		}
+		var s string
+		if json.Unmarshal(m.Content, &s) == nil {
+			out = append(out, s)
+			continue
+		}
+		var blocks []struct{ Type, Text string }
+		if err := json.Unmarshal(m.Content, &blocks); err != nil {
+			t.Fatal(err)
+		}
+		text := ""
+		for _, bl := range blocks {
+			if bl.Type == "text" {
+				if text != "" {
+					text += "\n"
+				}
+				text += bl.Text
+			}
+		}
+		out = append(out, text)
+	}
+	return out
+}
+
+// 018 AC1, AC2: an away summary and a prompt suggestion, as captured, are side calls with
+// their own names.
+func TestRules_AwaySummaryAndPromptSuggestionAreSideCalls(t *testing.T) {
+	for name, want := range map[string]string{
+		"02-away-summary.json":      "away summary",
+		"04-prompt-suggestion.json": "prompt suggestion",
+	} {
+		texts := fixtureTexts(t, name)
+		if !(Profile{}).IsSideCall(texts) {
+			t.Errorf("%s: not a side call", name)
+		}
+		if got := (Profile{}).SideCallName(texts); got != want {
+			t.Errorf("%s: name %q, want %q", name, got, want)
+		}
+	}
+}
+
+// 018 AC4: the turns around them stay turns, even the one whose prompt quotes both
+// markers; so does a request whose last text is a prompt after a marker.
+func TestRules_TurnsBesideSideCallsAreNotSideCalls(t *testing.T) {
+	for _, name := range []string{"01-turn.json", "03-turn-quotes-markers.json", "05-turn-after-suggestion.json"} {
+		if texts := fixtureTexts(t, name); (Profile{}).IsSideCall(texts) {
+			t.Errorf("%s: classed as side call (%q)", name, (Profile{}).SideCallName(texts))
+		}
+	}
+	away := fixtureTexts(t, "02-away-summary.json")
+	if (Profile{}).IsSideCall(append(away, "Commit this.")) {
+		t.Error("a prompt after an away summary's text classed as side call")
+	}
+}
+
+func TestRules_SideCallNames(t *testing.T) {
+	for _, c := range []struct {
+		texts []string
+		want  string
+	}{
+		{[]string{"quota"}, "quota probe"},
+		{[]string{"<session>\nfoo\n</session>\nWrite the title for it"}, "title generation"},
+		{[]string{"fix the bug"}, "side call"},
+	} {
+		if got := (Profile{}).SideCallName(c.texts); got != c.want {
+			t.Errorf("%q: name %q, want %q", c.texts, got, c.want)
+		}
 	}
 }

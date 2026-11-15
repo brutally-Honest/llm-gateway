@@ -1,0 +1,8 @@
+{
+ "session_id": "SESSION",
+ "cwd": "/w",
+ "prompt_id": "redacted",
+ "permission_mode": "auto",
+ "hook_event_name": "UserPromptSubmit",
+ "prompt": "Commit this."
+}

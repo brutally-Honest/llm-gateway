@@ -2,6 +2,8 @@ package claudecode
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -81,6 +83,23 @@ func TestMapHarness_SessionIDVerbatim(t *testing.T) {
 		ev := Profile{}.MapHarness([]byte(fmt.Sprintf(`{"hook_event_name":"Stop","session_id":%q}`, id)))
 		if ev.SessionKey != id {
 			t.Errorf("%q became %q", id, ev.SessionKey)
+		}
+	}
+}
+
+// 018 AC8: a task notification is a background prompt; a prompt that only quotes one is not.
+func TestProfile_TaskNotificationIsBackgroundPrompt(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("testdata", "task_notifications", "03-hook-notice-turn-open.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	notice, ok := (Profile{}).PromptOf(b)
+	if !ok || !(Profile{}).IsBackgroundPrompt(notice) {
+		t.Fatalf("notice %q: not a background prompt", notice)
+	}
+	for _, p := range []string{"Commit this.", "Why did <task-notification> show up as a turn?", ""} {
+		if (Profile{}).IsBackgroundPrompt(p) {
+			t.Errorf("%q: a background prompt", p)
 		}
 	}
 }

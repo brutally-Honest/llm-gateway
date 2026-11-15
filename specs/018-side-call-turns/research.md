@@ -1,0 +1,127 @@
+---
+feature: 018-side-call-turns
+---
+# Research & decisions — 018-side-call-turns
+
+## Open questions
+<!-- Answer by changing "(open)" to "(answered)" and writing the answer underneath. -->
+
+## Decisions
+- D1 (2026-11-15) — Karthik: a fix branch built by hand, no agent-loop kit (no /al-*
+  commands), so spec.md stays a draft with no approval stamps and there is no tasks.md.
+- D2 (2026-11-15) — Evidence (below): both kinds send the same body as a real main-thread
+  call (system prompt, 28 tools, max_tokens, thinking, metadata keys, output_config,
+  context_management, safeguards). Only two things differ: the last message, and two
+  `anthropic-beta` flags. The rule reads the last user text, as the quota and title rules
+  already read user texts: the text is Claude Code's fixed instruction, the profile
+  already gets it (`IsSideCall(userTexts)`), and the beta list changes with every Claude
+  Code release and holds nothing that names the call's purpose. Rejected: matching
+  `fallback-credit` / missing `afk-mode` (fragile, and the interface carries no headers).
+- D3 (2026-11-15) — The marker must be the *last* user text, and only its start is
+  matched ("The user stepped away and is coming back." / "[SUGGESTION MODE:"), so a real
+  prompt that quotes either one later in its text, or a request whose history happens to
+  carry one, stays a turn. In all 41 stored calls the marker is the request's last
+  message; no later real call carries it in its history. Known limit: a prompt the user
+  types starting with one of those exact openings is read as a side call.
+- D4 (2026-11-15) — Names: "away summary" and "prompt suggestion", beside the existing
+  "quota probe" and "title generation" (`SideCallName`).
+- D5 (2026-11-15) — Cached views (AC5): the session-view cache (`ui.TimelineCache`) and the
+  digest cache (`ui.digestCache`) live in memory only, keyed on the session's store version
+  (exchange count, max row, parsed count, hook count); nothing about a view is stored on
+  disk or in the browser (localStorage holds only the theme and the reply mode), and the
+  API sends no ETag or max-age. A gateway restart empties both, so every session is rebuilt
+  with the new rule on first open. There is no cache version to bump; none is added.
+- D6 (2026-11-15) — Seen in the real-store check, not fixed here: in session 9980399c the
+  fix turns 13 turns into 10, not 8, and needs-a-look grows by two hooks-only turns ("Turn
+  3/8 has no model calls captured"). Cause, outside this fix: Claude Code sends a
+  background task's `<task-notification>` as a `role: "system"` message, and fires a
+  prompt hook for it. The model calls that answer it have no new user text, so they join
+  the open turn, and the prompt hook stays unmatched: a hooks-only turn whose "no model
+  calls" is false (turn 7 of the same session was already one before the fix). The away
+  summary that followed each notification used to absorb its hook and hide this. Simplest
+  reading kept: the side-call fix stands; the notification turn is its own follow-up on
+  the roadmap (a profile rule naming a system-role task notification as a turn's prompt).
+- D7 (2026-11-15) — Karthik: fix D6 on this branch (AC7–AC11). Evidence, the real store
+  (read-only): 21 prompt hooks whose prompt starts `<task-notification>`, in 4 sessions
+  (9980399c 3, b9a0bc1b 3, f478826f 3, 2fff4047 12). Every one:
+  - came 0–7 s after the session's last main call ended, and that call had asked for 1–4
+    tool calls; no Stop hook came in between (the turn was still running);
+  - was answered by a main call starting 0.1–0.2 s after the hook, whose request ends with
+    the tool result, then a `role: "system"` message: `[SYSTEM NOTIFICATION - NOT USER
+    INPUT]\nThis is an automated background-task event, NOT a message from the user. …`
+    followed by the notice itself, e.g. `<task-notification>\n<task-id>bj076ahn9</task-id>
+    … <status>completed</status>\n<summary>Background command "Verify the config commit
+    alone in a worktree" completed (exit code 0)</summary>`;
+  - the hook payload: `hook_event_name: UserPromptSubmit`, `prompt` the notice alone.
+  So the store holds only the "turn still open" case. Rule used: the open turn is decided
+  from the view's own calls, not from Stop hooks (9980399c has no Stop hook at all before
+  its first notice): a notice's answering call (the main call starting at most 1 s after
+  the notice's hook) joins the open turn when that turn's last main call asked for a tool
+  call; when it answered with none (and did not fail), the turn has ended and the call
+  starts a turn marked background, its text the notice. A notice nothing answers is a
+  background hooks-only turn. The "after the turn ended" case is built from the same
+  shapes in the tests, not seen in the store. The notice is told apart by a new optional
+  profile interface, `core.BackgroundPromptReader` (Claude Code: the prompt starts
+  `<task-notification>`), beside `PromptReader`; the core stays client-agnostic.
+- D8 (2026-11-15) — Found in the real-store check of D7: in 2fff4047 two notices (tasks
+  bpm8ix0om and bf4oovf8j, hooks 5780 and 5781) arrived in the same nanosecond and one call
+  (OAW4BFWX) answered both; the first build let a call take one notice, leaving the other
+  as a background hooks-only turn. A call now takes every notice in its one-second window
+  (a background turn's text is their notices, in order); the gateway test sends two at once.
+  If an answering call ever starts outside the one-second window, the notice falls back to
+  a background turn with no needs-a-look, which is the accepted failure mode (Karthik,
+  2026-11-15).
+
+## Notes
+### Evidence: the captured calls (2026-11-15, the real store, read-only)
+Found by the content hash of each marker's user message:
+- Away summaries: 30 calls across 9 sessions; prompt suggestions: 11 calls across 5
+  sessions; 10 sessions in all. Every one is client `claude-code`, `POST /v1/messages?
+  beta=true`, model `claude-opus-5-5`, 29 of 30 away and all 11 suggestions status 200 (one
+  away summary 499, a client cancel).
+- The marker is the last message of the request, a user message whose `content` is a plain
+  string (no blocks, no `cache_control`):
+  - away: `The user stepped away and is coming back. Recap in under 40 words, 1-2 plain
+    sentences, no markdown. Lead with the overall goal and current task, then the one next
+    action. …`
+  - suggestion: `[SUGGESTION MODE: Suggest what the user might naturally type next into
+    Claude Code.]` then about 1,400 characters of instructions, ending `Reply with ONLY the
+    suggestion, no quotes or explanation.`
+- Everything before it is the main thread's conversation as of the last answer (778
+  messages for the latest away summary against 776 for the real call before it): the
+  call is a fork of the main thread, made to reuse its prompt cache.
+- Body fields, compared with the real call just before each (session 2fff4047, calls
+  KM6H4SDU… and 6OHMGS5G…): identical keys (`context_management, max_tokens, messages,
+  metadata, model, output_config, safeguards, stream, system, thinking, tools`);
+  `max_tokens` 128000, `stream` true, `thinking` adaptive, `output_config.effort` medium;
+  `system` the same three blocks (billing line `cc_version=2.1.325.a25; cc_entrypoint=cli`,
+  the identity line, the 12,426-character prompt); 28 tools, same names; `metadata` holds
+  `user_id` only; no `tool_choice`.
+- Headers: the same names and values (`User-Agent: claude-cli/2.1.325 (external, cli)`,
+  `X-App: cli`, `Anthropic-Version: 2023-06-01`, `X-Claude-Code-Session-Id` the session's),
+  except `Anthropic-Beta`, where both side calls add `fallback-credit-2026-06-01` and drop
+  `afk-mode-2026-01-31`.
+- Replies: text only, never a tool call (2 away summaries also carry thinking).
+- Effect today, session 9980399c (121 calls): 13 turns, of which turns 3, 8, 10 and 13 are
+  away summaries and turn 12 a suggestion; its row counts 13 prompts, 119 main calls and 2
+  side calls (quota probe, title generation).
+- Wrap-up (2026-11-15). Karthik accepted both fixes after the real-store checks in Chrome,
+  light and dark (the old build 3b41bf7 on a copy of the store beside the fixed build on
+  the real gateway). Built by hand, no agent-loop kit (D1); spec.md stays a draft.
+  - Side calls (AC1–AC6): 30 away summaries and 11 prompt suggestions in 10 sessions are
+    side calls named "away summary" and "prompt suggestion"; no turn's prompt starts with
+    either marker in any of them (e.g. 3afa9114: 23 turns to 13, 2 side calls to 12).
+  - Task notifications (AC7–AC11): all 21 notices in 4 sessions arrived during an open turn
+    and now go with it; none is a hooks-only turn or a prompt any more. 9980399c: 13 turns
+    to 7 (5 side calls, and its turn 7 was already a false hooks-only notice before 018),
+    needs a look 6 to 5; f478826f: 11 turns to 7, needs a look 7 to 6. No background turn
+    exists in the store: the "after the turn ended" case is covered by tests only (D7).
+  - Coverage: AC1, AC2, AC4 `TestRules_AwaySummaryAndPromptSuggestionAreSideCalls`,
+    `TestRules_TurnsBesideSideCallsAreNotSideCalls`, `TestRules_SideCallNames`; AC3, AC6
+    `TestRun_AwaySummaryAndPromptSuggestionAreSideCalls`; AC5 D5 and the restart check;
+    AC7, AC8, AC10, AC11 `TestRun_TaskNotificationsStayWithTheirCalls`,
+    `TestProfile_TaskNotificationIsBackgroundPrompt`; AC9 web
+    `backgroundTurnIsMarkedAndNotCountedAsAPrompt`. Each Go test was run against the code
+    without its fix and failed (commit notes).
+  - Each real-gateway restart took about 90 s and ended in SIGKILL (the roadmap's shutdown
+    item, now next as 019).
