@@ -179,6 +179,24 @@ func run(ctx context.Context, d deps) int {
 
 	log := logging.New(d.stdout, cfg.LogLevel)
 	metrics := observability.NewMetrics(version)
+	var tracing *observability.Tracing // nil: tracing off (spec 021 AC12)
+	if cfg.Tracing.Enabled {
+		var err error
+		if tracing, err = observability.StartTracing(cfg.Tracing.OTLPEndpoint, version, log); err != nil {
+			log.Error("invalid config", zap.String("key", "tracing.otlp_endpoint"), zap.String("reason", reasonInvalidValue))
+			return exitConfig
+		}
+		// Deferred first, so it runs last: after capture has drained and ended the
+		// capture spans, the spans still queued get a short flush.
+		defer func() {
+			flushCtx, cancel := context.WithTimeout(context.Background(), traceFlushTimeout)
+			defer cancel()
+			if err := tracing.Shutdown(flushCtx); err != nil {
+				log.Warn("trace flush failed", zap.Error(err))
+			}
+		}()
+		log.Info("tracing on", zap.String("otlp_endpoint", cfg.Tracing.OTLPEndpoint.String()))
+	}
 
 	// The store opens before bind, so a gateway that can't capture never serves
 	// (spec 002, Store: Startup).
@@ -266,6 +284,9 @@ func run(ctx context.Context, d deps) int {
 		defer hookSink.Close(context.Background()) // the early returns; Close is idempotent
 	}
 	hookHandler := hooks.NewHandler(hookSink, log, cfg.Capture.MaxBodyBytes, hookOn)
+	if t := tracing.Tracer(); t != nil {
+		opts = append(opts, core.WithTracer(t))
+	}
 	if capt.proxyOn() {
 		// Upstream calls never loop back through the gateway's own proxy (spec 014 AC11).
 		opts = append(opts, core.WithOwnProxies(cfg.Effects.Network.HTTPProxyAddr, cfg.Effects.Network.SocksProxyAddr))
@@ -431,6 +452,9 @@ func stopUI(ctx context.Context, srv *http.Server, capt *captureRun, log *zap.Lo
 const (
 	uiStopTimeout = 2 * time.Second
 	cutWait       = 2 * time.Second
+	// traceFlushTimeout bounds the last span export at exit (spec 021): a collector that
+	// is down must not hold the stop open.
+	traceFlushTimeout = 2 * time.Second
 )
 
 // reasonInvalidValue is config's reason for a value it can't use (ADR 0002).

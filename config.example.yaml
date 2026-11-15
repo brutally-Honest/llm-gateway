@@ -200,3 +200,17 @@ effects:
     # larger, and the earlier tool's file change also lists the later tool. 0 to 5s.
     # Env: GATEWAY_EFFECTS_ATTRIBUTION_SKEW
     skew: 50ms
+
+# Tracing (spec 021): OpenTelemetry spans for each proxied model call (receive, upstream
+# request, response stream, capture, store write), exported over OTLP/HTTP. Spans carry
+# sizes, status, timings, the model and the exchange id; never content or headers. An
+# unreachable collector never fails or slows a request. Metrics need no key: /metrics is
+# always on the API and UI listeners. See docs/observability.md.
+tracing:
+  # Env: GATEWAY_TRACING_ENABLED
+  enabled: false
+
+  # The collector's OTLP/HTTP base URL; spans go to <it>/v1/traces. https anywhere, http
+  # on loopback only. The default is Jaeger from deploy/observability.
+  # Env: GATEWAY_TRACING_OTLP_ENDPOINT
+  otlp_endpoint: http://127.0.0.1:4318

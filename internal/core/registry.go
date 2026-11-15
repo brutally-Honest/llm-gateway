@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
 	"github.com/brutally-honest/llm-gateway/internal/config"
@@ -21,6 +22,7 @@ type Registry struct {
 	ownProxies []string
 	adapters   []mounted
 	profiles   []Profile
+	tracer     trace.Tracer // nil: tracing off (spec 021)
 }
 
 // RegistryOption configures a Registry when it is made.
@@ -43,6 +45,12 @@ func WithGuard(g func(Adapter) func(http.Handler) http.Handler) RegistryOption {
 // whose environment proxy is one of them connects directly instead (spec 014 AC11).
 func WithOwnProxies(addrs ...string) RegistryOption {
 	return func(r *Registry) { r.ownProxies = append([]string(nil), addrs...) }
+}
+
+// WithTracer traces every proxied call with t (spec 021): a receive span and its
+// upstream, stream and capture children. Without it, or with a nil t, no span is made.
+func WithTracer(t trace.Tracer) RegistryOption {
+	return func(r *Registry) { r.tracer = t }
 }
 
 // mounted is one adapter and the handler in front of its upstream: its proxy,
@@ -68,7 +76,9 @@ func (r *Registry) AddProfile(p Profile) {
 
 // AddAdapter registers a protocol adapter and builds its proxy in front of up.
 func (r *Registry) AddAdapter(a Adapter, up config.Upstream) {
-	var h http.Handler = newProxy(a, up, r.Identify, r.sessionKey, r.log, r.capture, r.ownProxies...)
+	p := newProxy(a, up, r.Identify, r.sessionKey, r.log, r.capture, r.ownProxies...)
+	p.tracer = r.tracer
+	var h http.Handler = p
 	if r.guard != nil {
 		if wrap := r.guard(a); wrap != nil {
 			h = wrap(h)

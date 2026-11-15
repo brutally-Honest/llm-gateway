@@ -48,6 +48,7 @@ type Meta struct {
 	usage      *usageWriter  // nil when OnUsage is unset or the adapter is not a RateLimitAdapter
 	capture    *captureState // nil when capture is off or already finished
 	complete   bool          // the response body hit a clean EOF and all of it reached the client
+	trace      *callTrace    // nil when tracing is off (spec 021)
 }
 
 type metaKey struct{}
@@ -78,6 +79,24 @@ func (m *Meta) Settle(ctx context.Context) {
 	m.settleAbort(ctx)
 	m.finishCapture()
 	m.finishUsage()
+	m.trace.finish(m)
+	m.trace = nil
+}
+
+// requestBytes is how many request body bytes were read and sent upstream.
+func (m *Meta) requestBytes() int64 {
+	if m.reqBody == nil {
+		return 0
+	}
+	return m.reqBody.n.Load()
+}
+
+// responseBytes is how many response body bytes were read from upstream.
+func (m *Meta) responseBytes() int64 {
+	if m.resBody == nil {
+		return 0
+	}
+	return m.resBody.n
 }
 
 func (m *Meta) settleAbort(ctx context.Context) {
@@ -167,10 +186,12 @@ func (m *Meta) responseBodyErr() error {
 type requestWatcher struct {
 	rc  io.ReadCloser
 	err atomic.Pointer[error]
+	n   atomic.Int64 // bytes read, for the trace (spec 021)
 }
 
 func (w *requestWatcher) Read(p []byte) (int, error) {
 	n, err := w.rc.Read(p)
+	w.n.Add(int64(n))
 	if err != nil && !errors.Is(err, io.EOF) {
 		w.err.CompareAndSwap(nil, &err)
 	}
@@ -184,11 +205,13 @@ func (w *requestWatcher) Close() error { return w.rc.Close() }
 type responseWatcher struct {
 	rc  io.ReadCloser
 	err error
-	eof bool // a Read returned io.EOF
+	eof bool  // a Read returned io.EOF
+	n   int64 // bytes read, for the trace (spec 021)
 }
 
 func (w *responseWatcher) Read(p []byte) (int, error) {
 	n, err := w.rc.Read(p)
+	w.n += int64(n)
 	if err == io.EOF {
 		w.eof = true
 	} else if err != nil && w.err == nil {

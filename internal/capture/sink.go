@@ -145,6 +145,7 @@ wait:
 	}
 	n := s.abandoned.Load()
 	for ex := range s.queue {
+		ex.TraceEnd(core.CaptureUndrained)
 		ex.Release()
 		n++
 	}
@@ -172,6 +173,7 @@ func (s *Sink) Counts() Counts {
 func (s *Sink) work() error {
 	for ex := range s.queue {
 		if s.ctx.Err() != nil {
+			ex.TraceEnd(core.CaptureUndrained)
 			ex.Release()
 			s.abandoned.Add(1)
 			return nil
