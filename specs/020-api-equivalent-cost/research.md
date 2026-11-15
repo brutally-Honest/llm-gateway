@@ -98,6 +98,14 @@ feature: 020-api-equivalent-cost
   (`[$€£]\s*\d`, `\$\{[^}]*\}\s*usd`), so the money check is a superset of main's for
   every file but cost.js; a planted "Total: $5" in session-page.js fails it. What it no
   longer bans is the words "cost" and "price", which the labels need.
+- D16 (2026-11-15) — Karthik: price fast mode from the published fast rates if any capture
+  marks it, else keep D6. Checked on a fresh read-only copy of the real store (2,494
+  exchanges, to 16:10): none of the 2,474 request bodies has a `speed` field, no request
+  sends a fast-mode beta header, and all 2,457 usage events report `speed: standard`
+  (`inference_geo: global`, `service_tier: standard`). Nothing marks fast mode, so D6
+  stands: a call whose usage reports a non-standard speed stays "no price for <model>
+  (fast)" rather than priced from rates the table does not hold. Adding it later is a
+  `speed` column in the table and a row per fast rate.
 
 ## Notes
 ### Evidence: models in the real store (2026-11-15)
