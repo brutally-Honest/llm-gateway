@@ -222,6 +222,11 @@ feature: 017-sessions-list-and-call-details
   both before and after the update; otherwise the body is drawn again, so a running call's
   facts and a pending tool's state still follow. Seen in the check: a message box scrolled
   inside went back to its top when calls were added to the session.
+- D43 (2026-11-15, slice 2, Karthik at the UI check) — The call dialog's Headers link opens
+  the full exchange page at its top, the same as "Full exchange page". It is not changed in
+  slice 2: T023 adds a headers anchor to the full exchange page and points the Headers link
+  at it.
+
 ## Notes
 - Sessions list budget, before slice 1 (2026-11-14, T001): `BenchmarkSessionsList500`
   (500 sessions × 20 calls, `-benchtime 5x`, two runs, AMD Ryzen 5 5600G, 12 threads):
@@ -251,3 +256,18 @@ feature: 017-sessions-list-and-call-details
   sessions needed a look for their own turns (D31); an active hooks-only session did not say
   active (D33); "no sessions match" showed twice (D34). Not exercised: 1.6's "Loading
   sessions…" (the empty store answered too fast to see it; the loader has its web test).
+- Slice 2 manual check (2026-11-14 to 2026-11-15, T019, `/ui-check 017-sessions-and-calls`
+  §2 in Chrome, light and dark): Karthik accepted 2.1–2.11. Fixed on the way, each in its
+  own commit: a cut or failed reply now says so and links the raw response (c4bf325); a
+  side call's error status is a warning, not red (c263eba); focus starts on Close, and
+  empty replies and messages say why (b29b845); thinking placeholders stay out of a call's
+  reply (fa77ec3); the "No such call" note clears when another call opens (5e89a7c); the
+  reply is capped like a message box, with Show all, also in Raw (fabcab3, D41); a live
+  update of a complete call keeps its body, so scroll inside a message box holds (da0ceea,
+  D42). Three gaps Karthik asked to close, checked with real clicks: a tool dialog's
+  "Asked by" link opened call #8, the call whose stored response asked for that Edit; all
+  four raw links of the very long call served content (request body 159,452 bytes and
+  response 239,200 bytes as JSON; Headers and Full exchange page both open the exchange
+  page with the header tables, the API key `[REDACTED]`, D43); with that call open, its body
+  scrolled about halfway and a message box scrolled inside, calls added to the session left
+  both scrolls, the open call and focus where they were ("3 of 8" became "3 of 11").
