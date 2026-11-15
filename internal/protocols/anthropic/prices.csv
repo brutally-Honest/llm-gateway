@@ -1,0 +1,15 @@
+# Anthropic's published Claude API prices, USD per million tokens (spec 020).
+# Source: https://platform.claude.com/docs/en/about-claude/pricing, read 2026-11-15; model
+# IDs from https://platform.claude.com/docs/en/about-claude/models/overview the same day
+# (specs/020-api-equivalent-cost/research.md D2-D5). Never write a price or an ID that is
+# not on those pages.
+# from: the UTC day a price took effect; empty means since the start (the page shows no
+# history). A price change is a new row with its date; older calls keep the old row.
+# prompt_over: the row applies to prompts above that many tokens (input + cache reads +
+# cache writes); empty means any prompt. Only Claude Haiku 5.5 has such a tier.
+model,from,prompt_over,input,output,cache_read,cache_write_5m,cache_write_1h
+claude-fable-5-2,,,8,40,0.20,10,16
+claude-opus-5-5,,,4,20,0.20,5,8
+claude-sonnet-5-5,,,2,10,0.10,2.50,4
+claude-haiku-5-5,,,0.10,0.50,0.01,0.125,0.20
+claude-haiku-5-5,,100000,0.50,2.50,0.05,0.625,1
