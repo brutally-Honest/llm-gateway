@@ -9,7 +9,11 @@ automated parts are `internal/ui/api_sessions_test.go`, `api_today_test.go`,
 (`/ui-check 017-sessions-and-calls`); record expected against seen in the spec's
 research.md. §2's automated parts are `internal/timeline/view_test.go` (TestView_Call*,
 TestView_SideCallThread, TestView_FirstCallOfThread), `internal/ui/api_view_test.go`
-(TestCallDetails_*) and `internal/ui/webtest/call-dialog.test.js`.
+(TestCallDetails_*) and `internal/ui/webtest/call-dialog.test.js`. §3's are
+`internal/ui/api_exchange_test.go` (the exchange's session title, call number and status
+word), `internal/ui/webtest/app.test.js` (ungroupedPageUsesLabelsAndBreadcrumb,
+exchangePageUsesLabelsAndBreadcrumb), `effects.test.js` (unassignedPageUsesLabelsAndBreadcrumb)
+and `contrast.test.js`.
 
 ## Setup
 
@@ -177,3 +181,46 @@ Check every step in the light theme, then in dark.
     it can be clicked or reached with Tab; a click on the dimmed page closes it; the top
     (title, the facts, the context line and the message counts) stays while the messages
     and later sections scroll.
+
+## §3 Other pages (slice 3)
+
+Setup: the same throwaway gateway as §1 (a fresh data folder is fine). Seed the §1 session
+that needs a look (`seed-session.mjs`, as in Setup step 3, which also makes the unassigned
+connection), then the call kinds with two ungrouped exchanges:
+
+```sh
+node docs/manual-checks/seed-call-kinds.mjs --ungrouped --gateway http://127.0.0.1:17297 \
+  --ui http://127.0.0.1:17299 --stub-port 17296
+```
+
+Check every step in the light theme, then in dark. Each page sits in the sessions list's
+column, with a title and its labelled counts at the top and its lists in the same cards as
+the sessions list (016's theme); text stays readable on every card and row in both themes.
+
+3.1 **Ungrouped exchanges (AC12).** From the sessions list, follow "2 ungrouped exchanges →".
+    The breadcrumb reads "Sessions / Ungrouped", and Sessions goes back to the list. The
+    page is titled "Ungrouped exchanges" with "2 exchanges · 1 failed" beside it. Each row
+    shows its start (Today 8:47 PM), its first prompt as a link to the full exchange page,
+    the client (`unknown`), the model, its status as glyph and word (`✓ ok` or `✗ failed`)
+    and its tokens with their words ("120 in · 12 out · 0 cache read", "— in" where the call
+    reported none).
+
+3.2 **Unassigned connections (AC12).** Open `#/effects/unassigned` (or "All N unassigned
+    connections →" when the list has more than 10). The breadcrumb reads "Sessions /
+    Unassigned connections". The page is titled "Unassigned connections" with "1
+    connection" beside it (and "N files" when unassigned file changes exist), then the
+    coverage line. The connections card lists each one's time, label as glyph and word
+    (`○ unassigned`, or the harness label with its client), client, host, outcome as glyph
+    and word (`✓ ok`), bytes each way with arrows, duration and request.
+
+3.3 **Full exchange page (AC12, research D43).** From a call's details dialog (any call of
+    the seed session), follow "Full exchange page": the breadcrumb reads "Sessions /
+    <session title> / Call #n", and the session title goes back to the session. The page is
+    titled "Call #n" with its status as glyph and word (`✓ 200 OK`, or `✗ 500 Internal
+    Server Error` in red for the errored call), the method and path, model and duration;
+    then its facts as labelled cards (Summary with the tokens each labelled, Timings,
+    Capture), the request and response headers as tables (the API key shows
+    `[REDACTED]`), and the two bodies, each opening on click. Back in the dialog, follow
+    "Headers": the same page opens scrolled to "Request headers". From the ungrouped page,
+    open an exchange: the breadcrumb reads "Sessions / Ungrouped / Exchange", and Ungrouped
+    goes back to that page.

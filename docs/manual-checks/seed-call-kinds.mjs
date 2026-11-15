@@ -3,10 +3,12 @@
 // errored call. It starts a local stub upstream and sends the calls through a running
 // gateway, so they take the real capture path. Node only, no packages.
 //
-//   node docs/manual-checks/seed-call-kinds.mjs [--gateway URL] [--ui URL] [--stub-port N] [--live]
+//   node docs/manual-checks/seed-call-kinds.mjs [--gateway URL] [--ui URL] [--stub-port N] [--live] [--ungrouped]
 //
 // Start the gateway with GATEWAY_UPSTREAMS_ANTHROPIC_BASE_URL=http://127.0.0.1:<stub-port>.
 // --live then sends one more plain call every 5 s until Ctrl-C, for the live-update step.
+// --ungrouped also sends two calls with no session and no known client, one plain and one
+// errored, for the ungrouped exchanges page (§3).
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 
@@ -14,6 +16,7 @@ const args = { gateway: "http://127.0.0.1:8080", ui: "http://127.0.0.1:8081", "s
 for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i].replace(/^--/, "");
   if (a === "live") args.live = true;
+  else if (a === "ungrouped") args.ungrouped = true;
   else args[a] = process.argv[++i];
 }
 
@@ -112,6 +115,18 @@ async function call(kind, prompt, { stream = false } = {}) {
   return res.status;
 }
 
+// ungroupedCall sends one call no session claims: no session header, a client the gateway
+// does not know. The gateway still captures it, as an ungrouped exchange.
+async function ungroupedCall(kind, prompt) {
+  const res = await fetch(`${args.gateway}/anthropic/v1/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "user-agent": "seed-script/1.0", "x-api-key": "seed-not-a-real-key", "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({ model: MODEL, max_tokens: 64, metadata: { user_id: kind }, messages: [{ role: "user", content: [{ type: "text", text: prompt }] }] }),
+  });
+  await res.text();
+  return res.status;
+}
+
 await new Promise((ok) => stub.listen(Number(args["stub-port"]), "127.0.0.1", ok));
 try {
   await call("plain", "Say hello: a plain call.");
@@ -128,6 +143,11 @@ try {
       break;
     }
     await sleep(250);
+  }
+  if (args.ungrouped) {
+    const a = await ungroupedCall("plain", "An ungrouped call.");
+    const b = await ungroupedCall("error", "An ungrouped call that fails.");
+    console.log(`seeded 2 ungrouped exchanges (status ${a}, ${b}): ${args.ui}/#/ungrouped`);
   }
   if (args.live) {
     console.log("--live: one plain call every 5 s; Ctrl-C to stop");
