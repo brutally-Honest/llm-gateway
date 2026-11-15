@@ -19,6 +19,8 @@ import (
 type Server struct {
 	srv      *http.Server
 	inflight atomic.Int64
+	// cancel ends the base context every request's context derives from (spec 019).
+	cancel context.CancelCauseFunc
 }
 
 // New builds the router with the middleware and /healthz, then calls each mount on
@@ -26,6 +28,8 @@ type Server struct {
 // same middleware as production ones.
 func New(log *zap.Logger, mount ...func(chi.Router)) *Server {
 	s := &Server{}
+	base, cancel := context.WithCancelCause(context.Background())
+	s.cancel = cancel
 	r := chi.NewRouter()
 	// Outermost first. inflight wraps everything, so a request that panics is still
 	// counted and decremented.
@@ -44,6 +48,7 @@ func New(log *zap.Logger, mount ...func(chi.Router)) *Server {
 		// 001's streams.
 		ReadHeaderTimeout: 10 * time.Second,
 		ErrorLog:          logging.StdLog(log),
+		BaseContext:       func(net.Listener) context.Context { return base },
 	}
 	return s
 }
@@ -61,6 +66,27 @@ func (s *Server) Shutdown(ctx context.Context) error {
 // Close closes the listener and every connection at once.
 func (s *Server) Close() error {
 	return s.srv.Close()
+}
+
+// Cancel cancels every in-flight request's context with cause, so their handlers stop
+// and record why (spec 019: the shutdown grace period ran out). Requests that arrive
+// later start cancelled.
+func (s *Server) Cancel(cause error) {
+	s.cancel(cause)
+}
+
+// WaitIdle waits until no handler is running or ctx ends; it reports whether none is.
+func (s *Server) WaitIdle(ctx context.Context) bool {
+	t := time.NewTicker(5 * time.Millisecond)
+	defer t.Stop()
+	for s.inflight.Load() > 0 {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-t.C:
+		}
+	}
+	return true
 }
 
 // InFlight is the number of handlers still running.

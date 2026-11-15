@@ -263,11 +263,23 @@ func run(ctx context.Context, d deps) int {
 	var uiSrv *http.Server
 	var uiErr <-chan error // nil, so never ready, when the UI is off
 	if uiLn != nil {
+		deps := capt.uiDeps(ctx, uiLn.Addr().String(), log)
 		uiSrv = &http.Server{
-			Handler:           ui.Handler(capt.uiDeps(ctx, uiLn.Addr().String(), log)),
+			Handler:           ui.Handler(deps),
 			ReadHeaderTimeout: 10 * time.Second,
 		}
-		uiErr = logging.Go(log, "ui_serve", func() error { return uiSrv.Serve(uiLn) })
+		srvUI := uiSrv
+		// Spec 019: the sessions list is built before the UI accepts, so the first page
+		// load after a restart answers instead of timing out on a cold build; a page that
+		// connects meanwhile waits in the listen queue. The proxy serves from the start.
+		uiErr = logging.Go(log, "ui_serve", func() error {
+			start := time.Now()
+			if err := ui.Warm(ctx, deps); err != nil && ctx.Err() == nil {
+				log.Warn("ui warm-up failed; the list builds on first use", zap.Error(err))
+			}
+			log.Info("ui ready", zap.Int64("warm_ms", time.Since(start).Milliseconds()))
+			return srvUI.Serve(uiLn)
+		})
 		log.Info("ui started", zap.String("addr", uiLn.Addr().String()))
 	}
 
@@ -307,27 +319,46 @@ wait:
 		}
 	}
 
-	// ctx is already cancelled, so the shutdown deadline needs a fresh context.
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	// Spec 019: nothing new is accepted, and what never ends by itself ends now: the
+	// proxy's tunnels are cut (stored as closed early) and the UI's live streams close.
+	// Only in-flight model calls get the grace period (shutdown_timeout).
+	log.Info("shutting down", zap.Duration("grace", cfg.ShutdownTimeout))
+	// ctx is already cancelled, so the grace period needs a fresh context. The server
+	// stops accepting first, and shuts down before capture, so exchanges that end while
+	// it waits for in-flight streams are still queued.
+	graceCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
-	// The hub closes first so open UI streams end and the UI server can finish; commits
-	// from the draining workers then publish into a closed hub, which ignores them.
-	uiFailed := !stopUI(shutdownCtx, uiSrv, capt, log)
-	// The server shuts down next, so exchanges that end while it waits for in-flight
-	// streams are still queued; capture then drains in what is left of the timeout.
-	if err := srv.Shutdown(shutdownCtx); err != nil {
+	apiDone := logging.Go(log, "api_shutdown", func() error { return srv.Shutdown(graceCtx) })
+	capt.cutProxy()
+	uiCtx, uiCancel := context.WithTimeout(context.Background(), uiStopTimeout)
+	uiFailed := !stopUI(uiCtx, uiSrv, capt, log)
+	uiCancel()
+	if err := <-apiDone; err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			// in_flight counts handlers still running, not open connections.
 			log.Error("shutdown timed out", zap.Int64("in_flight", srv.InFlight()))
 		} else {
 			log.Error("shutdown failed", zap.Error(err))
 		}
+		// The calls still running are cut with a cause, so each is captured as cut by
+		// the gateway (gateway_error gateway_shutdown); their handlers get a moment to
+		// hand the capture over before the connections close.
+		srv.Cancel(core.ErrShutdown)
+		cutCtx, cutCancel := context.WithTimeout(context.Background(), cutWait)
+		srv.WaitIdle(cutCtx)
+		cutCancel()
 		_ = srv.Close() // cut what is left; its error adds nothing to the exit code
-		capt.stop(shutdownCtx, log)
+		drainCtx, drainCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		defer drainCancel()
+		capt.stop(drainCtx, log)
 		stopHooks()
 		return exitRuntime
 	}
-	capt.stop(shutdownCtx, log)
+	// Capture drains on a budget of its own, as long again as the grace period, never
+	// what the grace period left over.
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	defer drainCancel()
+	capt.stop(drainCtx, log)
 	stopHooks()
 	if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Error("serve failed", zap.Error(err))
@@ -340,8 +371,8 @@ wait:
 	return exitOK
 }
 
-// stopUI closes the hub, then shuts the UI server down. It reports false when the
-// shutdown failed or timed out.
+// stopUI closes the hub, so open live streams end, then shuts the UI server down,
+// cutting what still runs when ctx ends. It reports false when the shutdown failed.
 func stopUI(ctx context.Context, srv *http.Server, capt *captureRun, log *zap.Logger) bool {
 	if capt != nil && capt.hub != nil {
 		capt.hub.Close()
@@ -350,12 +381,26 @@ func stopUI(ctx context.Context, srv *http.Server, capt *captureRun, log *zap.Lo
 		return true
 	}
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Error("ui shutdown failed", zap.Error(err))
 		_ = srv.Close()
+		if errors.Is(err, context.DeadlineExceeded) {
+			// A UI read still running when the stop's budget ends is cut: the UI only
+			// reads, so nothing is lost (spec 019).
+			log.Warn("ui requests cut at shutdown")
+			return true
+		}
+		log.Error("ui shutdown failed", zap.Error(err))
 		return false
 	}
 	return true
 }
+
+// The shutdown budgets besides the grace period (spec 019, research D-entries): the UI
+// server's stop once its streams are closed, and the wait for cut calls' handlers to
+// hand their capture over. Capture's drain gets a fresh shutdown_timeout of its own.
+const (
+	uiStopTimeout = 2 * time.Second
+	cutWait       = 2 * time.Second
+)
 
 // reasonInvalidValue is config's reason for a value it can't use (ADR 0002).
 const reasonInvalidValue = "invalid value"
@@ -594,6 +639,25 @@ func (c *captureRun) startProxy(e config.Effects, listen func(network, addr stri
 		log.Info("proxy listener started", zap.String("key", b.key), zap.String("addr", b.ln.Addr().String()))
 	}
 	return exitOK
+}
+
+// cut closes the proxy listeners and cuts every open tunnel at once, stored as closed
+// early (spec 019): a tunnel never ends by itself, so waiting for it only delays the stop.
+func (e *effectsRun) cut() {
+	if e == nil || e.proxy == nil {
+		return
+	}
+	now, cancel := context.WithCancel(context.Background())
+	cancel()
+	e.proxy.Shutdown(now)
+}
+
+// cutProxy is cut on the capture's effects; a no-op with capture or the proxy off.
+func (c *captureRun) cutProxy() {
+	if c == nil {
+		return
+	}
+	c.effects.cut()
 }
 
 // close stops the proxy listeners (open tunnels are stored as closed early once ctx
