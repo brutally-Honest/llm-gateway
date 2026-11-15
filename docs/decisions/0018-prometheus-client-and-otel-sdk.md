@@ -29,8 +29,12 @@ span.
   collectors of the same shape and less familiar to the dashboard tooling the plan names.
 - **OTel metrics instead of Prometheus**: one SDK for both, but needs an exporter or a
   bridge for a pull-based `/metrics`, and the plan decided Prometheus.
-- **OTLP/gRPC exporter**: links gRPC into the binary (several MB more) for no gain on a
-  local Jaeger, which takes OTLP over HTTP on 4318.
+- **OTLP/gRPC exporter**: a gRPC connection to manage for no gain on a local Jaeger,
+  which takes OTLP over HTTP on 4318. (The HTTP exporter still links the gRPC packages,
+  through the OTLP proto package it encodes with; spec 021 research D10.)
+- **A hand-written OTLP/JSON exporter**: about 150 lines and none of the proto or gRPC
+  packages (most of the 8.5 MB), but the gateway would own the OTLP mapping, retries and
+  backoff. Rejected for a local single-user gateway, where disk size matters less.
 - **Jaeger's own client libraries**: deprecated in favour of OTel; vendor lock-in (PLAN §8).
 
 ## Consequences
