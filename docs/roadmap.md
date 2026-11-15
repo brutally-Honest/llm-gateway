@@ -62,5 +62,7 @@ features. Update it when the order changes.
   (`specs/015-effect-attribution/research.md`, 2026-11-10).
 
 ## Not now
-- OpenTelemetry
+- OpenTelemetry ingestion from harnesses (taking a client's own OTel events as ground
+  truth, Phase 6). This is not the gateway's own tracing, which Phase 8 built
+  (`docs/observability.md`).
 - Other harnesses
