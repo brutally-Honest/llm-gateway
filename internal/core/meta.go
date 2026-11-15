@@ -85,6 +85,11 @@ func (m *Meta) settleAbort(ctx context.Context) {
 	if m.complete {
 		return
 	}
+	// The gateway's shutdown cut it (spec 019): neither side ended it.
+	if cutByShutdown(ctx) {
+		m.GatewayError = reasonShutdown
+		return
+	}
 	if m.responseBodyErr() != nil && ctx.Err() == nil {
 		m.UpstreamAborted = true
 		return

@@ -178,5 +178,6 @@ Capture never fails a request. What happens depends on when the store fails:
 The `request` access line says what happened to each exchange's copy in its `capture`
 field: `queued`, `dropped_queue_full` (the queue was full), `dropped_memory` (the
 in-flight copies hit `capture.memory_limit`) or `off`. On shutdown the queue is drained
-within what is left of `shutdown_timeout`, and one `capture stopped` line reports what
-was left undrained, every drop and failure count, and `memory_peak_bytes`.
+on a budget of its own (another `shutdown_timeout`) once in-flight calls have finished
+or been cut, and one `capture stopped` line reports what was left undrained, every drop
+and failure count, and `memory_peak_bytes`.

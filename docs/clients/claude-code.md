@@ -110,15 +110,19 @@ If a step fails, do not work around it: record it as an open query in the featur
 
 ## 4. Shutdown
 
-On a stop signal the gateway stops accepting connections and lets in-flight requests,
-including open streams, finish. This can take **up to 10 minutes** (the default
-`shutdown_timeout`), so a long Claude Code turn is not cut off mid-answer.
+On a stop signal the gateway stops accepting connections at once. Open proxy tunnels
+and the web UI's live pages are closed straight away (a tunnel is stored as closed
+early; the page reconnects once the gateway is back). In-flight model calls get a
+grace period, **10 seconds** by default (`shutdown_timeout`), to finish; a call still
+running then is cut, and its capture says the gateway cut it (`gateway_error:
+gateway_shutdown`). Claude Code retries a cut call. Captures then finish storing, so a
+stop with nothing in flight takes well under a second.
 
-- **`make run`:** the first Ctrl-C starts the graceful stop. A **second Ctrl-C stops
-  the gateway at once**, cutting any open streams.
-- **`docker compose stop`** (and `docker compose down`) waits the same way, up to
-  10 minutes: the compose file's `stop_grace_period` matches the shutdown timeout.
-  `docker compose kill` stops the container at once.
+- **`make run`:** the first Ctrl-C starts the stop. A **second Ctrl-C stops the gateway
+  at once**, cutting any open streams.
+- **`docker compose stop`** (and `docker compose down`) waits the same way; the compose
+  file's `stop_grace_period` (30s) leaves room for the grace period and the capture
+  drain. `docker compose kill` stops the container at once.
 
 ## 5. Harness hooks
 
@@ -197,6 +201,8 @@ Description=LLM gateway
 [Service]
 ExecStart=%h/.local/bin/gateway -config %h/.config/llm-gateway/config.yaml
 Restart=on-failure
+# Room for shutdown_timeout (10s) and the capture drain; systemd's default is 90s.
+TimeoutStopSec=30
 
 [Install]
 WantedBy=default.target
@@ -225,6 +231,7 @@ the paths:
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
+  <key>ExitTimeOut</key><integer>30</integer>
   <key>StandardOutPath</key><string>/Users/you/Library/Logs/llm-gateway.log</string>
   <key>StandardErrorPath</key><string>/Users/you/Library/Logs/llm-gateway.log</string>
 </dict>

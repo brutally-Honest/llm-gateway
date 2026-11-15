@@ -89,7 +89,7 @@ func Defaults() Config {
 	return Config{
 		ListenAddr:      "127.0.0.1:7197",
 		LogLevel:        "info",
-		ShutdownTimeout: 10 * time.Minute,
+		ShutdownTimeout: 10 * time.Second, // spec 019: the grace for in-flight model calls
 		Capture:         defaultCapture(),
 		Hooks:           defaultHooks(),
 		RateLimit:       defaultRateLimit(),

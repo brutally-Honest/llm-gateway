@@ -12,10 +12,12 @@ listen_addr: 127.0.0.1:7197
 # Env: GATEWAY_LOG_LEVEL
 log_level: info
 
-# How long shutdown waits for in-flight requests, so streams can finish. Go duration
-# syntax; must be > 0. A second signal still stops the gateway at once.
+# The grace period shutdown gives in-flight model calls, so a stream about to end can
+# finish; when it ends, the calls still running are cut and captured as cut by the
+# gateway. Proxy tunnels and the UI's live streams never get it: they close at once.
+# Go duration syntax; must be > 0. A second signal still stops the gateway at once.
 # Env: GATEWAY_SHUTDOWN_TIMEOUT
-shutdown_timeout: 10m
+shutdown_timeout: 10s
 
 # One block per upstream, named after its adapter. An unknown name or key is an error.
 # There is no timeout on a request as a whole: streams run as long as upstream sends.

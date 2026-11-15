@@ -77,7 +77,20 @@ const (
 	reasonClientBody          = "client_body"
 	reasonUpstreamTimeout     = "upstream_timeout"
 	reasonUpstreamUnreachable = "upstream_unreachable"
+	// reasonShutdown marks a call the gateway cut because its shutdown grace period ran
+	// out (spec 019): neither the client nor upstream ended it.
+	reasonShutdown = "gateway_shutdown"
 )
+
+// ErrShutdown is the cause the gateway cancels in-flight requests with when its
+// shutdown grace period ends (spec 019). A request whose context carries it is recorded
+// as cut by the gateway, not as a client that left.
+var ErrShutdown = errors.New("gateway shutdown: grace period over")
+
+// cutByShutdown reports whether ctx was cancelled by the gateway's shutdown.
+func cutByShutdown(ctx context.Context) bool {
+	return errors.Is(context.Cause(ctx), ErrShutdown)
+}
 
 // statusClientClosedRequest is the status logged, and sent if anyone still reads it,
 // when the client left before upstream answered (research Q13). It is not an error
@@ -113,7 +126,8 @@ func (p *Proxy) handleError(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 // classify maps a failure before response headers to its status and reason; the
-// first match wins. ctx is the inbound request's context. A client that has left
+// first match wins. ctx is the inbound request's context. A call the gateway's
+// shutdown cut is a 503 with its own reason (spec 019). A client that has left
 // gets 499 and no reason: the gateway created no error. That includes a body short
 // of its Content-Length, because net/http cancels the context on the connection's
 // EOF (research Q19). A failed read of the client's own body on a live connection,
@@ -123,6 +137,8 @@ func (p *Proxy) handleError(w http.ResponseWriter, r *http.Request, err error) {
 func classify(ctx context.Context, m *Meta, err error) (int, string) {
 	var netErr net.Error
 	switch {
+	case cutByShutdown(ctx):
+		return http.StatusServiceUnavailable, reasonShutdown
 	case ctx.Err() != nil:
 		return statusClientClosedRequest, ""
 	case m != nil && m.requestBodyErr() != nil:

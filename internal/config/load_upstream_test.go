@@ -64,8 +64,8 @@ func TestLoad_UpstreamDefaults(t *testing.T) {
 	if up.ConnectTimeout != 10*time.Second || up.TLSHandshakeTimeout != 10*time.Second || up.ResponseHeaderTimeout != 10*time.Minute {
 		t.Errorf("timeouts = %v %v %v, want 10s 10s 10m", up.ConnectTimeout, up.TLSHandshakeTimeout, up.ResponseHeaderTimeout)
 	}
-	if cfg.ShutdownTimeout != 10*time.Minute {
-		t.Errorf("ShutdownTimeout = %v, want 10m", cfg.ShutdownTimeout)
+	if cfg.ShutdownTimeout != 10*time.Second {
+		t.Errorf("ShutdownTimeout = %v, want 10s", cfg.ShutdownTimeout)
 	}
 }
 
