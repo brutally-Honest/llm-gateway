@@ -87,6 +87,11 @@ feature: 020-api-equivalent-cost
   "API-equivalent cost: $X" in its foot after the tokens line; the Today line ends with
   "$X API-eq. cost"; the dialog has the cost in its top facts and an "API-equivalent cost"
   section after Context, with one row per token kind (5m and 1h apart) and the total.
+- D14 (2026-11-15) — Correction to D13, from the browser check: a cost column of its own
+  made the sessions table 1,626 px wide inside the 1,600 px page at 2,560 px, cutting the
+  column off (the Session column stayed at its 20rem, 280 px at the 14 px root). The cost
+  is now the Tokens cell's second line, "$X API-eq.", with its hover; the Tokens header's
+  hover explains the line. No width is added.
 
 ## Notes
 ### Evidence: models in the real store (2026-11-15)
