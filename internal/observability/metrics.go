@@ -59,8 +59,9 @@ type Metrics struct {
 }
 
 // NewMetrics registers every metric, build info for version and the Go runtime and
-// process collectors.
-func NewMetrics(version string) *Metrics {
+// process collectors. protocols are the registered adapters' names: the only values
+// the protocol label takes.
+func NewMetrics(version string, protocols ...string) *Metrics {
 	reg := prometheus.NewRegistry()
 	m := &Metrics{
 		reg: reg,
@@ -118,7 +119,40 @@ func NewMetrics(version string) *Metrics {
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
+	m.initSeries(protocols)
 	return m
+}
+
+// initSeries creates every series of the fixed label sets at zero, so a scrape lists
+// each metric before its first observation: an error panel reads 0, not "no data", and
+// a dashboard query of a renamed metric fails its test.
+func (m *Metrics) initSeries(protocols []string) {
+	for _, l := range []string{ListenerAPI, ListenerUI} {
+		for _, class := range []string{"2xx", "3xx", "4xx", "5xx"} {
+			for _, p := range []string{"true", "false"} {
+				m.requests.WithLabelValues(l, class, p)
+				m.requestTime.WithLabelValues(l, class, p)
+			}
+		}
+	}
+	for _, proto := range protocols {
+		m.overhead.WithLabelValues(proto)
+		for _, s := range []string{"true", "false"} {
+			m.upstreamTTFB.WithLabelValues(proto, s)
+			m.upstreamTotal.WithLabelValues(proto, s)
+		}
+		for _, k := range []string{UpstreamTimeout, UpstreamUnreachable, UpstreamAborted, UpstreamRateLimited, UpstreamStatus5xx} {
+			m.upstreamErrs.WithLabelValues(proto, k)
+		}
+	}
+	for _, op := range []string{StoreOpExchange, StoreOpParse} {
+		for _, o := range []string{"ok", "error"} {
+			m.storeWrite.WithLabelValues(op, o)
+		}
+	}
+	for _, c := range []string{"cold", "cached"} {
+		m.viewBuild.WithLabelValues(c)
+	}
 }
 
 // Handler serves the registry in the Prometheus text format.

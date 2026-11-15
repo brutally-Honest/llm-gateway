@@ -178,7 +178,11 @@ func run(ctx context.Context, d deps) int {
 	}
 
 	log := logging.New(d.stdout, cfg.LogLevel)
-	metrics := observability.NewMetrics(version)
+	protocols := make([]string, 0, len(adapters))
+	for _, a := range adapters {
+		protocols = append(protocols, a.Name())
+	}
+	metrics := observability.NewMetrics(version, protocols...)
 	var tracing *observability.Tracing // nil: tracing off (spec 021 AC12)
 	if cfg.Tracing.Enabled {
 		var err error

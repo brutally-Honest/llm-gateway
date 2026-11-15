@@ -47,8 +47,26 @@ func labelsOf(m *dto.Metric) map[string]string {
 
 // hasSeries reports whether family name has a series whose labels include want.
 func hasSeries(fams map[string]*dto.MetricFamily, name string, want map[string]string) bool {
-	f, ok := fams[name]
-	if !ok {
+	return findSeries(fams, name, want, func(*dto.Metric) bool { return true })
+}
+
+// observed reports whether family name has a series with want that recorded something:
+// a counter at 1 or more, a histogram with a sample. Gauges count as observed.
+func observed(fams map[string]*dto.MetricFamily, name string, want map[string]string) bool {
+	return findSeries(fams, name, want, func(m *dto.Metric) bool {
+		switch {
+		case m.GetCounter() != nil:
+			return m.GetCounter().GetValue() >= 1
+		case m.GetHistogram() != nil:
+			return m.GetHistogram().GetSampleCount() >= 1
+		}
+		return true
+	})
+}
+
+func findSeries(fams map[string]*dto.MetricFamily, name string, want map[string]string, ok func(*dto.Metric) bool) bool {
+	f, found := fams[name]
+	if !found {
 		return false
 	}
 	for _, m := range f.GetMetric() {
@@ -60,7 +78,7 @@ func hasSeries(fams map[string]*dto.MetricFamily, name string, want map[string]s
 				break
 			}
 		}
-		if match {
+		if match && ok(m) {
 			return true
 		}
 	}
@@ -150,13 +168,37 @@ func metricsGateway(t *testing.T, dir string, up *fakeUpstream) (*gateway, strin
 	}), nil)
 }
 
-// waitSeries scrapes until family name has a series with want, or fails.
+// waitCount scrapes until the counter name{want} is at least 1, or fails. Series of the
+// fixed label sets exist at 0 from the start, so presence alone proves nothing.
+func waitCount(t *testing.T, url, name string, want map[string]string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		for _, m := range scrape(t, url)[name].GetMetric() {
+			got := labelsOf(m)
+			match := true
+			for k, v := range want {
+				match = match && got[k] == v
+			}
+			if match && m.GetCounter().GetValue() >= 1 {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s%v never reached 1", name, want)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// waitSeries scrapes until family name has a series with want that recorded something
+// (observed), or fails.
 func waitSeries(t *testing.T, url, name string, want map[string]string) map[string]*dto.MetricFamily {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		fams := scrape(t, url)
-		if hasSeries(fams, name, want) {
+		if observed(fams, name, want) {
 			return fams
 		}
 		if time.Now().After(deadline) {
@@ -212,7 +254,13 @@ func TestRun_MetricsAfterRequest(t *testing.T) {
 		{"go_goroutines", nil},
 		{"process_resident_memory_bytes", nil},
 	} {
-		if !hasSeries(fams, w.name, w.labels) {
+		// The drop counters stay at 0: present is enough. Everything else must have
+		// recorded this call.
+		check := observed
+		if w.name == "gateway_capture_dropped_total" {
+			check = hasSeries
+		}
+		if !check(fams, w.name, w.labels) {
 			t.Errorf("no %s%v", w.name, w.labels)
 		}
 	}
@@ -241,7 +289,7 @@ func TestRun_MetricsUpstreamErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = resp.Body.Close()
-	waitSeries(t, url+"/metrics", "gateway_upstream_errors_total", map[string]string{"protocol": "anthropic", "kind": "status_5xx"})
+	waitCount(t, url+"/metrics", "gateway_upstream_errors_total", map[string]string{"protocol": "anthropic", "kind": "status_5xx"})
 
 	// Nothing listens at the closed upstream's address.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -256,7 +304,7 @@ func TestRun_MetricsUpstreamErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = resp.Body.Close()
-	waitSeries(t, url2+"/metrics", "gateway_upstream_errors_total", map[string]string{"protocol": "anthropic", "kind": "unreachable"})
+	waitCount(t, url2+"/metrics", "gateway_upstream_errors_total", map[string]string{"protocol": "anthropic", "kind": "unreachable"})
 }
 
 // Spec 021 AC1: the proxy listener never answers /metrics, as a plain request or as a
