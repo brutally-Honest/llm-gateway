@@ -1,15 +1,15 @@
 ---
 feature: 017-sessions-list-and-call-details
 kind: feat
-status: draft
+status: approved
 version: 8
 created: 2026-11-10
 supersedes:
 branch: feat/017-sessions-list-and-call-details
-approved:
-approved-by:
-sha256:
-fingerprint:
+approved: 2026-11-15T04:56:30Z
+approved-by: human
+sha256: 909f9aadca0a7de1861fe58059985ac95a8262db908dc1741a97cfbd323b3062
+fingerprint: 953c7d3813dfbc823937919c63ba1565ddda1941df13a81ebaff5ba8848cdc56
 previous: 67c86da
 ---
 # Sessions list and call details
