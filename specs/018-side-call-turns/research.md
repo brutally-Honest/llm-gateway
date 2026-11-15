@@ -31,6 +31,16 @@ feature: 018-side-call-turns
   disk or in the browser (localStorage holds only the theme and the reply mode), and the
   API sends no ETag or max-age. A gateway restart empties both, so every session is rebuilt
   with the new rule on first open. There is no cache version to bump; none is added.
+- D6 (2026-11-15) — Seen in the real-store check, not fixed here: in session 9980399c the
+  fix turns 13 turns into 10, not 8, and needs-a-look grows by two hooks-only turns ("Turn
+  3/8 has no model calls captured"). Cause, outside this fix: Claude Code sends a
+  background task's `<task-notification>` as a `role: "system"` message, and fires a
+  prompt hook for it. The model calls that answer it have no new user text, so they join
+  the open turn, and the prompt hook stays unmatched: a hooks-only turn whose "no model
+  calls" is false (turn 7 of the same session was already one before the fix). The away
+  summary that followed each notification used to absorb its hook and hide this. Simplest
+  reading kept: the side-call fix stands; the notification turn is its own follow-up on
+  the roadmap (a profile rule naming a system-role task notification as a turn's prompt).
 
 ## Notes
 ### Evidence: the captured calls (2026-11-15, the real store, read-only)
