@@ -353,6 +353,9 @@ function route() {
   setPage("");
   seq++;
   const r = parseRoute(location.hash);
+  // a new page starts at its top, not at the last page's scroll (seen in the 017 slice 3
+  // check); the exchange page's headers route scrolls to them once drawn
+  if (typeof window.scrollTo === "function") window.scrollTo(0, 0);
   shell.setRoute(r, "");
   shell.setKeyBar(r, null);
   if (r.name === "sessions") {

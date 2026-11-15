@@ -282,7 +282,10 @@ test("exchangePageUsesLabelsAndBreadcrumb", async () => {
   assert.equal(headers.textContent, "Request headers");
   assert.equal(globalThis.document.activeElement, headers, "the Headers link lands on the request headers");
   assert.match(textOf(page), /\[REDACTED\]/);
+  const tops = [];
+  window.scrollTo = (x, y) => tops.push([x, y]);
   await go("#/exchanges/x2");
+  assert.deepEqual(tops[0], [0, 0], "another page starts at its top");
   assert.equal(textOf(crumbs()).replace(/\s+/g, " ").trim(), "Sessions / Ungrouped / Exchange");
   const page2 = withClass(byId("app"), "exchange-page")[0];
   assert.match(textOf(withClass(page2, "sp-head")[0]), /Exchange/);
