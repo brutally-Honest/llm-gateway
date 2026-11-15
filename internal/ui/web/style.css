@@ -108,7 +108,7 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .sp-list tbody tr:hover td { background: var(--panel); }
 .sp-list tr.selected td { background: var(--accent-bg); }
 .sp-list td.time { color: var(--muted); font-variant-numeric: tabular-nums; }
-.sp-list th.title, .sp-list td.title { width: 100%; max-width: 0; }
+.sp-list th.title, .sp-list td.title { width: 100%; max-width: 0; min-width: 20rem; }
 .sp-list .stitle { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--hi); font-weight: 500; text-decoration: none; }
 .sp-list .stitle:hover { color: var(--accent); text-decoration: underline; }
 .sp-list td.src { color: var(--muted); white-space: nowrap; font-size: 12px; }
@@ -120,6 +120,13 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .sp-list .splace:empty, .sp-list .slook:empty { display: none; }
 .sp-list .slook { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--warn); font-size: 12px; font-weight: 600; margin-top: 2px; }
 .sp-list td.work, .sp-list td.tools, .sp-list td.changes, .sp-list td.dur, .sp-list td.tokens { white-space: nowrap; color: var(--text); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+/* below the page's full 1,600 px width, Work and Changes wrap onto two lines, at the dots,
+   so the Session column keeps its 20rem (research D49); wider, they stay on one line */
+.sp-list td .seg { white-space: nowrap; }
+/* 1599px must stay one below .sessions-page, .page { max-width: 1600px } */
+@media (max-width: 1599px) {
+.sp-list td.work, .sp-list td.changes { white-space: normal; min-width: 12.5rem; }
+}
 .sp-list td.tools .bad { color: var(--bad); font-weight: 600; }
 .sp-list td.tokens .tok + .tok::before { content: " · "; color: var(--muted); }
 .sp-list td.status { white-space: nowrap; }

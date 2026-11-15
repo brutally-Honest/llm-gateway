@@ -268,6 +268,21 @@ function setText(e, text) {
   if (e.textContent !== text) e.textContent = text;
 }
 
+// setSegments writes "a · b · c" with each part in a span that does not break, so a cell
+// that wraps does so at the dots (research D49); like setText it leaves an unchanged cell.
+function setSegments(e, text) {
+  if (e.textContent === text) return;
+  const nodes = [];
+  text.split(" · ").forEach((part, i) => {
+    if (i) nodes.push(" · ");
+    const sp = document.createElement("span");
+    sp.className = "seg";
+    sp.textContent = part;
+    nodes.push(sp);
+  });
+  e.replaceChildren(...nodes);
+}
+
 // setTitle writes the hover text only when it changed; "" shows none.
 function setTitle(e, text) {
   if (e.title !== (text || "")) e.title = text || "";
@@ -303,10 +318,10 @@ function fillRow(parts, s, selected) {
     const pill = span(`spill spill-${c.status.key}`, `${c.status.glyph} ${c.status.text}`);
     cells[3].replaceChildren(pill);
   }
-  setText(cells[4], `${c.prompts} · ${c.calls}`);
+  setSegments(cells[4], `${c.prompts} · ${c.calls}`);
   setText(parts.tools[0], c.tools);
   setText(parts.tools[1], c.failed ? ` · ${c.failed} failed` : "");
-  setText(cells[6], c.changes);
+  setSegments(cells[6], c.changes);
   setText(cells[7], c.time);
   setToken(parts.tokens[0], c.input, "in");
   setToken(parts.tokens[1], c.output, "out");

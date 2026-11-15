@@ -178,7 +178,8 @@ function livePage(items) {
   page.update({ items });
   const link = (id) => byTag(page.el, "a").find((a) => a.href === `#/sessions/${id}`);
   const row = (id) => byTag(page.el, "tr").find((r) => r.dataset && r.dataset.id === id);
-  const cell = (id, i) => textOf(byTag(row(id), "td")[i]).trim();
+  // a cell's text with its parts' spaces collapsed (Work and Changes are segment spans, D49)
+  const cell = (id, i) => textOf(byTag(row(id), "td")[i]).replace(/\s+/g, " ").trim();
   return { page, link, row, cell };
 }
 
@@ -264,6 +265,7 @@ test("listFormatsForReading", () => {
   assert.equal(byTag(tds[5], "span").map((x) => x.textContent).join(""), "8 tool calls · 1 failed");
   assert.equal(withClass(tds[5], "bad")[0].textContent, " · 1 failed", "failures stand out");
   assert.equal(p.cell("s1", 6), "2 files changed · 4 commands · 1 site");
+  assert.deepEqual(withClass(tds[6], "seg").map((x) => x.textContent), ["2 files changed", "4 commands", "1 site"], "it wraps only at the dots (D49)");
   assert.equal(p.cell("s1", 7), "2m 05s");
 });
 
