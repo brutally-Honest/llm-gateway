@@ -340,5 +340,10 @@ test("rowShowsApiEquivalentCost", () => {
   assert.match(th.title, /API-equivalent: .* not what was charged/, "the Tokens header explains the cost line");
   const line = withClass(p.page.el, "cost")[0];
   assert.equal(textOf(line).trim(), "$12.35 API-eq.", "the cost is the Tokens cell's second line, labelled");
+  // 020 D17: the counts are unbreakable parts with " · " as text between them, so the cell
+  // wraps only at the dots, as Work and Changes do; the cost comes last, a line of its own
+  const cell = byTag(p.page.el, "td").find((x) => x.className === "tokens");
+  assert.deepEqual(cell.children.map((c) => [c.className || "", c.textContent]),
+    [["tok seg", "10 in"], ["", " · "], ["tok seg", "— out"], ["", " · "], ["tok seg", "7 cache read"], ["cost", "$12.35 API-eq."]]);
   assert.match(line.title, /not what was charged/);
 });

@@ -124,17 +124,21 @@ test("exchangeHeaderTablesLineUp", () => {
   assert.equal(rule(".exchange-page .sp-list th.hname").width, "18rem");
 });
 
-// spec 017 AC1, research D49: at 1,440 px the sessions list's Session column keeps at least
-// 20rem — it has that minimum, and Work and Changes wrap onto two lines to make the room
-// (Tools, Time and Tokens stay on one line). Checked in the browser at 1,440 and 2,560.
+// spec 017 AC1, research D49, spec 020 D17: at 1,440 px the sessions list's Session column
+// keeps at least 20rem and nothing is cut — it has that minimum, and Work, Changes and
+// Tokens wrap onto two lines at their dots to make the room (Tools and Time stay on one
+// line; the Tokens cell's cost stays a line of its own). Checked in the browser at 1,440
+// and 2,560.
 test("sessionColumnKeepsItsMinimumAt1440", () => {
   assert.equal(rule(".sp-list th.title, .sp-list td.title")["min-width"], "20rem");
-  // below the page's 1,600 px width (1,440 included) Work and Changes wrap, two lines wide
-  const narrow = css.match(/@media \(max-width: 1599px\) \{\n\.sp-list td\.work, \.sp-list td\.changes \{([^}]*)\}/);
-  assert.ok(narrow, "Work and Changes wrap below 1,600 px");
+  // below the page's 1,600 px width (1,440 included) Work, Changes and Tokens wrap, two lines wide
+  const narrow = css.match(/@media \(max-width: 1599px\) \{\n\.sp-list td\.work, \.sp-list td\.changes, \.sp-list td\.tokens \{([^}]*)\}/);
+  assert.ok(narrow, "Work, Changes and Tokens wrap below 1,600 px");
   assert.match(narrow[1], /white-space: normal/);
   assert.match(narrow[1], /min-width: 12\.5rem/, "wide enough for two lines, not more");
   assert.equal(rule(".sp-list td .seg")["white-space"], "nowrap", "they wrap only at the dots");
+  assert.equal(rule(".sp-list td.tokens .cost")["display"], "block", "the cost is a line of its own");
+  assert.equal(rule(".sp-list td.tokens .cost")["white-space"], "nowrap", "and never breaks inside");
   // wider, every count cell stays on one line
   assert.equal(rule(".sp-list td.work, .sp-list td.tools, .sp-list td.changes, .sp-list td.dur, .sp-list td.tokens")["white-space"], "nowrap");
 });

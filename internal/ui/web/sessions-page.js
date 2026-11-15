@@ -260,9 +260,11 @@ function rowNode(id) {
   parts.a.className = "stitle";
   for (const cls of COLUMNS.map((c) => c[1])) parts.cells.push(td(tr, null, cls));
   parts.cells[1].append(parts.a, parts.place, parts.look);
-  parts.tokens = [span("tok"), span("tok"), span("tok")];
+  // each count an unbreakable part, " · " between them as text, so the cell wraps only at
+  // the dots, as Work and Changes do (setSegments); the cost is a line of its own
+  parts.tokens = [span("tok seg"), span("tok seg"), span("tok seg")];
   parts.cost = span("cost");
-  parts.cells[8].append(...parts.tokens, parts.cost);
+  parts.cells[8].append(parts.tokens[0], " · ", parts.tokens[1], " · ", parts.tokens[2], parts.cost);
   parts.tools = [span(""), span("bad")];
   parts.cells[5].append(...parts.tools);
   return parts;
