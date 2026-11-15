@@ -1,7 +1,7 @@
 ---
 feature: 017-sessions-list-and-call-details
 kind: feat
-status: approved
+status: done
 version: 8
 created: 2026-11-10
 supersedes:

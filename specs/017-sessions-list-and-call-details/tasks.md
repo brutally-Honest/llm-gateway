@@ -1,6 +1,6 @@
 ---
 feature: 017-sessions-list-and-call-details
-status: draft
+status: done
 version: 1
 approved:
 approved-by:
