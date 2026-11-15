@@ -41,6 +41,33 @@ feature: 018-side-call-turns
   summary that followed each notification used to absorb its hook and hide this. Simplest
   reading kept: the side-call fix stands; the notification turn is its own follow-up on
   the roadmap (a profile rule naming a system-role task notification as a turn's prompt).
+- D7 (2026-11-15) — Karthik: fix D6 on this branch (AC7–AC11). Evidence, the real store
+  (read-only): 21 prompt hooks whose prompt starts `<task-notification>`, in 4 sessions
+  (9980399c 3, b9a0bc1b 3, f478826f 3, 2fff4047 12). Every one:
+  - came 0–7 s after the session's last main call ended, and that call had asked for 1–4
+    tool calls; no Stop hook came in between (the turn was still running);
+  - was answered by a main call starting 0.1–0.2 s after the hook, whose request ends with
+    the tool result, then a `role: "system"` message: `[SYSTEM NOTIFICATION - NOT USER
+    INPUT]\nThis is an automated background-task event, NOT a message from the user. …`
+    followed by the notice itself, e.g. `<task-notification>\n<task-id>bj076ahn9</task-id>
+    … <status>completed</status>\n<summary>Background command "Verify the config commit
+    alone in a worktree" completed (exit code 0)</summary>`;
+  - the hook payload: `hook_event_name: UserPromptSubmit`, `prompt` the notice alone.
+  So the store holds only the "turn still open" case. Rule used: the open turn is decided
+  from the view's own calls, not from Stop hooks (9980399c has no Stop hook at all before
+  its first notice): a notice's answering call (the main call starting at most 1 s after
+  the notice's hook) joins the open turn when that turn's last main call asked for a tool
+  call; when it answered with none (and did not fail), the turn has ended and the call
+  starts a turn marked background, its text the notice. A notice nothing answers is a
+  background hooks-only turn. The "after the turn ended" case is built from the same
+  shapes in the tests, not seen in the store. The notice is told apart by a new optional
+  profile interface, `core.BackgroundPromptReader` (Claude Code: the prompt starts
+  `<task-notification>`), beside `PromptReader`; the core stays client-agnostic.
+- D8 (2026-11-15) — Found in the real-store check of D7: in 2fff4047 two notices (tasks
+  bpm8ix0om and bf4oovf8j, hooks 5780 and 5781) arrived in the same nanosecond and one call
+  (OAW4BFWX) answered both; the first build let a call take one notice, leaving the other
+  as a background hooks-only turn. A call now takes every notice in its one-second window
+  (a background turn's text is their notices, in order); the gateway test sends two at once.
 
 ## Notes
 ### Evidence: the captured calls (2026-11-15, the real store, read-only)
