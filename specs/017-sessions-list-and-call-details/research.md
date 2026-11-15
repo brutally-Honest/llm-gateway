@@ -234,6 +234,29 @@ feature: 017-sessions-list-and-call-details
   in the dialog's terms (each tool line's state, name and sub-agent). The plot, yes/no
   health rows, session id, browser-built context after a failed load, the paged 504 rule
   and `shouldFollow` stay dropped: the dialog has none of them (D40).
+- D45 (2026-11-15, slice 3, T022) — On the unassigned connections page a connection's label
+  is glyph and word (AC12): the server's attribution label as 015 words it ("⚙ harness:
+  client-a"), or "○ unassigned" when it has none (an empty circle: linked to nothing). Its
+  outcome is 014's glyph and word, in the failure colour only for refused and error. The
+  sessions list's own unassigned section (AC2, accepted in slice 1) keeps its plain words.
+- D46 (2026-11-15, slice 3, T023) — "contrast.test.js extended to the three pages' new colour
+  pairs": the three pages add no colour; they use 016's tokens, and every text-on-background
+  pair of those tokens is already checked in both themes. The extension is a check that the
+  pages' rules draw only with tokens (no hex, rgb or hsl), so a colour added later fails
+  there before it can miss the pair check.
+- D47 (2026-11-15, slice 3, T023) — The full exchange page's title and breadcrumb come from
+  the server: the exchange API adds the session's title and the call's #n (from the
+  session's cached view) and the status in words. "Sessions / <session title> / Call #n"
+  for a call; "Sessions / <session title> / Exchange" for an exchange of a session that is
+  not one of its calls; "Sessions / Ungrouped / Exchange" for one no session claims;
+  "Session" stands in for the title when the view cannot be built. Unreported counters
+  read "—" there, as everywhere else in 016 and 017 (it said "unknown").
+- D48 (2026-11-15, slice 3) — The ungrouped and full exchange pages were custom elements,
+  which the stubbed DOM of the web tests cannot run, so no test reached them through
+  app.js; they are now plain page factories like the sessions page. The unassigned page
+  lives in `effects-list.js` (the unassigned list's module since T018), which tasks.md
+  calls `effects.js`. Check-doc commits use `docs(spec)` (Karthik's slice 3 rule) where
+  tasks.md's Commit lines say `docs(docs)`.
 
 ## Notes
 - Sessions list budget, before slice 1 (2026-11-14, T001): `BenchmarkSessionsList500`
