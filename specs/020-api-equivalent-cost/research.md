@@ -162,3 +162,16 @@ header alignment, the fast-mode check (D16) and the 1,440 pass.
   $0.37; one side call (title generation): 1,172 × $4 + 18 × $20 = $0.005048, shown $0.01.
 - GIFs: `~/Downloads/020-cost-2026-11-15.gif` (2,560 px),
   `~/Downloads/020-cost-1440-2026-11-15.gif` (1,440 px).
+
+### Re-check after the Tokens wrap (D17, build 3aa2eb1, 2026-11-15)
+Sessions list, real store, 15 rows, scanned in the page (widths from the DOM):
+
+| Width | Theme | Table in frame | Sideways scroll | Session column | Tokens | Cut or outside the frame |
+|---|---|---|---|---|---|---|
+| 1,440 | dark, light | 1,375 in 1,377 | none | 283 px (min 280 = 20rem) | 2 lines of counts per row, counts never split, cost one line | none |
+| 2,560 | dark, light | 1,598 in 1,600 | none | 350 px | one line per row, cost one line | none |
+
+Work and Changes stay on one line at 2,560 too. The Session column's own lines shorten
+with "…" by 017's design (1,440: 3 titles, 13 folder lines, 7 needs-a-look; 2,560: 1
+title, 7 needs-a-look). Karthik accepted the 1,440 pass and the ellipsis; the 2,560 pass
+showed nothing different from before, so the re-check is accepted on his instruction.
