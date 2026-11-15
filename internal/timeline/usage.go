@@ -3,7 +3,9 @@ package timeline
 import (
 	"encoding/json"
 	"slices"
+	"time"
 
+	"github.com/brutally-honest/llm-gateway/internal/cost"
 	"github.com/brutally-honest/llm-gateway/internal/store"
 )
 
@@ -29,6 +31,9 @@ type CallUsage struct {
 	NoUsage string // "", NoUsageErrored or NoUsageMissing; set only without a usage event
 	// HasUsage is true when the exchange has a usage event.
 	HasUsage bool
+	// Cost is the call's API-equivalent cost (spec 020), priced on read from the usage
+	// and the protocol's price table.
+	Cost cost.Call
 }
 
 // callUsage derives the call record of an exchange from its events; the bool is
@@ -63,14 +68,18 @@ func callUsage(ex store.ExchangeRow, evs []store.EventRow) (CallUsage, bool) {
 	if usageEv != nil {
 		call.HasUsage, call.Partial = true, usageEv.Partial
 		var p struct {
-			Input      *int64 `json:"input_tokens"`
-			Output     *int64 `json:"output_tokens"`
-			CacheWrite *int64 `json:"cache_write_tokens"`
-			CacheRead  *int64 `json:"cache_read_tokens"`
+			Input      *int64          `json:"input_tokens"`
+			Output     *int64          `json:"output_tokens"`
+			CacheWrite *int64          `json:"cache_write_tokens"`
+			CacheRead  *int64          `json:"cache_read_tokens"`
+			Detail     json.RawMessage `json:"detail"`
 		}
 		if json.Unmarshal(usageEv.Payload, &p) == nil { // malformed: all counters nil
 			call.Counters = Counters{p.Input, p.Output, p.CacheWrite, p.CacheRead}
 		}
+		call.Cost = cost.Price(cost.Usage{Protocol: ex.Protocol, Model: call.Model, At: time.Unix(0, ex.StartedAt).UTC(),
+			Input: call.Input, Output: call.Output, CacheWrite: call.CacheWrite, CacheRead: call.CacheRead,
+			Detail: p.Detail, Partial: call.Partial})
 		return call, true
 	}
 	// Without a recorded upstream response (TTFBNS nil) the stored status is the
@@ -80,7 +89,16 @@ func callUsage(ex store.ExchangeRow, evs []store.EventRow) (CallUsage, bool) {
 	if ex.TTFBNS != nil && ex.Status >= 400 && ex.Status <= 599 {
 		call.NoUsage = NoUsageErrored
 	}
+	call.Cost = cost.NoUsage(call.NoUsage == NoUsageErrored, NoUsageReason(call.NoUsage))
 	return call, true
+}
+
+// NoUsageReason is the words for a call with no usage counts, as its tokens show them.
+func NoUsageReason(noUsage string) string {
+	if noUsage == NoUsageErrored {
+		return "the call failed before the provider counted tokens"
+	}
+	return "the stored reply has no usage counts"
 }
 
 // Sum is one counter summed over the calls that reported it.
@@ -108,6 +126,8 @@ type Group struct {
 	Errored                              int // calls without one, whose response was an error
 	PartialCalls                         int
 	Input, Output, CacheWrite, CacheRead Sum
+	// Cost is the API-equivalent cost of the calls (spec 020).
+	Cost cost.Total
 }
 
 // Incomplete reports whether some call is missing usage or left a counter unset.
@@ -121,6 +141,7 @@ func (g Group) AllErrored() bool { return g.Reporting == 0 && g.Missing == 0 && 
 
 func (g *Group) add(c CallUsage) {
 	g.Calls++
+	g.Cost.Add(c.Cost)
 	switch {
 	case c.HasUsage:
 		g.Reporting++

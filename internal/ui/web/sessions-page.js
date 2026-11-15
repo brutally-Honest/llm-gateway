@@ -1,6 +1,7 @@
 import { timeElement } from "./entries.js";
 import { filterSessions, FILTERS } from "./filters.js";
 import { bytes, dur, plural } from "./fmt.js";
+import { LABEL, explain, totalCost } from "./cost.js";
 
 export const NO_TITLE = "no prompt captured";
 const DASH = "—";
@@ -21,10 +22,11 @@ export function tableWithHead(columns) {
   const table = document.createElement("table");
   const thead = document.createElement("thead");
   const head = document.createElement("tr");
-  for (const [label, cls] of columns) {
+  for (const [label, cls, title] of columns) {
     const th = document.createElement("th");
     th.scope = "col";
     if (cls) th.className = cls;
+    if (title) th.title = title;
     th.textContent = label;
     head.append(th);
   }
@@ -148,6 +150,7 @@ export function rowCells(s) {
     input: hooksOnly ? DASH : counter(u.input),
     output: hooksOnly ? DASH : counter(u.output),
     cacheRead: hooksOnly ? DASH : counter(u.cache_read),
+    cost: hooksOnly ? { text: DASH, title: "" } : totalCost(u.cost),
     look: lookText(l),
   };
 }
@@ -203,6 +206,7 @@ export function todayCells(t) {
     sites: x.sites ?? 0,
     input: counter(x.input),
     output: counter(x.output),
+    cost: totalCost(x.cost),
   };
 }
 
@@ -256,8 +260,11 @@ function rowNode(id) {
   parts.a.className = "stitle";
   for (const cls of COLUMNS.map((c) => c[1])) parts.cells.push(td(tr, null, cls));
   parts.cells[1].append(parts.a, parts.place, parts.look);
-  parts.tokens = [span("tok"), span("tok"), span("tok")];
-  parts.cells[8].append(...parts.tokens);
+  // each count an unbreakable part, " · " between them as text, so the cell wraps only at
+  // the dots, as Work and Changes do (setSegments); the cost is a line of its own
+  parts.tokens = [span("tok seg"), span("tok seg"), span("tok seg")];
+  parts.cost = span("cost");
+  parts.cells[8].append(parts.tokens[0], " · ", parts.tokens[1], " · ", parts.tokens[2], parts.cost);
   parts.tools = [span(""), span("bad")];
   parts.cells[5].append(...parts.tools);
   return parts;
@@ -326,13 +333,15 @@ function fillRow(parts, s, selected) {
   setToken(parts.tokens[0], c.input, "in");
   setToken(parts.tokens[1], c.output, "out");
   setToken(parts.tokens[2], c.cacheRead, "cache read");
+  setText(parts.cost, `${c.cost.text} ${LABEL}`);
+  setTitle(parts.cost, c.cost.title);
 }
 
 // COLUMNS are the list's headers and each column's class; every count carries its own label
 // in words (spec 017 AC1).
 const COLUMNS = [
   ["Start", "time"], ["Session", "title"], ["Sources", "src"], ["Status", "status"], ["Work", "work"],
-  ["Tools", "tools"], ["Changes", "changes"], ["Time", "dur"], ["Tokens", "tokens"],
+  ["Tools", "tools"], ["Changes", "changes"], ["Time", "dur"], ["Tokens", "tokens", `Second line: ${explain("")}`],
 ];
 
 // unassignedShown is how many unassigned connections the list's section lists; the rest are
@@ -508,6 +517,7 @@ export function createSessionsPage(handlers) {
     stat(String(t.sites), t.sites === 1 ? "site" : "sites");
     stat(compact(t.input), "input", t.input);
     stat(compact(t.output), "output", t.output);
+    stat(t.cost.text, `${LABEL} cost`, t.cost.title);
     foot.replaceChildren();
     filterNote.textContent = "";
     if (state.error) {

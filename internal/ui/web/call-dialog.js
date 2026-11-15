@@ -1,5 +1,6 @@
 import { button, clock, dur, el, num, signed } from "./fmt.js";
 import { textBlock, toolNode } from "./story.js";
+import { LABEL, LABEL_LONG, callCost, costLines } from "./cost.js";
 
 // The call details dialog (spec 017 AC5–AC11, AC21): one model call in the 016 dialog shape —
 // a native <dialog> opened with showModal(), so the page behind is dimmed and inert. Its top
@@ -192,6 +193,7 @@ export function createCallDialog(ctx = {}) {
       fact("Ended", f.stop.word, f.stop.bad ? "bad" : ""),
       fact("Thread", f.thread.label),
       fact("Context", num(f.ctx)),
+      costFact(d.context.cost),
     );
     const c = d.context;
     const change = changeText(c);
@@ -212,6 +214,44 @@ export function createCallDialog(ctx = {}) {
     );
     return section("Context", "input + cache write + cache read", facts,
       c.why ? el("p", "why2", c.why) : null, c.note ? el("p", "muted-note", c.note) : null);
+  }
+
+  // costFact is the call's API-equivalent cost in the dialog's top, with its hover.
+  function costFact(c) {
+    const cc = callCost(c);
+    const f = fact(`${LABEL} cost`, cc.text);
+    f.title = cc.title;
+    return f;
+  }
+
+  // costSection is the call's cost by token kind: tokens × price = amount (spec 020 AC8);
+  // a call with no price or no usage says why instead.
+  function costSection(c) {
+    const cc = callCost(c);
+    const rows = costLines(c);
+    const sub = c && c.source ? `at ${c.source}'s published API prices, not what was charged` : "at published API prices, not what was charged";
+    if (!rows.length) return section(`${LABEL_LONG} cost`, sub, el("p", "muted-note", `${cc.text} · ${cc.title.split("\n").pop()}`));
+    const table = el("table", "cost-lines");
+    const head = el("tr");
+    for (const h of ["Tokens", "Count", "Price", "Amount"]) {
+      const th = el("th", h === "Tokens" ? "" : "n", h); // number headers align with their numbers
+      th.scope = "col";
+      head.append(th);
+    }
+    const thead = el("thead");
+    thead.append(head);
+    const tbody = el("tbody");
+    for (const r of rows) {
+      const tr = el("tr");
+      tr.append(el("td", "", r.kind), el("td", "n", r.tokens), el("td", "n", `× ${r.rate}`), el("td", "n", `= ${r.amount}`));
+      tbody.append(tr);
+    }
+    const tot = el("tr", "total");
+    tot.append(el("td", "", "Total"), el("td"), el("td"), el("td", "n", cc.text));
+    tbody.append(tot);
+    table.append(thead, tbody);
+    const notes = cc.title.split("\n").slice(1).map((t) => el("p", "muted-note", t));
+    return section(`${LABEL_LONG} cost`, sub, table, ...notes);
   }
 
   function sawSection(d) {
@@ -343,7 +383,7 @@ export function createCallDialog(ctx = {}) {
     } else {
       top.replaceChildren(...topNodes(d));
       replyFit = () => {};
-      body.replaceChildren(...[contextSection(d.context), sawSection(d), thinkingSection(d), responseSection(d), toolsSection(d), healthSection(d.health), rawSection(d.raw)].filter(Boolean));
+      body.replaceChildren(...[contextSection(d.context), costSection(d.context.cost), sawSection(d), thinkingSection(d), responseSection(d), toolsSection(d), healthSection(d.health), rawSection(d.raw)].filter(Boolean));
       replyFit();
     }
     if (keep) body.scrollTop = scroll;

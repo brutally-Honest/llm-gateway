@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/brutally-honest/llm-gateway/internal/cost"
 	"github.com/brutally-honest/llm-gateway/internal/store"
 	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
@@ -49,6 +50,8 @@ type usageJSON struct {
 	CacheRead  counterJSON `json:"cache_read"`
 	Incomplete bool        `json:"incomplete"`
 	AllErrored bool        `json:"all_errored"`
+	// Cost is the API-equivalent cost of the calls, side calls included (spec 020).
+	Cost cost.TotalJSON `json:"cost"`
 }
 
 // sessionSummary is the summary shape of a session and of one ungrouped exchange.
@@ -127,7 +130,7 @@ func usageToJSON(s timeline.Summary) usageJSON {
 		Calls: g.Calls, Reporting: g.Reporting, Missing: g.Missing, Errored: g.Errored,
 		Partial: g.PartialCalls,
 		Input:   c(g.Input), Output: c(g.Output), CacheWrite: c(g.CacheWrite), CacheRead: c(g.CacheRead),
-		Incomplete: g.Incomplete(), AllErrored: g.AllErrored(),
+		Incomplete: g.Incomplete(), AllErrored: g.AllErrored(), Cost: g.Cost.JSON(),
 	}
 }
 

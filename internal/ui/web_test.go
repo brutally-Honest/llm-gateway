@@ -204,17 +204,39 @@ func TestWeb_ComponentsCallTheTestedHelpers(t *testing.T) {
 	}
 }
 
-// TestWeb_NoCostOrContextPercent: no view shows money or a share of a context window (AC35).
-func TestWeb_NoCostOrContextPercent(t *testing.T) {
-	bad := regexp.MustCompile(`(?i)cost|price|percent|\d%|\}\s*%|"%|%"|[$€£]\s*\d|\$\{[^}]*\}\s*usd`)
+// TestWeb_NoContextPercentAndMoneyOnlyFromCost: no view shows a share of a context window
+// (013 AC35). Money, which 013 AC35 kept off every view, is shown since spec 020 only as the
+// API-equivalent cost: cost.js is the one file that writes an amount, and it labels every
+// amount as what the tokens would cost, not what was charged (020 AC8, research D12).
+func TestWeb_NoContextPercentAndMoneyOnlyFromCost(t *testing.T) {
+	percent := regexp.MustCompile(`(?i)percent|\d%|\}\s*%|"%|%"`)
+	// 013's money patterns (a currency sign before a digit, "${…} usd"), plus a pound or euro
+	// sign anywhere, "$${", a string that starts with "$" and a digit, "< $", or an amount
+	// field of the API ("\x60" is a backtick)
+	money := regexp.MustCompile("(?i)[$€£]\\s*\\d|\\$\\{[^}]*\\}\\s*usd|[€£]|\\$\\$\\{|[\"'\x60]\\$\\s*\\d|< \\$|\\.usd\\b|usd_per_mtok")
 	comment := regexp.MustCompile(`(?m)//.*$`)
-	for name, src := range webFiles(t) {
+	files := webFiles(t)
+	for name, src := range files {
 		if !strings.HasSuffix(name, ".js") && name != "index.html" {
 			continue
 		}
 		src = comment.ReplaceAllString(src, "")
-		if m := bad.FindString(src); m != "" {
-			t.Errorf("%s shows cost or a percentage: %q", name, m)
+		if m := percent.FindString(src); m != "" {
+			t.Errorf("%s shows a percentage: %q", name, m)
+		}
+		if m := money.FindString(src); m != "" && name != "cost.js" {
+			t.Errorf("%s writes money itself (only cost.js may): %q", name, m)
+		}
+	}
+	c := files["cost.js"]
+	for _, want := range []string{"API-equivalent", "not what was charged"} {
+		if !strings.Contains(c, want) {
+			t.Errorf("cost.js does not label amounts with %q", want)
+		}
+	}
+	for name, src := range files {
+		if strings.HasSuffix(name, ".js") && strings.Contains(src, ".cost") && name != "cost.js" && !strings.Contains(src, `from "./cost.js"`) {
+			t.Errorf("%s reads a cost without cost.js", name)
 		}
 	}
 }

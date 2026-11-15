@@ -52,6 +52,7 @@ func TestCore_NoProviderOrClientIdentifiers(t *testing.T) {
 		{"../store", names},
 		{"../contentcoding", names},
 		{"../timeline", full},
+		{"../cost", full},                     // pricing (spec 020): each protocol hands over its own price table
 		{"../ui", full},                       // the web UI: Go files and the embedded web/ files
 		{"../effects", full},                  // the file and read effect sensors (spec 014)
 		{"../netproxy", full},                 // the network effect sensor (spec 014)

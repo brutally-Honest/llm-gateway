@@ -537,3 +537,31 @@ test("stepsDisabledAtTheEnds", async () => {
   assert.equal(slow.btn("Previous").disabled, true);
   assert.equal(slow.btn("Next").disabled, true);
 });
+
+// spec 020 AC7, AC8: the dialog shows the call's API-equivalent cost in its top and, in a
+// section of its own, by token kind: tokens × price = amount, then the total.
+test("callDialogShowsCostBreakdown", async () => {
+  const cost = { status: "priced", source: "Test", usd: "0.0531508", estimated: false, at_least: false, lines: [
+    { kind: "input", tokens: 2, usd_per_mtok: "4", usd: "0.000008" },
+    { kind: "cache_write_5m", tokens: 0, usd_per_mtok: "5", usd: "0" },
+    { kind: "cache_write_1h", tokens: 199, usd_per_mtok: "8", usd: "0.001592" },
+    { kind: "cache_read", tokens: 226054, usd_per_mtok: "0.2", usd: "0.0452108" },
+    { kind: "output", tokens: 317, usd_per_mtok: "20", usd: "0.00634" },
+  ] };
+  const h = host({ load: (id) => detail(id, { context: { ...detail(id).context, cost }, facts: { ...detail(id).facts, thread: { kind: "side", label: "title" } } }) });
+  h.clickTo(0);
+  await tick();
+  const t = h.text().replace(/\s+/g, " ");
+  assert.match(t, /API-eq\. cost \$0\.05/, "the top shows the call's cost");
+  assert.match(t, /API-equivalent cost at Test's published API prices, not what was charged/);
+  assert.match(t, /Cache read 226,054 × \$0\.2 \/ MTok = \$0\.0452/);
+  assert.match(t, /Output 317 × \$20 \/ MTok = \$0\.0063/);
+  assert.match(t, /Total \$0\.05/);
+  const heads = byTag(withClass(h.root, "cost-lines")[0], "th").map((th) => [th.textContent, th.className]);
+  assert.deepEqual(heads, [["Tokens", ""], ["Count", "n"], ["Price", "n"], ["Amount", "n"]], "number headers align right, over their numbers");
+
+  const np = host({ load: (id) => detail(id, { context: { ...detail(id).context, cost: { status: "no_price", reason: "no price for m9" } } }) });
+  np.clickTo(0);
+  await tick();
+  assert.match(np.text(), /— no price for m9/);
+});

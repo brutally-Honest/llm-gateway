@@ -120,15 +120,16 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .sp-list .splace:empty, .sp-list .slook:empty { display: none; }
 .sp-list .slook { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--warn); font-size: 12px; font-weight: 600; margin-top: 2px; }
 .sp-list td.work, .sp-list td.tools, .sp-list td.changes, .sp-list td.dur, .sp-list td.tokens { white-space: nowrap; color: var(--text); font-size: 12.5px; font-variant-numeric: tabular-nums; }
-/* below the page's full 1,600 px width, Work and Changes wrap onto two lines, at the dots,
-   so the Session column keeps its 20rem (research D49); wider, they stay on one line */
+/* below the page's full 1,600 px width, Work, Changes and Tokens wrap onto two lines, at
+   the dots, so the Session column keeps its 20rem and nothing is cut (research D49, 020
+   D17); wider, they stay on one line */
 .sp-list td .seg { white-space: nowrap; }
 /* 1599px must stay one below .sessions-page, .page { max-width: 1600px } */
 @media (max-width: 1599px) {
-.sp-list td.work, .sp-list td.changes { white-space: normal; min-width: 12.5rem; }
+.sp-list td.work, .sp-list td.changes, .sp-list td.tokens { white-space: normal; min-width: 12.5rem; }
 }
 .sp-list td.tools .bad { color: var(--bad); font-weight: 600; }
-.sp-list td.tokens .tok + .tok::before { content: " · "; color: var(--muted); }
+.sp-list td.tokens .cost { display: block; white-space: nowrap; color: var(--muted); }
 .sp-list td.status { white-space: nowrap; }
 .page .sp-list table { min-width: 0; }
 .page > .muted { margin: 0; font-size: 13px; }
@@ -451,6 +452,10 @@ dialog.details::backdrop { background: var(--scrim); }
 .mf .grow { flex: 1; }
 .mf .primary { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--on-accent); font-weight: 600; }
 .muted-note { font-size: 12.5px; color: var(--muted); margin: 0; }
+table.cost-lines { width: auto; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+table.cost-lines th, table.cost-lines td { padding: 3px 14px 3px 0; text-align: left; white-space: nowrap; }
+table.cost-lines th.n, table.cost-lines td.n { text-align: right; }
+table.cost-lines tr.total td { border-top: 1px solid var(--border); font-weight: 700; color: var(--hi); }
 .errbox { border-left: 3px solid var(--bad); padding-left: 8px; }
 .mb pre { margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 12.5px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 26rem; overflow: auto; }
 .mb .copy { align-self: flex-end; margin-bottom: 4px; }

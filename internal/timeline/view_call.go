@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/brutally-honest/llm-gateway/internal/cost"
 	"github.com/brutally-honest/llm-gateway/internal/store"
 )
 
@@ -137,6 +138,9 @@ type CallContext struct {
 	CacheRead  *int64 `json:"cache_read"`
 	Output     *int64 `json:"output"`
 	Note       string `json:"note,omitempty"`
+	// Cost is the call's API-equivalent cost with its breakdown by token kind (spec 020
+	// AC8); a side call's like any call's (AC7).
+	Cost cost.CallJSON `json:"cost"`
 }
 
 // CallHealth is the call's disconnect, abort, error and partial-capture facts in words
@@ -362,8 +366,10 @@ func callContext(v View, id string, p callPlace, in CallInput) CallContext {
 		case u.Partial:
 			c.Note = "Usage from a reply cut short: the counts may be low."
 		}
+		c.Cost = u.Cost.JSON()
 	} else {
 		c.Note = "No usage reported: the call's events were not parsed."
+		c.Cost = cost.NoUsage(false, "the call's events were not parsed").JSON()
 	}
 	if p.side != nil {
 		c.Size = sumCtx(c.Input, c.CacheWrite, c.CacheRead)
