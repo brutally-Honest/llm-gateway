@@ -557,6 +557,8 @@ test("callDialogShowsCostBreakdown", async () => {
   assert.match(t, /Cache read 226,054 × \$0\.2 \/ MTok = \$0\.0452/);
   assert.match(t, /Output 317 × \$20 \/ MTok = \$0\.0063/);
   assert.match(t, /Total \$0\.05/);
+  const heads = byTag(withClass(h.root, "cost-lines")[0], "th").map((th) => [th.textContent, th.className]);
+  assert.deepEqual(heads, [["Tokens", ""], ["Count", "n"], ["Price", "n"], ["Amount", "n"]], "number headers align right, over their numbers");
 
   const np = host({ load: (id) => detail(id, { context: { ...detail(id).context, cost: { status: "no_price", reason: "no price for m9" } } }) });
   np.clickTo(0);

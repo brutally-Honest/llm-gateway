@@ -234,7 +234,7 @@ export function createCallDialog(ctx = {}) {
     const table = el("table", "cost-lines");
     const head = el("tr");
     for (const h of ["Tokens", "Count", "Price", "Amount"]) {
-      const th = el("th", "", h);
+      const th = el("th", h === "Tokens" ? "" : "n", h); // number headers align with their numbers
       th.scope = "col";
       head.append(th);
     }
