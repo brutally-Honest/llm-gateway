@@ -45,6 +45,30 @@ feature: 021-self-observability
 - D8 (2026-11-15) — Library versions: client_golang v1.25 and OTel v1.47 need go 1.26,
   and `go get @latest` raised the module's go line to 1.26.0. Kept go 1.25.4 (the
   installed toolchain) with client_golang v1.24.0 and OTel v1.46.0 (ADR 0018).
+  `go mod tidy` picks the newest OTel for a new import and raises the go line again, so
+  it is run with `GOTOOLCHAIN=local` and the versions pinned with `go get …@v1.46.0`.
+- D9 (2026-11-15) — Spans: `gateway.receive` (root, from the proxy taking the call to
+  Settle) → `gateway.upstream_request` (handed to the transport → response headers, or
+  the error) and `gateway.response_stream` (headers → body done) and `gateway.capture`
+  (handed to the sink → stored, dropped or undrained) → `gateway.store_write` per store
+  call. No trace context is read from or written to any header (no propagator): a
+  client's `traceparent` is ignored and upstream never gets one, so headers stay as sent.
+  The model comes from the canonical request event, on `gateway.capture` (D4), cut at
+  128 characters. `client` is the profile's name (`claude-code`, `unknown`), not the
+  User-Agent. Request and response sizes are counted in the body watchers that already
+  exist (one add per read). The capture span ends with `stored`, `store_failed`,
+  `dropped_queue_full`, `dropped_memory` or `undrained` (E3).
+- D10 (2026-11-15) — Correction to ADR 0018's first draft: the OTLP/HTTP exporter links
+  gRPC too. Its proto package (`go.opentelemetry.io/proto/otlp/collector/trace/v1`)
+  imports `google.golang.org/grpc` and grpc-gateway, so 66 grpc packages end up in the
+  binary either way. Kept the official exporter: the alternative, a hand-written OTLP/JSON
+  exporter (~150 lines, no proto), would save most of the size but leave the gateway
+  owning the OTLP mapping and retries; on a local single-user gateway disk size matters
+  less than that. ADR 0018 is corrected.
+- D11 (2026-11-15) — OTel's global error handler and logger default to the `log` package
+  on stderr, which the lint (spec 000, Logging) forbids; `StartTracing` routes errors to a
+  zap warning ("trace export failed") and discards OTel's internal logger. With tracing
+  off neither global is touched.
 
 ### Dependencies
 - `github.com/prometheus/client_golang` v1.24.0 — the reference Prometheus client
@@ -52,6 +76,43 @@ feature: 021-self-observability
   exposition or VictoriaMetrics/metrics for correctness and familiarity (ADR 0018).
   Size: the gateway binary grew from 21,530,874 to 24,942,155 bytes (+3.4 MB, mostly
   protobuf and procfs), `CGO_ENABLED=0 -trimpath`.
+- `go.opentelemetry.io/otel`, `/otel/trace`, `/otel/sdk`,
+  `/otel/exporters/otlp/otlptrace/otlptracehttp` v1.46.0 — the OpenTelemetry API, SDK
+  (batch span processor, sampler) and OTLP/HTTP exporter; chosen over Jaeger's deprecated
+  clients (lock-in) and a hand-written exporter (D10). Size: 24,942,155 → 33,439,040
+  bytes (+8.5 MB: the SDK, the OTLP protos and the gRPC packages they import).
+- `github.com/go-logr/logr` v1.4.4 — already a transitive dependency of OTel; imported
+  directly only for `logr.Discard()` (D11). No size change.
+- Test only: `github.com/prometheus/common/expfmt` and `client_model` (parse a scrape),
+  `go.opentelemetry.io/proto/otlp` and `google.golang.org/protobuf` (the fake OTLP
+  collector) — all already in the module graph through the libraries above.
+
+### Flake seen (2026-11-15)
+`TestCapture_ForwardingUnchanged/TestProxy_GoldenAnthropicStreamReplay`
+(`internal/protocols/anthropic`) failed once in a full `make verify` while building
+tracing, the flake the roadmap's Later already watches (015 research). It then passed 8
+times alone, 25 times under parallel load from three other packages, and in the next full
+`make verify`. Left as the roadmap has it.
+
+### Benchmark: the proxy hot path (2026-11-15)
+`go test -run '^$' -bench ProxyHotPath -benchtime 3s -count 6 ./internal/observability`
+(AMD Ryzen 5 5600G, 12 threads, go1.25.4). One streamed model call per op, run in
+parallel over keep-alive loopback connections: client → gateway (capture on into a
+store that does nothing) → local SSE upstream (6 events) → client reads it whole. So an
+op includes the client, the upstream and loopback, not just the gateway. Medians of 6:
+
+| Case | ns/op | B/op | allocs/op | vs metrics off |
+|---|---|---|---|---|
+| metrics off, tracing off | 62,319 | 87,263 | 580 | — |
+| metrics on, tracing off | 62,649 | 87,038 | 584 | +0.5 % (in the noise: runs 60,991–64,306) |
+| metrics on, tracing on | 65,836 | 96,104 | 641 | +5.6 %, +3.5 µs, +61 allocs, +8.8 KB |
+
+Raw runs (ns/op): off/off 62158 62480 63104 66761 61498 61417; on/off 62613 60991 64306
+62684 62764 61698; on/on 68188 65836 65503 65835 65767 71417. Tracing off costs a nil
+check per hook (start, sent, answered, failed, capture, finish) and nothing measurable;
+tracing on costs about 3.5 µs per call for six spans, next to a real model call's
+seconds. Tracing on exports to a processor that drops the spans, so the network cost of
+export (async, batched) is not in the numbers.
 
 ## Notes
 ### Evidence: what the code measures today (main, f216cb3)
