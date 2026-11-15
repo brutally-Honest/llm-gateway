@@ -55,9 +55,7 @@ footer#keybar kbd { font-size: 11px; color: var(--hi); border: 1px solid var(--b
 table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { color: var(--muted); font-size: 12px; font-weight: 600; }
-td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 td.time { white-space: nowrap; }
-td.usage, th.usage { font-variant-numeric: tabular-nums; min-width: 16rem; }
 button { color: var(--hi); background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px;
   cursor: pointer; }
 button:hover { background: var(--panel); }
@@ -88,11 +86,11 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .qa-notes { padding-left: 8px; border-left: 3px solid var(--accent-strong); }
 
 /* ---- the sessions list (visual cleanup, 2026-11-13) ---- */
-.sessions-page { max-width: 1600px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.sessions-page, .page { max-width: 1600px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
 .sp-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 20px; }
 .sp-head h1 { margin: 0; font-size: 20px; font-weight: 700; color: var(--hi); letter-spacing: -.01em; }
-.sp-head .today { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; font-size: 13px; color: var(--muted); }
-.sp-head .today .stat b { color: var(--hi); font-weight: 600; font-variant-numeric: tabular-nums; }
+.sp-head .today, .sp-head .stats { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+.sp-head .today .stat b, .sp-head .stats .stat b { color: var(--hi); font-weight: 600; font-variant-numeric: tabular-nums; }
 .sessions-page .filter-bar { align-items: center; gap: 10px; padding: 0; }
 .sessions-page .filter-bar input { width: 18rem; max-width: 100%; padding: 6px 10px; }
 .seg-group { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--card); }
@@ -128,6 +126,7 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .sp-list td.tools .bad { color: var(--bad); font-weight: 600; }
 .sp-list td.tokens .tok + .tok::before { content: " · "; color: var(--muted); }
 .sp-list td.status { white-space: nowrap; }
+.page .sp-list table { min-width: 0; }
 .sp-unassigned { display: flex; flex-direction: column; gap: 8px; }
 .sp-unassigned h2 { margin: 6px 0 0; font-size: 15px; font-weight: 700; color: var(--hi); }
 .sp-unassigned > p { margin: 0; }

@@ -11,7 +11,7 @@ import { handleKey, isTextInput } from "./keys.js";
 import { createCallDialog } from "./call-dialog.js";
 import { mountShell } from "./shell.js";
 import "./exchange-detail.js";
-import "./ungrouped-list.js";
+import { createUngroupedPage } from "./ungrouped-list.js";
 
 const app = document.getElementById("app");
 const root = document.documentElement;
@@ -301,11 +301,10 @@ async function showExchange(id) {
   }
 }
 
-function show(kind, tag) {
-  const el = document.createElement(tag);
-  app.replaceChildren(el);
+function show(kind, pg) {
+  app.replaceChildren(pg.el);
   const draw = (s) =>
-    el.render({
+    pg.render({
       items: s[kind],
       next_after: s[`${kind}Next`],
       error: s[`${kind}Error`],
@@ -363,7 +362,7 @@ function route() {
     showSessions();
     startStream();
   } else if (r.name === "ungrouped") {
-    show("ungrouped", "ungrouped-list");
+    show("ungrouped", createUngroupedPage());
   } else if (r.name === "session") {
     showSession(r.id);
   } else if (r.name === "exchange") {

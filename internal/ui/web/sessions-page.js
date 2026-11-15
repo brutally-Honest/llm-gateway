@@ -41,10 +41,47 @@ export function note(cls, text) {
   return p;
 }
 
+// pageHead is a page's top, as the sessions list has it (016's theme): its title and its
+// labelled counts beside it. stats is a list of [count, word] pairs; null counts are left out.
+export function pageHead(title, stats = []) {
+  const head = document.createElement("div");
+  head.className = "sp-head";
+  const h = document.createElement("h1");
+  h.textContent = title;
+  const line = document.createElement("p");
+  line.className = "stats";
+  for (const [count, word] of stats) {
+    if (count === null || count === undefined) continue;
+    const st = document.createElement("span");
+    st.className = "stat";
+    const b = document.createElement("b");
+    b.textContent = String(count);
+    st.append(b, ` ${word}`);
+    line.append(st);
+  }
+  head.append(h, line);
+  return head;
+}
+
+// card is a bordered list card, as the sessions list's table sits in.
+export function card(...nodes) {
+  const box = document.createElement("div");
+  box.className = "sp-list";
+  box.append(...nodes);
+  return box;
+}
+
+// pageBox is a page in the sessions list's column.
+export function pageBox(cls) {
+  const box = document.createElement("section");
+  box.className = `page ${cls}`.trim();
+  return box;
+}
+
 // ---- pure row model ----
 
 // counter shows a summed counter: "—" when no call reported it, never 0 (AC1).
-function counter(c) {
+export function counter(c) {
   return c && typeof c.value === "number" ? String(c.value) : DASH;
 }
 

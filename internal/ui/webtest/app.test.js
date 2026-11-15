@@ -221,3 +221,35 @@ test("noSuchCallNoteClearsOnTheNextCall", async () => {
   assert.doesNotMatch(textOf(app), /No such call/);
   assert.match(textOf(withClass(app, "call-details")[0]), /Call #2/);
 });
+
+// AC12: the ungrouped exchanges page sits in the sessions list's column with its title and
+// labelled counts, its rows in a card with glyph-and-word statuses and labelled tokens, and
+// the breadcrumb back to Sessions.
+test("ungroupedPageUsesLabelsAndBreadcrumb", async () => {
+  const u = (v) => ({ value: v, unreported: 0 });
+  replies["/api/ungrouped"] = {
+    items: [
+      { id: "x1", client: "unknown", models: ["m1"], first_at: "2026-01-01T00:00:00Z", errors: 0, title: "hello", usage: { input: u(120), output: u(12), cache_read: u(0) } },
+      { id: "x2", client: "unknown", models: ["m1"], first_at: "2026-01-01T00:01:00Z", errors: 1, title: "", usage: { input: u(null), output: u(null), cache_read: u(null) } },
+    ],
+    next_after: null,
+  };
+  location.hash = "#/ungrouped";
+  for (const fn of listeners.hashchange) fn();
+  for (let i = 0; i < 6; i++) await settle();
+  const app = byId("app");
+  const page = withClass(app, "page")[0];
+  assert.ok(page, "the page sits in the list's column");
+  const head = textOf(withClass(page, "sp-head")[0]).replace(/\s+/g, " ");
+  assert.match(head, /Ungrouped exchanges/);
+  assert.match(head, /2 exchanges/);
+  assert.match(head, /1 failed/);
+  const rows = withClass(withClass(page, "sp-list")[0], "status").filter((c) => c.tagName === "td").map((c) => textOf(c).trim());
+  assert.deepEqual(rows, ["✓ ok", "✗ failed"]);
+  const tokens = withClass(page, "tokens").filter((c) => c.tagName === "td").map((c) => textOf(c).trim());
+  assert.deepEqual(tokens, ["120 in · 12 out · 0 cache read", "— in · — out · — cache read"]);
+  const links = withClass(page, "stitle").map((a) => [a.textContent, a.href]);
+  assert.deepEqual(links, [["hello", "#/exchanges/x1"], ["no prompt captured", "#/exchanges/x2"]]);
+  const crumbs = textOf(all(byId("shell-head")).find((e) => e.tagName === "nav")).replace(/\s+/g, " ").trim();
+  assert.equal(crumbs, "Sessions / Ungrouped");
+});
