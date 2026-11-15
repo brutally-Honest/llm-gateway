@@ -210,9 +210,10 @@ func TestWeb_ComponentsCallTheTestedHelpers(t *testing.T) {
 // amount as what the tokens would cost, not what was charged (020 AC8, research D12).
 func TestWeb_NoContextPercentAndMoneyOnlyFromCost(t *testing.T) {
 	percent := regexp.MustCompile(`(?i)percent|\d%|\}\s*%|"%|%"`)
-	// a currency sign, "$${", a string that starts with "$" and a digit, "< $", or an amount
+	// 013's money patterns (a currency sign before a digit, "${…} usd"), plus a pound or euro
+	// sign anywhere, "$${", a string that starts with "$" and a digit, "< $", or an amount
 	// field of the API ("\x60" is a backtick)
-	money := regexp.MustCompile("[€£]|\\$\\$\\{|[\"'\x60]\\$\\s*\\d|< \\$|\\.usd\\b|usd_per_mtok")
+	money := regexp.MustCompile("(?i)[$€£]\\s*\\d|\\$\\{[^}]*\\}\\s*usd|[€£]|\\$\\$\\{|[\"'\x60]\\$\\s*\\d|< \\$|\\.usd\\b|usd_per_mtok")
 	comment := regexp.MustCompile(`(?m)//.*$`)
 	files := webFiles(t)
 	for name, src := range files {
