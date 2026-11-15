@@ -6,8 +6,8 @@ features. Update it when the order changes.
 ## Next
 1. **017 sessions list and call details**: the sessions list and the call details dialog
    that replaces the 013 drawer, on 016's view and theme (split from 016;
-   `specs/017-sessions-list-and-call-details/`): slice 1, the sessions list, is done;
-   slice 2, the call details dialog, is under way; slice 3, the other pages, is next.
+   `specs/017-sessions-list-and-call-details/`): slice 1, the sessions list, and slice 2,
+   the call details dialog, are done; slice 3, the other pages, is under way.
 
 ## Later
 - The 014 Mac check: step 11 of `docs/manual-checks/014-effects.md`, the sandbox part of
