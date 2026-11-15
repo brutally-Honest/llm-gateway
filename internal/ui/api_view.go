@@ -150,19 +150,29 @@ var errNoSession = errors.New("ui: no such session")
 // the effects as stored now, memoised per (build version, effect version). fresh waits for
 // a build at the store's current version instead of serving an older one.
 func (d Deps) cachedView(ctx context.Context, who sessIdent, fresh bool) (timeline.View, error) {
+	start := time.Now()
+	v, cached, err := d.buildView(ctx, who, fresh)
+	if err == nil {
+		d.Metrics.ViewBuild(cached, time.Since(start))
+	}
+	return v, err
+}
+
+// buildView is cachedView without the timing; cached is true for a view cache hit.
+func (d Deps) buildView(ctx context.Context, who sessIdent, fresh bool) (_ timeline.View, cached bool, _ error) {
 	c := d.Reader.WithContext(ctx)
 	ident := store.SessionIdent{Principal: who.principal, Client: who.client, Key: who.name}
 	vers, err := c.SessionVersions([]store.SessionIdent{ident})
 	if err != nil {
-		return timeline.View{}, err
+		return timeline.View{}, false, err
 	}
 	ver := vers[ident]
 	if ver.ExCount == 0 && ver.HookCount == 0 {
-		return timeline.View{}, errNoSession
+		return timeline.View{}, false, errNoSession
 	}
 	evs, err := c.EffectVersions([]store.SessionIdent{ident})
 	if err != nil {
-		return timeline.View{}, err
+		return timeline.View{}, false, err
 	}
 	get := d.Timelines.latest
 	if fresh {
@@ -170,7 +180,7 @@ func (d Deps) cachedView(ctx context.Context, who sessIdent, fresh bool) (timeli
 	}
 	built, err := get(ctx, ident, ver, d.timelineBuild(who))
 	if err != nil {
-		return timeline.View{}, err
+		return timeline.View{}, false, err
 	}
 	ev := evs[ident]
 	b := built.ver
@@ -179,23 +189,23 @@ func (d Deps) cachedView(ctx context.Context, who sessIdent, fresh bool) (timeli
 	views := d.Views
 	if views != nil {
 		if v, ok := views.get(ident, key, now); ok {
-			return v, nil
+			return v, true, nil
 		}
 	}
 	hooks, err := c.HookEvents(who.principal, who.client, who.name)
 	if err != nil {
-		return timeline.View{}, err
+		return timeline.View{}, false, err
 	}
 	last := lastActivity(built.bs, hooks)
 	active := isActive(last, now)
 	v, err := d.viewDeps().sessionView(c, who, built.bs, hooks, active, key)
 	if err != nil {
-		return timeline.View{}, err
+		return timeline.View{}, false, err
 	}
 	if views != nil {
 		views.put(&viewEntry{id: ident, key: key, last: last, active: active, view: v})
 	}
-	return v, nil
+	return v, false, nil
 }
 
 func (d Deps) getView(w http.ResponseWriter, r *http.Request) {

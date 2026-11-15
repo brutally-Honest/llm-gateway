@@ -59,6 +59,10 @@ func newProxy(a Adapter, up config.Upstream, identify func(*http.Request) string
 			// it above, where redaction hides its value.
 			pr.Out.Header.Del(gatewayKeyHeader)
 			watchRequestBody(pr)
+			// Rewrite runs on the handler's goroutine just before the transport.
+			if m := MetaFrom(pr.Out.Context()); m != nil {
+				m.dispatched = time.Now()
+			}
 		},
 		ModifyResponse: modifyResponse,
 		ErrorHandler:   p.handleError,
@@ -80,6 +84,13 @@ const (
 	// reasonShutdown marks a call the gateway cut because its shutdown grace period ran
 	// out (spec 019): neither the client nor upstream ended it.
 	reasonShutdown = "gateway_shutdown"
+)
+
+// The upstream reasons, exported for the gateway's own metrics (spec 021), which count
+// them as upstream errors; client_body and gateway_shutdown are not upstream's.
+const (
+	GatewayErrorUpstreamTimeout     = reasonUpstreamTimeout
+	GatewayErrorUpstreamUnreachable = reasonUpstreamUnreachable
 )
 
 // ErrShutdown is the cause the gateway cancels in-flight requests with when its

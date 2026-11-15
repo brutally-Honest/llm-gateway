@@ -9,6 +9,7 @@ import (
 
 	"github.com/brutally-honest/llm-gateway/internal/core"
 	"github.com/brutally-honest/llm-gateway/internal/logging"
+	"github.com/brutally-honest/llm-gateway/internal/observability"
 )
 
 // Config sizes the sink: capture.queue_size and capture.workers, both greater than 0
@@ -23,6 +24,8 @@ type Config struct {
 	QueueSize, Workers int
 	DecodeLimit        int64
 	OnCommit           func(Committed)
+	// Metrics times each store call (spec 021); nil is metrics off.
+	Metrics *observability.Metrics
 }
 
 // Committed names an exchange whose raw row is stored. It carries what a subscriber
@@ -49,6 +52,7 @@ type Sink struct {
 	log         *zap.Logger
 	decodeLimit int64
 	onCommit    func(Committed)
+	metrics     *observability.Metrics
 
 	// mu orders Submit against Close: Submit sends under the read lock, and Close
 	// sets closed under the write lock before it closes queue, so no send ever
@@ -82,6 +86,7 @@ func NewSink(cfg Config, st Store, log *zap.Logger) *Sink {
 		log:         log,
 		decodeLimit: cfg.DecodeLimit,
 		onCommit:    cfg.OnCommit,
+		metrics:     cfg.Metrics,
 		queue:       make(chan *core.Exchange, cfg.QueueSize),
 		ctx:         ctx,
 		cancel:      cancel,
@@ -145,6 +150,12 @@ wait:
 	}
 	return int(n)
 }
+
+// QueueDepth is how many exchanges wait in the queue now (spec 021).
+func (s *Sink) QueueDepth() int { return len(s.queue) }
+
+// QueueCapacity is the queue's size, capture.queue_size.
+func (s *Sink) QueueCapacity() int { return cap(s.queue) }
 
 // Counts is a snapshot of the sink's counts.
 func (s *Sink) Counts() Counts {

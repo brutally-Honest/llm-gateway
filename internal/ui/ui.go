@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/brutally-honest/llm-gateway/internal/observability"
 	"github.com/brutally-honest/llm-gateway/internal/store"
 )
 
@@ -49,6 +50,9 @@ type Deps struct {
 	// Ctx is the server's lifetime: digest and timeline builds started by a request run
 	// on it, so they finish after the request times out. Nil is context.Background.
 	Ctx context.Context
+	// Metrics is the gateway's own metrics (spec 021): /metrics, the UI's request counts
+	// and view build times. Nil is metrics off.
+	Metrics *observability.Metrics
 }
 
 // ClientRules is the client-specific knowledge the UI needs, implemented by a client
@@ -104,7 +108,12 @@ func newRouter(d Deps, extra ...func(chi.Router)) chi.Router {
 	}
 	hosts := allowedHosts(d.Addr)
 	r := chi.NewRouter()
-	r.Use(securityHeaders, recoverer(log), hostCheck(hosts), originCheck(hosts), getOnly)
+	r.Use(observability.RequestMetrics(d.Metrics, observability.ListenerUI),
+		securityHeaders, recoverer(log), hostCheck(hosts), originCheck(hosts), getOnly)
+	if d.Metrics != nil {
+		// Behind the host and origin checks, like every UI route (spec 021 AC1).
+		r.Get("/metrics", d.Metrics.Handler().ServeHTTP)
+	}
 	r.Route("/api", func(api chi.Router) {
 		api.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
 			writeJSON(w, map[string]bool{"ok": true})

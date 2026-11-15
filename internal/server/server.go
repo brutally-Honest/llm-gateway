@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/brutally-honest/llm-gateway/internal/logging"
+	"github.com/brutally-honest/llm-gateway/internal/observability"
 )
 
 // Server is an http.Server with the gateway's router and an in-flight count.
@@ -27,14 +28,24 @@ type Server struct {
 // it. main passes no mounts; tests pass their own routes, which then run under the
 // same middleware as production ones.
 func New(log *zap.Logger, mount ...func(chi.Router)) *Server {
+	return NewWithMetrics(log, nil, mount...)
+}
+
+// NewWithMetrics is New with the gateway's own metrics (spec 021): every request is
+// counted, a proxied call's upstream timings and errors are recorded, and GET /metrics
+// serves them. A nil m is New.
+func NewWithMetrics(log *zap.Logger, m *observability.Metrics, mount ...func(chi.Router)) *Server {
 	s := &Server{}
 	base, cancel := context.WithCancelCause(context.Background())
 	s.cancel = cancel
 	r := chi.NewRouter()
 	// Outermost first. inflight wraps everything, so a request that panics is still
 	// counted and decremented.
-	r.Use(s.countInFlight, requestID, accessLog(log), recoverer(log))
+	r.Use(s.countInFlight, requestID, accessLog(log, m), recoverer(log))
 	r.Get("/healthz", healthz)
+	if m != nil {
+		r.Get("/metrics", m.Handler().ServeHTTP)
+	}
 	for _, m := range mount {
 		m(r)
 	}

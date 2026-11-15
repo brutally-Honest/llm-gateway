@@ -1,10 +1,13 @@
 package capture
 
 import (
+	"time"
+
 	"go.uber.org/zap"
 
 	"github.com/brutally-honest/llm-gateway/internal/core"
 	"github.com/brutally-honest/llm-gateway/internal/logging"
+	"github.com/brutally-honest/llm-gateway/internal/observability"
 )
 
 // The stages a capture_failed line names.
@@ -22,7 +25,10 @@ const (
 // exchange's memory is released whatever the outcome.
 func (s *Sink) process(ex *core.Exchange) {
 	defer ex.Release()
-	if err := s.store.SaveExchange(s.ctx, ex); err != nil {
+	start := time.Now()
+	err := s.store.SaveExchange(s.ctx, ex)
+	s.metrics.StoreWrite(observability.StoreOpExchange, err == nil, time.Since(start))
+	if err != nil {
 		s.storeFailure(ex.RequestID, err)
 		return
 	}
@@ -49,7 +55,10 @@ func (s *Sink) process(ex *core.Exchange) {
 			zap.String("reason", reason))
 	}
 
-	if err := s.store.SaveParse(s.ctx, ex.RequestID, ex.PrincipalID, status, stored, contents); err != nil {
+	start = time.Now()
+	err = s.store.SaveParse(s.ctx, ex.RequestID, ex.PrincipalID, status, stored, contents)
+	s.metrics.StoreWrite(observability.StoreOpParse, err == nil, time.Since(start))
+	if err != nil {
 		s.storeFailure(ex.RequestID, err)
 	}
 	s.commit(ex)

@@ -23,6 +23,7 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/hooks"
 	"github.com/brutally-honest/llm-gateway/internal/logging"
 	"github.com/brutally-honest/llm-gateway/internal/netproxy"
+	"github.com/brutally-honest/llm-gateway/internal/observability"
 	"github.com/brutally-honest/llm-gateway/internal/protocols/anthropic"
 	"github.com/brutally-honest/llm-gateway/internal/ratelimit"
 	"github.com/brutally-honest/llm-gateway/internal/server"
@@ -177,13 +178,14 @@ func run(ctx context.Context, d deps) int {
 	}
 
 	log := logging.New(d.stdout, cfg.LogLevel)
+	metrics := observability.NewMetrics(version)
 
 	// The store opens before bind, so a gateway that can't capture never serves
 	// (spec 002, Store: Startup).
 	var capt *captureRun
 	if cfg.Capture.Enabled {
 		var code int
-		if capt, code = startCaptureWith(ctx, cfg.Capture, cfg.Hooks, cfg.UI.Enabled, cfg.Effects, profiles, d, log); capt == nil {
+		if capt, code = startCaptureWith(ctx, cfg.Capture, cfg.Hooks, cfg.UI.Enabled, cfg.Effects, profiles, d, log, metrics); capt == nil {
 			return code
 		}
 	} else if cfg.UI.Enabled {
@@ -277,7 +279,8 @@ func run(ctx context.Context, d deps) int {
 	}
 	// The adapters' prefixes first, then the test-only routes.
 	mounts := append([]func(chi.Router){registry.Mount, hookHandler.Mount}, d.mount...)
-	srv := server.New(log, mounts...)
+	capt.observe(metrics, log)
+	srv := server.NewWithMetrics(log, metrics, mounts...)
 	serveErr := logging.Go(log, "serve", func() error { return srv.Serve(ln) })
 
 	var uiSrv *http.Server
@@ -297,7 +300,9 @@ func run(ctx context.Context, d deps) int {
 			if err := ui.Warm(ctx, deps); err != nil && ctx.Err() == nil {
 				log.Warn("ui warm-up failed; the list builds on first use", zap.Error(err))
 			}
-			log.Info("ui ready", zap.Int64("warm_ms", time.Since(start).Milliseconds()))
+			warm := time.Since(start)
+			metrics.Warmup(warm)
+			log.Info("ui ready", zap.Int64("warm_ms", warm.Milliseconds()))
 			return srvUI.Serve(uiLn)
 		})
 		log.Info("ui started", zap.String("addr", uiLn.Addr().String()))
@@ -343,6 +348,8 @@ wait:
 	// proxy's tunnels are cut (stored as closed early) and the UI's live streams close.
 	// Only in-flight model calls get the grace period (shutdown_timeout).
 	log.Info("shutting down", zap.Duration("grace", cfg.ShutdownTimeout))
+	stopStart := time.Now()
+	tunnelsCut := capt.openTunnels()
 	// ctx is already cancelled, so the grace period needs a fresh context. The server
 	// stops accepting first, and shuts down before capture, so exchanges that end while
 	// it waits for in-flight streams are still queued.
@@ -354,9 +361,11 @@ wait:
 	uiFailed := !stopUI(uiCtx, uiSrv, capt, log)
 	uiCancel()
 	if err := <-apiDone; err != nil {
+		// The calls still running now are the ones the stop cuts (spec 021 AC7).
+		callsCut := srv.InFlight()
 		if errors.Is(err, context.DeadlineExceeded) {
 			// in_flight counts handlers still running, not open connections.
-			log.Error("shutdown timed out", zap.Int64("in_flight", srv.InFlight()))
+			log.Error("shutdown timed out", zap.Int64("in_flight", callsCut))
 		} else {
 			log.Error("shutdown failed", zap.Error(err))
 		}
@@ -372,6 +381,7 @@ wait:
 		defer drainCancel()
 		capt.stop(drainCtx, log)
 		stopHooks()
+		capt.recordShutdown(stopStart, callsCut, tunnelsCut, log)
 		return exitRuntime
 	}
 	// Capture drains on a budget of its own, as long again as the grace period, never
@@ -380,6 +390,7 @@ wait:
 	defer drainCancel()
 	capt.stop(drainCtx, log)
 	stopHooks()
+	capt.recordShutdown(stopStart, 0, tunnelsCut, log)
 	if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Error("serve failed", zap.Error(err))
 		return exitRuntime
@@ -447,6 +458,10 @@ type captureRun struct {
 	effects *effectsRun
 	// skew is effects.attribution.skew, for labelling effects in the UI (spec 015).
 	skew time.Duration
+	// dir is the capture directory, where a stop leaves its record (spec 021).
+	dir string
+	// metrics is the gateway's own metrics; nil in tests that leave them out.
+	metrics *observability.Metrics
 }
 
 // hookSink is the hook sink, or nil with capture off or a store that cannot save hooks.
@@ -482,18 +497,18 @@ func (c *captureRun) uiDeps(ctx context.Context, addr string, log *zap.Logger) u
 	return ui.Deps{
 		Addr: addr, Log: log, Reader: c.reader, Hub: c.hub,
 		Rules: uiRules(), Ctx: ctx, Timelines: c.timelines, Digests: c.digests, Views: c.views,
-		AttributionSkew: c.skew,
+		AttributionSkew: c.skew, Metrics: c.metrics,
 	}
 }
 
 // startCapture resolves capture.dir, opens the store and starts the sink. On failure
 // it logs one line and returns nil and the exit code.
 func startCapture(ctx context.Context, c config.Capture, h config.Hooks, withUI bool, profiles []core.Profile, d deps, log *zap.Logger) (*captureRun, int) {
-	return startCaptureWith(ctx, c, h, withUI, config.Effects{}, profiles, d, log)
+	return startCaptureWith(ctx, c, h, withUI, config.Effects{}, profiles, d, log, nil)
 }
 
 // startCaptureWith is startCapture with the effect sensors of e hanging off the hook sink.
-func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, withUI bool, e config.Effects, profiles []core.Profile, d deps, log *zap.Logger) (*captureRun, int) {
+func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, withUI bool, e config.Effects, profiles []core.Profile, d deps, log *zap.Logger, m *observability.Metrics) (*captureRun, int) {
 	dir, ok := captureDir(c, d.lookupEnv, log)
 	if !ok {
 		return nil, exitConfig
@@ -512,7 +527,7 @@ func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, wit
 			zap.String("reason", storeOpenReason(err)))
 		return nil, exitRuntime
 	}
-	cfg := capture.Config{QueueSize: c.QueueSize, Workers: c.Workers, DecodeLimit: c.MaxBodyBytes}
+	cfg := capture.Config{QueueSize: c.QueueSize, Workers: c.Workers, DecodeLimit: c.MaxBodyBytes, Metrics: m}
 	var reader *store.Reader
 	var hub *ui.Hub
 	var timelines *ui.TimelineCache
@@ -532,7 +547,7 @@ func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, wit
 		digests = ui.NewDigestCache(ctx, log)
 		views = ui.NewViewCache()
 		hub = ui.NewHub(ui.Deps{Log: log, Reader: reader, Rules: uiRules(), Timelines: timelines, Digests: digests,
-			Views: views, AttributionSkew: e.Attribution.Skew})
+			Views: views, AttributionSkew: e.Attribution.Skew, Metrics: m})
 		cfg.OnCommit = hub.Publish
 	}
 	sink := capture.NewSink(cfg, st, log)
@@ -559,7 +574,7 @@ func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, wit
 	return &captureRun{
 		store: st, sink: sink, hooks: hookSink, budget: core.NewBudget(c.MemoryLimit), maxBodyBytes: c.MaxBodyBytes,
 		reader: reader, hub: hub, timelines: timelines, views: views, digests: digests, effects: eff,
-		skew: e.Attribution.Skew,
+		skew: e.Attribution.Skew, dir: dir, metrics: m,
 	}, exitOK
 }
 
@@ -691,6 +706,59 @@ func (e *effectsRun) close(ctx context.Context) {
 		e.rec.Close(ctx)
 	}
 	e.runner.Close(ctx)
+}
+
+// observe registers the metrics read from capture's parts when scraped (spec 021): the
+// queue, the drops, the open tunnels and UI streams, and the previous stop's record.
+// With capture off there are none (E1).
+func (c *captureRun) observe(m *observability.Metrics, log *zap.Logger) {
+	if c == nil || m == nil {
+		return
+	}
+	m.GaugeFunc("gateway_capture_queue_depth", "Exchanges waiting in the capture queue.",
+		func() float64 { return float64(c.sink.QueueDepth()) })
+	m.GaugeFunc("gateway_capture_queue_capacity", "The capture queue's size, capture.queue_size.",
+		func() float64 { return float64(c.sink.QueueCapacity()) })
+	m.CounterFunc("gateway_capture_dropped_total", "Exchanges dropped from capture, by reason.",
+		map[string]string{"reason": "queue_full"}, func() float64 { return float64(c.sink.Counts().DroppedQueueFull) })
+	m.CounterFunc("gateway_capture_dropped_total", "Exchanges dropped from capture, by reason.",
+		map[string]string{"reason": "memory"}, func() float64 { return float64(c.budget.Dropped()) })
+	if c.proxyOn() {
+		proxy := c.effects.proxy
+		m.GaugeFunc("gateway_proxy_tunnels_open", "Open tunnels and forwarded requests on the proxy listeners.",
+			func() float64 { return float64(proxy.Open()) })
+	}
+	if c.hub != nil {
+		m.GaugeFunc("gateway_ui_streams_open", "Open UI live streams (SSE).",
+			func() float64 { return float64(c.hub.Streams()) })
+	}
+	switch last, ok, err := observability.LoadLastShutdown(c.dir); {
+	case err != nil:
+		log.Warn("last shutdown record unreadable; its metrics are off", zap.String("path", c.dir))
+	case ok:
+		m.LastShutdown(last)
+	}
+}
+
+// openTunnels is how many proxy tunnels are open now; 0 with the proxy off.
+func (c *captureRun) openTunnels() int64 {
+	if !c.proxyOn() {
+		return 0
+	}
+	return int64(c.effects.proxy.Open())
+}
+
+// recordShutdown leaves this stop's record in the capture directory, for the next
+// start's metrics (spec 021 AC7). A failure costs only those metrics.
+func (c *captureRun) recordShutdown(start time.Time, callsCut, tunnelsCut int64, log *zap.Logger) {
+	if c == nil {
+		return
+	}
+	now := time.Now()
+	rec := observability.LastShutdown{At: now, Duration: now.Sub(start).Seconds(), CallsCut: callsCut, TunnelsCut: tunnelsCut}
+	if err := observability.SaveLastShutdown(c.dir, rec); err != nil {
+		log.Warn("cannot save the shutdown record", zap.String("path", c.dir))
+	}
 }
 
 // proxyOn reports whether the gateway's own proxy listeners are serving.

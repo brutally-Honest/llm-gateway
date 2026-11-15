@@ -41,6 +41,7 @@ type Meta struct {
 	OnUsage func(UsageResult)
 
 	start      time.Time // when the proxy handler started; TTFB is measured from it
+	dispatched time.Time // when the call was handed to the transport; zero if never
 	reqBody    *requestWatcher
 	resBody    *responseWatcher
 	sessionKey string        // validated; "" when the request has none
@@ -97,6 +98,24 @@ func (m *Meta) settleAbort(ctx context.Context) {
 	if ctx.Err() != nil {
 		m.ClientDisconnected = true
 	}
+}
+
+// Overhead is the time from the proxy taking the call to handing it to the transport,
+// what the gateway itself adds before upstream sees it (spec 021). False when the call
+// was never sent.
+func (m *Meta) Overhead() (time.Duration, bool) {
+	if m == nil || m.start.IsZero() || m.dispatched.IsZero() {
+		return 0, false
+	}
+	return m.dispatched.Sub(m.start), true
+}
+
+// Elapsed is the time since the proxy took the call; 0 off the proxy.
+func (m *Meta) Elapsed() time.Duration {
+	if m == nil || m.start.IsZero() {
+		return 0
+	}
+	return time.Since(m.start)
 }
 
 // markResponseComplete records that the response was forwarded whole: the upstream
