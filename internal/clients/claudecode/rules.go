@@ -10,24 +10,20 @@ const (
 	reminderClose = "</system-reminder>"
 )
 
-// IsSideCall reports whether a request is one Claude Code makes on its own behalf: the
-// quota probe (exactly one user message, equal to "quota") or title generation (a user
-// message starting "<session>" that contains "Write the title").
-func (Profile) IsSideCall(userTexts []string) bool {
-	if len(userTexts) == 1 && userTexts[0] == "quota" {
-		return true
-	}
-	for _, t := range userTexts {
-		if strings.HasPrefix(t, "<session>") && strings.Contains(t, "Write the title") {
-			return true
-		}
-	}
-	return false
-}
+// Openings of the user texts Claude Code sends as the last message of a request it makes
+// on its own: the recap shown when the user comes back, and the guess at their next
+// prompt. Both are forks of the main thread, so everything before that text is the
+// conversation as it stood (018 research D2, D3).
+const (
+	awayOpening    = "The user stepped away and is coming back."
+	suggestOpening = "[SUGGESTION MODE:"
+)
 
-// SideCallName names a side call in words: "quota probe", "title generation", else "side
-// call".
-func (p Profile) SideCallName(userTexts []string) string {
+// sideCallKind names the side call a request's user texts mark, "" for none: the quota
+// probe (exactly one user message, equal to "quota"), title generation (a user message
+// starting "<session>" that contains "Write the title"), an away summary or a prompt
+// suggestion (the last user text starts with its fixed opening).
+func sideCallKind(userTexts []string) string {
 	if len(userTexts) == 1 && userTexts[0] == "quota" {
 		return "quota probe"
 	}
@@ -35,6 +31,27 @@ func (p Profile) SideCallName(userTexts []string) string {
 		if strings.HasPrefix(t, "<session>") && strings.Contains(t, "Write the title") {
 			return "title generation"
 		}
+	}
+	if n := len(userTexts); n > 0 {
+		switch last := userTexts[n-1]; {
+		case strings.HasPrefix(last, awayOpening):
+			return "away summary"
+		case strings.HasPrefix(last, suggestOpening):
+			return "prompt suggestion"
+		}
+	}
+	return ""
+}
+
+// IsSideCall reports whether a request is one Claude Code makes on its own behalf: a
+// quota probe, title generation, an away summary or a prompt suggestion.
+func (Profile) IsSideCall(userTexts []string) bool { return sideCallKind(userTexts) != "" }
+
+// SideCallName names a side call in words: "quota probe", "title generation", "away
+// summary", "prompt suggestion", else "side call".
+func (Profile) SideCallName(userTexts []string) string {
+	if k := sideCallKind(userTexts); k != "" {
+		return k
 	}
 	return "side call"
 }
