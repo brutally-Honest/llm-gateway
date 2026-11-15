@@ -69,6 +69,30 @@ feature: 021-self-observability
   on stderr, which the lint (spec 000, Logging) forbids; `StartTracing` routes errors to a
   zap warning ("trace export failed") and discards OTel's internal logger. With tracing
   off neither global is touched.
+- D12 (2026-11-15) — Decision 1 said Prometheus reaches the gateway through host-gateway
+  on Linux. Tested on this machine (Docker Engine 29.4.3, Ubuntu 26.04): a container with
+  `host.docker.internal:host-gateway` gets "connection refused" from 172.17.0.1 for a
+  server bound to the host's 127.0.0.1, which is where the gateway listens (Notes,
+  host-gateway test). Making it work through host-gateway would mean binding the gateway
+  to the bridge address, which is reachable from every container and breaks "no route
+  reachable from outside localhost without a gateway token". So: `compose.yml` keeps
+  `extra_hosts: host.docker.internal:host-gateway` and that target (macOS, Docker
+  Desktop), and on Linux `make observability-up` adds `compose.linux.yml`, which puts
+  Prometheus and Grafana on the host network, each bound to 127.0.0.1. Jaeger stays on
+  the bridge with ports published on 127.0.0.1 (the gateway reaches it from the host).
+  The goal of decision 1 holds (Prometheus reaches the gateway on both, everything on
+  loopback); its mechanism on Linux differs.
+- D13 (2026-11-15) — Grafana on 127.0.0.1:3030, not 3000: on this machine 3000 was taken
+  by another local dev server (a `node server.js`), and Grafana failed to bind. 3000 is a
+  common dev port, so the default moved; `GRAFANA_PORT` picks another.
+- D14 (2026-11-15) — Every series of the fixed label sets is created at 0 at start: a
+  labelled metric with no observation is missing from the scrape, which left the error
+  and drop panels at "no data" and let the dashboard test miss a renamed metric. The run
+  tests now require recorded values, not presence.
+- D15 (2026-11-15) — The dashboard JSON is generated once and then kept by hand in the
+  repo (one row per metric group, 17 panels); error and drop panels count over the last
+  hour, quantiles over 5 minutes, refresh 10 s. `TestDashboard_QueriesOnlyExposedMetrics`
+  ties it to the gateway's real scrape.
 
 ### Dependencies
 - `github.com/prometheus/client_golang` v1.24.0 — the reference Prometheus client
@@ -86,6 +110,12 @@ feature: 021-self-observability
 - Test only: `github.com/prometheus/common/expfmt` and `client_model` (parse a scrape),
   `go.opentelemetry.io/proto/otlp` and `google.golang.org/protobuf` (the fake OTLP
   collector) — all already in the module graph through the libraries above.
+
+### Evidence: host-gateway and a loopback-bound server (2026-11-15)
+`python3 -m http.server 17411 --bind 127.0.0.1` on the host, then
+`docker run --rm --add-host host.docker.internal:host-gateway busybox:1.36 wget
+http://host.docker.internal:17411/` → `can't connect to remote host (172.17.0.1):
+Connection refused`. docker0 is 172.17.0.1/16. (D12)
 
 ### Flake seen (2026-11-15)
 `TestCapture_ForwardingUnchanged/TestProxy_GoldenAnthropicStreamReplay`
