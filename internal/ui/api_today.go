@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/brutally-honest/llm-gateway/internal/cost"
 	"github.com/brutally-honest/llm-gateway/internal/store"
 	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
@@ -23,6 +24,8 @@ type todayJSON struct {
 	Output     counterJSON `json:"output"`
 	CacheWrite counterJSON `json:"cache_write"`
 	CacheRead  counterJSON `json:"cache_read"`
+	// Cost is the API-equivalent cost of the calls since the time (spec 020 AC8).
+	Cost cost.TotalJSON `json:"cost"`
 }
 
 // sinceSource presents a fixed set of exchanges as one session, so SessionStats can
@@ -80,6 +83,6 @@ func (d Deps) getToday(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, todayJSON{
 		Sessions: len(seen), Calls: st.ModelCalls, Changed: changed, Sites: sites,
-		Input: u.Input, Output: u.Output, CacheWrite: u.CacheWrite, CacheRead: u.CacheRead,
+		Input: u.Input, Output: u.Output, CacheWrite: u.CacheWrite, CacheRead: u.CacheRead, Cost: u.Cost,
 	})
 }
