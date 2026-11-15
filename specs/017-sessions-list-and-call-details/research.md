@@ -226,6 +226,14 @@ feature: 017-sessions-list-and-call-details
   the full exchange page at its top, the same as "Full exchange page". It is not changed in
   slice 2: T023 adds a headers anchor to the full exchange page and points the Headers link
   at it.
+- D44 (2026-11-15, slice 2 close, Karthik) — D40's leftovers are removed: `model.js`,
+  `plot.js` and `api.js`'s `loadAllPages`, with the context plot styles and the tests and
+  fixture that only exercised them (chips and context are built on the server, with Go
+  tests). `formatDuration`, still used by the unassigned page's effects list, moved
+  unchanged to `fmt.js`. The drawer's tool chain assertions that T018 dropped are restored
+  in the dialog's terms (each tool line's state, name and sub-agent). The plot, yes/no
+  health rows, session id, browser-built context after a failed load, the paged 504 rule
+  and `shouldFollow` stay dropped: the dialog has none of them (D40).
 
 ## Notes
 - Sessions list budget, before slice 1 (2026-11-14, T001): `BenchmarkSessionsList500`
