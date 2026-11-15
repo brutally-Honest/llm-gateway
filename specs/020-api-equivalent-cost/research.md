@@ -92,6 +92,12 @@ feature: 020-api-equivalent-cost
   column off (the Session column stayed at its 20rem, 280 px at the 14 px root). The cost
   is now the Tokens cell's second line, "$X API-eq.", with its hover; the Tokens header's
   hover explains the line. No width is added.
+- D15 (2026-11-15) — Correction to D12, on Karthik's question: the money regex existed on
+  main (013, since 409ed1d). D12's first replacement dropped two of its patterns, so a
+  "$5" in the middle of a string in another file would have passed. They are restored
+  (`[$€£]\s*\d`, `\$\{[^}]*\}\s*usd`), so the money check is a superset of main's for
+  every file but cost.js; a planted "Total: $5" in session-page.js fails it. What it no
+  longer bans is the words "cost" and "price", which the labels need.
 
 ## Notes
 ### Evidence: models in the real store (2026-11-15)
