@@ -38,8 +38,10 @@ tracing:
 
 `otlp_endpoint` is an OTLP/HTTP base URL (spans go to `<it>/v1/traces`): https anywhere,
 http on loopback only. The default is the stack's Jaeger. Restart the gateway after the
-change. Spans are exported in batches; a collector that is down costs a `trace export
-failed` warning in the log, never a request.
+change. Spans are exported in batches; a collector that is down never fails or slows a
+request. It costs a `trace export failed` warning at the first failure, then at most one
+a minute (with `failed_batches`), and one `trace export recovered` line when it is back;
+the spans of the failed batches are dropped.
 
 One trace per proxied call: `gateway.receive` → `gateway.upstream_request`,
 `gateway.response_stream`, `gateway.capture` → `gateway.store_write` (one per store call).
