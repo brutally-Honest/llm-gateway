@@ -93,6 +93,28 @@ feature: 021-self-observability
   repo (one row per metric group, 17 panels); error and drop panels count over the last
   hour, quantiles over 5 minutes, refresh 10 s. `TestDashboard_QueriesOnlyExposedMetrics`
   ties it to the gateway's real scrape.
+- D16 (2026-11-15) — Karthik's edge case, on the real gateway: tracing on, Jaeger
+  stopped (`docker compose … stop jaeger`), real `claude -p --model haiku` calls.
+  Model calls kept working: 0 non-200s among 16 calls in the 3-minute window, and the
+  gateway's own numbers did not move. Median call duration (access log, status 200) was
+  933 ms with Jaeger up, 859 ms down; proxy overhead mean 36.1 µs up, 36.5 µs down. The
+  first build (6608bd1…06e6211) logged a warning for every failed batch: 17 in 3 minutes
+  (one per 5 s while traffic flowed). That is one per export interval, but hundreds an
+  hour, so it counts as flooding. Fixed in 068a840: the exporter logs the first failure at
+  once, then at most one warning a minute with `failed_batches`, and one
+  `trace export recovered` line when the collector is back. Re-run on 068a840 (Jaeger
+  still down): warnings at 20:12:31 (first failure, at once), 20:13:41 (failed_batches 10)
+  and 20:14:46 (14); median duration 861 ms; overhead 35.2 µs. Jaeger started again:
+  one `trace export recovered` (failed_batches 20). The client's wall time per
+  `claude -p` rose from ~4.2 s to ~6.7 s in the second run while the gateway-measured
+  durations stayed the same, so that was outside the gateway (CLI start-up and
+  Anthropic). `TestQuietExporter_RateLimitsFailures` covers the limiter.
+- D17 (2026-11-15) — Karthik accepted the real-gateway check. Afterwards: the config is
+  restored from `config.yaml.bak-021` (byte-identical, tracing off again by default) and
+  the gateway restarted; the stack is stopped (`make observability-down`, volumes kept),
+  as it was not running before the check. The service keeps this branch's build
+  (068a840); `~/.local/bin/gateway.bak-021` (the pre-021 binary) and
+  `config.yaml.bak-021` are left in place.
 
 ### Dependencies
 - `github.com/prometheus/client_golang` v1.24.0 — the reference Prometheus client
