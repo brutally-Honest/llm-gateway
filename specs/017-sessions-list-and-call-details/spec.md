@@ -62,17 +62,22 @@ This changes earlier features:
 ### Sessions list
 - **AC1** — When the sessions list is shown, each row shall show the start time, the title
   (016's rule, so never a session key; the key on hover), the folder and model, the capture
-  sources as glyph and word, a status (active, ended, hooks only), and labelled counts:
+  sources as glyph and word, a status (active, ended, hooks only; a hooks-only session still
+  going shows active, research D33), and labelled counts:
   prompts, model calls with side calls apart, tool calls with failures, files changed,
   commands, sites, wall-clock time, and input, output and cache-read tokens ("—", never 0,
   when no usage was captured).
 - **AC2** — When the sessions list is shown, a row with anything in its "Needs a look" set
   (016) shall say how many items and of what kinds as words, and the list shall show the
   unassigned connections in their own section with each one's label, client, host, bytes
-  and time.
+  and time: the first 10, then a link to the unassigned connections page for the rest
+  (research D27). A session that is hooks only has no hooks-only-turn item, since every
+  turn of it is one; a session with model calls still lists its hooks-only turns (amended
+  2026-11-15, research D31).
 - **AC3** — When the sessions list is shown, a "Today" line shall show labelled totals since
   local midnight (sessions, model calls with side calls included, files changed, sites,
-  input and output tokens), computed on the server (amended 2026-11-14, research D17).
+  input and output tokens), computed on the server; sessions counts every session with a
+  model call or a hook since then (amended 2026-11-14, research D17; 2026-11-15, D30).
 - **AC4** — When the user types in the filter or picks All, Needs a look, Active or Hooks
   only, the list shall show the matching loaded rows, say "filtering N loaded" while more
   rows exist, and keep Load more.
@@ -91,14 +96,19 @@ This changes earlier features:
   (016 AC10's rows), with the input, cache-write and cache-read parts.
 - **AC8** — When the call details are shown, they shall show what the call saw (its
   messages, marked carried over or new since the previous call, with counts; a thread's
-  first call marked as such), its thinking behind a toggle, its response, and the tool calls
-  it asked for, each opening its 016 tool dialog.
+  first call marked as such), its thinking behind a toggle (the toggle says the call thought
+  and links the raw response, where the thinking is, research D37), its response (capped
+  like a message box, with "Show all" expanding it in place, research D41), and the tool
+  calls it asked for, each opening its 016 tool dialog.
 - **AC9** — When the call details are shown, a Health section shall show disconnect, abort,
   error and partial-capture facts in words, and a Raw section shall link the raw request,
-  response stream and headers and the full exchange page.
+  response stream and headers and the full exchange page; the headers link opens that page
+  at its request headers (research D43).
 - **AC10** — While the call details are open, ↑ and ↓ (and Previous and Next buttons) shall
   step through the session's calls in order, disabled at the ends, and live updates shall
-  keep the dialog on its call.
+  keep the dialog on its call; once the call is complete (ended, no tool call pending), a
+  live update refreshes only its number, place and Previous / Next, so scroll and focus
+  inside it hold (research D42).
 - **AC11** — When a section of the call details lacks data (body not stored, capture cut,
   parse failed, no usage), it shall say why and show "—" for numbers, while the other
   sections and raw links still work.
@@ -140,9 +150,9 @@ This changes earlier features:
   (changes 016 AC10's bar per call; added 2026-11-13).
 - **AC21** — While the call details dialog (AC5) is open, the page behind it shall be dimmed
   and inert (no click or Tab reaches it), a click on the dimmed page shall close the dialog,
-  and the dialog's top (title, context, message counts) shall stay while the messages and
-  later sections scroll (added 2026-11-13 for the 013 drawer; amended 2026-11-14 for the
-  dialog that replaces it, research D19).
+  and the dialog's top (title, labelled facts, context, message counts) shall stay while the
+  messages and later sections scroll (added 2026-11-13 for the 013 drawer; amended 2026-11-14 for the
+  dialog that replaces it, research D19; the facts join the top, D38).
 - **AC22** — When the turn list is hovered or focused, an entry shall keep its two-line
   prompt, with no tooltip; the story shall end at its last turn, with no empty space after
   it (changes 016 AC3; added 2026-11-13).
@@ -157,7 +167,9 @@ This changes earlier features:
 ### Other pages
 - **AC12** — When the ungrouped exchanges page, the unassigned connections page or the full
   exchange page is shown, it shall use 016's theme, labelled counts and glyph-and-word
-  statuses, with the breadcrumb back to Sessions.
+  statuses, with the breadcrumb back to Sessions; the full exchange page's breadcrumb also
+  names its session and call ("Sessions / <session title> / Call #n"), or "Ungrouped" for
+  an exchange no session claims (research D47).
 
 ## Edge cases
 - **E1** — Empty store → the list's empty note, today's totals 0, no unassigned section (AC1,
@@ -175,8 +187,9 @@ This changes earlier features:
 - **E9** — A turn with no files changed or no sites → no such chip (AC14, AC15).
 - **E10** — Live updates while a chip's panel is open → the panel stays open and updates
   (AC14, 016 AC12).
-- **E6** — A filter matching nothing → "no sessions match", Load more kept while more rows
-  exist (AC4).
+- **E6** — A filter matching nothing → "no sessions match", said once, in the list; the note
+  still says "filtering N loaded" and Load more is kept while more rows exist (AC4,
+  research D34).
 
 ## Constraints
 - Every count, title and "needs a look" kind comes from the server; the browser formats only.
@@ -209,3 +222,12 @@ This changes earlier features:
   "Today" totals are since local midnight (research D17); AC5 opens a call from a Context
   row only, a bar keeps AC20 (D18); AC15 and AC21 name the call details dialog in place of
   the 013 drawer, keeping AC21's behaviour (D19); E1 also cites AC2 (no unassigned section)
+- v8 (2026-11-15) — the spec text follows the decisions taken while building: AC1, an active
+  hooks-only session shows active (research D33); AC2, a hooks-only session has no
+  hooks-only-turn item (D31) and the unassigned section lists the first 10 with a link to
+  the rest (D27); AC3, today's sessions count sessions with a model call or a hook (D30);
+  AC8, the thinking toggle links the raw response (D37) and the reply is capped with "Show
+  all" (D41); AC9, the headers link opens the exchange page at its headers (D43); AC10, a
+  complete call keeps its body on live updates (D42); AC12, the exchange page's breadcrumb
+  names its session and call, or Ungrouped (D47); AC21, the facts join the fixed top (D38);
+  E6, "no sessions match" is said once and the filter note stays (D34)
