@@ -41,6 +41,10 @@ function link(href, text, blank = false) {
   return a;
 }
 
+// done says the call was complete when it was read: it had ended (the server gives a
+// duration only then) and none of the tool calls it asked for is still pending.
+const done = (d) => d.facts.dur_ms !== null && d.facts.dur_ms !== undefined && !(d.tools || []).some((t) => t.chip === "pending");
+
 // changeText is the context change since the previous call of its thread, in words.
 export function changeText(c) {
   if (c.first) return "first call of its thread";
@@ -156,8 +160,13 @@ export function createCallDialog(ctx = {}) {
     Promise.resolve().then(() => ctx.loadCall(id)).then(
       (data) => {
         if (id !== current) return; // the dialog moved on
+        // a live refresh of a complete call changes only where it sits among the session's
+        // calls: keep the body as it is, so scroll inside its boxes, an open toggle and
+        // focus all hold (research D42); a call still running, or with a tool pending, redraws
+        const settled = keep && got.data && done(got.data) && done(data);
         got = { id, state: "ready", data, error: "" };
-        draw(true);
+        if (settled) drawNav(data);
+        else draw(true);
       },
       (err) => {
         if (id !== current) return;
@@ -311,12 +320,22 @@ export function createCallDialog(ctx = {}) {
     return rawSection({ request: `/api/exchanges/${e}/body?part=request`, response: `/api/exchanges/${e}/body?part=response`, headers: `#/exchanges/${e}`, page: `#/exchanges/${e}` });
   }
 
+  // drawNav is the call's place among the session's calls, all in the head: its number
+  // (an earlier call arriving late renumbers it), "N of M" and Previous / Next.
+  function drawNav(d) {
+    prev.disabled = !(d && d.nav.prev);
+    next.disabled = !(d && d.nav.next);
+    if (!d) return;
+    kick.textContent = d.facts.thread.kind === "side" ? "Side call" : d.turn ? `Model call · turn ${d.turn}` : "Model call";
+    title.textContent = `Call #${d.n}`;
+    subt.textContent = `${d.nav.index} of ${d.nav.total} · ${d.facts.thread.label}`;
+  }
+
   // draw lays out the open call; keep holds the body's scroll (a live redraw or a fetch).
   function draw(keep = false) {
     const scroll = body.scrollTop;
     const d = got.data;
-    prev.disabled = !(d && d.nav.prev);
-    next.disabled = !(d && d.nav.next);
+    drawNav(d);
     if (!d) {
       kick.textContent = "Model call";
       title.textContent = "Call";
@@ -324,9 +343,6 @@ export function createCallDialog(ctx = {}) {
       top.replaceChildren(el("p", "muted-note", got.state === "loading" ? "Loading call…" : `Call details unavailable: ${got.error}`));
       body.replaceChildren(rawFor(got.id));
     } else {
-      kick.textContent = d.facts.thread.kind === "side" ? "Side call" : d.turn ? `Model call · turn ${d.turn}` : "Model call";
-      title.textContent = `Call #${d.n}`;
-      subt.textContent = `${d.nav.index} of ${d.nav.total} · ${d.facts.thread.label}`;
       top.replaceChildren(...topNodes(d));
       replyFit = () => {};
       body.replaceChildren(...[contextSection(d.context), sawSection(d), thinkingSection(d), responseSection(d), toolsSection(d), healthSection(d.health), rawSection(d.raw)].filter(Boolean));

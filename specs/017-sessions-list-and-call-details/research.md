@@ -214,7 +214,14 @@ feature: 017-sessions-list-and-call-details
   expanded state holds through live redraws of the same call and resets on the next call; a
   reply that fits its box has no button. This is the dialog only: the turn card still shows
   prompts and answers whole (D11).
-
+- D42 (2026-11-15, slice 2, Karthik at the UI check) — A live update of a complete call
+  refreshes only its place in the dialog's head: its number (an earlier call arriving late
+  renumbers it), "N of M" and Previous / Next. The body is left alone, so scroll inside a
+  message box or the reply, an expanded reply and focus all hold. Complete means the call
+  had ended (the server gives a duration only then) and none of its tool calls is pending,
+  both before and after the update; otherwise the body is drawn again, so a running call's
+  facts and a pending tool's state still follow. Seen in the check: a message box scrolled
+  inside went back to its top when calls were added to the session.
 ## Notes
 - Sessions list budget, before slice 1 (2026-11-14, T001): `BenchmarkSessionsList500`
   (500 sessions × 20 calls, `-benchtime 5x`, two runs, AMD Ryzen 5 5600G, 12 threads):

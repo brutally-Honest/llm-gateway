@@ -305,7 +305,9 @@ test("callDialogShowsSawThinkingResponse", async () => {
 // through a live redraw of the same call and caps again on the next call; a reply that
 // fits its box has no toggle.
 test("replyIsCappedWithShowAll", async () => {
+  // still running, so a live update draws it again (a finished call keeps its body, D42)
   const long = detail("b", { response: { text: "line\n".repeat(400), truncated: true, stop_reason: "end turn" } });
+  long.facts = { ...long.facts, dur_ms: null };
   const dlg = createCallDialog({ nav: { push() {}, replace() {}, back() {} }, loadCall: async (id) => (id === "b" ? long : detail(id)) });
   dlg.sync({ sessionId: "s1", callId: "b" });
   await tick();
@@ -336,17 +338,68 @@ test("replyIsCappedWithShowAll", async () => {
   Object.defineProperty(proto, "scrollHeight", { configurable: true, get: () => scroll });
   Object.defineProperty(proto, "clientHeight", { configurable: true, get: () => 100 });
   try {
-    dlg.refresh();
+    dlg.sync({ sessionId: "s1", callId: "b" });
     await tick();
     assert.equal(all().hidden, true, "a reply that fits has no toggle");
     scroll = 900;
-    dlg.refresh();
+    dlg.sync({ sessionId: "s1", callId: "a" });
     await tick();
     assert.equal(all().hidden, false, "a reply taller than its cap keeps the toggle");
   } finally {
     delete proto.scrollHeight;
     delete proto.clientHeight;
   }
+});
+
+// AC10, research D42: a live update of a call that has finished changes only its place —
+// "N of M" and Previous / Next — and leaves the body alone, so a message box scrolled inside
+// keeps its scroll; a call still running is drawn again with what the server now has.
+test("liveUpdateKeepsAFinishedCallsBody", async () => {
+  let total = 3;
+  let running = false;
+  let n = 3;
+  let pending = false;
+  const load = async (id) => {
+    const d = detail(id);
+    d.nav = { ...d.nav, total, next: total > 3 && id === "c" ? "d" : d.nav.next };
+    if (id === "c") d.n = n;
+    if (running) d.facts = { ...d.facts, dur_ms: null };
+    if (pending) d.tools = [{ id: "t1", name: "Bash", kind: "command", state: { glyph: "…", word: "pending" }, chip: "pending", summary: "npm test" }];
+    return d;
+  };
+  const dlg = createCallDialog({ nav: { push() {}, replace() {}, back() {} }, loadCall: load });
+  dlg.sync({ sessionId: "s1", callId: "c" });
+  await tick();
+  const subt = () => textOf(withClass(dlg.el, "subt")[0]);
+  const nextBtn = () => byTag(dlg.el, "button").find((b) => b.textContent.includes("Next"));
+  assert.match(subt(), /^3 of 3/);
+  assert.equal(nextBtn().disabled, true, "the last call has no Next");
+  const box = withClass(dlg.el, "msg")[0];
+  box.scrollTop = 120;
+  total = 4;
+  n = 4; // an earlier call arrived late: the open call is renumbered
+  dlg.refresh();
+  await tick();
+  assert.match(subt(), /^3 of 4/, "the place follows the session");
+  assert.match(textOf(withClass(dlg.el, "mh")[0]), /Call #4/, "and so does its number");
+  assert.equal(nextBtn().disabled, false, "Next once a later call exists");
+  assert.equal(withClass(dlg.el, "msg")[0], box, "the message box is the same node");
+  assert.equal(box.scrollTop, 120, "its scroll inside holds");
+  // a call with a tool call still pending is drawn again, so the tool's state follows
+  pending = true;
+  const pendingBox = withClass(dlg.el, "msg")[0];
+  dlg.refresh();
+  await tick();
+  assert.notEqual(withClass(dlg.el, "msg")[0], pendingBox, "a pending tool redraws");
+  // a call still running is drawn again on a live update
+  pending = false;
+  running = true;
+  dlg.sync({ sessionId: "s1", callId: "b" });
+  await tick();
+  const runningBox = withClass(dlg.el, "msg")[0];
+  dlg.refresh();
+  await tick();
+  assert.notEqual(withClass(dlg.el, "msg")[0], runningBox, "a running call redraws");
 });
 
 // AC9 (carries healthShowsDisconnectAbortError, rawLinksAndFullPageLink): health in words,
