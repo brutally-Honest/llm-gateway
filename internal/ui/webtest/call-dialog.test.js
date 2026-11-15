@@ -257,6 +257,7 @@ test("callDialogShowsFactsAndContext", async () => {
   const ctx = byTag(h.root, "section").find((s) => /^Context/.test(textOf(s).trim()));
   const c = textOf(ctx).replace(/\s+/g, " ");
   for (const re of [/Size 160/, /Change \+60 since #1/, /Input 120/, /Cache write 30/, /Cache read 10/, /Output 5/, /added #1's reply/]) assert.match(c, re);
+  assert.doesNotMatch(t, /first call of its thread/i, "a later call does not start its thread");
   const first = await openOne(detail("a"));
   assert.match(first.text(), /first call of its thread/);
   assert.match(first.text(), /First call of its thread · 1 new/);
@@ -298,6 +299,27 @@ test("callDialogShowsSawThinkingResponse", async () => {
   assert.deepEqual(opened.map((o) => o[0]), ["t1"]);
   assert.equal(opened[0][1], name, "the tool dialog returns focus to its row");
   assert.match(textOf(g.root), /1 asked for/);
+});
+
+// AC8 (carries toolChainShowsThreeSteps, chainShowsRanWithReportedMissing in the dialog's
+// terms, research D40 item 2): each tool call the call asked for shows its state — the
+// glyph alone when it ran and reported, glyph and word otherwise (ran but its result never
+// reported stays pending) — its name and the sub-agent that ran it.
+test("callDialogToolLinesShowStateAndAgent", async () => {
+  const tools = [
+    { id: "t1", name: "Bash", kind: "command", state: { glyph: "✓", word: "ok" }, chip: "ok", summary: "npm test", agent: "Explore x1" },
+    { id: "t2", name: "Read", kind: "read", state: { glyph: "…", word: "pending" }, chip: "pending", summary: "a.js" },
+    { id: "t3", name: "Edit", kind: "edit", state: { glyph: "✗", word: "failed" }, chip: "failed", summary: "b.js", first_error: "String to replace not found in file." },
+  ];
+  const h = await openOne(detail("b", { tools }));
+  const lines = withClass(h.root, "call-tools")[0].children.map((li) => textOf(li).replace(/\s+/g, " ").trim());
+  assert.equal(lines.length, 3);
+  assert.match(lines[0], /^✓ ?Bash ?Explore x1 ?npm test/);
+  assert.doesNotMatch(lines[0], /ok/, "a call that ran and reported shows the glyph alone");
+  assert.match(lines[1], /… ?pending ?Read/);
+  assert.match(lines[2], /✗ ?failed ?Edit/);
+  assert.match(lines[2], /String to replace not found in file\./);
+  assert.match(h.text(), /3 asked for/);
 });
 
 // AC8, research D41: the reply is capped like a message box; "Show all" expands it in
