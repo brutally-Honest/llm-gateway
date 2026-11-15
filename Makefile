@@ -9,7 +9,8 @@ NOTES_REFSPEC := +refs/notes/*:refs/notes/*
 # `dev` when git can't describe the tree, e.g. a Docker build without .git.
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-.PHONY: setup setup-git setup-lint setup-shellcheck setup-node build run image test kit-test web-test lint verify
+.PHONY: setup setup-git setup-lint setup-shellcheck setup-node build run image test kit-test web-test lint verify \
+	observability-up observability-down
 
 # Idempotent: safe to run again at any time.
 setup: setup-git setup-lint setup-shellcheck setup-node
@@ -55,6 +56,18 @@ build:
 
 run: build
 	$(BIN)/gateway
+
+# The self-observability stack (spec 021, docs/observability.md): Prometheus, Grafana and
+# Jaeger on 127.0.0.1, for a gateway running on the host. On Linux the override puts
+# Prometheus and Grafana on the host's network, where the gateway's loopback is.
+OBS_COMPOSE := docker compose -f deploy/observability/compose.yml \
+	$(if $(filter Linux,$(shell uname -s)),-f deploy/observability/compose.linux.yml)
+
+observability-up:
+	$(OBS_COMPOSE) up -d
+
+observability-down:
+	$(OBS_COMPOSE) down
 
 # The build context has no .git, so the version is passed in as a build arg.
 image:

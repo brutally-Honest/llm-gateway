@@ -1,0 +1,12 @@
+# Prometheus for compose.linux.yml: it shares the host's network, so the gateway is on
+# 127.0.0.1.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: llm-gateway
+    metrics_path: /metrics
+    # The API listener (listen_addr), spec 021 research D2.
+    static_configs:
+      - targets: ["127.0.0.1:7197"]

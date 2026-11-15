@@ -1,0 +1,67 @@
+# The gateway's self-observability stack (spec 021): Prometheus scrapes the gateway's
+# /metrics, Grafana shows the provisioned dashboard, Jaeger takes OTLP spans and shows
+# traces. The gateway itself runs on the host (systemd, launchd or `make run`), never in
+# this stack. Every published port is on 127.0.0.1.
+#
+# Start and stop with `make observability-up` / `make observability-down`, which add
+# compose.linux.yml on Linux (docs/observability.md). This file alone is the macOS and
+# Docker Desktop setup, where host.docker.internal reaches the host's loopback.
+name: llm-gateway-observability
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.listen-address=:9090
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus:/prometheus
+    # host.docker.internal is the host, where the gateway listens (built in on Docker
+    # Desktop; host-gateway maps it on Linux engines that have it).
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - "127.0.0.1:9090:9090"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.4.15
+    environment:
+      # Local only (loopback): anyone who can open the page may view; editing needs the
+      # admin login (admin / admin on first start, then Grafana asks for a new one).
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/llm-gateway.json
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      # Read by the provisioned datasource.
+      PROMETHEUS_URL: http://prometheus:9090
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana:/var/lib/grafana
+    # 3030, not Grafana's usual 3000, which local dev servers often hold; GRAFANA_PORT
+    # picks another.
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3030}:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/jaeger:2.22.0
+    ports:
+      # OTLP over HTTP: the gateway's tracing.otlp_endpoint default.
+      - "127.0.0.1:4318:4318"
+      # The Jaeger UI.
+      - "127.0.0.1:16686:16686"
+    restart: unless-stopped
+
+volumes:
+  prometheus:
+  grafana:

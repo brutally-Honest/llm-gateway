@@ -1,0 +1,12 @@
+# Prometheus for compose.yml (macOS, Docker Desktop): the gateway is on the host.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: llm-gateway
+    metrics_path: /metrics
+    # The API listener (listen_addr): always bound, and it has no Host check, unlike
+    # the UI listener (spec 021 research D2).
+    static_configs:
+      - targets: ["host.docker.internal:7197"]
