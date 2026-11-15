@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/brutally-honest/llm-gateway/internal/core"
 	"github.com/brutally-honest/llm-gateway/internal/store"
 	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
@@ -80,6 +81,66 @@ func (d Deps) viewDeps() viewDeps { return viewDeps{rules: d.Rules, skew: d.Attr
 func mountView(api chi.Router, d Deps) {
 	api.Get("/sessions/{id}/view", d.getView)
 	api.Get("/sessions/{id}/tools/{tid}", d.getTool)
+	api.Get("/sessions/{id}/calls/{eid}", d.getCall)
+}
+
+// getCall serves one model call's details (spec 017 AC5–AC11): the session's view places
+// it, and its own exchange, usage, thread fact and stored events fill it in. A call that is
+// not in the session is a 404 (E3). Nothing here carries a header or a credential: the raw
+// links point at the endpoints that serve them.
+func (d Deps) getCall(w http.ResponseWriter, r *http.Request) {
+	principal, client, key, ok := parseSessionID(chi.URLParam(r, "id"))
+	eid := chi.URLParam(r, "eid")
+	if !ok || eid == "" {
+		writeErr(w, http.StatusNotFound, "not_found", "no such call")
+		return
+	}
+	ctx, cancel := storeCtx(r)
+	defer cancel()
+	c := d.Reader.WithContext(ctx)
+	ex, err := c.Exchange(eid)
+	if errors.Is(err, store.ErrNotFound) || (err == nil && (ex.PrincipalID != principal || ex.Client != client || ex.SessionKey != key)) {
+		writeErr(w, http.StatusNotFound, "not_found", "no such call in this session")
+		return
+	}
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	who := sessIdent{principal, client, key}
+	v, err := d.cachedView(ctx, who, false)
+	if err == nil && !timeline.HasCall(v, eid) {
+		// the call is newer than the view served so far: wait for one that has it
+		v, err = d.cachedView(ctx, who, true)
+	}
+	if errors.Is(err, errNoSession) {
+		writeErr(w, http.StatusNotFound, "not_found", "no such session")
+		return
+	}
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	evs, err := c.Events(ex.RequestID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	bs, err := d.drawerBuild(ctx, c, who, ex.RequestID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	in := timeline.CallInput{Exchange: ex, Usage: timeline.CallOf(ex, evs), Fact: bs.calls[ex.RequestID]}
+	if det, err := timeline.ExchangeDetail(c, ex, entryCut); err == nil {
+		in.Detail = &det
+	}
+	out, ok := timeline.CallDetailsOf(v, eid, in)
+	if !ok {
+		writeErr(w, http.StatusNotFound, "not_found", "no such call in this session")
+		return
+	}
+	writeJSON(w, out)
 }
 
 // errNoSession is a session with neither exchanges nor hook events.
@@ -185,6 +246,46 @@ type toolJSON struct {
 	HookInput       string         `json:"hook_input,omitempty"`
 	HookOmitted     int            `json:"hook_omitted_bytes,omitempty"`
 	Hooks           []hookLineJSON `json:"hooks"`
+	// Questions are the questions the call put to the user with the answers, when the
+	// client's profile can read them (017, 2026-11-13); omitted otherwise.
+	Questions []questionJSON `json:"questions,omitempty"`
+}
+
+// questionJSON is one question a tool asked, its options and the user's answer and notes.
+type questionJSON struct {
+	Header  string               `json:"header,omitempty"`
+	Text    string               `json:"text"`
+	Multi   bool                 `json:"multi,omitempty"`
+	Options []questionOptionJSON `json:"options"`
+	Answer  string               `json:"answer"`
+	Notes   string               `json:"notes,omitempty"`
+}
+
+type questionOptionJSON struct {
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+}
+
+// toolQuestions reads a tool call's questions and answers through the client's profile;
+// nil when the profile cannot or the call has no result yet.
+func toolQuestions(rules ClientRules, out toolJSON) []questionJSON {
+	qr, ok := rules.(core.QuestionReader)
+	if !ok || out.Result == nil || out.InputTruncated {
+		return nil
+	}
+	qs, ok := qr.Questions(out.Name, []byte(out.Input), *out.Result)
+	if !ok {
+		return nil
+	}
+	res := make([]questionJSON, 0, len(qs))
+	for _, q := range qs {
+		j := questionJSON{Header: q.Header, Text: q.Text, Multi: q.Multi, Answer: q.Answer, Notes: q.Notes, Options: []questionOptionJSON{}}
+		for _, o := range q.Options {
+			j.Options = append(j.Options, questionOptionJSON{Label: o.Label, Description: o.Description})
+		}
+		res = append(res, j)
+	}
+	return res
 }
 
 func (d Deps) getTool(w http.ResponseWriter, r *http.Request) {
@@ -264,5 +365,6 @@ func (d Deps) getTool(w http.ResponseWriter, r *http.Request) {
 	if out.Chip == "" {
 		out.Chip = timeline.ChipNoHooks
 	}
+	out.Questions = toolQuestions(d.Rules[client], out)
 	writeJSON(w, out)
 }

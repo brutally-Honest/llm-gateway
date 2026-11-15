@@ -16,7 +16,7 @@ const mark = (glyph, word) => ({ glyph, word });
 const eff = (o) => ({ id: 1, kind: "change", change: "modified", at: "2026-11-10T10:00:06Z", what: mark("~", "modified"), path: "src/a.js", full_path: "/w/src/a.js", added: 2, removed: 1, has_diff: true, label: "named", mark: mark("●", "named"), why: "Edit names this file in its input.", tool: "t2", by: "#4 Edit src/a.js", where: "turn 1", turn: 1, ...o });
 const tool = (o) => ({ id: "t2", name: "Edit", kind: "file", state: mark("✓", "ok"), chip: "ok", summary: "src/a.js", added: 2, removed: 1, dur_ms: 400, call_n: 4, turn: 1, effects: [], ...o });
 const step = (n, o) => ({ n, exchange_id: `e${n}`, at: "2026-11-10T10:00:05Z", dur_ms: 1000, did: "wrote", tools: [], ...o });
-const turn = (n, o) => ({ n, hash: `h${n}`, prompt: `prompt ${n}`, at: "2026-11-10T10:00:00Z", clock_ms: 7100, model_ms: 4000, tool_ms: 1400, wait_ms: 1700, counts: { tools: 1, changed: 0, read: 0, searched: 0, sites: 0, failed: 0 }, steps: [], ...o });
+const turn = (n, o) => ({ n, hash: `h${n}`, prompt: `prompt ${n}`, at: "2026-11-10T10:00:00Z", clock_ms: 7100, model_ms: 4000, tool_ms: 1400, wait_ms: 1700, counts: { calls: 1, tools: 1, changed: 0, read: 0, searched: 0, sites: 0, failed: 0 }, steps: [], ...o });
 
 function fixture() {
   const named = eff();
@@ -30,7 +30,7 @@ function fixture() {
     turns: [
       turn(1, {
         reminders: ["be brief"], answer: "Fixed the retry.", answer_call: 5,
-        counts: { tools: 3, changed: 2, read: 0, searched: 0, sites: 1, failed: 1 },
+        counts: { calls: 3, tools: 3, changed: 2, read: 0, searched: 0, sites: 1, failed: 1 },
         steps: [
           step(3, { thinking: true, tools: [tool({ id: "t1", name: "Bash", kind: "command", state: mark("✗", "failed"), chip: "failed", summary: "npm test", added: 0, removed: 0, dur_ms: 1000, first_error: "Error: 1 failing", call_n: 3 })] }),
           step(4, { tools: [tool({ effects: [named] }), tool({ id: "t3", summary: "src/b.js", added: 1, removed: 0 })], several: [several], several_names: ["#4 Edit src/a.js", "#4 Edit src/b.js"] }),
@@ -39,7 +39,7 @@ function fixture() {
         loose: [harness],
       }),
       turn(2, { prompt: "prompt 2", models: ["m1", "m2"], steps: [step(6, { did: "wrote the answer" })] }),
-      turn(3, { hooks_only: true, prompt: "", clock_ms: 0, hook_tools: [tool({ id: "h1", name: "Bash", kind: "command", state: mark("?", "unmatched"), chip: "unmatched", summary: "ls", added: 0, removed: 0, call_n: 0, turn: 3 })] }),
+      turn(3, { hooks_only: true, prompt: "", clock_ms: 0, counts: { calls: 0, tools: 1, changed: 0, read: 0, searched: 0, sites: 0, failed: 0 }, hook_tools: [tool({ id: "h1", name: "Bash", kind: "command", state: mark("?", "unmatched"), chip: "unmatched", summary: "ls", added: 0, removed: 0, call_n: 0, turn: 3 })] }),
     ],
     between: [{ after: 1, at: "2026-11-10T10:00:09Z", title: "Seen between turns 1 and 2", text: "A change while no tool call was running: most likely your own edit.", effects: [outside] }],
     files: {
@@ -93,11 +93,11 @@ test("rendersTurnsTabsAndDialogFromTheView", async () => {
   assert.equal(longest.title, "pandoc docs/checkout-fix.md -o docs/checkout-fix.pdf --pdf-engine=xelatex");
   assert.match(story, /Time 9\.0s model 5\.0s · tools 1\.5s · waiting 1\.0s · between turns 1\.5s/, "the Time card splits the clock into four parts");
   assert.match(story, /\+1 reminder/);
-  assert.match(story, /3 tool calls 2 files changed 1 site ✗ 1 failed/);
+  assert.match(story, /All 3 model calls 3 tool calls 2 files changed 1 site ✗ 1 failed/);
   const links = withClass(page.el, "call-link").map((a) => a.href);
   assert.deepEqual(links.slice(0, 4), ["#/sessions/s1/call/e3", "#/sessions/s1/call/e4", "#/sessions/s1/call/e5", "#/sessions/s1/call/e6"]);
   assert.match(story, /Read the thinking/);
-  assert.match(story, /Final answer Fixed the retry\./);
+  assert.match(story, /Final answer Preview Raw Fixed the retry\./);
   // tool lines: state as glyph and word (✓ alone), summary, lines, first error
   const t1 = byId(page.el, "tool-t1");
   assert.match(textOf(t1), /✗ failed Bash npm test/);
@@ -237,41 +237,122 @@ function shown(n) {
   return true;
 }
 
-// A turn shows its prompt and its answer; every step between is one line in a stepper,
-// folded until opened, and stays as the user left it across a live redraw (research
-// 2026-11-13, Karthik's feedback).
-test("stepsAreFoldedBetweenPromptAndAnswer", () => {
+// A turn shows its prompt, its chips and its answer. "All" opens the whole stepper in
+// order; every other chip opens the timeline narrowed to its kind, still in order, each
+// row with its #n; one panel at a time (017 AC14, AC16 as amended 2026-11-13, E10).
+test("chipsOpenOnePanelAtATime", () => {
   const { page } = mount();
   const t1 = byId(page.el, "turn-1");
-  assert.ok(shown(byId(t1, "h-1")), "the prompt is shown");
+  const chip = (id) => withClass(t1, "chip").find((b) => b.dataset.chip === id);
+  const rowsOf = (id) => withClass(byId(t1, `cp-1-${id}`), "frow").map((r) => textOf(r).replace(/\s+/g, " ").trim());
+  assert.ok(shown(withClass(t1, "prompt")[0]), "the prompt is shown");
   assert.ok(shown(withClass(t1, "answer")[0]), "the answer is shown");
+  assert.deepEqual(withClass(t1, "chip").map((b) => b.textContent), ["All", "3 model calls", "3 tool calls", "2 files changed", "1 site", "✗ 1 failed"]);
+  assert.equal(shown(byId(t1, "cp-1-all")), false, "no steps until a chip is clicked");
+  assert.equal(chip("all").attrs["aria-expanded"], "false");
+
+  // All: the whole stepper, each step's tool lines folded
+  chip("all").fire("click");
+  assert.ok(shown(byId(t1, "cp-1-all")));
+  assert.ok(chip("all").classes.has("on"), "the chip is marked selected");
+  assert.equal(withClass(byId(t1, "cp-1-all"), "call-link").length, 3);
   const body = byId(t1, "steps-e3");
   assert.equal(body.hidden, true, "a step's tool lines start folded");
-  assert.equal(shown(byId(t1, "tool-t1")), false);
   const toggle = withClass(t1, "fold").find((b) => b.attrs["aria-controls"] === "steps-e3");
-  assert.equal(toggle.attrs["aria-expanded"], "false");
-  assert.match(textOf(toggle).replace(/\s+/g, " "), /Thought|Wrote|wrote/i);
   assert.match(textOf(toggle), /✗ Bash npm test/, "the folded line names its tools");
-  assert.equal(withClass(t1, "call-link").length, 3, "every step keeps its #n in the stepper");
   assert.equal(byId(t1, "steps-e5"), undefined, "a step with nothing under it has no fold");
   assert.ok(body.parentNode.className.split(" ").includes("bad"), "a step whose tool failed is marked on the stepper");
-  assert.ok(!byId(t1, "steps-e4").parentNode.className.split(" ").includes("bad"));
   const loose = withClass(t1, "fold").find((b) => /Not caused by a tool call/.test(textOf(b)));
-  assert.equal(loose.attrs["aria-expanded"], "false", "the effects no tool call caused are folded too");
-  assert.equal(shown(byId(t1, "eff-3")), false);
-
+  assert.equal(loose.attrs["aria-expanded"], "false", "the effects no tool call caused are folded in All");
   toggle.fire("click");
   assert.equal(body.hidden, false);
-  assert.equal(toggle.attrs["aria-expanded"], "true");
-  assert.ok(shown(byId(t1, "tool-t1")));
 
-  // a live event rebuilding turn 1 keeps its opened step open
+  // model calls: one line per call, in order, no tool lines
+  chip("calls").fire("click");
+  assert.equal(shown(byId(t1, "cp-1-all")), false, "another chip closes the open panel");
+  assert.deepEqual(rowsOf("calls"), ["#3 Wrote for 1.0s · 1 tool call Read the thinking", "#4 Wrote for 1.0s · 2 tool calls", "#5 Wrote the answer for 1.0s"]);
+  // tool calls: every tool call in order with its #n
+  chip("tools").fire("click");
+  assert.deepEqual(rowsOf("tools"), ["#3 ✗ failed Bash npm test 1.0s Error: 1 failing", "#4 ✓ Edit src/a.js +2 −1 0.4s", "#4 ✓ Edit src/b.js +1 −0 0.4s"]);
+  // files: each change in order with its #n and tool; several-running marked
+  chip("changed").fire("click");
+  assert.deepEqual(rowsOf("changed"), ["#4 Edit ~ src/a.js +2 −1", "#4 ◌ several running ~ dist/out.js 2.0 KB"]);
+  // sites: a connection no tool call caused says so
+  chip("sites").fire("click");
+  assert.deepEqual(rowsOf("sites"), ["○ not caused by a tool call ⇄ telemetry.example ↑ 10 B ↓ 20 B"]);
+  // failed: only the failed tool calls
+  chip("failed").fire("click");
+  assert.deepEqual(rowsOf("failed"), ["#3 ✗ failed Bash npm test 1.0s Error: 1 failing"]);
+  chip("failed").fire("click");
+  assert.equal(shown(byId(t1, "cp-1-failed")), false, "the selected chip closes its own panel");
+  assert.equal(withClass(t1, "chip").filter((b) => b.classes.has("on")).length, 0);
+
+  // a live event rebuilding turn 1 keeps its chip and its opened step
+  chip("all").fire("click");
   const v = fixture();
   page.applyEvent({ ...v, full: false, order: [1, 2, 3], turns: [{ ...v.turns[0], hash: "h1b" }] });
   const again = byId(page.el, "turn-1");
   assert.notEqual(again, t1);
+  assert.ok(shown(byId(again, "cp-1-all")));
+  assert.equal(withClass(again, "chip").find((b) => b.dataset.chip === "all").attrs["aria-expanded"], "true");
   assert.equal(byId(again, "steps-e3").hidden, false);
   assert.equal(byId(again, "steps-e4").hidden, true);
+});
+
+// A hooks-only turn has no model-calls chip; its chips open what the hooks saw.
+test("hooksOnlyTurnOpensItsHookTools", () => {
+  const { page } = mount();
+  const t3 = byId(page.el, "turn-3");
+  assert.deepEqual(withClass(t3, "chip").map((b) => b.textContent), ["All", "1 tool call"]);
+  withClass(t3, "chip")[1].fire("click");
+  assert.deepEqual(withClass(byId(t3, "cp-3-tools"), "frow").map((r) => textOf(r).replace(/\s+/g, " ").trim()), ["hooks ? unmatched Bash ls 0.4s"]);
+  withClass(t3, "chip")[0].fire("click");
+  assert.match(textOf(byId(t3, "cp-3-all")), /No model calls captured\. The hooks saw: 1 tool call/);
+});
+
+// The prompt and the answer render as Markdown by default, with the raw text a click away;
+// the choice is kept in the browser (017 AC13).
+test("promptAndAnswerSwitchBetweenPreviewAndRaw", () => {
+  const store = new Map();
+  globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+  try {
+    const v = fixture();
+    v.turns[0].answer = "**Done.**\n\n- one\n- two";
+    const { page } = mount(v);
+    const answer = withClass(byId(page.el, "turn-1"), "answer")[0];
+    const md = withClass(answer, "md")[0];
+    assert.ok(md, "Preview by default");
+    assert.equal(textOf(byTag(md, "strong")[0]).trim(), "Done.");
+    assert.equal(byTag(md, "li").length, 2);
+    const raw = withClass(answer, "seg").find((b) => b.dataset.mode === "raw");
+    raw.fire("click");
+    assert.equal(raw.attrs["aria-pressed"], "true");
+    assert.equal(withClass(answer, "raw")[0].textContent, "**Done.**\n\n- one\n- two", "Raw is the stored text as is");
+    assert.equal(withClass(answer, "md").length, 0);
+    assert.equal(store.get("gw.textMode"), "raw", "the choice is kept");
+    const later = mount(v).page;
+    assert.ok(withClass(withClass(byId(later.el, "turn-1"), "answer")[0], "raw")[0], "a new page starts in the kept mode");
+  } finally {
+    delete globalThis.localStorage;
+  }
+});
+
+// A long prompt is shown whole, with no fold (017 AC18 as amended 2026-11-13).
+test("longPromptIsShownWhole", () => {
+  const v = fixture();
+  v.turns[0].prompt = Array.from({ length: 30 }, (_, i) => `line ${i}`).join("\n");
+  const { page } = mount(v);
+  const prompt = withClass(byId(page.el, "turn-1"), "prompt")[0];
+  assert.ok(!withClass(prompt, "tx-b")[0].classes.has("clamp"));
+  assert.equal(withClass(prompt, "more").length, 0);
+  assert.match(textOf(prompt), /line 29/);
+});
+
+// The Sites tab is each host's name alone, like the Files tab (017 AC17).
+test("sitesTabListsHostsOnly", () => {
+  const { page } = mount();
+  const rows = withClass(byId(page.el, "tp-sites"), "row").map((r) => textOf(r).replace(/\s+/g, " ").trim());
+  assert.deepEqual(rows, ["telemetry.example"]);
 });
 
 // "Show in turn" opens the folds around the row it shows.
@@ -291,4 +372,99 @@ test("turnHeaderNamesItsModels", () => {
   const head = withClass(byId(page.el, "turn-2"), "th")[0];
   assert.equal(withClass(head, "mdl")[0].textContent, "m1, m2");
   assert.equal(withClass(withClass(byId(page.el, "turn-1"), "th")[0], "mdl").length, 0, "no models, no tag");
+});
+
+// The Context chart is one bar per turn: its height the context at the turn's last call,
+// a darker cap what the turn added; a bar shows the turn's calls in the list, and labels
+// thin out past 24 turns (Karthik 2026-11-13).
+test("contextChartIsOneBarPerTurn", () => {
+  const v = fixture();
+  v.context.main = [
+    { n: 3, exchange_id: "e3", turn: 1, ctx: 100, delta: null, why: "first call" },
+    { n: 4, exchange_id: "e4", turn: 1, ctx: 300, delta: 200, why: "" },
+    { n: 6, exchange_id: "e6", turn: 2, ctx: 600, delta: 300, why: "" },
+  ];
+  const { page } = mount(v);
+  const bars = withClass(page.el, "tbar");
+  assert.deepEqual(bars.map((b) => b.style.transform), ["scaleY(0.500)", "scaleY(1.000)"], "one bar per turn, at its last call");
+  assert.equal(withClass(bars[0], "cap")[0].style.flexGrow, "200", "turn 1 added 200 of its 300");
+  assert.equal(withClass(bars[0], "rest")[0].style.flexGrow, "100");
+  assert.equal(withClass(bars[1], "cap").length, 0, "a one-call turn has no cap");
+  assert.match(bars[0].attrs["aria-label"], /Turn 1: 300 tokens at its end, \+200 inside the turn/);
+  assert.deepEqual(withClass(page.el, "tl2").map((l) => l.textContent), ["T1", "T2"]);
+  const scrolled = [];
+  const rows = byTag(byId(page.el, "tp-context"), "li").filter((li) => li.dataset.turn);
+  for (const li of rows) li.scrollIntoView = () => scrolled.push(li.dataset.turn);
+  bars[1].fire("click");
+  assert.deepEqual(scrolled, ["2"], "a bar shows its turn's calls in the list");
+
+  v.context.main = Array.from({ length: 50 }, (_, i) => ({ n: i + 1, exchange_id: `x${i}`, turn: i + 1, ctx: 100 + i, delta: 1, why: "" }));
+  const many = withClass(mount(v).page.el, "tl2").map((l) => l.textContent).filter(Boolean);
+  assert.ok(many.length <= 26, `labels thinned: ${many.length}`);
+  assert.equal(many[0], "T1");
+  assert.equal(many.at(-1), "T50");
+});
+
+// A tool that asked the user questions shows them in its dialog with the picked option
+// marked and the notes, before the raw result and input (2026-11-13).
+test("toolDialogShowsQuestionsAndAnswers", async () => {
+  const det = { ...toolDetails, questions: [
+    { header: "Layout", text: "Which layout?", options: [{ label: "Cards", description: "one card each" }, { label: "Table" }], answer: "Table", notes: "keep it short" },
+    { header: "Loose", text: "Where?", options: [{ label: "A" }, { label: "B" }], answer: "", notes: "like the stepper" },
+  ] };
+  const { page } = mount(fixture(), { loadTool: async () => det });
+  withClass(byId(page.el, "tool-t1"), "nm")[0].fire("click");
+  await settle();
+  const dlg = page.dialog.el;
+  const qa = withClass(dlg, "qa")[0];
+  assert.ok(qa, "a Questions section");
+  const items = qa.children;
+  assert.equal(textOf(items[0].children[0]).trim(), "Layout");
+  const opts = withClass(items[0], "qa-opts")[0].children;
+  assert.deepEqual(opts.map((o) => o.className), ["", "on"], "the picked option is marked");
+  assert.match(textOf(items[0]), /Notes: keep it short/);
+  assert.match(textOf(items[1]), /No option picked\..*Notes: like the stepper/s);
+});
+
+// 017 AC5, AC15 (T018): every place a model call is named opens the call details dialog
+// through the call's URL, noting the link it was opened from: a step's #n, a chip row, a
+// Context row, a tool dialog's "Asked by", and a "needs a look" target.
+test("everyCallLinkOpensTheDialog", async () => {
+  const noted = [];
+  const { page, opened } = mount(fixture(), { noteOpener: (node) => noted.push(node) });
+  const href = (id) => `#/sessions/s1/call/${id}`;
+  const t1 = byId(page.el, "turn-1");
+
+  // a step's #n
+  const chip = (id) => withClass(t1, "chip").find((b) => b.dataset.chip === id);
+  chip("all").fire("click");
+  const step = withClass(byId(t1, "cp-1-all"), "call-link")[0];
+  assert.equal(step.href, href("e3"));
+  step.fire("click");
+  assert.equal(noted.at(-1), step);
+
+  // a chip row's #n (AC15)
+  chip("calls").fire("click");
+  const chipRow = withClass(byId(t1, "cp-1-calls"), "call-link")[1];
+  assert.equal(chipRow.href, href("e4"));
+  chipRow.fire("click");
+  assert.equal(noted.at(-1), chipRow);
+
+  // a Context row (a Context bar keeps AC20 and opens no call)
+  const ctxRows = byTag(byId(page.el, "tp-context"), "a").filter((a) => a.href.startsWith("#/sessions/"));
+  assert.deepEqual(ctxRows.map((a) => a.href), [href("e3"), href("e6")]);
+  ctxRows[1].fire("click");
+  assert.equal(noted.at(-1), ctxRows[1]);
+  assert.equal(byTag(withClass(page.el, "bars")[0], "a").length, 0, "a bar is not a call link");
+
+  // a tool dialog's "Asked by"
+  withClass(byId(page.el, "tool-t1"), "nm")[0].fire("click");
+  await settle();
+  const asked = byTag(page.dialog.el, "a").find((a) => /model call #3/.test(a.textContent));
+  assert.equal(asked.href, href("e3"));
+
+  // a target naming a call (needs a look, AC2)
+  const from = globalThis.document.createElement("button");
+  page.open({ kind: "call", id: "e5" }, from);
+  assert.deepEqual(opened, ["e5"]);
 });

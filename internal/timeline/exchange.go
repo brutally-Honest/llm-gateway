@@ -27,6 +27,8 @@ type Detail struct {
 	// the provider gave none.
 	ResponseText string
 	StopReason   string
+	// ResponseTruncated is true when ResponseText was cut at the limit.
+	ResponseTruncated bool
 	// ResponseToolCallIDs are the ids of the tool calls the reply made.
 	ResponseToolCallIDs []string
 }
@@ -62,7 +64,9 @@ func ExchangeDetail(src Source, ex store.ExchangeRow, limit int) (Detail, error)
 			}
 		}
 	}
-	d.ResponseText, _ = cut(strings.Join(reply, "\n"), limit)
+	var omitted int
+	d.ResponseText, omitted = cut(strings.Join(reply, "\n"), limit)
+	d.ResponseTruncated = omitted > 0
 	return d, nil
 }
 

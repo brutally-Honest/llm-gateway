@@ -331,8 +331,8 @@ func TestView_Turns(t *testing.T) {
 	eq(t, "step 5 did", t1.Steps[2].Did, "wrote the answer")
 	eq(t, "turn 1 answer", t1.Answer, "Fixed the retry.")
 	eq(t, "turn 1 answer call", t1.AnswerCall, 5)
-	eq(t, "turn 1 counts", fmt.Sprintf("%+v", t1.Counts), "{Tools:3 Changed:2 Read:0 Searched:0 Sites:2 Failed:1}")
-	eq(t, "turn 2 counts", fmt.Sprintf("%+v", t2.Counts), "{Tools:2 Changed:0 Read:0 Searched:1 Sites:0 Failed:0}")
+	eq(t, "turn 1 counts", fmt.Sprintf("%+v", t1.Counts), "{Calls:3 Tools:3 Changed:2 Read:0 Searched:0 Sites:2 Failed:1}")
+	eq(t, "turn 2 counts", fmt.Sprintf("%+v", t2.Counts), "{Calls:4 Tools:2 Changed:0 Read:0 Searched:1 Sites:0 Failed:0}")
 
 	bash := mustTool(t, v, "t1")
 	eq(t, "t1 state", bash.State.Glyph+" "+bash.State.Word, "✗ failed")
@@ -669,5 +669,327 @@ func TestView_TurnModels(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("CLI turn 1 line has no models:\n%s", out.String())
+	}
+}
+
+// 017 AC14: a turn counts its model calls, sub-agents' included; a hooks-only turn has none.
+func TestView_TurnCountsModelCalls(t *testing.T) {
+	v := seedFixture(true).view(t, true)
+	eq(t, "turn 1 calls", v.Turns[0].Counts.Calls, 3)
+	eq(t, "turn 2 calls, its sub-agent's included", v.Turns[1].Counts.Calls, 4)
+	eq(t, "hooks-only calls", v.Turns[2].Counts.Calls, 0)
+}
+
+// 017 AC2: every "Needs a look" item has a kind, and the overview counts them by kind in a
+// fixed order, in words, the items past the shown eight included.
+func TestView_LookKinds(t *testing.T) {
+	v := seedFixture(true).view(t, true)
+	var kinds []string
+	for _, l := range v.Overview.NeedsLook {
+		kinds = append(kinds, l.Kind)
+	}
+	eq(t, "item kinds", strings.Join(kinds, ","), "failed_tool,outside_change,unpinned,hooks_only_turn,unmatched")
+	var words []string
+	for _, k := range v.Overview.LookKinds {
+		words = append(words, fmt.Sprintf("%s=%d %s", k.Kind, k.Count, k.Words))
+	}
+	eq(t, "look kinds", strings.Join(words, "; "), "failed_tool=1 1 failed tool call; outside_change=1 1 change with no tool running; "+
+		"unpinned=1 1 group of effects not pinned to one tool call; hooks_only_turn=1 1 hooks-only turn; unmatched=1 1 unmatched tool call")
+}
+
+// 017 AC2 narrowed (D31): a session that is hooks only has no hooks-only-turn item to look
+// at, since every turn is one; a session with model calls still lists its hooks-only turns.
+func TestView_HooksOnlyTurnLookOnlyBesideModelCalls(t *testing.T) {
+	kindsOf := func(v timeline.View) string {
+		var ks []string
+		for _, l := range v.Overview.NeedsLook {
+			ks = append(ks, l.Kind)
+		}
+		for _, k := range v.Overview.LookKinds {
+			ks = append(ks, "kinds:"+k.Kind)
+		}
+		return strings.Join(ks, ",")
+	}
+	hooks := &fixture{f: newFake()}
+	hooks.f.vhook(core.PhasePrompt, "", "", 1)
+	hooks.f.vhook(core.PhasePrompt, "", "", 5)
+	v := hooks.view(t, true)
+	eq(t, "hooks-only session turns", len(v.Turns), 2)
+	eq(t, "hooks-only session look", kindsOf(v), "")
+
+	mixed := seedFixture(true).view(t, true)
+	if k := kindsOf(mixed); !strings.Contains(k, "hooks_only_turn") || !strings.Contains(k, "kinds:hooks_only_turn") {
+		t.Errorf("session with model calls: look = %s, want its hooks-only turn", k)
+	}
+}
+
+// callInput is what the server reads for one fixture call beyond the view: its exchange,
+// usage, thread fact and stored events.
+func (x *fixture) callInput(t *testing.T, id string) timeline.CallInput {
+	t.Helper()
+	f := x.f
+	var ex store.ExchangeRow
+	for _, e := range f.exchanges {
+		if e.RequestID == id {
+			ex = e
+		}
+	}
+	in := timeline.CallInput{Exchange: ex, Usage: timeline.CallOf(ex, f.events[id])}
+	sess := store.SessionRow{PrincipalID: "p", Client: "c", SessionKey: "k"}
+	entries, err := timeline.Build(f, sess, timeline.Options{Full: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts, err := timeline.CallFacts(f, entries, viewRules{}, f.events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Fact = facts[id]
+	det, err := timeline.ExchangeDetail(f, ex, 1<<16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Detail = &det
+	return in
+}
+
+func (x *fixture) details(t *testing.T, v timeline.View, id string) timeline.CallDetails {
+	t.Helper()
+	d, ok := timeline.CallDetailsOf(v, id, x.callInput(t, id))
+	if !ok {
+		t.Fatalf("no call %s in the view", id)
+	}
+	return d
+}
+
+func i64(p *int64) string {
+	if p == nil {
+		return "—"
+	}
+	return fmt.Sprint(*p)
+}
+
+// 017 AC6, AC10: a call's labelled facts, and its place among the session's calls, side
+// calls included, in call order.
+func TestView_CallFacts(t *testing.T) {
+	x := seedFixture(true)
+	v := x.view(t, true)
+	d := x.details(t, v, "a2")
+	eq(t, "n", d.N, 4)
+	eq(t, "turn", d.Turn, 1)
+	eq(t, "model", d.Facts.Model, "m1")
+	eq(t, "duration", i64(d.Facts.DurMS), "1000")
+	eq(t, "start", d.Facts.Start, time.Unix(0, vat(5)).UTC().Format(time.RFC3339Nano))
+	eq(t, "thread", d.Facts.Thread.Kind+" "+d.Facts.Thread.Label, "main main")
+	eq(t, "ctx", i64(d.Facts.Ctx), "250")
+	eq(t, "nav", fmt.Sprintf("%d/%d %s %s", d.Nav.Index, d.Nav.Total, d.Nav.Prev, d.Nav.Next), "4/9 a1 a3")
+	eq(t, "health", fmt.Sprintf("%s %v %d", d.Health.Status, d.Health.OK, len(d.Health.Items)), "200 OK true 0")
+
+	first := x.details(t, v, "q")
+	eq(t, "first call has no previous", first.Nav.Prev+"|"+first.Nav.Next, "|ttl")
+	last := x.details(t, v, "b2")
+	eq(t, "last call has no next", last.Nav.Next, "")
+
+	sub := x.details(t, v, "s1")
+	eq(t, "sub-agent thread", sub.Facts.Thread.Kind+" "+sub.Facts.Thread.Label, "sub sub-agent Explore")
+	eq(t, "sub-agent turn", sub.Turn, 2)
+
+	if _, ok := timeline.CallDetailsOf(v, "nope", timeline.CallInput{}); ok {
+		t.Error("a call not in the view was found (E3)")
+	}
+}
+
+// 017 AC7: the context, its change since the previous call of its thread and why, and the
+// three counters it is made of.
+func TestView_CallContextDelta(t *testing.T) {
+	x := seedFixture(true)
+	v := x.view(t, true)
+	a1 := x.details(t, v, "a1")
+	eq(t, "first of thread", a1.Context.First, true)
+	eq(t, "first size", i64(a1.Context.Size), "100")
+	if a1.Context.Why == "" {
+		t.Error("the thread's first call says why it is that size")
+	}
+	a2 := x.details(t, v, "a2")
+	eq(t, "delta", i64(a2.Context.Delta), "150")
+	eq(t, "since", a2.Context.PrevN, 3)
+	eq(t, "parts", i64(a2.Context.Input)+" "+i64(a2.Context.CacheWrite)+" "+i64(a2.Context.CacheRead), "100 50 100")
+	if a2.Context.Why == "" {
+		t.Error("the change says what was added, in words")
+	}
+	s2 := x.details(t, v, "s2")
+	eq(t, "sub-agent delta is against its own thread", i64(s2.Context.Delta)+" #"+fmt.Sprint(s2.Context.PrevN), "60 #7")
+}
+
+// 017 E2: a side call's thread is its kind from the client's profile, and its failure is
+// not marked bad.
+func TestView_SideCallThread(t *testing.T) {
+	x := seedFixture(true)
+	v := x.view(t, true)
+	v.SideCalls[0].Name, v.SideCalls[0].Status = "quota probe", "429 Too Many Requests"
+	d := x.details(t, v, "q")
+	eq(t, "side thread", d.Facts.Thread.Kind+" "+d.Facts.Thread.Label, "side quota probe")
+	eq(t, "status word", d.Facts.Stop.Word, "429 Too Many Requests")
+	eq(t, "not bad", d.Facts.Stop.Bad, false)
+	if d.Context.Delta != nil || d.Context.Why == "" {
+		t.Errorf("side call context = %+v, want no delta and a reason", d.Context)
+	}
+	// its health says what the provider answered, as a warning, not in red
+	x.f.exchanges[0].Status = 429
+	d = x.details(t, v, "q")
+	for _, i := range d.Health.Items {
+		if i.Tone == "bad" {
+			t.Errorf("side call health item %q is bad", i.Text)
+		}
+	}
+	if len(d.Health.Items) == 0 {
+		t.Error("the side call's 429 is in its health")
+	}
+}
+
+// 017 AC11: a call with no usage shows "—" for every count and says why; a failed call's
+// status is a word, marked bad, and its health says so.
+func TestView_CallMissingUsage(t *testing.T) {
+	x := &fixture{f: newFake()}
+	f := x.f
+	f.call(vcallSpec{id: "ok", from: 1, to: 2, msgs: []string{"u:hello"}, in: 10})
+	e := f.exchange("bad", vat(3), "ok")
+	e.EndedAt, e.Status = vat(4), 500
+	ttfb := int64(1)
+	e.TTFBNS = &ttfb
+	f.request("bad", "m1")
+	f.msg("bad", "user", "hello")
+	v := x.view(t, true)
+	d := x.details(t, v, "bad")
+	eq(t, "counts", i64(d.Context.Size)+" "+i64(d.Context.Input)+" "+i64(d.Context.Output), "— — —")
+	if !strings.Contains(d.Context.Note, "failed") {
+		t.Errorf("note = %q, want why there is no usage", d.Context.Note)
+	}
+	eq(t, "stop", d.Facts.Stop.Word+" bad="+fmt.Sprint(d.Facts.Stop.Bad), "500 Internal Server Error bad=true")
+	if d.Health.OK || len(d.Health.Items) == 0 || d.Health.Items[0].Tone != "bad" {
+		t.Errorf("health = %+v", d.Health)
+	}
+}
+
+// 017 AC8: what a call saw, each message marked carried over from the previous call of its
+// thread or new, with the counts; its thinking flag, its reply and the tool calls it asked
+// for.
+func TestView_CallSawCarriedAndNew(t *testing.T) {
+	x := seedFixture(true)
+	v := x.view(t, true)
+	d := x.details(t, v, "a2")
+	var marks []string
+	for _, m := range d.Saw.Messages {
+		marks = append(marks, fmt.Sprintf("%s:%v", m.Role, m.New))
+	}
+	eq(t, "messages", strings.Join(marks, " "), "user:false assistant:false assistant:true")
+	eq(t, "counts", fmt.Sprintf("%d carried %d new", *d.Saw.Carried, *d.Saw.New), "2 carried 1 new")
+	eq(t, "not first", d.Saw.First, false)
+	var tools []string
+	for _, l := range d.Tools {
+		tools = append(tools, l.ID+" "+l.Name)
+	}
+	eq(t, "tools asked for", strings.Join(tools, ", "), "t2 Edit, t3 Edit")
+
+	raw := d.Raw
+	if raw.Page != "#/exchanges/a2" || raw.Headers == "" {
+		t.Errorf("raw = %+v", raw)
+	}
+}
+
+// 017 AC8: a thread's first call is marked as such: the main thread's and a sub-agent's.
+func TestView_FirstCallOfThread(t *testing.T) {
+	x := seedFixture(true)
+	v := x.view(t, true)
+	eq(t, "main thread's first call", x.details(t, v, "a1").Saw.First, true)
+	eq(t, "sub-agent's first call", x.details(t, v, "s1").Saw.First, true)
+	eq(t, "sub-agent's second call", x.details(t, v, "s2").Saw.First, false)
+}
+
+// 017 AC11: a body that was not stored says so where it is missing, and the other sections
+// and the raw links still work.
+func TestView_CallBodyNotStored(t *testing.T) {
+	x := &fixture{f: newFake()}
+	f := x.f
+	f.call(vcallSpec{id: "a", from: 1, to: 2, msgs: []string{"u:hello"}, in: 10})
+	e := f.exchange("cut", vat(3), "ok")
+	e.EndedAt, e.ResponseBody = vat(4), "resp-hash"
+	f.request("cut", "m1")
+	raw, _ := json.Marshal(map[string]string{"type": "text", "text": "Done."})
+	reply, _ := json.Marshal(map[string]any{"role": "assistant", "stop_reason": "end_turn",
+		"blocks": []map[string]string{{"hash": f.put(string(raw)), "type": "text"}}})
+	f.add("cut", store.EventRow{Kind: "message", Source: "response", ContentHash: hashOf("reply"), Payload: reply})
+	f.usage("cut", false, n(20), n(5), n(0), n(0))
+	v := x.view(t, true)
+	d := x.details(t, v, "cut")
+	eq(t, "the reply still shows", d.Response.Text+" / "+d.Response.StopReason, "Done. / end turn")
+
+	// a thinking block's placeholder is not reply text, nor message text (016 AC7)
+	think, _ := json.Marshal(map[string]string{"type": "thinking", "thinking": "hmm"})
+	both, _ := json.Marshal(map[string]any{"role": "assistant", "stop_reason": "end_turn",
+		"blocks": []map[string]string{{"hash": f.put(string(think)), "type": "reasoning"}, {"hash": f.put(string(raw)), "type": "text"}}})
+	e2 := f.exchange("thought", vat(5), "ok")
+	e2.EndedAt, e2.RequestBody, e2.ResponseBody = vat(6), "req3", "resp3"
+	f.request("thought", "m1")
+	f.add("thought", store.EventRow{Kind: "message", ContentHash: hashOf("thought prior"), Payload: both})
+	f.add("thought", store.EventRow{Kind: "message", Source: "response", ContentHash: hashOf("thought reply"), Payload: both})
+	f.usage("thought", false, n(1), n(1), n(0), n(0))
+	v = x.view(t, true)
+	th := x.details(t, v, "thought")
+	eq(t, "reply without the placeholder", th.Response.Text, "Done.")
+	eq(t, "message without the placeholder", th.Saw.Messages[0].Text, "Done.")
+	eq(t, "stop reason as a fact", d.Facts.Stop.Word, "end turn")
+	if !strings.Contains(d.Saw.Unavailable, "request body was not stored") {
+		t.Errorf("saw = %+v, want why there are no messages", d.Saw)
+	}
+	if d.Saw.Carried != nil || d.Saw.New != nil {
+		t.Errorf("counts = %v %v, want — for both", d.Saw.Carried, d.Saw.New)
+	}
+	if d.Raw.Request != "" || !strings.Contains(d.Raw.RequestMissing, "not stored") {
+		t.Errorf("raw request = %+v", d.Raw)
+	}
+	if d.Raw.Response == "" || d.Raw.Page == "" {
+		t.Errorf("the stored response and the page still link: %+v", d.Raw)
+	}
+	eq(t, "context still built", i64(d.Context.Size), "20")
+	eq(t, "model still known", d.Facts.Model, "m1")
+}
+
+// 017 AC11: a reply longer than the cut says it is cut, with the raw response to open; a
+// call that failed says it has no reply because it failed, in words.
+func TestView_CallReplyCutOrFailed(t *testing.T) {
+	x := &fixture{f: newFake()}
+	f := x.f
+	long := strings.Repeat("all work and no play ", 200)
+	e := f.exchange("long", vat(1), "ok")
+	e.EndedAt, e.RequestBody, e.ResponseBody = vat(2), "req", "resp"
+	f.request("long", "m1")
+	f.msg("long", "user", "hi")
+	raw, _ := json.Marshal(map[string]string{"type": "text", "text": long})
+	reply, _ := json.Marshal(map[string]any{"role": "assistant", "stop_reason": "end_turn",
+		"blocks": []map[string]string{{"hash": f.put(string(raw)), "type": "text"}}})
+	f.add("long", store.EventRow{Kind: "message", Source: "response", ContentHash: hashOf("long reply"), Payload: reply})
+	f.usage("long", false, n(10), n(5), n(0), n(0))
+	bad := f.exchange("bad", vat(3), "ok")
+	bad.EndedAt, bad.Status, bad.RequestBody, bad.ResponseBody = vat(4), 500, "req2", "resp2"
+	ttfb := int64(1)
+	bad.TTFBNS = &ttfb
+	f.request("bad", "m1")
+	f.msg("bad", "user", "hi")
+	v := x.view(t, true)
+
+	in := x.callInput(t, "long")
+	det, err := timeline.ExchangeDetail(f, in.Exchange, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Detail = &det
+	d, _ := timeline.CallDetailsOf(v, "long", in)
+	if !d.Response.Truncated || len(d.Response.Text) > 100 {
+		t.Errorf("reply = %d bytes, truncated %v; want it cut at 100 and marked", len(d.Response.Text), d.Response.Truncated)
+	}
+	b := x.details(t, v, "bad")
+	if !strings.Contains(b.Response.Unavailable, "failed") || !strings.Contains(b.Response.Unavailable, "500 Internal Server Error") {
+		t.Errorf("failed call's reply = %q, want why there is none", b.Response.Unavailable)
 	}
 }

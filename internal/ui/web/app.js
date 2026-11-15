@@ -1,17 +1,17 @@
-import { getJSON, loadAllPages, openStream } from "./api.js";
-import { effectsListNode } from "./drawer-sections.js";
+import { getJSON, openStream } from "./api.js";
+import { createUnassignedPage } from "./effects-list.js";
 import { lastID } from "./effects.js";
 import { addUnique, upsertSession } from "./entries.js";
 import { createStore } from "./store.js";
 import { createSessionPage } from "./session-page.js";
-import { createSessionsPage, localMidnight, note } from "./sessions-page.js";
+import { createSessionsPage, localMidnight, note, UNASSIGNED_SHOWN } from "./sessions-page.js";
 import { initTheme } from "./theme.js";
 import { buildRoute, parseRoute } from "./route.js";
 import { handleKey, isTextInput } from "./keys.js";
-import { createDrawer } from "./drawer.js";
+import { createCallDialog } from "./call-dialog.js";
 import { mountShell } from "./shell.js";
-import "./exchange-detail.js";
-import "./ungrouped-list.js";
+import { createExchangePage } from "./exchange-detail.js";
+import { createUngroupedPage } from "./ungrouped-list.js";
 
 const app = document.getElementById("app");
 const root = document.documentElement;
@@ -28,13 +28,13 @@ const shell = mountShell({
   root,
   theme: initTheme(storage, root),
 });
-const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "", ungrouped: [], ungroupedNext: null, ungroupedError: "", ungroupedHead: { items: [], next_after: null }, today: null, unassigned: 0 });
+const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "", ungrouped: [], ungroupedNext: null, ungroupedError: "", ungroupedHead: { items: [], next_after: null }, today: null, unassigned: 0, unassignedItems: [] });
 let closeStream = null;
 let view = null;
 let page = null; // the Sessions page while it is shown
-let tpage = null; // the session page and its drawer while a session is shown
+let tpage = null; // the session page and its call dialog while a session is shown
 let todayTimer = null;
-let sessionSync = null; // the shown session, so a drawer URL change does not reload it
+let sessionSync = null; // the shown session, so a call URL change does not reload it
 
 async function load(kind, after) {
   const path = kind === "sessions" ? "sessions" : "ungrouped";
@@ -45,10 +45,27 @@ async function load(kind, after) {
       [kind]: after ? addUnique(s[kind], page.items) : page.items,
       [`${kind}Next`]: page.next_after,
       [`${kind}Error`]: "",
+      [`${kind}Loaded`]: true,
       ...(kind === "sessions" && !after ? { unassigned: page.unassigned_connections || 0 } : {}),
     });
+    if (kind === "sessions" && !after) loadUnassigned(page.unassigned_connections || 0);
   } catch (e) {
     store.set({ [`${kind}Error`]: e.message });
+  }
+}
+
+// loadUnassigned reads the first unassigned connections for the list's own section
+// (spec 017 AC2); none are read when there are none.
+async function loadUnassigned(count) {
+  if (!count) {
+    store.set({ unassignedItems: [] });
+    return;
+  }
+  try {
+    const p = await getJSON("effects/unassigned", { limit: UNASSIGNED_SHOWN });
+    store.set({ unassignedItems: p.effects || [] });
+  } catch {
+    // the section still says how many there are and links to the full page
   }
 }
 
@@ -133,8 +150,8 @@ async function retryOn504(fn, onWait) {
 
 // showSession shows the session page (spec 016): it loads the server's view of the session
 // (one retry on 504 while the build runs), then, for an active session, opens the session's
-// view stream, whose events replace only the turns that changed. The 013 drawer stays until
-// 017: its call list and entries are loaded only when a call is opened.
+// view stream, whose events replace only the turns that changed. A call named in the URL
+// opens in the call details dialog (spec 017 AC5), which the server fills one call at a time.
 async function showSession(id) {
   const mine = ++seq;
   const enc = encodeURIComponent;
@@ -145,73 +162,53 @@ async function showSession(id) {
     back: () => history.back(),
   };
   let page = null;
-  const drawer = createDrawer({
+  let missingNoted = false; // the "no such call" note is up; the next call URL clears it
+  const calls = createCallDialog({
     nav,
-    turnHeading: () => (page ? page.turnHeading() : null),
-    // a call's detail gets the view's single retry on 504; the drawer shows "loading…"
+    // a call's details get the view's single retry on 504; the dialog shows "Loading call…"
     // meanwhile (F9)
-    loadDetail: (callId) => retryOn504(() => getJSON(`exchanges/${enc(callId)}`), () => {}),
+    loadCall: (callId) => retryOn504(() => getJSON(`sessions/${enc(id)}/calls/${enc(callId)}`), () => {}),
+    // a tool the call asked for opens its 016 dialog over this one (research D39)
+    openTool: (toolId, from) => {
+      if (!page) return;
+      if (page.dialogOpen()) page.dialog.close();
+      page.dialog.open(`tool:${toolId}`, from);
+    },
+    callHref: (exchangeId) => buildRoute({ name: "session", id, call: exchangeId }),
+    turnHeading: () => (page ? page.turnHeading() : null),
+    onMissing: () => {
+      if (!page) return;
+      missingNoted = true;
+      page.setStatus("No such call in this session.", "error");
+    },
   });
   page = createSessionPage({
     callHref: (exchangeId) => buildRoute({ name: "session", id, call: exchangeId }),
-    noteOpener: (node) => drawer.noteOpener(node),
-    openCall: (exchangeId, from) => drawer.openCall(exchangeId, from),
+    noteOpener: (node) => calls.noteOpener(node),
+    openCall: (exchangeId, from) => calls.openCall(exchangeId, from),
     loadTool: (tid) => getJSON(`sessions/${enc(id)}/tools/${enc(tid)}`),
     loadDiff: (eid) => getJSON(`effects/${enc(eid)}/diff`),
     loadContent: (eid) => getJSON(`effects/${enc(eid)}/content`),
   });
-  app.replaceChildren(page.el, drawer.el);
-  tpage = { page, drawer };
+  app.replaceChildren(page.el, calls.el);
+  tpage = { page, calls };
 
-  // The drawer's entries: loaded on first open, and again after the session changed.
-  const calls = { entries: [], state: "none", callId: parseRoute(location.hash).call || null, error: "" };
-  const syncDrawer = () => {
-    const drawn = drawer.sync({ sessionId: id, callId: calls.callId, entries: calls.entries, loaded: calls.state === "ready" });
-    if (drawn.missing) page.setStatus("No such call in this session.", "error");
-  };
-  const loadEntries = async () => {
-    if (calls.state === "loading") return;
-    calls.state = "loading";
-    const got = [];
-    try {
-      let first = true;
-      const fetchPage = (after) => getJSON(`sessions/${enc(id)}/timeline`, { after, limit: 2000 });
-      await loadAllPages(
-        (after) => {
-          if (!first) return fetchPage(after); // later pages are not retried
-          first = false;
-          return retryOn504(() => fetchPage(after), () => {});
-        },
-        (p) => {
-          if (mine !== seq) return false;
-          got.push(...p.entries);
-          return true;
-        },
-      );
-      if (mine !== seq) return;
-      calls.entries = got;
-      calls.state = "ready";
-    } catch (e) {
-      if (mine !== seq) return;
-      calls.entries = got;
-      calls.state = "failed";
-      page.setStatus(e.message, "error");
+  // followCall opens, moves or closes the call dialog to the call the URL names. The call
+  // dialog replaces an open tool dialog (one item dialog at a time, research D39).
+  let callId = parseRoute(location.hash).call || null;
+  const followCall = () => {
+    if (missingNoted) {
+      missingNoted = false;
+      page.setStatus("");
     }
-    syncDrawer();
-  };
-  const followDrawer = () => {
-    if (!calls.callId) {
-      syncDrawer();
-      return;
-    }
-    if (calls.state === "none" || calls.state === "stale") loadEntries();
-    else syncDrawer();
+    if (callId && page.dialogOpen()) page.dialog.close();
+    calls.sync({ sessionId: id, callId });
   };
   sessionSync = {
     id,
     apply: (call) => {
-      calls.callId = call || null;
-      followDrawer();
+      callId = call || null;
+      followCall();
     },
   };
 
@@ -226,7 +223,7 @@ async function showSession(id) {
   page.setStatus("");
   page.setView(view);
   shell.setRoute(parseRoute(location.hash), view.overview.title);
-  followDrawer();
+  followCall();
   if (view.overview.status.word !== "active") return;
   closeStream = openStream(
     (name, data) => {
@@ -238,10 +235,7 @@ async function showSession(id) {
       if (name !== "view") return;
       page.setStatus("");
       page.applyEvent(data);
-      if (calls.state === "ready" || calls.state === "failed") {
-        calls.state = "stale";
-        if (drawer.isOpen()) loadEntries();
-      }
+      calls.refresh(); // the open call stays; its details are fetched again (AC10)
     },
     (state) => shell.setLive(liveText(state)),
     `sessions/${enc(id)}/stream?view=1`,
@@ -258,60 +252,56 @@ function setPage(name) {
   }
 }
 
-// showUnassigned lists the connections linked to no session (spec 014, AC15).
+// showUnassigned lists the connections linked to no session (spec 014 AC15, 017 AC12).
 async function showUnassigned() {
   const mine = ++seq;
-  const box = document.createElement("section");
-  box.className = "unassigned-page";
-  const h = document.createElement("h1");
-  h.textContent = "Unassigned connections";
-  const why = note("muted", "Connections made while no session, or more than one, was active.");
-  const body = document.createElement("div");
-  box.append(h, why, body);
-  app.replaceChildren(box);
   const open = new Set();
-  let items = [];
-  const draw = () => {
-    body.replaceChildren(effectsListNode(items, {
-      isOpen: (k) => open.has(k),
-      setOpen: (k, on) => (on ? open.add(k) : open.delete(k)),
-      getJSON,
-      redraw: draw,
-    }));
-  };
-  draw();
+  let state = { items: [], loading: true, error: "" };
+  const pg = createUnassignedPage({
+    isOpen: (k) => open.has(k),
+    setOpen: (k, on) => (on ? open.add(k) : open.delete(k)),
+    getJSON,
+    redraw: () => pg.render(state),
+  });
+  app.replaceChildren(pg.el);
+  pg.render(state);
   try {
+    let items = [];
     for (;;) {
       const p = await getJSON("effects/unassigned", { after: lastID(items), limit: 5000 });
       if (mine !== seq) return;
       items = items.concat(p.effects);
-      draw();
       if (p.effects.length < 5000) break;
     }
+    state = { items, loading: false, error: "" };
   } catch (e) {
-    if (mine === seq) body.replaceChildren(note("error", e.message));
+    if (mine !== seq) return;
+    state = { items: [], loading: false, error: e.message };
   }
+  pg.render(state);
 }
 
 // showExchange loads one exchange's detail; its bodies load only when their sections open.
-async function showExchange(id) {
+// Once it lands, the breadcrumb names its session and call, or Ungrouped (017 AC12).
+async function showExchange(r) {
   const mine = ++seq;
-  const el = document.createElement("exchange-detail");
-  app.replaceChildren(el);
-  el.render({ exchange: null, error: "" });
+  const pg = createExchangePage();
+  app.replaceChildren(pg.el);
+  pg.render({ exchange: null });
   try {
-    const exchange = await getJSON(`exchanges/${encodeURIComponent(id)}`);
-    if (mine === seq) el.render({ exchange, error: "" });
+    const exchange = await getJSON(`exchanges/${encodeURIComponent(r.id)}`);
+    if (mine !== seq) return;
+    shell.setRoute(r, "", { sessionId: exchange.session_id || "", sessionTitle: exchange.session_title || "", callN: exchange.call_n || 0 });
+    pg.render({ exchange, focus: r.focus || "" });
   } catch (e) {
-    if (mine === seq) el.render({ exchange: null, error: e.message });
+    if (mine === seq) pg.render({ exchange: null, error: e.message });
   }
 }
 
-function show(kind, tag) {
-  const el = document.createElement(tag);
-  app.replaceChildren(el);
+function show(kind, pg) {
+  app.replaceChildren(pg.el);
   const draw = (s) =>
-    el.render({
+    pg.render({
       items: s[kind],
       next_after: s[`${kind}Next`],
       error: s[`${kind}Error`],
@@ -331,9 +321,11 @@ function showSessions() {
       items: s.sessions,
       next_after: s.sessionsNext,
       error: s.sessionsError,
+      loaded: Boolean(s.sessionsLoaded),
       today: s.today,
       ungrouped: s.ungroupedHead,
       unassigned: s.unassigned,
+      unassignedItems: s.unassignedItems,
     });
     shell.setKeyBar(r, page.position());
   };
@@ -361,17 +353,20 @@ function route() {
   setPage("");
   seq++;
   const r = parseRoute(location.hash);
+  // a new page starts at its top, not at the last page's scroll (seen in the 017 slice 3
+  // check); the exchange page's headers route scrolls to them once drawn
+  if (typeof window.scrollTo === "function") window.scrollTo(0, 0);
   shell.setRoute(r, "");
   shell.setKeyBar(r, null);
   if (r.name === "sessions") {
     showSessions();
     startStream();
   } else if (r.name === "ungrouped") {
-    show("ungrouped", "ungrouped-list");
+    show("ungrouped", createUngroupedPage());
   } else if (r.name === "session") {
     showSession(r.id);
   } else if (r.name === "exchange") {
-    showExchange(r.id);
+    showExchange(r);
   } else if (r.name === "unassigned") {
     showUnassigned();
   } else {
@@ -400,14 +395,17 @@ window.addEventListener("keydown", (e) => {
     if (page.selectedId()) location.hash = `#/sessions/${encodeURIComponent(page.selectedId())}`;
   } else if (tpage && act.type === "turn") {
     // j/k step through turns; a dialog takes no turn keys (AC13)
-    if (tpage.page.dialogOpen() || tpage.drawer.isOpen()) return;
+    if (tpage.page.dialogOpen() || tpage.calls.isOpen()) return;
     e.preventDefault();
     tpage.page.moveTurn(act.delta);
   } else if (tpage && act.type === "call") {
+    // a tool dialog opened over the call takes the keys until it closes
+    if (tpage.page.dialogOpen()) return;
     e.preventDefault();
-    tpage.drawer.step(act.delta);
+    tpage.calls.step(act.delta);
   } else if (tpage && act.type === "close") {
-    tpage.drawer.close();
+    if (tpage.page.dialogOpen()) return;
+    tpage.calls.close();
   } else if (act.type === "filter") {
     const f = app.querySelector("input");
     if (f) {

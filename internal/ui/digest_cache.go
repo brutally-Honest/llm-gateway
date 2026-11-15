@@ -23,6 +23,34 @@ const digestCacheSize = 512
 type digestMemo struct {
 	digest timeline.Digest
 	stats  timeline.Stats
+	// row is what the sessions list shows from the session's view (017 AC1, AC2).
+	row rowFacts
+}
+
+// rowFacts are the counts and words a sessions-list row takes from the session's view, in
+// the session page's own terms (spec 017 AC1, AC2).
+type rowFacts struct {
+	title      string
+	folder     string
+	folderFull string
+	prompts    int
+	mainCalls  int
+	sideCalls  int
+	commands   int
+	clockMS    int64
+	look       int
+	lookKinds  []timeline.LookKind
+}
+
+// rowFactsOf reads a row's facts off a session view.
+func rowFactsOf(v timeline.View) rowFacts {
+	o := v.Overview
+	return rowFacts{
+		title: o.Title, folder: o.Folder, folderFull: o.FolderFull,
+		prompts: o.Turns, mainCalls: o.Calls - len(v.SideCalls), sideCalls: len(v.SideCalls),
+		commands: o.Commands.Count, clockMS: o.Time.ClockMS,
+		look: len(o.NeedsLook) + o.MoreLook, lookKinds: o.LookKinds,
+	}
 }
 
 // digestEntry is a session's latest computed memo and the version it was computed at.
@@ -104,6 +132,7 @@ func cloneDigest(d timeline.Digest) timeline.Digest {
 
 func cloneMemo(m digestMemo) digestMemo {
 	m.digest = cloneDigest(m.digest)
+	m.row.lookKinds = append([]timeline.LookKind(nil), m.row.lookKinds...)
 	return m
 }
 

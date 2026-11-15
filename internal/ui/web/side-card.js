@@ -2,7 +2,7 @@ import { button, bytes, clock, dur, el, num, plural } from "./fmt.js";
 
 // The right card (spec 016 AC9, AC10): the session's Files, Commands, Sites and Context
 // as four tabs. Every row, count and sentence comes from the view; rows open the details
-// dialog, and a model call opens the 013 drawer until 017.
+// dialog, and a model call opens the call details dialog (spec 017 AC5).
 // ctx: { open(key, opener), callHref(exchangeId), noteOpener(node) }.
 
 const TABS = [
@@ -26,7 +26,7 @@ function icon(glyph, cls = "ic") {
   return s;
 }
 
-// linkRow is a row linking a model call to the 013 drawer.
+// linkRow is a row linking a model call to the call details dialog.
 function linkRow(ctx, href) {
   const a = el("a", "row");
   a.href = href;
@@ -120,11 +120,15 @@ function sitesPanel(s, ctx) {
   const out = [el("p", "lead", s.coverage)];
   if (s.empty) out.push(el("p", "muted-note pad", s.empty));
   else {
-    out.push(rows((s.items || []).map((it) => row(ctx, {
-      key: `site:${it.host}`, ic: icon(it.harness ? "⚙" : "⇄"), t1: t1(it.port && it.port !== 443 ? `${it.host}:${it.port}` : it.host),
-      r: el("span", "r", `↓ ${bytes(it.down ?? 0)}`),
-      t2: el("span", "t2", [plural(it.connections, "connection"), it.where, it.who].filter(Boolean).join(" · ")),
-    }))));
+    // a site is its host alone, like a file's row; connections, bytes, turns and tools
+    // are in its dialog (017 AC17)
+    out.push(rows((s.items || []).map((it) => {
+      const li = el("li");
+      const b = button("row file site", undefined, () => ctx.open && ctx.open(`site:${it.host}`, b));
+      b.append(t1(it.port && it.port !== 443 ? `${it.host}:${it.port}` : it.host), el("span", "r"));
+      li.append(b);
+      return li;
+    })));
   }
   const u = s.unassigned;
   if (u && u.count) {
@@ -140,41 +144,60 @@ function sitesPanel(s, ctx) {
 const signedTokens = (n) => (n === null || n === undefined ? "—" : `${n >= 0 ? "+" : "−"}${num(Math.abs(n))}`);
 
 function ctxRows(list, ctx) {
-  return rows(list.map((r) => row(ctx, {
-    href: ctx.callHref ? ctx.callHref(r.exchange_id) : "#",
-    ic: icon("◆"), t1: t1(`#${r.n} · ${num(r.ctx)} tokens`), r: el("span", "r", signedTokens(r.delta)),
-    t2: el("span", "t2", [r.turn ? `turn ${r.turn}` : "", r.why].filter(Boolean).join(" · ")),
-  })));
+  const ul = rows(list.map((r) => {
+    const li = row(ctx, {
+      href: ctx.callHref ? ctx.callHref(r.exchange_id) : "#",
+      ic: icon("◆"), t1: t1(`#${r.n} · ${num(r.ctx)} tokens`), r: el("span", "r", signedTokens(r.delta)),
+      t2: el("span", "t2", [r.turn ? `turn ${r.turn}` : "", r.why].filter(Boolean).join(" · ")),
+    });
+    li.dataset.turn = String(r.turn || 0);
+    return li;
+  }));
+  return ul;
 }
 
-// chart is the main thread's context as one bar per call, grouped by turn; a bar is
-// scaled to its context over the peak.
-function chart(c, ctx) {
+// LABELS is how many turn labels fit under the chart; past that every k-th is shown, the
+// first and last always.
+const LABELS = 24;
+
+// chart is the main thread's context as one bar per turn (Karthik 2026-11-13, replacing
+// one bar per call): the bar is the context at the turn's last call over the peak, its
+// darker cap what the turn added since its first call. A bar shows that turn's calls in
+// the list below.
+function chart(c, ctx, pick) {
   const box = el("div", "ctxchart");
   box.setAttribute("role", "group");
-  box.setAttribute("aria-label", "Context per main-thread call, by turn");
+  box.setAttribute("aria-label", "Context at the end of each turn");
   const groups = [];
   for (const r of c.main || []) {
     if (!groups.length || groups[groups.length - 1].turn !== (r.turn || 0)) groups.push({ turn: r.turn || 0, rows: [] });
     groups[groups.length - 1].rows.push(r);
   }
-  for (const g of groups) {
+  const every = Math.ceil(groups.length / LABELS);
+  groups.forEach((g, i) => {
+    const known = g.rows.filter((r) => r.ctx !== null && r.ctx !== undefined);
+    const last = known.length ? known[known.length - 1].ctx : null;
+    const first = known.length ? known[0].ctx : null;
     const ct = el("div", "ct");
-    ct.style.flex = String(g.rows.length);
     const bars = el("div", "bars");
-    for (const r of g.rows) {
-      const a = el("a");
-      a.href = ctx.callHref ? ctx.callHref(r.exchange_id) : "#";
-      if (ctx.noteOpener) a.addEventListener("click", () => ctx.noteOpener(a));
-      const f = c.peak > 0 && r.ctx !== null && r.ctx !== undefined ? r.ctx / c.peak : 0;
-      a.style.transform = `scaleY(${f.toFixed(3)})`;
-      a.title = `#${r.n} · ${num(r.ctx)} tokens`;
-      a.setAttribute("aria-label", `call #${r.n}, ${num(r.ctx)} tokens`);
-      bars.append(a);
+    const name = g.turn ? `Turn ${g.turn}` : "Before the first prompt";
+    const grew = last !== null && first !== null ? last - first : null;
+    const b = button("tbar", undefined, () => pick(g.turn));
+    b.style.transform = `scaleY(${(c.peak > 0 && last !== null ? last / c.peak : 0).toFixed(3)})`;
+    if (grew > 0 && last > 0) {
+      // the cap and the rest share the bar's height in proportion to their tokens
+      const cap = el("span", "cap");
+      cap.style.flexGrow = String(grew);
+      const rest = el("span", "rest");
+      rest.style.flexGrow = String(last - grew);
+      b.append(cap, rest);
     }
-    ct.append(bars, el("span", "tl2", g.turn ? `T${g.turn}` : "·"));
+    b.setAttribute("aria-label", `${name}: ${num(last)} tokens at its end${grew ? `, ${signedTokens(grew)} inside the turn` : ""}`);
+    bars.append(b);
+    const label = i === 0 || i === groups.length - 1 || i % every === 0 ? (g.turn ? `T${g.turn}` : "·") : "";
+    ct.append(bars, el("span", "tl2", label));
     box.append(ct);
-  }
+  });
   return box;
 }
 
@@ -191,8 +214,19 @@ function contextPanel(c, ctx) {
   fact("Grew by", signedTokens(c.growth));
   out.push(facts);
   if ((c.main || []).length) {
-    out.push(chart(c, ctx));
-    out.push(el("h3", "", `Main thread · ${plural(c.main.length, "call")}`), ctxRows(c.main, ctx));
+    const list = ctxRows(c.main, ctx);
+    const pick = (turn) => {
+      const li = Array.from(list.children).find((x) => x.dataset.turn === String(turn || 0));
+      if (!li) return;
+      if (typeof li.scrollIntoView === "function") li.scrollIntoView({ block: "start", behavior: "smooth" });
+      if (li.classList) {
+        li.classList.remove("flash");
+        void li.offsetWidth;
+        li.classList.add("flash");
+      }
+    };
+    out.push(chart(c, ctx, pick));
+    out.push(el("h3", "", `Main thread · ${plural(c.main.length, "call")}`), list);
   }
   for (const th of c.subs || []) out.push(el("h3", "", `${th.label} · its own context`), ctxRows(th.rows || [], ctx));
   if (c.note) out.push(el("p", "tabfoot", c.note));

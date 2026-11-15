@@ -154,9 +154,10 @@ func TestSummary_TitleIsLatestGenerated(t *testing.T) {
 
 func TestSummary_TitleFallsBackToFirstPrompt(t *testing.T) {
 	e := withRules(t)
-	e.call("a", 1, 0, 0, "user:"+strings.Repeat("x", 100))
+	e.call("a", 1, 0, 0, "user:"+strings.Repeat("x", 150))
 	e.call("b", 2, 0, 0, "user:second")
-	if got := e.summary()["title"]; got != strings.Repeat("x", 80) {
+	// 016's title rule cuts a prompt at 120 runes (spec 017 AC1)
+	if got := e.summary()["title"]; got != strings.Repeat("x", 120) {
 		t.Fatalf("title = %v", got)
 	}
 }
@@ -191,8 +192,9 @@ func TestSummary_TitleSkipsReminderOnlyPrompt(t *testing.T) {
 func TestSummary_NoPromptTitle(t *testing.T) {
 	e := withRules(t)
 	e.call("a", 1, 0, 0, "user:<r>only a reminder</r>", "assistant:hi")
-	if got := e.summary()["title"]; got != "" {
-		t.Fatalf("title = %q, want empty", got)
+	// never empty, never the key: 016's readable fallback (spec 017 AC1)
+	if got, _ := e.summary()["title"].(string); !strings.HasPrefix(got, "No prompt · cc · ") {
+		t.Fatalf("title = %q, want No prompt · cc · <start>", got)
 	}
 }
 
@@ -200,7 +202,7 @@ func TestSummary_OnlySideCalls(t *testing.T) {
 	e := withRules(t)
 	e.call("a", 1, 0, 0, "user:quota", "assistant:ok")
 	s := e.summary()
-	if s["title"] != "" || s["main_errors"] != float64(0) || s["has_calls"] != true {
+	if title, _ := s["title"].(string); !strings.HasPrefix(title, "No prompt · cc · ") || s["main_errors"] != float64(0) || s["has_calls"] != true {
 		t.Fatalf("summary = %v", s)
 	}
 	e.call("b", 2, 0, 0, "user:"+titlePrompt, `assistant:{"title":"T"}`)

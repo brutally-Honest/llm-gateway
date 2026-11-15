@@ -301,3 +301,115 @@ func TestAPISessions_HooksOnlyLabel(t *testing.T) {
 		t.Fatalf("hooks-only timeline = %v", p.Entries)
 	}
 }
+
+// cmdRules is testRules whose profile names a Bash tool call a command, so a session view
+// lists it under Commands (spec 016 AC5).
+type cmdRules struct{ testRules }
+
+func (cmdRules) SummarizeTool(name string, input []byte, _ string) core.ToolSummary {
+	if name == "Bash" {
+		return core.ToolSummary{Kind: core.ToolCommand, Arg: string(input), Added: -1, Removed: -1}
+	}
+	return core.ToolSummary{Kind: core.ToolOther, Added: -1, Removed: -1}
+}
+
+// rowList is a sessions-list row's "list" object (spec 017 AC1, AC2).
+func rowList(t *testing.T, s map[string]any) map[string]any {
+	t.Helper()
+	l, ok := s["list"].(map[string]any)
+	if !ok {
+		t.Fatalf("row has no list facts: %v", s)
+	}
+	return l
+}
+
+// 017 AC1: a row carries the session page's counts: prompts, model calls with side calls
+// apart, commands, the wall-clock time and the folder, and its title follows 016's rule.
+func TestSessions_RowCounts(t *testing.T) {
+	e := newDigestEnv(t, map[string]ClientRules{"cc": cmdRules{}})
+	e.hook("k", core.HarnessEvent{Phase: core.PhasePrompt, WorkDir: "/work/proj"}, 0)
+	e.callWith("a", 1, false, []toolSpec{{"Bash", "npm test"}}, "user:fix the retry")
+	e.callWith("q", 3, false, nil, "user:quota")
+	e.callWith("b", 4, false, nil, "user:fix the retry", "assistant:Fixed.")
+	e.callWith("c", 6, false, nil, "user:fix the retry", "assistant:Fixed.", "user:now the docs")
+	s := e.summary()
+	if s["title"] != "fix the retry" {
+		t.Errorf("title = %v", s["title"])
+	}
+	l := rowList(t, s)
+	want := map[string]any{"prompts": 2.0, "main_calls": 3.0, "side_calls": 1.0, "commands": 1.0,
+		"clock_ms": 7000.0, "folder": "/work/proj", "needs_look": 0.0}
+	for k, v := range want {
+		if l[k] != v {
+			t.Errorf("list.%s = %v, want %v", k, l[k], v)
+		}
+	}
+	if kinds := l["look_kinds"].([]any); len(kinds) != 0 {
+		t.Errorf("look kinds = %v, want none", kinds)
+	}
+}
+
+// 017 AC1, E5: a hooks-only session has no model calls to count; its title is "Hooks only"
+// and its folder, never its key.
+func TestSessions_HooksOnlyRowHasNoCallCounts(t *testing.T) {
+	e := newDigestEnv(t, map[string]ClientRules{"cc": cmdRules{}})
+	e.hook("k", core.HarnessEvent{Phase: core.PhasePrompt, WorkDir: "/work/proj"}, 1)
+	e.hook("k", core.HarnessEvent{Phase: core.PhasePreTool, ToolCallID: "h1", ToolName: "Bash", ToolInput: []byte("ls")}, 2)
+	e.hook("k", core.HarnessEvent{Phase: core.PhasePostTool, ToolCallID: "h1", ToolName: "Bash"}, 3)
+	s := e.summary()
+	if s["hooks_only"] != true || s["model_calls"] != 0.0 {
+		t.Fatalf("summary = %v", s)
+	}
+	if s["title"] != "Hooks only · /work/proj" {
+		t.Errorf("title = %v", s["title"])
+	}
+	l := rowList(t, s)
+	if l["main_calls"] != 0.0 || l["side_calls"] != 0.0 || l["commands"] != 1.0 {
+		t.Errorf("list = %v", l)
+	}
+}
+
+// 017 AC2: a row says how many items need a look and of what kinds, in words.
+func TestSessions_NeedsLookKinds(t *testing.T) {
+	e := newDigestEnv(t, map[string]ClientRules{"cc": cmdRules{}})
+	e.callWith("a", 1, false, []toolSpec{{"Bash", "npm test"}, {"Bash", "npm run lint"}}, "user:fix the retry")
+	// both tools ran, failed, and the next request reported their results
+	e.save("r", "k", "cc", 3)
+	evs := []core.StoredEvent{{Seq: 0, Kind: core.KindRequest, Payload: []byte(`{"model":"m1"}`)}}
+	for i, id := range []string{"t-a-0", "t-a-1"} {
+		e.hook("k", core.HarnessEvent{Phase: core.PhasePreTool, ToolCallID: id, ToolName: "Bash"}, 2)
+		e.hook("k", core.HarnessEvent{Phase: core.PhasePostToolFailed, ToolCallID: id, ToolName: "Bash"}, 2)
+		evs = append(evs, core.StoredEvent{Seq: 1 + i, Kind: core.KindToolResult, ToolCallID: id, ContentHash: sha("res"),
+			Payload: []byte(`{"is_error":true}`)})
+	}
+	if err := e.s.SaveParse(t.Context(), "r", core.PrincipalLocal, core.ParseOK, evs,
+		[]core.Content{{Hash: sha("res"), Bytes: []byte(`"boom"`)}}); err != nil {
+		t.Fatal(err)
+	}
+	e.callWith("b", 5, true, nil, "user:fix the retry", "assistant:x")
+	l := rowList(t, e.summary())
+	if l["needs_look"] != 3.0 {
+		t.Errorf("needs_look = %v, want 3", l["needs_look"])
+	}
+	var got []string
+	for _, k := range l["look_kinds"].([]any) {
+		m := k.(map[string]any)
+		got = append(got, fmt.Sprintf("%v %v %v", m["kind"], m["count"], m["words"]))
+	}
+	want := []string{"failed_tool 2 2 failed tool calls", "failed_call 1 1 failed model call"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("look kinds = %v, want %v", got, want)
+	}
+}
+
+// 017 AC1: tokens no call reported are null, never 0, so the row shows "—".
+func TestSessions_NoUsageIsNotZero(t *testing.T) {
+	e := withRules(t)
+	e.call("a", 1, 0, 0, "user:hello")
+	u := e.summary()["usage"].(map[string]any)
+	for _, k := range []string{"input", "output", "cache_read"} {
+		if v := u[k].(map[string]any)["value"]; v != nil {
+			t.Errorf("usage.%s = %v, want null", k, v)
+		}
+	}
+}

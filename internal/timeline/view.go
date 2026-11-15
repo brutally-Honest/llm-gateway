@@ -112,7 +112,10 @@ type Overview struct {
 	Context     CtxCard    `json:"context"`
 	NeedsLook   []LookItem `json:"needs_look"`
 	MoreLook    int        `json:"more_look"`
-	Tokens      TokenLine  `json:"tokens"`
+	// LookKinds counts every "Needs a look" item by kind, the ones past maxLook included,
+	// in a fixed order; empty when nothing needs a look (017 AC2).
+	LookKinds []LookKind `json:"look_kinds"`
+	Tokens    TokenLine  `json:"tokens"`
 	// Empty is the empty-state line of a session with no turns; "" otherwise.
 	Empty string `json:"empty,omitempty"`
 }
@@ -167,12 +170,57 @@ type TokenLine struct {
 
 // LookItem is one "Needs a look" entry; Target says what it opens or where it scrolls.
 type LookItem struct {
+	// Kind is the item's kind: one of the Look* constants.
+	Kind   string `json:"kind"`
 	Tone   string `json:"tone"` // bad, warn, info
 	Glyph  string `json:"glyph"`
 	Title  string `json:"title"`
 	Sub    string `json:"sub"`
 	Go     string `json:"go"`
 	Target Target `json:"target"`
+}
+
+// The kinds of "Needs a look" item, in the order the list and LookKinds show them.
+const (
+	LookFailedTool = "failed_tool"    // a tool call that failed
+	LookFailedCall = "failed_call"    // a model call outside side calls that errored
+	LookOutside    = "outside_change" // a file changed with no tool running
+	LookUnpinned   = "unpinned"       // effects not pinned to one tool call
+	LookHooksOnly  = "hooks_only_turn"
+	LookUnmatched  = "unmatched" // a tool that ran with no captured call asking for it
+)
+
+// lookOrder is the fixed order of the kinds, with the words for one and for several.
+var lookOrder = []struct{ kind, one, many string }{
+	{LookFailedTool, "failed tool call", "failed tool calls"},
+	{LookFailedCall, "failed model call", "failed model calls"},
+	{LookOutside, "change with no tool running", "changes with no tool running"},
+	{LookUnpinned, "group of effects not pinned to one tool call", "groups of effects not pinned to one tool call"},
+	{LookHooksOnly, "hooks-only turn", "hooks-only turns"},
+	{LookUnmatched, "unmatched tool call", "unmatched tool calls"},
+}
+
+// LookKind is how many "Needs a look" items are of one kind, with that in words
+// ("2 failed tool calls").
+type LookKind struct {
+	Kind  string `json:"kind"`
+	Count int    `json:"count"`
+	Words string `json:"words"`
+}
+
+// lookKinds counts items by kind in lookOrder.
+func lookKinds(items []LookItem) []LookKind {
+	n := map[string]int{}
+	for _, it := range items {
+		n[it.Kind]++
+	}
+	out := []LookKind{}
+	for _, k := range lookOrder {
+		if c := n[k.kind]; c > 0 {
+			out = append(out, LookKind{Kind: k.kind, Count: c, Words: plural(c, k.one, k.many)})
+		}
+	}
+	return out
 }
 
 // Target is a place on the page: a tool, file, site or call to open, or a turn, a
@@ -217,8 +265,10 @@ type Turn struct {
 	atNS            int64
 }
 
-// TurnCounts are a turn's pills.
+// TurnCounts are a turn's chips (017 AC14); Calls counts its model calls, sub-agents'
+// included.
 type TurnCounts struct {
+	Calls    int `json:"calls"`
 	Tools    int `json:"tools,omitempty"`
 	Changed  int `json:"changed"`
 	Read     int `json:"read"`

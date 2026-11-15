@@ -1,16 +1,18 @@
 import { button, bytes, clock, dur, el, markText, plural } from "./fmt.js";
+import { renderMarkdown } from "./markdown.js";
 
-// The story's turn cards (spec 016 AC4–AC8). Every fact comes from the server's view:
-// these functions only lay it out. ctx: { open(target, opener), callHref(exchangeId),
-// noteOpener(node), isOpen(key), setOpen(key, open) }. A turn shows its prompt and its
-// final answer; the steps between sit in a stepper, one line each, folded until opened
-// (research 2026-11-13); isOpen and setOpen keep what was opened across live redraws.
+// The story's turn cards (spec 016 AC4–AC8, 017 AC13–AC18). Every fact comes from the
+// server's view: these functions only lay it out. ctx: { open(target, opener),
+// callHref(exchangeId), noteOpener(node), isOpen(key), setOpen(key, open) }. A turn shows
+// its prompt, its chips and its final answer; a chip opens its panel (the steps, the
+// files, the sites…), one at a time; isOpen and setOpen keep what was opened across live
+// redraws.
 
 const run = (ctx, target, opener) => {
   if (ctx && ctx.open) ctx.open(target, opener);
 };
 
-// callLink is a model call's "#n": it opens the 013 drawer until 017 ships.
+// callLink is a model call's "#n": it opens the call details dialog (spec 017 AC5).
 function callLink(ctx, exchangeId, text, cls) {
   const a = el("a", cls, text);
   a.href = ctx && ctx.callHref ? ctx.callHref(exchangeId) : "#";
@@ -215,16 +217,6 @@ function foldItem(ctx, key, title, content, cls = "") {
   return li;
 }
 
-function pills(c, box) {
-  const add = (text, cls = "pill") => box.append(el("span", cls, text));
-  if (c.tools) add(plural(c.tools, "tool call"));
-  if (c.changed) add(`${plural(c.changed, "file")} changed`);
-  if (c.read) add(`${c.read} read`);
-  if (c.searched) add(plural(c.searched, "search", "searches"));
-  if (c.sites) add(plural(c.sites, "site"));
-  if (c.failed) add(`✗ ${c.failed} failed`, "pill bad");
-}
-
 // remindersNode is the "+N reminders" toggle under the prompt (AC4).
 function remindersNode(list) {
   const box = el("div", "reminders");
@@ -242,33 +234,163 @@ function remindersNode(list) {
   return box;
 }
 
-// turnNode is one turn card (AC4–AC7).
-export function turnNode(t, ctx) {
-  const box = el("article", "card turn");
-  box.id = `turn-${t.n}`;
-  box.setAttribute("aria-labelledby", `h-${t.n}`);
-  const head = el("header", "th");
-  const k = el("div", "k");
-  k.append(el("b", "", t.n ? `Turn ${t.n}` : "Before the first prompt"), el("span", "", clock(t.at)));
-  if ((t.models || []).length) k.append(el("span", "mdl", t.models.join(", ")));
-  if (t.end) k.append(el("span", `end${t.end.word === "ended by error" ? " bad" : ""}`, markText(t.end)));
-  const d = el("div", "dur");
-  if (t.hooks_only) {
-    d.append(el("b", "", "—"), el("span", "", "no model calls captured"));
-  } else {
-    d.append(el("b", "", dur(t.clock_ms ?? 0)), el("span", "", `model ${dur(t.model_ms ?? 0)} · tools ${dur(t.tool_ms ?? 0)} · waiting ${dur(t.wait_ms ?? 0)}`));
+// The Preview / Raw choice for prompts and answers (017 AC13): Preview by default, the
+// last choice kept in this browser. Storage can be missing or blocked; then it is not kept.
+const MODE_KEY = "gw.textMode";
+function savedMode() {
+  try {
+    return globalThis.localStorage && globalThis.localStorage.getItem(MODE_KEY) === "raw" ? "raw" : "preview";
+  } catch {
+    return "preview";
   }
-  const h = el("h2", "", t.prompt || "(no prompt text)");
-  h.id = `h-${t.n}`;
-  head.append(k, d, h);
-  if (t.prompt_truncated) head.append(el("p", "muted small", "The prompt was cut when it was stored."));
-  if ((t.reminders || []).length) head.append(remindersNode(t.reminders));
-  box.append(head);
+}
+function saveMode(m) {
+  try {
+    if (globalThis.localStorage) globalThis.localStorage.setItem(MODE_KEY, m);
+  } catch {
+    // not kept
+  }
+}
 
-  const body = el("div", "tb");
-  const sum = el("div", "sum");
-  pills(t.counts || {}, sum);
-  if (sum.children.length) body.append(sum);
+// textBlock is a turn's prompt or final answer (AC13, AC18): its label, the Preview / Raw
+// switch and the whole text. Only the shown mode is built.
+// onMode, if given, runs after a switch between Preview and Raw (their heights differ).
+export function textBlock(cls, label, text, extra = [], onMode = null) {
+  const box = el("section", `tx ${cls}`);
+  const head = el("div", "tx-h");
+  head.append(el("span", "who", label));
+  const sw = el("div", "mode");
+  sw.setAttribute("role", "group");
+  sw.setAttribute("aria-label", `${label}: preview or raw`);
+  const body = el("div", "tx-b");
+  const built = {};
+  let mode = savedMode();
+  const show = () => {
+    built[mode] ||= mode === "raw" ? el("pre", "raw", text) : renderMarkdown(text);
+    body.replaceChildren(built[mode]);
+    for (const b of sw.children) b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
+  };
+  for (const [m, word] of [["preview", "Preview"], ["raw", "Raw"]]) {
+    const b = button("seg", word, () => {
+      mode = m;
+      saveMode(m);
+      show();
+      if (onMode) onMode();
+    });
+    b.dataset.mode = m;
+    sw.append(b);
+  }
+  head.append(sw);
+  box.append(head, ...extra, body);
+  show();
+  return box;
+}
+
+// The chips (017 AC14–AC16, amended 2026-11-13): "All" opens the turn's whole stepper in
+// order; every other chip opens the same timeline narrowed to its kind, still in order,
+// each row keeping the #n of the call it belongs to.
+
+// walkTurn lists a turn's model calls, tool calls and effects in stepper order, each with
+// the step that holds it; loose effects (no tool call caused them) come last.
+function walkTurn(t) {
+  const calls = [];
+  const tools = [];
+  const effects = [];
+  const walkStep = (s) => {
+    calls.push(s);
+    for (const l of s.tools || []) walkTool(l, s);
+    for (const e of s.several || []) effects.push({ e, s, several: true });
+  };
+  const walkTool = (l, s) => {
+    tools.push({ l, s });
+    for (const e of l.effects || []) effects.push({ e, l, s });
+    for (const sub of (l.sub && l.sub.steps) || []) walkStep(sub);
+  };
+  (t.steps || []).forEach(walkStep);
+  for (const l of t.hook_tools || []) walkTool(l, null);
+  for (const e of t.loose || []) effects.push({ e, loose: true });
+  calls.sort((a, b) => a.n - b.n);
+  const at = (x) => Date.parse(x.e.at) || 0;
+  effects.sort((a, b) => at(a) - at(b));
+  return { calls, tools, effects };
+}
+
+// callTag is the #n of the call a row belongs to, or where it came from without one.
+function callTag(ctx, s, fallback) {
+  if (s) return callLink(ctx, s.exchange_id, `#${s.n}`, "linkish cn call-link");
+  return el("span", "cn muted", fallback);
+}
+
+const frows = (items, empty) => {
+  const ul = el("ul", "frows");
+  ul.append(...items);
+  if (!items.length) ul.append(el("li", "muted small", empty));
+  return [ul];
+};
+
+// callRow is one model call on its own line: #n, sub-agent, what it did and for how long.
+function callRow(s, ctx) {
+  const li = el("li", `frow${s.errored ? " bad" : ""}`);
+  li.append(callTag(ctx, s));
+  const what = el("span", "fw");
+  if (s.agent) what.append(el("span", "agent", s.agent), " ");
+  if (s.errored) what.append(el("span", "err-word", `✗ ${s.status || "failed"}`), ` after ${dur(s.dur_ms)}`);
+  else what.append(`${capital(s.did)} for ${dur(s.dur_ms)}`);
+  const n = (s.tools || []).length;
+  if (n) what.append(el("span", "muted", ` · ${plural(n, "tool call")}`));
+  li.append(what);
+  if (s.thinking) li.append(callLink(ctx, s.exchange_id, "Read the thinking", "linkish small"));
+  return li;
+}
+
+// toolRow is one tool call on its own line: #n, state, name, summary, lines, run time.
+function toolRow({ l, s }, ctx) {
+  const li = el("li", `frow${l.chip === "failed" ? " bad" : ""}`);
+  li.append(callTag(ctx, s, "hooks"));
+  const line = el("span", "fw");
+  line.append(el("span", `si ${l.chip || ""}`.trim(), markText(l.state, l.chip === "ok")), " ");
+  const name = button("linkish nm", l.name, () => run(ctx, { kind: "tool", id: l.id }, name));
+  line.append(name);
+  if (l.agent) line.append(" ", el("span", "agent", l.agent));
+  if (l.summary) line.append(" ", el("code", "", l.summary));
+  li.append(line);
+  const r = el("span", "r");
+  if (l.added > 0 || l.removed > 0) r.append(el("span", "a", `+${l.added}`), " ", el("span", "d", `−${l.removed}`), " ");
+  if (l.dur_ms !== undefined && l.dur_ms !== null) r.append(el("span", "tm", `${l.approx ? "≈" : ""}${dur(l.dur_ms)}`));
+  li.append(r);
+  if (l.first_error) li.append(el("div", "why", l.first_error));
+  return li;
+}
+
+// effectRow is one file change, read or connection on its own line: the #n and tool that
+// caused it (or that none did), what happened to which path or host, its size.
+function effectRow({ e, l, s, loose, several }, ctx) {
+  const li = el("li", "frow");
+  li.append(callTag(ctx, s, "○"));
+  const what = el("span", "fw");
+  if (l) {
+    const name = button("linkish nm", l.name, () => run(ctx, { kind: "tool", id: l.id }, name));
+    what.append(name, " ");
+  } else if (several) {
+    what.append(el("span", "muted", "◌ several running "));
+  } else if (loose) {
+    what.append(el("span", "muted", "not caused by a tool call "));
+  }
+  const w = e.what || { glyph: "", word: "" };
+  what.append(`${w.glyph} `);
+  const target = effectTarget(e);
+  const path = button("linkish", undefined, () => run(ctx, target, path));
+  const code = el("code", "", e.kind === "net" ? (e.port && e.port !== 443 ? `${e.host}:${e.port}` : e.host) : e.path);
+  if (e.kind !== "net" && e.full_path) code.title = e.full_path;
+  path.append(code);
+  what.append(path);
+  li.append(what, effectStat(e));
+  return li;
+}
+
+// stepsPanel is the turn's whole stepper (016 AC5–AC7), the "All" chip's panel: every
+// model call with its tool calls folded, and the effects no tool call caused.
+function stepsPanel(t, ctx) {
   const hookTools = t.hook_tools || [];
   const ol = el("ol", "steps");
   if (t.hooks_only) {
@@ -279,12 +401,106 @@ export function turnNode(t, ctx) {
   }
   const loose = t.loose || [];
   if (loose.length) ol.append(foldItem(ctx, `loose:${t.n}`, `○ Not caused by a tool call: ${plural(loose.length, "effect")}`, [effectList(loose, ctx)], "loose"));
-  if (ol.children.length) body.append(ol);
-  if (t.answer) {
-    const a = el("div", "answer");
-    a.append(el("span", "who", "Final answer"), t.answer);
-    body.append(a);
+  return [ol];
+}
+
+// CHIPS are a turn's chips in order: what each says and what its panel lists.
+const CHIPS = [
+  { id: "all", text: () => "All", panel: stepsPanel },
+  { id: "calls", text: (c) => c.calls && plural(c.calls, "model call"), panel: (t, ctx) => frows(walkTurn(t).calls.map((s) => callRow(s, ctx)), "No model calls.") },
+  { id: "tools", text: (c) => c.tools && plural(c.tools, "tool call"), panel: (t, ctx) => frows(walkTurn(t).tools.map((x) => toolRow(x, ctx)), "No tool calls.") },
+  { id: "changed", text: (c) => c.changed && `${plural(c.changed, "file")} changed`, panel: (t, ctx) => frows(walkTurn(t).effects.filter((x) => x.e.kind === "change").map((x) => effectRow(x, ctx)), "No file changes.") },
+  { id: "read", text: (c) => c.read && `${c.read} read`, panel: (t, ctx) => frows(walkTurn(t).effects.filter((x) => x.e.kind === "read").map((x) => effectRow(x, ctx)), "No reads.") },
+  { id: "searched", text: (c) => c.searched && plural(c.searched, "search", "searches"), panel: (t, ctx) => frows(walkTurn(t).tools.filter((x) => x.l.kind === "search").map((x) => toolRow(x, ctx)), "No searches.") },
+  { id: "sites", text: (c) => c.sites && plural(c.sites, "site"), panel: (t, ctx) => frows(walkTurn(t).effects.filter((x) => x.e.kind === "net").map((x) => effectRow(x, ctx)), "No connections.") },
+  { id: "failed", bad: true, text: (c) => c.failed && `✗ ${c.failed} failed`, panel: (t, ctx) => frows(walkTurn(t).tools.filter((x) => x.l.chip === "failed").map((x) => toolRow(x, ctx)), "Nothing failed.") },
+];
+
+// chipsNode is a turn's chips and their panels: one open at a time, the selected chip
+// marked, the choice kept across live redraws (AC14–AC16, E10). The "All" panel is built
+// at once, since "Show in turn" finds rows in it; the others when first opened.
+function chipsNode(t, ctx) {
+  const counts = t.counts || {};
+  const shown = CHIPS.filter((c) => c.id !== "all" && c.text(counts));
+  if (!shown.length && !(t.steps || []).length && !(t.hook_tools || []).length) return null;
+  const box = el("div", "turn-chips");
+  const bar = el("div", "sum");
+  bar.setAttribute("role", "group");
+  bar.setAttribute("aria-label", `Turn ${t.n}: what it did`);
+  const holder = el("div", "chip-panels");
+  const panels = {};
+  const chips = [];
+  const key = (id) => `chip:${t.n}:${id}`;
+  let selected = null;
+  const panelOf = (c) => {
+    if (!panels[c.id]) {
+      const p = el("div", `chip-panel cp-${c.id}`);
+      p.id = `cp-${t.n}-${c.id}`;
+      p.hidden = true;
+      p.append(...c.panel(t, ctx));
+      holder.append(p);
+      panels[c.id] = p;
+    }
+    return panels[c.id];
+  };
+  const select = (id, remember = true) => {
+    selected = id;
+    if (id) panelOf(CHIPS.find((c) => c.id === id));
+    for (const [name, p] of Object.entries(panels)) p.hidden = name !== id;
+    for (const b of chips) {
+      const on = b.dataset.chip === id;
+      b.setAttribute("aria-expanded", String(on));
+      if (on) b.classList.add("on");
+      else b.classList.remove("on");
+    }
+    if (remember && ctx && ctx.setOpen) for (const c of CHIPS) ctx.setOpen(key(c.id), c.id === id);
+  };
+  for (const c of [CHIPS[0], ...shown]) {
+    const b = button(`pill chip${c.bad ? " bad" : ""}`, c.text(counts), () => select(selected === c.id ? null : c.id));
+    b.dataset.chip = c.id;
+    b.setAttribute("aria-controls", `cp-${t.n}-${c.id}`);
+    chips.push(b);
+    bar.append(b);
   }
+  // a row the page shows (Show in turn) sits in the All panel: open it there
+  folds.set(panelOf(CHIPS[0]), () => select("all"));
+  box.append(bar, holder);
+  select(CHIPS.map((c) => c.id).find((id) => chips.some((b) => b.dataset.chip === id) && ctx && ctx.isOpen && ctx.isOpen(key(id))) || null, false);
+  return box;
+}
+
+// turnNode is one turn card (016 AC4, 017 AC13–AC18): the prompt, the chips that open
+// the turn's timeline whole or narrowed to one kind, then the final answer.
+export function turnNode(t, ctx) {
+  const box = el("article", "card turn");
+  box.id = `turn-${t.n}`;
+  box.setAttribute("aria-labelledby", `h-${t.n}`);
+  const head = el("header", "th");
+  const k = el("div", "k");
+  const h = el("h2", "", t.n ? `Turn ${t.n}` : "Before the first prompt");
+  h.id = `h-${t.n}`;
+  k.append(h, el("span", "", clock(t.at)));
+  if ((t.models || []).length) k.append(el("span", "mdl", t.models.join(", ")));
+  if (t.end) k.append(el("span", `end${t.end.word === "ended by error" ? " bad" : ""}`, markText(t.end)));
+  const d = el("div", "dur");
+  if (t.hooks_only) {
+    d.append(el("b", "", "—"), el("span", "", "no model calls captured"));
+  } else {
+    d.append(el("b", "", dur(t.clock_ms ?? 0)), el("span", "", `model ${dur(t.model_ms ?? 0)} · tools ${dur(t.tool_ms ?? 0)} · waiting ${dur(t.wait_ms ?? 0)}`));
+  }
+  head.append(k, d);
+  box.append(head);
+
+  const body = el("div", "tb");
+  if (t.n) {
+    const extra = [];
+    if (t.prompt_truncated) extra.push(el("p", "muted small", "The prompt was cut when it was stored."));
+    if ((t.reminders || []).length) extra.push(remindersNode(t.reminders));
+    body.append(textBlock("prompt", "Prompt", t.prompt || "(no prompt text)", extra));
+  }
+  const chips = chipsNode(t, ctx);
+  if (chips) body.append(chips);
+  if (t.answer) body.append(textBlock("answer", "Final answer", t.answer));
   box.append(body);
   return box;
 }

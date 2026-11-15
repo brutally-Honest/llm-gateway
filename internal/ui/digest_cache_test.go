@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -90,7 +91,8 @@ func TestDigestCache_ParseLandingRecomputes(t *testing.T) {
 	e := newCacheEnv(t, 8)
 	e.save("a", "k", "cc", 1) // stored with no parse yet
 	s := e.summary()
-	if s["title"] != "" {
+	// stored, not yet parsed: a call with no prompt yet, never "Hooks only" (spec 017 AC1)
+	if title, _ := s["title"].(string); !strings.HasPrefix(title, "No prompt · cc") {
 		t.Fatalf("title before parse = %v", s["title"])
 	}
 	mh, bh := sha("m-hello"), sha("body-hello")

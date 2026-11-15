@@ -1,74 +1,61 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadAllPages } from "../web/api.js";
 
-test("loadsEveryTimelinePage", async () => {
-  const pages = { undefined: { entries: [1, 2], next_after: "a" }, a: { entries: [3], next_after: "b" }, b: { entries: [4], next_after: null } };
+// AC10 (carries drawerKeepsCallFocusAndScrollOnLiveData, lateCallRenumbersTheOpenDrawerWithoutMovingIt):
+// a live update fetches the open call again and redraws it in place — the same call, its
+// scroll and focus kept, its tool's new state shown, Next enabled once a later call exists,
+// and its number updated when an earlier call arrives late.
+test("callDialogKeepsItsCallOnLiveData", async () => {
+  const { installDom, byTag, textOf, withClass } = await import("./dom-stub.js");
+  installDom();
+  const { createCallDialog } = await import("../web/call-dialog.js");
+  const tool = (word) => ({ id: "t", name: "Bash", kind: "command", state: { glyph: word === "ok" ? "✓" : "…", word }, chip: word, summary: "npm test" });
+  const mk = (n, nav, toolWord) => ({
+    n, exchange_id: "a", turn: 1,
+    facts: { model: "m", dur_ms: 1, start: "", stop: { word: "tool use" }, thread: { kind: "main", label: "main" }, ctx: 1 },
+    context: { size: 1, first: true }, saw: { first: true, carried: 0, new: 1, messages: [{ role: "user", text: "go", new: true }] },
+    thinking: false, response: { text: "ok" }, tools: [tool(toolWord)], health: { status: "200 OK", ok: true, items: [] },
+    raw: { headers: "#/exchanges/a", page: "#/exchanges/a" }, nav,
+  });
+  let served = mk(1, { index: 1, total: 2, prev: "", next: "b" }, "pending");
   const asked = [];
-  const got = [];
-  await loadAllPages(async (after) => {
-    asked.push(after);
-    return pages[after];
-  }, (p) => got.push(...p.entries));
-  assert.deepEqual(asked, [undefined, "a", "b"]);
-  assert.deepEqual(got, [1, 2, 3, 4]);
-});
-
-test("loadAllPagesStopsWhenTheViewMovedOn", async () => {
-  let calls = 0;
-  await loadAllPages(async () => {
-    calls++;
-    return { next_after: "more" };
-  }, () => false);
-  assert.equal(calls, 1);
-});
-
-test("drawerKeepsCallFocusAndScrollOnLiveData", async () => {
-  const { installDom, withClass } = await import("./dom-stub.js");
-  installDom();
-  const { call, item } = await import("./fixtures.js");
-  const { createDrawerHost } = await import("./drawer-host.js");
-  const summary = { id: "s1", client: "c", models: [], first_at: "", last_at: "", exchange_count: 2, model_calls: 2, main_errors: 0, active: true, usage: {}, tool_states: {} };
-  const p = createDrawerHost();
-  const es = [call("a", 1), item("a", "tool_call", { name: "Bash", tool_call_id: "t", chip: "pending" }), call("b", 2, { prev: "a" })];
-  p.render({ summary, entries: es, error: "", snapshotError: "", callId: "a", loaded: true });
-  const drawer = withClass(p.el, "drawer")[0];
-  const body = drawer.children[1];
+  const d = createCallDialog({ nav: { push() {}, replace() {}, back() {} }, loadCall: async (id) => { asked.push(id); return served; } });
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  d.sync({ sessionId: "s1", callId: "a" });
+  await tick();
+  const body = withClass(d.el, "mb")[0]; // the part that scrolls
   body.scrollTop = 120;
-  const prev = drawer.children[0].children.find((c) => c.textContent.includes("next"));
-  prev.focus();
-  const chipText = () => drawer.children[0].children[1].children.map((c) => c.textContent).join();
-  assert.match(chipText(), /pending/);
-  const done = [call("a", 1), item("a", "tool_call", { name: "Bash", tool_call_id: "t", chip: "ok" }), call("b", 2, { prev: "a" }), call("c", 3, { prev: "b" })];
-  p.render({ summary, entries: done, error: "", snapshotError: "", callId: "a", loaded: true });
-  assert.equal(drawer.hidden, false);
-  assert.match(drawer.children[0].children[0].textContent, /Call #1/);
-  assert.equal(body.scrollTop, 120);
-  assert.equal(globalThis.document.activeElement, prev);
-  assert.match(chipText(), /ok/);
-  assert.equal(p.position().total, 3); // position and next see the new call
-  assert.equal(prev.disabled, false);
-});
+  const next = byTag(d.el, "button").find((b) => b.textContent.includes("Next"));
+  next.focus();
+  assert.match(textOf(d.el), /pending/);
 
-test("lateCallRenumbersTheOpenDrawerWithoutMovingIt", async () => {
-  const { installDom, withClass } = await import("./dom-stub.js");
-  installDom();
-  const { call } = await import("./fixtures.js");
-  const { createDrawerHost } = await import("./drawer-host.js");
-  const summary = { id: "s1", client: "c", models: [], first_at: "", last_at: "", exchange_count: 2, model_calls: 2, main_errors: 0, active: true, usage: {}, tool_states: {} };
-  const p = createDrawerHost();
-  const shown = (entries) => p.render({ summary, entries, error: "", snapshotError: "", callId: "c", loaded: true });
-  shown([call("a", 1), call("c", 3, { prev: "a" })]);
-  const title = withClass(p.el, "drawer")[0].children[0].children[0];
-  assert.match(title.textContent, /Call #2/);
-  shown([call("a", 1), call("b", 2, { prev: "a" }), call("c", 3, { prev: "b" })]);
-  assert.match(title.textContent, /Call #3/);
-  assert.equal(p.position().index, 3); // still call c, now third of three
-});
+  served = mk(1, { index: 1, total: 3, prev: "", next: "b" }, "ok");
+  d.refresh();
+  await tick();
+  assert.equal(d.isOpen(), true);
+  assert.equal(d.callId(), "a", "the dialog stays on its call");
+  assert.match(textOf(d.el), /Call #1/);
+  assert.equal(body.scrollTop, 120, "its scroll is kept");
+  assert.equal(globalThis.document.activeElement, next, "its focus is kept");
+  assert.match(textOf(d.el), /✓ ok|ok/);
+  assert.doesNotMatch(textOf(d.el), /pending/);
+  assert.match(textOf(d.el), /1 of 3/, "the new call is counted");
+  assert.equal(next.disabled, false);
+  assert.deepEqual(asked, ["a", "a"], "the same call is fetched again");
 
-test("followOnlyWhenDrawerClosedAndAtBottom", async () => {
-  const { shouldFollow } = await import("../web/drawer.js");
-  assert.equal(shouldFollow(false, true), true);
-  assert.equal(shouldFollow(true, true), false);
-  assert.equal(shouldFollow(false, false), false);
+  // an earlier call arrives late: the open call is renumbered, never moved
+  served = { ...mk(2, { index: 2, total: 4, prev: "z", next: "b" }, "ok") };
+  d.refresh();
+  await tick();
+  assert.match(textOf(d.el), /Call #2/);
+  assert.equal(d.callId(), "a");
+  // a refresh that fails keeps the call shown
+  let loads = 0;
+  const failing = createCallDialog({ nav: { push() {}, replace() {}, back() {} }, loadCall: async () => { if (++loads > 1) throw new Error("boom"); return served; } });
+  failing.sync({ sessionId: "s1", callId: "a" });
+  await tick();
+  failing.refresh();
+  await tick();
+  assert.match(textOf(failing.el), /Call #2/);
+  assert.doesNotMatch(textOf(failing.el), /unavailable/);
 });

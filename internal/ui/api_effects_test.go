@@ -193,3 +193,30 @@ func TestEffectsAPI_Attribution(t *testing.T) {
 		t.Errorf("example.com under client unknown = %+v, want none", other)
 	}
 }
+
+// 017 AC2: an unassigned connection carries what the sessions list shows of it: its
+// client, host and port, bytes each way, start time and how long it lasted.
+func TestUnassigned_RowFields(t *testing.T) {
+	e := newAPIEnv(t)
+	at := baseTime.Add(7 * time.Second)
+	c := core.Effect{Kind: core.EffectNetConn, At: at, EndedAt: at.Add(1500 * time.Millisecond), Principal: core.PrincipalLocal,
+		Client: "unknown", Host: "example.com", Port: 8443, Via: "connect", Outcome: core.NetOK, BytesUp: 120, BytesDown: 4096}
+	if err := e.s.SaveEffects(t.Context(), []core.Effect{c}, nil); err != nil {
+		t.Fatal(err)
+	}
+	rec := e.get("/api/effects/unassigned")
+	var page struct {
+		Effects []map[string]any `json:"effects"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil || len(page.Effects) != 1 {
+		t.Fatalf("unassigned = %s (%v)", rec.Body, err)
+	}
+	got := page.Effects[0]
+	want := map[string]any{"client": "unknown", "host": "example.com", "port": 8443.0, "bytes_up": 120.0, "bytes_down": 4096.0,
+		"duration_ms": 1500.0, "at": nsTime(at.UnixNano())}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s = %v, want %v", k, got[k], v)
+		}
+	}
+}

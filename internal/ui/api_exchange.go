@@ -33,6 +33,12 @@ type exchangeJSON struct {
 	Usage *callUsageJSON `json:"usage"`
 
 	SessionID string `json:"session_id,omitempty"`
+	// StatusWord is the status in words; SessionTitle and CallN name the session and the
+	// call's #n in it, for the full exchange page's title and breadcrumb (017 AC12). Both
+	// are left out for an exchange no session claims, or one its session's view lacks.
+	StatusWord   string `json:"status_word"`
+	SessionTitle string `json:"session_title,omitempty"`
+	CallN        int    `json:"call_n,omitempty"`
 
 	RequestTruncated   bool   `json:"request_truncated"`
 	ResponseTruncated  bool   `json:"response_truncated"`
@@ -80,15 +86,7 @@ type responseJSON struct {
 
 // unavailableReason says why an exchange's events hold nothing to show.
 func unavailableReason(ex store.ExchangeRow, body string, bodyStored, truncated bool) string {
-	switch {
-	case ex.Parse == "failed" || ex.Parse == "skipped" || ex.Parse == "unsupported_encoding":
-		return "parse_" + ex.Parse
-	case !bodyStored:
-		return body + "_body_not_stored"
-	case truncated:
-		return "capture_truncated"
-	}
-	return "nothing_parsed"
+	return timeline.UnavailableReason(ex, body, bodyStored, truncated)
 }
 
 func ms(ns int64) float64 { return float64(ns) / 1e6 }
@@ -127,14 +125,33 @@ func (d Deps) getExchange(w http.ResponseWriter, r *http.Request) {
 	if call := timeline.CallOf(ex, evs); call != nil {
 		out.Model, out.Usage = call.Model, callToJSON(call)
 	}
+	out.StatusWord = timeline.StatusWord(ex.Status)
 	if ex.SessionKey != "" {
 		out.SessionID = sessionID(store.SessionRow{PrincipalID: ex.PrincipalID, Client: ex.Client, SessionKey: ex.SessionKey})
+		d.placeInSession(ctx, ex, &out)
 	}
 	if err := d.fillDrawer(ctx, c, ex, &out); err != nil {
 		writeStoreErr(w, err)
 		return
 	}
 	writeJSON(w, out)
+}
+
+// placeInSession names the exchange's session and its #n from the session's cached view.
+// The page still works without them, so a view that cannot be built leaves both out.
+func (d Deps) placeInSession(ctx context.Context, ex store.ExchangeRow, out *exchangeJSON) {
+	who := sessIdent{ex.PrincipalID, ex.Client, ex.SessionKey}
+	v, err := d.cachedView(ctx, who, false)
+	if err == nil && !timeline.HasCall(v, ex.RequestID) {
+		v, err = d.cachedView(ctx, who, true) // the call is newer than the view served so far
+	}
+	if err != nil {
+		return
+	}
+	out.SessionTitle = v.Overview.Title
+	if n, ok := timeline.CallNumber(v, ex.RequestID); ok {
+		out.CallN = n
+	}
 }
 
 // fillDrawer adds the thread, message and reply facts. It places the call among its

@@ -329,6 +329,43 @@ func (c *CtxReader) Effect(id int64) (EffectRow, error) {
 	return rows[0], nil
 }
 
+// EffectTotalsSince counts the effects of sessions from since (unix ns) on: the distinct
+// files each session changed, summed over sessions, and the distinct hosts any session
+// connected to. Unassigned connections are not counted.
+func (c *CtxReader) EffectTotalsSince(since int64) (changed, sites int, err error) {
+	err = c.r.db.QueryRowContext(c.ctx, `SELECT
+		COUNT(DISTINCT CASE WHEN kind = 'file_change' THEN principal_id || char(31) || client || char(31) || session_key || char(31) || path END),
+		COUNT(DISTINCT CASE WHEN kind = 'net_conn' THEN host END)
+		FROM effects WHERE session_key IS NOT NULL AND at >= ?`, since).Scan(&changed, &sites)
+	if err != nil {
+		return 0, 0, fmt.Errorf("store %s: effect totals: %w", c.r.path, err)
+	}
+	return changed, sites, nil
+}
+
+// HookSessionsSince lists the sessions that received a hook from since (unix ns) on,
+// each once. Hooks with no session are left out.
+func (c *CtxReader) HookSessionsSince(since int64) ([]SessionIdent, error) {
+	rows, err := c.r.db.QueryContext(c.ctx, `SELECT DISTINCT principal_id, client, session_key
+		FROM hook_events WHERE session_key IS NOT NULL AND session_key != '' AND received_at >= ?`, since)
+	if err != nil {
+		return nil, fmt.Errorf("store %s: hook sessions since: %w", c.r.path, err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []SessionIdent
+	for rows.Next() {
+		var id SessionIdent
+		if err := rows.Scan(&id.Principal, &id.Client, &id.Key); err != nil {
+			return nil, fmt.Errorf("store %s: hook sessions since: %w", c.r.path, err)
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store %s: hook sessions since: %w", c.r.path, err)
+	}
+	return out, nil
+}
+
 // UnassignedConnections counts network effects with no session.
 func (c *CtxReader) UnassignedConnections() (int, error) {
 	var n int

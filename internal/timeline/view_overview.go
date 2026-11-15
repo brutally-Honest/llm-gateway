@@ -107,6 +107,7 @@ func (b *builder) overview(v *View) {
 
 	b.title(&o, v)
 	look := b.needsLook(v)
+	o.LookKinds = lookKinds(look)
 	if len(look) > maxLook {
 		o.MoreLook = len(look) - maxLook
 		look = look[:maxLook]
@@ -168,7 +169,8 @@ func (b *builder) title(o *Overview, v *View) {
 		}
 	}
 	kind, src := "No prompt", "no_prompt"
-	if len(b.calls) == 0 {
+	// an exchange stored but not yet parsed is a call, not hooks only
+	if len(b.calls) == 0 && len(b.in.Exchanges) == 0 {
 		kind, src = "Hooks only", "hooks_only"
 	}
 	o.TitleSource = src
@@ -186,7 +188,8 @@ func (b *builder) title(o *Overview, v *View) {
 
 // needsLook is the fixed set of things worth a second look (Decisions for Karthik 5):
 // failed tool calls, errored model calls outside side calls, changes with no tool
-// running, effects not pinned to one tool call, hooks-only turns and unmatched calls.
+// running, effects not pinned to one tool call, hooks-only turns (in a session that also
+// has model calls, D31) and unmatched calls.
 func (b *builder) needsLook(v *View) []LookItem {
 	var out []LookItem
 	var tools []ToolLine
@@ -233,14 +236,14 @@ func (b *builder) needsLook(v *View) []LookItem {
 		if l.Summary != "" {
 			title += " on " + l.Summary
 		}
-		out = append(out, LookItem{Tone: "bad", Glyph: "✗", Title: title, Sub: sub, Go: "Open", Target: Target{Kind: "tool", ID: l.ID, Turn: l.Turn}})
+		out = append(out, LookItem{Kind: LookFailedTool, Tone: "bad", Glyph: "✗", Title: title, Sub: sub, Go: "Open", Target: Target{Kind: "tool", ID: l.ID, Turn: l.Turn}})
 	}
 	for _, s := range steps {
 		if !s.Errored {
 			continue
 		}
 		n := turnOf[s.ExchangeID]
-		out = append(out, LookItem{Tone: "bad", Glyph: "✗", Title: "Model call #" + strconv.Itoa(s.N) + " failed: " + s.Status,
+		out = append(out, LookItem{Kind: LookFailedCall, Tone: "bad", Glyph: "✗", Title: "Model call #" + strconv.Itoa(s.N) + " failed: " + s.Status,
 			Sub: where(n), Go: "Open", Target: Target{Kind: "call", ID: s.ExchangeID, Turn: n}})
 	}
 	seen := map[string]bool{}
@@ -250,7 +253,7 @@ func (b *builder) needsLook(v *View) []LookItem {
 				continue
 			}
 			seen[f.FullPath] = true
-			out = append(out, LookItem{Tone: "warn", Glyph: "○", Title: f.Path + " changed with no tool running",
+			out = append(out, LookItem{Kind: LookOutside, Tone: "warn", Glyph: "○", Title: f.Path + " changed with no tool running",
 				Sub: c.Where + " · most likely your own edit", Go: "Open", Target: Target{Kind: "file", ID: f.FullPath, Turn: c.Turn}})
 		}
 	}
@@ -273,7 +276,7 @@ func (b *builder) needsLook(v *View) []LookItem {
 				if conns > 0 {
 					what = append(what, plural(conns, "connection", "connections"))
 				}
-				out = append(out, LookItem{Tone: "info", Glyph: "◌", Title: strings.Join(what, " and ") + " can't be pinned to one tool call",
+				out = append(out, LookItem{Kind: LookUnpinned, Tone: "info", Glyph: "◌", Title: strings.Join(what, " and ") + " can't be pinned to one tool call",
 					Sub: where(t.N) + ": " + strings.Join(s.SeveralNames, " and ") + " ran together", Go: "Show in " + where(t.N),
 					Target: Target{Kind: "several", ID: s.ExchangeID, Turn: t.N}})
 			}
@@ -289,9 +292,12 @@ func (b *builder) needsLook(v *View) []LookItem {
 			group(s)
 		}
 	}
+	// 017 D31: in a session with no exchanges every turn is hooks only, so none is
+	// singled out; hooks-only turns are listed only beside turns with model calls.
+	hooksSession := len(b.in.Exchanges) == 0
 	for _, t := range v.Turns {
-		if t.HooksOnly {
-			out = append(out, LookItem{Tone: "info", Glyph: "◇", Title: "Turn " + strconv.Itoa(t.N) + " has no model calls captured",
+		if t.HooksOnly && !hooksSession {
+			out = append(out, LookItem{Kind: LookHooksOnly, Tone: "info", Glyph: "◇", Title: "Turn " + strconv.Itoa(t.N) + " has no model calls captured",
 				Sub: "only the hooks saw it: its tool calls show, the conversation does not", Go: "Show turn " + strconv.Itoa(t.N),
 				Target: Target{Kind: "turn", Turn: t.N}})
 		}
@@ -304,7 +310,7 @@ func (b *builder) needsLook(v *View) []LookItem {
 		if l.Summary != "" {
 			title += " " + l.Summary
 		}
-		out = append(out, LookItem{Tone: "info", Glyph: "?", Title: title + " ran with no captured call asking for it",
+		out = append(out, LookItem{Kind: LookUnmatched, Tone: "info", Glyph: "?", Title: title + " ran with no captured call asking for it",
 			Sub: where(l.Turn) + " · ? unmatched", Go: "Open", Target: Target{Kind: "tool", ID: l.ID, Turn: l.Turn}})
 	}
 	return out

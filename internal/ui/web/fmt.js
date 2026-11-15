@@ -58,3 +58,12 @@ export function button(cls, text, onClick) {
 // mark is a status as glyph and word ({ glyph, word } from the view); the glyph alone
 // when alone is set (an ok tool line).
 export const markText = (m, alone = false) => (m ? (alone ? m.glyph : `${m.glyph} ${m.word}`) : "");
+
+// formatDuration renders milliseconds as 850ms, 1.2s or 2m05s; "—" when unknown.
+export function formatDuration(ms) {
+  if (ms === null || ms === undefined) return "—";
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const s = Math.round(ms / 1000);
+  return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
+}

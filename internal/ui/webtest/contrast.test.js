@@ -35,3 +35,13 @@ test("allTextPairsMeet4_5InBothThemes", () => {
     }
   }
 });
+
+// spec 017 AC12: the ungrouped, unassigned and full exchange pages draw only with the theme's
+// tokens, so every colour they use is one of the pairs checked above in both themes.
+test("otherPagesUseOnlyThemeColours", () => {
+  const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter((m) => /\.page\b|\.page-sub|\.ungrouped-page|\.unassigned-page|\.exchange-page|\.st-ok|\.st-failed/.test(m[1]));
+  assert.ok(rules.length >= 8, `found ${rules.length} rules for the pages`);
+  for (const [, sel, body] of rules) {
+    assert.doesNotMatch(body, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/, `${sel.trim()} uses a colour outside the theme`);
+  }
+});

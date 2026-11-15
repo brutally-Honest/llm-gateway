@@ -25,7 +25,15 @@ type viewDeps struct {
 // sessionView builds one session's view (spec 016 AC1) from a timeline build: it reads the
 // session's hook rows and effects, labels the effects (spec 015), names the unassigned
 // connections seen while it ran, and hands everything to timeline.BuildView.
-func (vd viewDeps) sessionView(c *store.CtxReader, who sessIdent, bs builtSession, hooks []store.HookRow, active bool, version string) (timeline.View, error) {
+// viewReader is what a session view reads beyond its timeline build. *store.CtxReader
+// satisfies it.
+type viewReader interface {
+	SessionEffects(store.SessionIdent) ([]store.EffectRow, error)
+	Content(hash string) ([]byte, error)
+	UnassignedConnsBetween(from, to int64, limit int) ([]store.EffectRow, error)
+}
+
+func (vd viewDeps) sessionView(c viewReader, who sessIdent, bs builtSession, hooks []store.HookRow, active bool, version string) (timeline.View, error) {
 	ident := store.SessionIdent{Principal: who.principal, Client: who.client, Key: who.name}
 	rows, err := c.SessionEffects(ident)
 	if err != nil {

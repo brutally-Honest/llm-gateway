@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { StubElement, all, installDom, textOf, withClass } from "./dom-stub.js";
-import { call, item } from "./fixtures.js";
 
 // E16 through the real app.js and api.js: only the browser is stubbed, so the stream's
 // error event travels the same path it does in a page.
@@ -37,10 +36,9 @@ class FakeEventSource {
   }
 }
 const session = { id: "s1", title: "Seeded", client: "c", models: ["m"], first_at: "2026-01-01T00:00:00Z", last_at: "2026-01-01T00:01:00Z", exchange_count: 2, model_calls: 2, main_errors: 0, active: true, usage: {}, tool_states: {} };
-const entries = [call("a", 1), item("a", "user_prompt", { role: "user", text: "one" }), call("b", 2, { prev: "a" })];
 // viewOf is the server's session view (spec 016) of the two calls above, one turn each.
 const step = (n, id) => ({ n, exchange_id: id, at: "2026-01-01T00:00:0" + n + "Z", dur_ms: 1000, did: "wrote the answer", tools: [] });
-const turn = (n, id, prompt) => ({ n, hash: `h${n}`, prompt, reminders: [], at: step(n, id).at, clock_ms: 1000, counts: {}, steps: [step(n, id)], hook_tools: [], loose: [] });
+const turn = (n, id, prompt) => ({ n, hash: `h${n}`, prompt, reminders: [], at: step(n, id).at, clock_ms: 1000, counts: { calls: 1 }, steps: [step(n, id)], hook_tools: [], loose: [] });
 const viewOf = (title, active) => ({
   version: "v1",
   overview: { title, status: active ? { glyph: "●", word: "active" } : { glyph: "■", word: "ended" }, client: "c", key: "k", models: ["m"],
@@ -49,10 +47,19 @@ const viewOf = (title, active) => ({
   files: { changed: [], read: [], searches: [], coverage: "" }, commands: { items: [], coverage: "" }, sites: { items: [], coverage: "" },
   context: { main: [], subs: [], coverage: "" },
 });
+// callOf is the server's call details (spec 017 T014) of call b, the second of two.
+const callOf = (id) => ({
+  n: 2, exchange_id: id, turn: 2,
+  facts: { model: "m", dur_ms: 1000, start: "2026-01-01T00:00:02Z", stop: { word: "end turn" }, thread: { kind: "main", label: "main" }, ctx: 10 },
+  context: { size: 10, delta: null, input: 10, cache_write: 0, cache_read: 0, output: 1 },
+  saw: { first: false, carried: 0, new: 0, messages: [] }, thinking: false, response: { text: "", stop_reason: "" }, tools: [],
+  health: { status: "200 OK", ok: true, items: [] },
+  raw: { headers: `#/exchanges/${id}`, page: `#/exchanges/${id}` },
+  nav: { index: 2, total: 2, prev: "a", next: "" },
+});
 const replies = {
   "/api/sessions/s1/view": viewOf("Seeded", true),
-  "/api/sessions/s1/timeline": { entries, next_after: null },
-  "/api/exchanges/b": { id: "b", status: 200, session_id: "s1", messages: [], carried: 0, new_count: 0, response: { text: "", stop_reason: "" }, response_tool_call_ids: [] },
+  "/api/sessions/s1/calls/b": callOf("b"),
 };
 Object.assign(document, {
   getElementById: byId,
@@ -78,15 +85,16 @@ Object.assign(globalThis, {
 const settle = () => new Promise((r) => setImmediate(r));
 const liveText = () => all(byId("shell-head")).find((e) => e.attrs.role === "status").textContent;
 
-test("droppedSessionStreamKeepsDrawerAndHistoryAndShowsDisconnected", async (t) => {
+test("droppedSessionStreamKeepsCallDialogAndHistoryAndShowsDisconnected", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   await import("../web/app.js");
   await settle();
+  await settle();
   const page = byId("app");
-  const drawer = withClass(page, "drawer")[0];
+  const dialog = withClass(page, "call-details")[0];
   const held = () => {
-    assert.equal(drawer.hidden, false, "the drawer stays open");
-    assert.match(textOf(drawer), /Call #2/);
+    assert.equal(dialog.open, true, "the call dialog stays open");
+    assert.match(textOf(dialog), /Call #2/);
     assert.equal(withClass(page, "toc-item").length, 2, "the turns stay");
     assert.equal(withClass(page, "call-link").length, 2, "each turn's step keeps its call link");
   };
@@ -121,7 +129,6 @@ async function openSession(sid, plan) {
   globalThis.__retryDelay = async (ms) => void delays.push(ms);
   const path = `/api/sessions/${sid}/view`;
   replies[path] = viewOf("Seeded", false);
-  replies[`/api/sessions/${sid}/timeline`] ||= { entries, next_after: null };
   Object.assign(plans, plan(path));
   asked.length = 0;
   location.hash = `#/sessions/${sid}`;
@@ -163,24 +170,7 @@ test("secondFailureShowsTheError", async () => {
   assert.doesNotMatch(r.text(), /building session/);
 });
 
-// The drawer's call list is the only paged load left (the page itself loads one view): its
-// first page gets the single 504 retry, a later page does not.
-test("laterPage504IsNotRetried", async () => {
-  const delays = [];
-  globalThis.__retryDelay = async (ms) => void delays.push(ms);
-  replies["/api/sessions/r3/view"] = viewOf("Seeded", false);
-  replies["/api/sessions/r3/timeline"] = { entries, next_after: "p2" };
-  plans["/api/sessions/r3/timeline"] = [200, 504];
-  asked.length = 0;
-  location.hash = "#/sessions/r3/call/b";
-  for (const fn of listeners.hashchange) fn();
-  for (let i = 0; i < 8; i++) await settle();
-  assert.deepEqual(delays, []);
-  assert.equal(asked.filter((u) => u.startsWith("/api/sessions/r3/timeline")).length, 2, "page 2 asked once");
-  assert.match(textOf(byId("app")), /store timed out/);
-});
-
-// A call's detail gets the same single retry on 504 as the session summary: the server
+// A call's details get the same single retry on 504 as the session's view: the server
 // answers 504 while a build runs past its store timeout, and a second later the cached
 // build serves it (013 manual check, F9).
 async function openCall(sid, plan) {
@@ -188,26 +178,117 @@ async function openCall(sid, plan) {
   globalThis.__retryDelay = async (ms) => void delays.push(ms);
   const path = `/api/sessions/${sid}`;
   replies[`${path}/view`] = viewOf("Seeded", false);
-  replies[`${path}/timeline`] = { entries, next_after: null };
-  plans["/api/exchanges/b"] = plan;
+  replies[`${path}/calls/b`] = callOf("b");
+  plans[`${path}/calls/b`] = plan;
   asked.length = 0;
   location.hash = `#/sessions/${sid}/call/b`;
   for (const fn of listeners.hashchange) fn();
   for (let i = 0; i < 8; i++) await settle();
-  const drawer = withClass(byId("app"), "drawer")[0];
-  return { delays, text: () => textOf(drawer), detailAsks: () => asked.filter((u) => u.startsWith("/api/exchanges/b")).length };
+  const dialog = withClass(byId("app"), "call-details")[0];
+  return { delays, text: () => textOf(dialog), detailAsks: () => asked.filter((u) => u.startsWith(`${path}/calls/b`)).length };
 }
 
 test("callDetailRetriesOnceAfter504", async () => {
   const r = await openCall("d1", [504]);
   assert.deepEqual(r.delays, [1000]);
-  assert.equal(r.detailAsks(), 2, "the detail is asked twice");
-  assert.doesNotMatch(r.text(), /detail unavailable/);
+  assert.equal(r.detailAsks(), 2, "the details are asked twice");
+  assert.doesNotMatch(r.text(), /unavailable/);
+  assert.match(r.text(), /Call #2/);
 });
 
 test("callDetailSecond504ShowsTheReason", async () => {
   const r = await openCall("d2", [504, 504]);
   assert.deepEqual(r.delays, [1000]);
   assert.equal(r.detailAsks(), 2, "one retry only");
-  assert.match(r.text(), /detail unavailable: store timed out/);
+  assert.match(r.text(), /Call details unavailable: store timed out/);
+});
+
+// E3: a URL naming a call the session does not have shows the "no such call" note and no
+// dialog; the next call URL clears the note and opens its call.
+test("noSuchCallNoteClearsOnTheNextCall", async () => {
+  const path = "/api/sessions/m1";
+  replies[`${path}/view`] = viewOf("Seeded", false);
+  replies[`${path}/calls/b`] = callOf("b");
+  location.hash = "#/sessions/m1/call/zzz";
+  for (const fn of listeners.hashchange) fn();
+  for (let i = 0; i < 8; i++) await settle();
+  const app = byId("app");
+  assert.match(textOf(app), /No such call in this session\./);
+  assert.equal(withClass(app, "call-details")[0].open, false, "no dialog");
+  location.hash = "#/sessions/m1/call/b";
+  for (const fn of listeners.hashchange) fn();
+  for (let i = 0; i < 8; i++) await settle();
+  assert.doesNotMatch(textOf(app), /No such call/);
+  assert.match(textOf(withClass(app, "call-details")[0]), /Call #2/);
+});
+
+// AC12: the ungrouped exchanges page sits in the sessions list's column with its title and
+// labelled counts, its rows in a card with glyph-and-word statuses and labelled tokens, and
+// the breadcrumb back to Sessions.
+test("ungroupedPageUsesLabelsAndBreadcrumb", async () => {
+  const u = (v) => ({ value: v, unreported: 0 });
+  replies["/api/ungrouped"] = {
+    items: [
+      { id: "x1", client: "unknown", models: ["m1"], first_at: "2026-01-01T00:00:00Z", errors: 0, title: "hello", usage: { input: u(120), output: u(12), cache_read: u(0) } },
+      { id: "x2", client: "unknown", models: ["m1"], first_at: "2026-01-01T00:01:00Z", errors: 1, title: "", usage: { input: u(null), output: u(null), cache_read: u(null) } },
+    ],
+    next_after: null,
+  };
+  location.hash = "#/ungrouped";
+  for (const fn of listeners.hashchange) fn();
+  for (let i = 0; i < 6; i++) await settle();
+  const app = byId("app");
+  const page = withClass(app, "page")[0];
+  assert.ok(page, "the page sits in the list's column");
+  const head = textOf(withClass(page, "sp-head")[0]).replace(/\s+/g, " ");
+  assert.match(head, /Ungrouped exchanges/);
+  assert.match(head, /2 exchanges/);
+  assert.match(head, /1 failed/);
+  const rows = withClass(withClass(page, "sp-list")[0], "status").filter((c) => c.tagName === "td").map((c) => textOf(c).trim());
+  assert.deepEqual(rows, ["✓ ok", "✗ failed"]);
+  const tokens = withClass(page, "tokens").filter((c) => c.tagName === "td").map((c) => textOf(c).trim());
+  assert.deepEqual(tokens, ["120 in · 12 out · 0 cache read", "— in · — out · — cache read"]);
+  const links = withClass(page, "stitle").map((a) => [a.textContent, a.href]);
+  assert.deepEqual(links, [["hello", "#/exchanges/x1"], ["no prompt captured", "#/exchanges/x2"]]);
+  const crumbs = textOf(all(byId("shell-head")).find((e) => e.tagName === "nav")).replace(/\s+/g, " ").trim();
+  assert.equal(crumbs, "Sessions / Ungrouped");
+});
+
+// AC12, research D43: the full exchange page sits in the sessions list's column, titled with
+// its call's number, its status as glyph and word and its facts labelled; the breadcrumb
+// names its session and call, or Ungrouped for an exchange no session claims; the call
+// dialog's Headers link (#/exchanges/{id}/headers) lands on the request headers.
+test("exchangePageUsesLabelsAndBreadcrumb", async () => {
+  const base = { method: "POST", path: "/v1/messages", protocol: "test", client: "c", stream: false, parse: "ok", started_at: "2026-01-01T00:00:00Z", ended_at: "2026-01-01T00:00:01Z", ttfb_ms: 120, duration_ms: 1000, request_body_stored: true, response_body_stored: true, request_headers: { "X-Test-Key": ["[REDACTED]"] }, response_headers: {} };
+  replies["/api/exchanges/x1"] = { ...base, id: "x1", status: 200, status_word: "200 OK", model: "m1", session_id: "s1", session_title: "Seeded", call_n: 2, usage: { has_usage: true, input: 42, output: 7, cache_write: 0, cache_read: null } };
+  replies["/api/exchanges/x2"] = { ...base, id: "x2", status: 500, status_word: "500 Internal Server Error", client: "unknown", usage: null };
+  const go = async (hash) => {
+    location.hash = hash;
+    for (const fn of listeners.hashchange) fn();
+    for (let i = 0; i < 6; i++) await settle();
+  };
+  const crumbs = () => all(byId("shell-head")).find((e) => e.tagName === "nav");
+  await go("#/exchanges/x1/headers");
+  const page = withClass(byId("app"), "exchange-page")[0];
+  assert.ok(page && page.className.split(" ").includes("page"), "the sessions list's column");
+  assert.equal(textOf(crumbs()).replace(/\s+/g, " ").trim(), "Sessions / Seeded / Call #2");
+  assert.equal(all(crumbs()).find((e) => e.tagName === "a" && e.textContent === "Seeded").href, "#/sessions/s1");
+  const head = withClass(page, "sp-head")[0];
+  assert.match(textOf(head), /Call #2/);
+  assert.equal(withClass(head, "st-ok")[0].textContent, "✓ 200 OK");
+  const facts = withClass(page, "mfact").map((f) => textOf(f).replace(/\s+/g, " ").trim());
+  for (const want of ["Input tokens 42", "Output tokens 7", "Cache write 0", "Cache read —", "Parse ✓ ok", "Time to first byte 120 ms"]) assert.ok(facts.includes(want), want);
+  const headers = page.children.find((c) => c.id === "headers");
+  assert.equal(headers.textContent, "Request headers");
+  assert.equal(globalThis.document.activeElement, headers, "the Headers link lands on the request headers");
+  assert.match(textOf(page), /\[REDACTED\]/);
+  const tops = [];
+  window.scrollTo = (x, y) => tops.push([x, y]);
+  await go("#/exchanges/x2");
+  assert.deepEqual(tops[0], [0, 0], "another page starts at its top");
+  assert.equal(textOf(crumbs()).replace(/\s+/g, " ").trim(), "Sessions / Ungrouped / Exchange");
+  const page2 = withClass(byId("app"), "exchange-page")[0];
+  assert.match(textOf(withClass(page2, "sp-head")[0]), /Exchange/);
+  assert.equal(withClass(page2, "st-failed")[0].textContent, "✗ 500 Internal Server Error");
+  assert.ok(withClass(page2, "mfact").some((f) => /Tokens\s*not a model call/.test(textOf(f))));
 });
