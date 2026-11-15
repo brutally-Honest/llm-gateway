@@ -261,7 +261,8 @@ function rowNode(id) {
   for (const cls of COLUMNS.map((c) => c[1])) parts.cells.push(td(tr, null, cls));
   parts.cells[1].append(parts.a, parts.place, parts.look);
   parts.tokens = [span("tok"), span("tok"), span("tok")];
-  parts.cells[8].append(...parts.tokens);
+  parts.cost = span("cost");
+  parts.cells[8].append(...parts.tokens, parts.cost);
   parts.tools = [span(""), span("bad")];
   parts.cells[5].append(...parts.tools);
   return parts;
@@ -330,16 +331,15 @@ function fillRow(parts, s, selected) {
   setToken(parts.tokens[0], c.input, "in");
   setToken(parts.tokens[1], c.output, "out");
   setToken(parts.tokens[2], c.cacheRead, "cache read");
-  setText(cells[9], c.cost.text);
-  setTitle(cells[9], c.cost.title);
+  setText(parts.cost, `${c.cost.text} ${LABEL}`);
+  setTitle(parts.cost, c.cost.title);
 }
 
 // COLUMNS are the list's headers and each column's class; every count carries its own label
 // in words (spec 017 AC1).
 const COLUMNS = [
   ["Start", "time"], ["Session", "title"], ["Sources", "src"], ["Status", "status"], ["Work", "work"],
-  ["Tools", "tools"], ["Changes", "changes"], ["Time", "dur"], ["Tokens", "tokens"],
-  [`${LABEL} cost`, "cost", explain("")],
+  ["Tools", "tools"], ["Changes", "changes"], ["Time", "dur"], ["Tokens", "tokens", `Second line: ${explain("")}`],
 ];
 
 // unassignedShown is how many unassigned connections the list's section lists; the rest are

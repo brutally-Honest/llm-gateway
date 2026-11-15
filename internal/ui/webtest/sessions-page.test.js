@@ -326,8 +326,9 @@ test("noUnassignedSectionWhenNone", () => {
   assert.equal(withClass(p.page.el, "sp-unassigned").length, 0);
 });
 
-// spec 020 AC6, AC8: a row's API-equivalent cost cell, partial when calls were left out,
-// with a header hover saying what the amount is.
+// spec 020 AC6, AC8, research D13: a row's API-equivalent cost, a labelled second line of
+// the Tokens cell (a column of its own overflowed the 1,600 px list), partial when calls
+// were left out.
 test("rowShowsApiEquivalentCost", () => {
   const cost = { usd: "12.345", source: "Test", priced: 9, no_price: 0, no_price_models: [], no_usage: 1, errored: 0, estimated: 0, at_least: 0, partial: true };
   const c = rowCells(session({ usage: { ...session().usage, cost } }));
@@ -335,9 +336,9 @@ test("rowShowsApiEquivalentCost", () => {
   assert.match(c.cost.title, /1 call left out: no usage counts/);
   assert.equal(rowCells(session({ hooks_only: true, has_calls: false })).cost.text, "—");
   const p = livePage([session({ usage: { ...session().usage, cost: { ...cost, no_usage: 0, partial: false } } })]);
-  const th = byTag(p.page.el, "th").find((x) => x.textContent === "API-eq. cost");
-  assert.ok(th, "the column is labelled API-eq. cost");
-  assert.match(th.title, /not what was charged/);
-  const cell = withClass(p.page.el, "cost").find((x) => x.tagName === "TD" || x.tagName === "td");
-  assert.equal(textOf(cell).trim(), "$12.35");
+  const th = byTag(p.page.el, "th").find((x) => x.textContent === "Tokens");
+  assert.match(th.title, /API-equivalent: .* not what was charged/, "the Tokens header explains the cost line");
+  const line = withClass(p.page.el, "cost")[0];
+  assert.equal(textOf(line).trim(), "$12.35 API-eq.", "the cost is the Tokens cell's second line, labelled");
+  assert.match(line.title, /not what was charged/);
 });
