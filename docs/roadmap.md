@@ -4,12 +4,17 @@ What comes next, in order. PLAN.md §7 holds the phases; this is the short list 
 features. Update it when the order changes.
 
 ## Next
-1. **Fix: side-call requests shown as turns** (017 research D12, D16): Claude Code's
-   away-summary ("The user stepped away…") and prompt-suggestion ("[SUGGESTION MODE…")
-   requests show as turns of their own; they should be side calls. The fix is in the
-   Claude Code profile's side-call detection, not the UI, on its own `fix/` branch.
+1. **019 fast shutdown**: the gateway's stop takes 90 s and ends in SIGKILL, because open
+   proxy tunnels are only closed after the shutdown timeout runs out. Close them as soon as
+   shutdown starts, and set `TimeoutStopSec` in the systemd unit in
+   `docs/clients/claude-code.md` (and the launchd equivalent, `ExitTimeOut`, in the plist
+   there).
 
 ## Done
+- **018 side-call turns** (`specs/018-side-call-turns/`, fix): Claude Code's away
+  summaries and prompt suggestions are side calls (017 D12), and its background-task
+  notices stay with the calls that answer them instead of showing as false hooks-only
+  turns or prompts.
 - **017 sessions list and call details** (`specs/017-sessions-list-and-call-details/`,
   spec v8): the sessions list, the call details dialog that replaced the 013 drawer, and
   the ungrouped, unassigned and full exchange pages on 016's theme.
@@ -33,10 +38,6 @@ features. Update it when the order changes.
     (`specs/017-sessions-list-and-call-details/research.md`, Notes).
   - The today query scans the effects table, which has no index on time (017 D25).
   - These two may share one fix (a time index, or running totals); neither is chosen.
-- Gateway stop takes 90 s and ends in SIGKILL: open proxy tunnels are only closed after
-  the shutdown timeout runs out. Close them as soon as shutdown starts, and set
-  `TimeoutStopSec` in the systemd unit in `docs/clients/claude-code.md` (and the launchd
-  equivalent, `ExitTimeOut`, in the plist there).
 - Watch `TestProxy_GoldenAnthropicStreamReplay` (`internal/protocols/anthropic`): it failed
   once on an unrelated commit with "unexpected EOF" and passed on rerun; possible flake
   (`specs/015-effect-attribution/research.md`, 2026-11-10).
