@@ -106,6 +106,12 @@ feature: 020-api-equivalent-cost
   stands: a call whose usage reports a non-standard speed stays "no price for <model>
   (fast)" rather than priced from rates the table does not hold. Adding it later is a
   `speed` column in the table and a row per fast rate.
+- D17 (2026-11-15) — Karthik: fix the 1,440 px Tokens overflow (Notes, check) on this
+  branch. Below 1,600 px the Tokens cell wraps at its " · " separators like Work and
+  Changes (017 D49): each count is an unbreakable `.seg` part with the dots as text
+  between them, in the same media query; the cost stays a line of its own that never
+  breaks. This changes 017 D49's "Tokens stays on one line" below 1,600 px only; at
+  1,600 px and wider every count cell is still one line.
 
 ## Notes
 ### Evidence: models in the real store (2026-11-15)
