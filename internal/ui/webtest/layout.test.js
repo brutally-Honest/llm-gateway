@@ -117,3 +117,9 @@ test("callReplyCapAndShowAllCoverRaw", () => {
   assert.equal(capped.overflow, "auto");
   assert.equal(rule(".call-reply:not(.is-capped) .tx-b pre")["max-height"], "none", "Raw shows all too");
 });
+
+// spec 017 AC12: the full exchange page's two header tables line up: the Name column has one
+// width in both, so Value starts at the same place (seen in the slice 3 check).
+test("exchangeHeaderTablesLineUp", () => {
+  assert.equal(rule(".exchange-page .sp-list th.hname").width, "18rem");
+});
