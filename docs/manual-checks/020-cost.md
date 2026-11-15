@@ -41,9 +41,9 @@ spec's research.md.
 
 | Step | Expected |
 |---|---|
-| 1.1 | The list has a column "API-eq. cost" after Tokens; each row shows a dollar amount to cents on one line. Hovering the header says "API-equivalent: what these tokens would cost at the provider's published API prices — not what was charged." |
+| 1.1 | Each row's Tokens cell has a second line "$X API-eq." (research D14). Hovering the Tokens header says "Second line: API-equivalent: what these tokens would cost at the provider's published API prices — not what was charged." |
 | 1.2 | Hovering a row's amount shows the same explanation, with Anthropic named; a row whose calls include a cut call (no usage counts) reads "≥ $…" and its hover says how many calls were left out. |
-| 1.3 | The Session column keeps at least 20rem at 1,440 px and at 2,560 px (computed width of `td.title` ≥ 320 px). |
+| 1.3 | The Session column keeps at least 20rem at 1,440 px and at 2,560 px (computed `min-width` 20rem, 280 px at the 14 px root; the table fits its 1,600 px container). |
 | 1.4 | The Today line ends with "$X API-eq. cost"; its hover explains it. |
 
 ## §2 A real session (normal, and one with side calls)
