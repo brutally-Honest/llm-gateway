@@ -24,6 +24,13 @@ features. Update it when the order changes.
   the ungrouped, unassigned and full exchange pages on 016's theme.
 
 ## Later
+- Cold sessions-list build takes ~17 s on the real store (warm_ms 17670 after 019), versus
+  ~210 ms in the 500-session benchmark; the UI waits that long after every start. Likely
+  fix: a view cache that persists across restarts. The benchmark misses it by shape, not
+  size: it seeds 500 sessions × 20 calls × 4 events (~40k events), while the real store
+  has 14 sessions, 2,337 calls (up to 661 in one) and ~510 events per call (each call
+  re-sends the conversation), 1.18M events; seeding that shape takes minutes a run, so the
+  benchmark is left as it is (`internal/ui/timeline_bench_test.go`).
 - AC44, the API-key smoke test of Phase 1 (Claude Code in API-key mode through the
   gateway; `specs/001-core-and-anthropic-passthrough/research.md` Q4): needs a Console
   account and prepaid credits.
