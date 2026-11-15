@@ -117,6 +117,29 @@ feature: 021-self-observability
 http://host.docker.internal:17411/` → `can't connect to remote host (172.17.0.1):
 Connection refused`. docker0 is 172.17.0.1/16. (D12)
 
+### Real-gateway check (2026-11-15, docs/manual-checks/021-self-observability.md)
+Build 6608bd1 installed first (binary kept as `~/.local/bin/gateway.bak-021`; config
+kept as `config.yaml.bak-021`, `tracing.enabled: true` appended with Karthik's
+go-ahead), then 06e6211 after the check showed `ui p50/p99` lines in the model-call
+latency panel (pre-created `listener=ui, proxied=true` series the UI can never fill;
+fixed in 06e6211). Stack via `make observability-up` (Linux override). Claude Code calls
+were this build session's own, which run through the gateway and its proxy listeners.
+
+| # | Step | Expected | Seen | Match |
+|---|---|---|---|---|
+| 1 | `/metrics` on 7197 and 7199 | build info, this version | `gateway_build_info{go_version="go1.25.4",version="6608bd1"} 1` on both | yes |
+| 2 | `/metrics` via and on the proxy listener 7198 | no metrics | 400 both ways, no `gateway_` line | yes |
+| 3 | Prometheus targets | `llm-gateway` 127.0.0.1:7197 UP | UP, last scrape 2 ms | yes |
+| 4 | Claude Code calls with the UI open on a session | answer as before | calls 200; `ui_streams_open 1`, `proxy_tunnels_open 2`, cold view builds 4 | yes |
+| 5 | Restart | seconds, no SIGKILL, record written | 0.32 s (`gateway stopped`), no SIGKILL; `last-shutdown.json`: 0.323 s, calls_cut 0, tunnels_cut 2. The 06e6211 install restart: 0.004 s, tunnels_cut 2 | yes |
+| 6 | More calls; session page cold then cached | both builds recorded | `cache="cold"` 5, `cache="cached"` 1 on 06e6211 | yes |
+| 7 | Grafana dashboard, last 15 min | data on every panel | all 17 panels show data: requests, latency p50 ~5 s / p99 ~27 s, overhead p50 ~50 µs / p99 ~230 µs, TTFB, upstream total, errors 0, queue 0 of 256, drops 0, store write (parse p50 ~180 ms), tunnels, UI streams, view build cold/cached, warm-up 23.43 s, last shutdown 3.86 ms, cut 0 calls / 2 tunnels, build 06e6211, uptime | yes |
+| 8 | Jaeger trace of a model call | six spans, ids/sizes/status/model, no content or headers | trace 2c5d97c…: receive (6.3 s, POST 200) → upstream_request (1.1 s, 200), response_stream (5.2 s), capture (model claude-opus-5-5) → 2 store_write (17.6 ms, 223 ms); root attributes: exchange id, client, protocol, stream, ttfb 1117.6 ms, request 1,539,815 B, response 5,666 B. Across 26 traces the only keys are the spec's plus Jaeger's own `@jaeger@warnings` (clock-skew notes: the capture span ends after its parent, as it runs after the response) | yes |
+| 9 | `gateway dump` of the trace's exchange id | the same call | `IEYWQ6SGA2FG4CWOA5SJLEDLTG`, POST /v1/messages, claude-code | yes |
+
+Seen beside the steps: a trace queried while its call still streamed had only
+`gateway.upstream_request` (ended spans export first); fetched again it had all six.
+
 ### Flake seen (2026-11-15)
 `TestCapture_ForwardingUnchanged/TestProxy_GoldenAnthropicStreamReplay`
 (`internal/protocols/anthropic`) failed once in a full `make verify` while building
