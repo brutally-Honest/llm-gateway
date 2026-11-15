@@ -187,7 +187,7 @@ Each is resolved in the named phase's spec and recorded as an ADR. The leaning i
   - **Tailscale Funnel:** good if I already use Tailscale.
 - **Constraint regardless of choice:** gateway token auth on every externally reachable route.
 
-**OQ-4. How is usage audited for models whose tokenizer isn't public?** *(decide by Phase 9)*
+**OQ-4. How is usage audited for models whose tokenizer isn't public?** *(decide by Phase 9)* **Deferred** with AC44 (roadmap, Later): a usage audit needs the Console's usage records. Phase 9 prices the provider-reported usage as captured (spec 020).
 - **Why it matters:** tiktoken approximates Claude and Gemini tokenization poorly, so a 5% audit threshold would raise false alarms.
 - **Options:** call the provider's own count-tokens endpoint (exact, but extra requests); use a wider tolerance per model family; audit only OpenAI-family models.
 - **Leaning:** per-family tolerance in config, with provider count-tokens as an opt-in exact check.
