@@ -4,13 +4,16 @@ What comes next, in order. PLAN.md §7 holds the phases; this is the short list 
 features. Update it when the order changes.
 
 ## Next
-1. **Phase 9 cost, API-equivalent** (PLAN §7): each model call and session priced from
-   its captured tokens (the four Phase 4 counters) and the published prices, as what it
-   would cost on the API; no API key needed. Unknown models show `unknown`.
-2. **Phase 8 self-observability** (PLAN §7): Prometheus, OTel → Jaeger, Grafana; the
+1. **Phase 8 self-observability** (PLAN §7): Prometheus, OTel → Jaeger, Grafana; the
    gateway's own p50/p99 overhead visible.
 
 ## Done
+- **020 API-equivalent cost** (`specs/020-api-equivalent-cost/`, Phase 9): every model
+  call priced on read from its stored usage and a checked-in table of Anthropic's
+  published prices (effective dates, the 5m/1h cache-write split, Haiku 5.5's tier), in
+  exact integer pico-dollars; shown as API-equivalent in the call dialog with its
+  breakdown, the sessions list, the session overview and the Today line; a model with no
+  price is "— no price for <model>" and makes totals partial ("≥").
 - **019 fast shutdown** (`specs/019-fast-shutdown/`, fix): a stop takes under a second with
   nothing in flight (was 90 s and a SIGKILL): proxy tunnels and UI streams close at once,
   in-flight model calls get 10 s and are then cut and stored as cut by the gateway; the
@@ -24,6 +27,13 @@ features. Update it when the order changes.
   the ungrouped, unassigned and full exchange pages on 016's theme.
 
 ## Later
+- At a 1,440 px window the sessions list's Tokens column is cut at the right edge on the
+  real store (the table is 1,430 px in a 1,377 px frame; the list scrolls sideways): its
+  token counts grew past what 017 D49's one-line Tokens cell fits. Found in the 020 check,
+  same on main (`specs/020-api-equivalent-cost/research.md`, Notes). Likely fix: let the
+  Tokens cell wrap at its dots below 1,600 px, as Work and Changes do.
+- Fast-mode and US-only inference prices (020 D6, D16): nothing captured uses them yet;
+  a `speed` column in the price table when something does.
 - Cold sessions-list build takes ~17 s on the real store (warm_ms 17670 after 019), versus
   ~210 ms in the 500-session benchmark; the UI waits that long after every start. Likely
   fix: a view cache that persists across restarts. The benchmark misses it by shape, not
