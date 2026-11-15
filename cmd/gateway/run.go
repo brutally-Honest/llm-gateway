@@ -18,6 +18,7 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/clients/claudecode"
 	"github.com/brutally-honest/llm-gateway/internal/config"
 	"github.com/brutally-honest/llm-gateway/internal/core"
+	"github.com/brutally-honest/llm-gateway/internal/cost"
 	"github.com/brutally-honest/llm-gateway/internal/effects"
 	"github.com/brutally-honest/llm-gateway/internal/hooks"
 	"github.com/brutally-honest/llm-gateway/internal/logging"
@@ -50,6 +51,24 @@ type deps struct {
 // the only one that imports an adapter or a profile.
 func registered() ([]core.Adapter, []core.Profile) {
 	return []core.Adapter{anthropic.Adapter{}}, []core.Profile{claudecode.Profile{}}
+}
+
+// costBooker is an adapter that prices its calls: its protocol's published price table
+// and how to read its usage detail (spec 020).
+type costBooker interface {
+	CostBook() cost.Book
+}
+
+// registerCostBooks registers the price book of every adapter that has one, under the
+// adapter's protocol name, before any view is built (research D9). An adapter with no
+// book leaves its calls "no price".
+func registerCostBooks() {
+	adapters, _ := registered()
+	for _, a := range adapters {
+		if b, ok := a.(costBooker); ok {
+			cost.Register(a.Name(), b.CostBook())
+		}
+	}
 }
 
 // upstreamSpecs is the upstreams.<name> block config expects for each adapter.
@@ -114,6 +133,7 @@ func captureDir(c config.Capture, lookupEnv func(string) (string, bool), log *za
 // run starts the gateway and serves until ctx is cancelled. It returns the exit code.
 func run(ctx context.Context, d deps) int {
 	boot := logging.Bootstrap(d.stdout)
+	registerCostBooks()
 
 	if len(d.args) > 0 && d.args[0] == "dump" {
 		return runDump(d)
