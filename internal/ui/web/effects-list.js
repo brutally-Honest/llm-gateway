@@ -1,5 +1,5 @@
 import { COVERAGE, attributionText, changeGlyph, formatBytes, outcomeGlyph } from "./effects.js";
-import { formatDuration } from "./model.js";
+import { formatDuration } from "./fmt.js";
 
 // The expanded effects list of the unassigned connections page (spec 014 AC15): the coverage
 // line, the files, then the connections, each with its attribution. Moved here from the

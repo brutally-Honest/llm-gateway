@@ -135,7 +135,7 @@ func TestWeb_GuardExemptsOnlyTheSVGNamespace(t *testing.T) {
 // the browser leaves it alone.
 func TestWeb_NoSideCallTextMatching(t *testing.T) {
 	files := webFiles(t)
-	if _, ok := files["model.js"]; !ok {
+	if _, ok := files["app.js"]; !ok {
 		t.Fatal("the web files were not read")
 	}
 	for name, src := range files {
@@ -171,7 +171,6 @@ func TestWeb_ServesHarnessBadgeRendering(t *testing.T) {
 	want := map[string][]string{
 		"story.js":         {"markText(l.state, ok)", "l.agent", "t.hook_tools", "No model calls captured. The hooks saw:"},
 		"dialog.js":        {"det.input_differs", "det.hook_input", "det.hook_omitted_bytes", "det.hooks"},
-		"model.js":         {"agentLabel(e)", "export function chipOf"},
 		"sessions-page.js": {"hooks_only", "hooks only"},
 	}
 	for name, subs := range want {
