@@ -105,7 +105,13 @@ test("todayLineShowsServerTotals", () => {
   const p = livePage([session()]);
   p.page.update({ today: { sessions: 2, calls: 5, changed: 7, sites: 1, input: counter(3707), output: counter(null) } });
   const today = withClass(p.page.el, "today")[0];
-  assert.equal(textOf(today).replace(/\s+/g, " ").trim(), "Today 2 sessions 5 model calls 7 files changed 1 site 3.7k input — output");
+  assert.equal(textOf(today).replace(/\s+/g, " ").trim(), "Today 2 sessions 5 model calls 7 files changed 1 site 3.7k input — output — API-eq. cost");
+  // spec 020 AC6, AC8: the day's API-equivalent cost, partial when calls were left out
+  p.page.update({ today: { sessions: 2, calls: 5, changed: 7, sites: 1, input: counter(3707), output: counter(null),
+    cost: { usd: "1.5", source: "Test", priced: 4, no_price: 1, no_price_models: ["m9"], no_usage: 0, errored: 0, estimated: 0, at_least: 0, partial: true } } });
+  const stat = withClass(withClass(p.page.el, "today")[0], "stat").at(-1);
+  assert.equal(textOf(stat).replace(/\s+/g, " ").trim(), "≥ $1.50 API-eq. cost");
+  assert.match(stat.title, /1 call left out: no price for m9/);
 });
 
 // spec 017 AC4: the filter shows the matching loaded rows; the kinds are buttons marked pressed.
@@ -318,4 +324,20 @@ test("noUnassignedSectionWhenNone", () => {
   const p = livePage([session()]);
   p.page.update({ unassigned: 0, unassignedItems: [] });
   assert.equal(withClass(p.page.el, "sp-unassigned").length, 0);
+});
+
+// spec 020 AC6, AC8: a row's API-equivalent cost cell, partial when calls were left out,
+// with a header hover saying what the amount is.
+test("rowShowsApiEquivalentCost", () => {
+  const cost = { usd: "12.345", source: "Test", priced: 9, no_price: 0, no_price_models: [], no_usage: 1, errored: 0, estimated: 0, at_least: 0, partial: true };
+  const c = rowCells(session({ usage: { ...session().usage, cost } }));
+  assert.equal(c.cost.text, "≥ $12.35");
+  assert.match(c.cost.title, /1 call left out: no usage counts/);
+  assert.equal(rowCells(session({ hooks_only: true, has_calls: false })).cost.text, "—");
+  const p = livePage([session({ usage: { ...session().usage, cost: { ...cost, no_usage: 0, partial: false } } })]);
+  const th = byTag(p.page.el, "th").find((x) => x.textContent === "API-eq. cost");
+  assert.ok(th, "the column is labelled API-eq. cost");
+  assert.match(th.title, /not what was charged/);
+  const cell = withClass(p.page.el, "cost").find((x) => x.tagName === "TD" || x.tagName === "td");
+  assert.equal(textOf(cell).trim(), "$12.35");
 });

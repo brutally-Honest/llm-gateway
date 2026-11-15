@@ -1,4 +1,5 @@
 import { button, clock, dur, el, num, plural } from "./fmt.js";
+import { LABEL_LONG, totalCost } from "./cost.js";
 import { createDialog } from "./dialog.js";
 import { createSideCard } from "./side-card.js";
 import { betweenNode, reveal, turnNode } from "./story.js";
@@ -283,6 +284,10 @@ export function createSessionPage(ctx = {}) {
     const foot = el("div", "foot");
     const tk = o.tokens || {};
     foot.append(el("span", "", `Tokens: ${num(tk.input)} input · ${num(tk.output)} output · ${num(tk.cache_write)} cache write · ${num(tk.cache_read)} cache read${tk.incomplete ? " (some calls did not report)" : ""}`));
+    const cost = totalCost(tk.cost);
+    const costLine = el("span", "cost", `${LABEL_LONG} cost: ${cost.text}`);
+    costLine.title = `${cost.title}\nSide calls included.`;
+    foot.append(costLine);
     const sideCalls = view.side_calls || [];
     if (sideCalls.length) {
       const d = el("details", "side");
