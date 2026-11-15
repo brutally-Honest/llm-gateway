@@ -124,11 +124,11 @@ Each phase maps to one or more features, and each feature gets its own spec fold
 | C | File system and network visibility | Show file-system and network activity alongside the timeline and the captured tool calls | Defined in its own spec when it starts |
 | 7 | Routing: **removed from v1** ([ADR 0010](docs/decisions/0010-remove-routing-and-auth-from-v1.md)) | Same-protocol model aliases, weighted selection, fallback + circuit breaker. Not scheduled | Not in v1 |
 | 8 | Self-observability | Prometheus, OTel → Jaeger, Grafana | The gateway's own p50/p99 overhead is visible |
-| 9 | Cost: pricing table keyed by provider + model, needs API billing to verify | Price each model call from the Phase 4 counters using a pricing table keyed by provider + model; estimate audit (OQ-4) | Per-session cost matches the provider console within tolerance; unknown models are shown as `unknown` |
+| 9 | Cost: API-equivalent, from captured tokens and published prices; no API key needed | Price each model call from the Phase 4 counters using a pricing table of published prices keyed by provider + model, as what the call would cost on the API (a subscription session included); estimate audit (OQ-4) | Every model call and session shows its API-equivalent cost from the published prices; unknown models are shown as `unknown` |
 
 The former Phase 3 (a second wire protocol and its client profile, gateway token auth, a public tunnel) was removed and the later phases moved up by one ([ADR 0006](docs/decisions/0006-drop-cursor-from-v1.md)).
 
-The v1 order is now A → 6 → C → C v2 (effect attribution) → web UI v2 → 9. Routing (old Phase 7) and real auth are removed from v1 ([ADR 0010](docs/decisions/0010-remove-routing-and-auth-from-v1.md)). Self-observability (Phase 8) is unchanged.
+The v1 order is now A → 6 → C → C v2 (effect attribution) → web UI v2 → 9 (cost, API-equivalent) → 8 (self-observability). Routing (old Phase 7) and real auth are removed from v1 ([ADR 0010](docs/decisions/0010-remove-routing-and-auth-from-v1.md)).
 
 Later, each as a new adapter or profile: OpenAI Responses (Codex), OpenAI Chat Completions (Cursor and others), Gemini (Gemini CLI, Antigravity), Bedrock/Vertex formats, cross-protocol translation, eBPF-level fs/network tracing. Each new protocol's decoder must map its provider usage to the four Phase 4 counters with the meaning defined in `specs/005-session-token-usage/spec.md` (Terms): input is uncached input only, so input + cache write + cache read is the full prompt.
 
