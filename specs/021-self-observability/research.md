@@ -14,6 +14,44 @@ feature: 021-self-observability
   under systemd; every port on 127.0.0.1; low-cardinality metrics in the seven groups of
   the spec; OTel spans for one path (a proxied model call), off by default, OTLP endpoint
   in config; one provisioned Grafana dashboard and datasource.
+- D2 (2026-11-15) — "/metrics on the UI/API listener only": read as both the API listener
+  (`listen_addr`, always bound, so "always exposes /metrics" holds with the UI off) and
+  the UI listener (where it sits behind the UI's Host and Origin checks). Prometheus
+  scrapes the API listener: the UI's Host check would refuse `host.docker.internal`.
+  Never on the proxy listeners.
+- D3 (2026-11-15) — Requests are counted on the API and UI listeners. The proxy listeners
+  serve tunnels and forwards, not requests the gateway answers; they are covered by
+  `gateway_proxy_tunnels_open`. A third label, `proxied`, keeps model calls apart from
+  the gateway's own routes (healthz, /metrics, hooks), so a scrape every 15 s does not
+  drown the p50/p99 of model calls.
+- D4 (2026-11-15) — No `model` label on metrics, though allowed: the model is known only
+  after the capture worker parses the body (off the request path), and its value comes
+  from the client, so it is unbounded. Upstream metrics are labelled by `protocol` (the
+  registered adapter names) and `stream`. The model is on the trace's capture span.
+- D5 (2026-11-15) — "Overhead" (PLAN §7: the gateway's own p50/p99 overhead):
+  `gateway_proxy_overhead_seconds`, from the proxy taking the call to handing it to the
+  transport (session key, capture tee set-up, rewrite). The response path adds only the
+  tee's copy per chunk, which the benchmark measures.
+- D6 (2026-11-15) — Shutdown metrics: a stop's numbers cannot be scraped from the process
+  that is exiting, so each stop writes `last-shutdown.json` (duration, calls cut, tunnels
+  cut, time) to the capture directory and the next start exposes it as
+  `gateway_last_shutdown_*` gauges. The process stays stateless; the record lives beside
+  the store. Calls cut is the in-flight count when the grace period ran out (0 on a
+  clean stop).
+- D7 (2026-11-15) — Upstream error kinds: timeout and unreachable (before headers),
+  aborted (cut mid-body), rate_limited (upstream 429), status_5xx. A client that left, a
+  bad client body, a shutdown cut and the gateway's own rate-limit 429 are not upstream
+  errors.
+- D8 (2026-11-15) — Library versions: client_golang v1.25 and OTel v1.47 need go 1.26,
+  and `go get @latest` raised the module's go line to 1.26.0. Kept go 1.25.4 (the
+  installed toolchain) with client_golang v1.24.0 and OTel v1.46.0 (ADR 0018).
+
+### Dependencies
+- `github.com/prometheus/client_golang` v1.24.0 — the reference Prometheus client
+  (registry, histograms, Go/process collectors, text exposition); chosen over hand-rolled
+  exposition or VictoriaMetrics/metrics for correctness and familiarity (ADR 0018).
+  Size: the gateway binary grew from 21,530,874 to 24,942,155 bytes (+3.4 MB, mostly
+  protobuf and procfs), `CGO_ENABLED=0 -trimpath`.
 
 ## Notes
 ### Evidence: what the code measures today (main, f216cb3)
