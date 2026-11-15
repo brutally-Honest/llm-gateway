@@ -208,6 +208,12 @@ feature: 017-sessions-list-and-call-details
   now unused by the UI: `model.js` and `plot.js` (`web_test.go` asserts on model.js, so
   removing them changes a Go test) and `api.js`'s `loadAllPages` (its own tests) — for
   Karthik to decide.
+- D41 (2026-11-15, slice 2, Karthik at the UI check) — The call dialog's reply is capped like
+  its message boxes (12rem, scrolling inside), with a "Show all" button that expands it in
+  place and "Show less" that caps it again. The "cut short" link and the raw links stay. The
+  expanded state holds through live redraws of the same call and resets on the next call; a
+  reply that fits its box has no button. This is the dialog only: the turn card still shows
+  prompts and answers whole (D11).
 
 ## Notes
 - Sessions list budget, before slice 1 (2026-11-14, T001): `BenchmarkSessionsList500`

@@ -470,6 +470,9 @@ dialog.call-details { width: min(60rem, 96vw); max-height: 90vh; }
 .call-messages .role { color: var(--muted); font-weight: 600; }
 .call-messages .msg { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12rem; overflow: auto; }
 .call-messages li > a { grid-column: 1 / -1; font-size: 12px; }
+/* the reply is capped like a message box until "Show all" (D41); the turn card stays whole (D11) */
+.call-reply.is-capped .tx-b { max-height: 12rem; overflow: auto; }
+.call-reply:not(.is-capped) .tx-b pre { max-height: none; }
 .call-health { margin: 0; padding-left: 18px; font-size: 13px; }
 .call-health .tone-bad { color: var(--bad); }
 .call-health .tone-warn { color: var(--warn); }

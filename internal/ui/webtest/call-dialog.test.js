@@ -300,6 +300,55 @@ test("callDialogShowsSawThinkingResponse", async () => {
   assert.match(textOf(g.root), /1 asked for/);
 });
 
+// AC8, research D41: the reply is capped like a message box; "Show all" expands it in
+// place and "Show less" caps it again; the cut-short link stays; the expanded reply holds
+// through a live redraw of the same call and caps again on the next call; a reply that
+// fits its box has no toggle.
+test("replyIsCappedWithShowAll", async () => {
+  const long = detail("b", { response: { text: "line\n".repeat(400), truncated: true, stop_reason: "end turn" } });
+  const dlg = createCallDialog({ nav: { push() {}, replace() {}, back() {} }, loadCall: async (id) => (id === "b" ? long : detail(id)) });
+  dlg.sync({ sessionId: "s1", callId: "b" });
+  await tick();
+  const reply = () => withClass(dlg.el, "call-reply")[0];
+  const all = () => byTag(dlg.el, "button").find((b) => /^Show (all|less)$/.test(b.textContent));
+  assert.ok(reply().className.split(" ").includes("is-capped"), "the reply starts capped");
+  assert.equal(all().textContent, "Show all");
+  assert.equal(all().attrs["aria-expanded"], "false");
+  all().fire("click");
+  assert.ok(!reply().className.split(" ").includes("is-capped"), "Show all expands it in place");
+  assert.equal(all().textContent, "Show less");
+  assert.equal(all().attrs["aria-expanded"], "true");
+  assert.ok(byTag(dlg.el, "a").some((a) => /cut short/.test(a.textContent) && a.href === "/api/exchanges/b/body?part=response"), "the cut-short link stays");
+  dlg.refresh();
+  await tick();
+  assert.ok(!reply().className.split(" ").includes("is-capped"), "a live redraw keeps it expanded");
+  assert.equal(all().textContent, "Show less");
+  all().fire("click");
+  assert.ok(reply().className.split(" ").includes("is-capped"), "Show less caps it again");
+  all().fire("click");
+  dlg.sync({ sessionId: "s1", callId: "a" });
+  await tick();
+  assert.ok(reply().className.split(" ").includes("is-capped"), "the next call starts capped");
+  assert.equal(all().hidden, false, "without layout the toggle stays");
+  // with layout: a reply that fits its box has no toggle; one that overflows keeps it
+  const proto = Object.getPrototypeOf(reply());
+  let scroll = 100;
+  Object.defineProperty(proto, "scrollHeight", { configurable: true, get: () => scroll });
+  Object.defineProperty(proto, "clientHeight", { configurable: true, get: () => 100 });
+  try {
+    dlg.refresh();
+    await tick();
+    assert.equal(all().hidden, true, "a reply that fits has no toggle");
+    scroll = 900;
+    dlg.refresh();
+    await tick();
+    assert.equal(all().hidden, false, "a reply taller than its cap keeps the toggle");
+  } finally {
+    delete proto.scrollHeight;
+    delete proto.clientHeight;
+  }
+});
+
 // AC9 (carries healthShowsDisconnectAbortError, rawLinksAndFullPageLink): health in words,
 // and the raw request, response stream, headers and full page linked.
 test("callDialogHealthAndRaw", async () => {

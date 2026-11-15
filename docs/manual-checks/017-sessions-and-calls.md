@@ -166,7 +166,9 @@ Check every step in the light theme, then in dark.
     Context shows "—" for every count with why ("No usage reported: …"), the response says
     why it is missing, Health says what failed, and the raw links still open. The very long
     call: its messages and reply are cut, each saying so, with the raw links for the whole
-    body. The streamed call: its reply is the streamed text assembled.
+    body; the reply is capped like a message box, and "Show all" expands it in place ("Show
+    less" caps it again; research D41). The streamed call: its reply is the streamed text
+    assembled.
 
 2.10 **A URL naming no call (E3).** Edit the call id in the URL to one that does not exist:
     the session opens with a "No such call in this session." note and no dialog.

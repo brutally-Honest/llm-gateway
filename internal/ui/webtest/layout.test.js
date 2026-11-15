@@ -107,3 +107,13 @@ test("dialogTitleBlockIsNotATextBox", () => {
   assert.equal(head.border, "0");
   assert.equal(head.padding, "0");
 });
+
+// The call dialog's reply is capped like a message box until "Show all"; shown all, the Raw
+// view's <pre> drops the generic pre cap too, so the whole reply shows (research D41, seen
+// in the 017 slice 2 check).
+test("callReplyCapAndShowAllCoverRaw", () => {
+  const capped = rule(".call-reply.is-capped .tx-b");
+  assert.equal(capped["max-height"], rule(".call-messages .msg")["max-height"], "the same cap as a message box");
+  assert.equal(capped.overflow, "auto");
+  assert.equal(rule(".call-reply:not(.is-capped) .tx-b pre")["max-height"], "none", "Raw shows all too");
+});

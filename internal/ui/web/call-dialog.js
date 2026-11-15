@@ -29,6 +29,11 @@ function section(title, sub, ...body) {
   s.append(h, ...body.filter(Boolean));
   return s;
 }
+// childWith is node's first child carrying class cls, or null.
+function childWith(node, cls) {
+  if (!node) return null;
+  return Array.from(node.children).find((c) => String(c.className).split(" ").includes(cls)) || null;
+}
 function link(href, text, blank = false) {
   const a = el("a", "linkish", text);
   a.href = href;
@@ -89,6 +94,8 @@ export function createCallDialog(ctx = {}) {
   let pendingOpener = null;
   let inApp = false; // opened here (a link or Enter), so Back returns to the session page
   let stacked = false; // another call was opened while one was open: Back would land on it
+  let replyAll = false; // the open call's reply is shown whole ("Show all")
+  let replyFit = () => {};
 
   scrim.addEventListener("click", () => close());
   // Esc: the browser would close the <dialog> on its own; the URL closes it instead
@@ -138,6 +145,7 @@ export function createCallDialog(ctx = {}) {
     inApp = false;
     stacked = false;
     current = "";
+    replyAll = false;
     got = { id: "", state: "loading", data: null, error: "" };
     if (target && typeof target.focus === "function") target.focus();
   }
@@ -235,10 +243,33 @@ export function createCallDialog(ctx = {}) {
     const cutNote = r.truncated
       ? (d.raw.response ? link(d.raw.response, "cut short — open the raw response", true) : el("p", "muted-note", "Cut short."))
       : null;
-    const reply = r.text
-      ? textBlock("call-reply", "Response", r.text)
-      : el("p", "muted-note", (d.tools || []).length ? "No text in the reply: it asked for the tool calls below." : "No text in the reply.");
-    return section("Response", r.stop_reason ? `stop: ${r.stop_reason}` : "", reply, cutNote);
+    if (!r.text) {
+      const none = el("p", "muted-note", (d.tools || []).length ? "No text in the reply: it asked for the tool calls below." : "No text in the reply.");
+      return section("Response", r.stop_reason ? `stop: ${r.stop_reason}` : "", none, cutNote);
+    }
+    // the reply is capped like a message box; "Show all" expands it in place, and stays
+    // expanded through live redraws of the same call (the turn card stays whole, D11)
+    const reply = textBlock(replyAll ? "call-reply" : "call-reply is-capped", "Response", r.text);
+    const all = button("btn sm call-reply-all", replyAll ? "Show less" : "Show all", () => {
+      replyAll = !replyAll;
+      reply.className = replyAll ? "tx call-reply" : "tx call-reply is-capped";
+      all.textContent = replyAll ? "Show less" : "Show all";
+      all.setAttribute("aria-expanded", String(replyAll));
+    });
+    all.setAttribute("aria-expanded", String(replyAll));
+    replyFit = () => fitReply(reply, all);
+    // Preview and Raw differ in height: measure again after a switch
+    const mode = childWith(childWith(reply, "tx-h"), "mode");
+    if (mode) mode.addEventListener("click", () => replyFit());
+    return section("Response", r.stop_reason ? `stop: ${r.stop_reason}` : "", reply, all, cutNote);
+  }
+
+  // fitReply hides "Show all" while the capped reply fits its box, so a short reply has no
+  // toggle; without layout (no scrollHeight) the toggle stays.
+  function fitReply(reply, all) {
+    if (replyAll) return;
+    const b = childWith(reply, "tx-b");
+    all.hidden = Boolean(b && typeof b.scrollHeight === "number" && b.clientHeight > 0 && b.scrollHeight <= b.clientHeight + 1);
   }
 
   function toolsSection(d) {
@@ -297,7 +328,9 @@ export function createCallDialog(ctx = {}) {
       title.textContent = `Call #${d.n}`;
       subt.textContent = `${d.nav.index} of ${d.nav.total} · ${d.facts.thread.label}`;
       top.replaceChildren(...topNodes(d));
+      replyFit = () => {};
       body.replaceChildren(...[contextSection(d.context), sawSection(d), thinkingSection(d), responseSection(d), toolsSection(d), healthSection(d.health), rawSection(d.raw)].filter(Boolean));
+      replyFit();
     }
     if (keep) body.scrollTop = scroll;
   }
@@ -330,6 +363,7 @@ export function createCallDialog(ctx = {}) {
       const moved = callId !== current;
       if (moved) {
         current = callId;
+        replyAll = false;
         fetch(callId, false);
       }
       if (!shown) open();
