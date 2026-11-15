@@ -27,11 +27,6 @@ features. Update it when the order changes.
   the ungrouped, unassigned and full exchange pages on 016's theme.
 
 ## Later
-- At a 1,440 px window the sessions list's Tokens column is cut at the right edge on the
-  real store (the table is 1,430 px in a 1,377 px frame; the list scrolls sideways): its
-  token counts grew past what 017 D49's one-line Tokens cell fits. Found in the 020 check,
-  same on main (`specs/020-api-equivalent-cost/research.md`, Notes). Likely fix: let the
-  Tokens cell wrap at its dots below 1,600 px, as Work and Changes do.
 - Fast-mode and US-only inference prices (020 D6, D16): nothing captured uses them yet;
   a `speed` column in the price table when something does.
 - Cold sessions-list build takes ~17 s on the real store (warm_ms 17670 after 019), versus
