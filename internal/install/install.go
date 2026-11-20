@@ -214,8 +214,16 @@ func buildPlan(e *Env, c Client, pre *Preflight, prev *State, o InstallOptions) 
 		svc := e.service()
 		file := svc.File(p)
 		ch := fileChange(prev, "service", file, svc.Render(p), &pl)
+		var prior *PriorService
+		if prev != nil && prev.Service != nil {
+			prior = prev.Service.Prior // kept across upgrades: it is the state before the first install
+		}
 		if ch.exists && ch.changed() && !managedFile(prev, file, ch.old) {
-			pl.notes = append(pl.notes, "Found a "+svc.Kind()+" service file not made by install: "+p.tilde(file))
+			// What the user's own service was doing, so uninstall can put it back (D25).
+			st := svc.Status(p)
+			prior = &PriorService{Enabled: st.AtLogin, Running: st.Running}
+			pl.notes = append(pl.notes, fmt.Sprintf("Found a %s service file not made by install: %s (%s)",
+				svc.Kind(), p.tilde(file), priorWords(*prior)))
 			if !confirmReplace(e, o, p, file, string(ch.old)) {
 				pl.notes = append(pl.notes, "Kept your service file; no service was set up by install.")
 				delete(pl.state.Backups, file)
@@ -226,7 +234,7 @@ func buildPlan(e *Env, c Client, pre *Preflight, prev *State, o InstallOptions) 
 			pl.changes = append(pl.changes, ch)
 			pl.commands = append(pl.commands, svc.StartCommands(p)...)
 			pl.state.Files = append(pl.state.Files, file)
-			pl.state.Service = &ServiceState{Kind: svc.Kind(), File: file}
+			pl.state.Service = &ServiceState{Kind: svc.Kind(), File: file, Prior: prior}
 			pl.service = true
 		}
 	}
@@ -276,6 +284,18 @@ func buildPlan(e *Env, c Client, pre *Preflight, prev *State, o InstallOptions) 
 	last := &pl.changes[len(pl.changes)-1]
 	last.old, last.exists, _ = readMaybe(p.State)
 	return pl, cfg, nil
+}
+
+// priorWords says what a user's own service was doing.
+func priorWords(s PriorService) string {
+	on := "not enabled at login"
+	if s.Enabled {
+		on = "enabled at login"
+	}
+	if s.Running {
+		return on + ", running"
+	}
+	return on + ", not running"
 }
 
 func orUnknown(s string) string {

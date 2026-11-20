@@ -41,6 +41,15 @@ type ShellState struct {
 type ServiceState struct {
 	Kind string `json:"kind"`
 	File string `json:"file"`
+	// Prior is the state of the user's own service file install replaced, put back on
+	// uninstall (research D25); nil when install replaced none.
+	Prior *PriorService `json:"prior,omitempty"`
+}
+
+// PriorService is whether a replaced service was enabled at login and running.
+type PriorService struct {
+	Enabled bool `json:"enabled"`
+	Running bool `json:"running"`
 }
 
 func readState(path string) (*State, error) {

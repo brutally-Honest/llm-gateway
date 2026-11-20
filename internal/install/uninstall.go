@@ -32,15 +32,22 @@ func Uninstall(e *Env, c Client, o UninstallOptions) int {
 	}
 	svc := e.service()
 	var steps []removal
-	var stop [][]string
+	var stop, restart [][]string
 	var keep []string
+	var prior *PriorService
 
 	// The service: only one install made (the state names it or it carries the mark).
 	if file := svc.File(p); file != "" {
 		if data, ok, _ := readMaybe(file); ok {
 			if st.owns(file) || bytes.Contains(data, []byte(managedMark)) {
 				stop = svc.StopCommands(p)
-				steps = append(steps, removal{label: "service", path: file, remove: true, restore: existingBackup(st, file)})
+				r := removal{label: "service", path: file, remove: true, restore: existingBackup(st, file)}
+				// The user's own service goes back to how install found it (D25).
+				if r.restore != "" && st != nil && st.Service != nil && st.Service.Prior != nil {
+					prior = st.Service.Prior
+					restart = svc.RestoreCommands(p, prior.Enabled, prior.Running)
+				}
+				steps = append(steps, r)
 			} else {
 				keep = append(keep, p.tilde(file)+" (a service file not made by install)")
 			}
@@ -110,7 +117,13 @@ func Uninstall(e *Env, c Client, o UninstallOptions) int {
 		}
 		if s.restore != "" {
 			e.printf("            and put back the original from %s\n", p.tilde(s.restore))
+			if s.label == "service" && prior != nil {
+				e.printf("            as it was before install: %s\n", priorWords(*prior))
+			}
 		}
+	}
+	for _, cmd := range restart {
+		e.printf("    run     %s\n", strings.Join(cmd, " "))
 	}
 	if o.Purge {
 		e.printf("    purge   %s and %s\n", p.tilde(p.ConfigDir), p.tilde(p.DataDir))
@@ -153,6 +166,22 @@ func Uninstall(e *Env, c Client, o UninstallOptions) int {
 	if svc.Kind() == "systemd" && len(stop) > 0 {
 		_, _ = e.Run.Output("systemctl", "--user", "daemon-reload")
 	}
+	var restored string
+	if len(restart) > 0 {
+		ok := true
+		for _, cmd := range restart {
+			if out, err := e.Run.Output(cmd[0], cmd[1:]...); err != nil {
+				ok = false
+				failed = append(failed, fmt.Sprintf("%s: %v %s", strings.Join(cmd, " "), err, strings.TrimSpace(out)))
+			}
+		}
+		if ok {
+			restored = fmt.Sprintf("Your own service file is back as it was before install (%s).\n  To stop it: %s\n",
+				priorWords(*prior), svc.StopHint(p))
+		}
+	} else if prior != nil {
+		restored = fmt.Sprintf("Your own service file is back as it was before install (%s).\n", priorWords(*prior))
+	}
 	// The rc file's .bak is dropped once its lines are back, if it holds nothing more.
 	if st != nil && st.Shell != nil {
 		if b := st.backup(rc); b != "" {
@@ -182,6 +211,9 @@ func Uninstall(e *Env, c Client, o UninstallOptions) int {
 	e.printf("Uninstalled.\n")
 	if purge {
 		e.printf("  Config and data deleted.\n")
+	}
+	if restored != "" {
+		e.printf("%s", restored)
 	}
 	printKeep(e, keep)
 	e.printf("Open a new terminal: %s then runs plain %s.\n", c.Binary, c.Name)

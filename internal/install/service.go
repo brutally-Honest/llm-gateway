@@ -32,6 +32,11 @@ type ServiceManager interface {
 	StartCommands(p Paths) [][]string
 	// StopCommands are run before the file is removed.
 	StopCommands(p Paths) [][]string
+	// RestoreCommands put a user's own service file, restored by uninstall, back in the
+	// state it had before install: enabled at login and/or running (023 research D25).
+	RestoreCommands(p Paths, enabled, running bool) [][]string
+	// StopHint is the command a user runs to stop and disable the service.
+	StopHint(p Paths) string
 	Status(p Paths) ServiceStatus
 	// Notes are extra lines for the summary, such as lingering being off.
 	Notes() []string
@@ -92,6 +97,22 @@ func (s *systemd) StartCommands(Paths) [][]string {
 
 func (s *systemd) StopCommands(Paths) [][]string {
 	return [][]string{{"systemctl", "--user", "disable", "--now", systemdUnit}}
+}
+
+func (s *systemd) RestoreCommands(_ Paths, enabled, running bool) [][]string {
+	switch {
+	case enabled && running:
+		return [][]string{{"systemctl", "--user", "enable", "--now", systemdUnit}}
+	case enabled:
+		return [][]string{{"systemctl", "--user", "enable", systemdUnit}}
+	case running:
+		return [][]string{{"systemctl", "--user", "start", systemdUnit}}
+	}
+	return nil
+}
+
+func (s *systemd) StopHint(Paths) string {
+	return "systemctl --user disable --now " + systemdUnit
 }
 
 func (s *systemd) Status(p Paths) ServiceStatus {
@@ -203,6 +224,24 @@ func (l *launchd) StopCommands(Paths) [][]string {
 	return [][]string{{"launchctl", "bootout", l.domain() + "/" + launchdLabel}}
 }
 
+// RestoreCommands: a plist loaded into gui/$UID runs (RunAtLoad, as a user's own usually
+// has); enable keeps it on at login.
+func (l *launchd) RestoreCommands(p Paths, enabled, running bool) [][]string {
+	target := l.domain() + "/" + launchdLabel
+	var out [][]string
+	if enabled {
+		out = append(out, []string{"launchctl", "enable", target})
+	}
+	if running {
+		out = append(out, []string{"launchctl", "bootstrap", l.domain(), l.File(p)})
+	}
+	return out
+}
+
+func (l *launchd) StopHint(Paths) string {
+	return "launchctl bootout " + l.domain() + "/" + launchdLabel
+}
+
 func (l *launchd) Status(p Paths) ServiceStatus {
 	st := ServiceStatus{}
 	if _, err := os.Stat(l.File(p)); err == nil {
@@ -235,9 +274,13 @@ func (noService) File(Paths) string              { return "" }
 func (noService) Render(Paths) []byte            { return nil }
 func (noService) StartCommands(Paths) [][]string { return nil }
 func (noService) StopCommands(Paths) [][]string  { return nil }
-func (noService) Status(Paths) ServiceStatus     { return ServiceStatus{} }
-func (noService) Notes() []string                { return nil }
-func (noService) LogHint(Paths) string           { return "" }
+func (noService) RestoreCommands(Paths, bool, bool) [][]string {
+	return nil
+}
+func (noService) StopHint(Paths) string      { return "" }
+func (noService) Status(Paths) ServiceStatus { return ServiceStatus{} }
+func (noService) Notes() []string            { return nil }
+func (noService) LogHint(Paths) string       { return "" }
 
 // manualStart is how to run the gateway without a service (spec AC8).
 func manualStart(p Paths) string {
