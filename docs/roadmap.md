@@ -18,6 +18,16 @@ below and AC44, the API-key smoke test of Phase 1.
    run, so the benchmark was left as it is (`internal/ui/timeline_bench_test.go`).
 
 ## Done
+- **023 one-command install** (`specs/023-one-command-install/`): `curl … install.sh | sh`
+  on Linux and macOS. install.sh checks its own needs, downloads the release for the
+  machine and verifies its SHA256; `gateway install` prints a preflight table, offers to
+  install what is missing (sudo only inside a shown, approved package command), shows the
+  plan or a `--dry-run` diff, and sets up the config (only if none), the Claude Code
+  settings, a systemd user unit or launchd agent and the `claude` function between
+  markers, replacing a hand-made setup only on yes with `.bak`s. `gateway uninstall` puts
+  back what install replaced, in its prior state, and asks before cutting off its own
+  session; `gateway doctor` checks the dependencies and the live install
+  (`docs/install.md`). Checked on Linux; the macOS run is under Later.
 - **021 self-observability** (`specs/021-self-observability/`, Phase 8): Prometheus
   `/metrics` on the API and UI listeners (requests, upstream latency and errors, gateway
   overhead, capture and store, tunnels and UI streams, UI build times, warm-up, the last
@@ -44,6 +54,14 @@ below and AC44, the API-key smoke test of Phase 1.
   the ungrouped, unassigned and full exchange pages on 016's theme.
 
 ## Later
+- The first release: tag it and publish what `make dist` builds (four archives and
+  `SHA256SUMS`, names in `specs/023-one-command-install/research.md`), so the curl line
+  works; until then install.sh has nothing to download from GitHub.
+- The 023 macOS check: launchd bootstrap, KeepAlive and the 30 s exit timeout, doctor
+  reading launchd status, logs in `~/Library/Logs/llm-gateway/`, the PATH line and
+  `~/.bash_profile`, brew offers and the no-Homebrew manual steps, the Seatbelt sandbox
+  block, `shasum` in install.sh, the darwin binaries running after a curl download, and
+  `lsof` naming a port's holder.
 - Fast-mode and US-only inference prices (020 D6, D16): nothing captured uses them yet;
   a `speed` column in the price table when something does.
 - AC44, the API-key smoke test of Phase 1 (Claude Code in API-key mode through the

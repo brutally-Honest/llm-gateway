@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Managed by gateway install; `gateway uninstall` removes it. Edits here are overwritten. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>dev.llm-gateway</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/u/.local/bin/gateway</string>
+    <string>-config</string>
+    <string>/Users/u/.config/llm-gateway/config.yaml</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key><false/>
+  </dict>
+  <key>ExitTimeOut</key><integer>30</integer>
+  <key>StandardOutPath</key><string>/Users/u/Library/Logs/llm-gateway/gateway.log</string>
+  <key>StandardErrorPath</key><string>/Users/u/Library/Logs/llm-gateway/gateway.log</string>
+</dict>
+</plist>

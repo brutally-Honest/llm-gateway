@@ -1,0 +1,13 @@
+# Managed by gateway install; `gateway uninstall` removes it. Edits here are overwritten.
+[Unit]
+Description=LLM gateway
+Documentation=https://github.com/brutally-Honest/llm-gateway/blob/main/docs/install.md
+
+[Service]
+ExecStart=/home/u/.local/bin/gateway -config /home/u/.config/llm-gateway/config.yaml
+Restart=on-failure
+# Room for shutdown_timeout (10s) and the capture drain; systemd's default is 90s.
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target
