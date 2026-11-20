@@ -1,4 +1,8 @@
 // Key bar content and the shortcut reducer. Pure: the page feeds it keyboard events.
+
+// HELP_URL is the install and troubleshooting guide; the key bar links it (spec 023 AC29).
+export const HELP_URL = "https://github.com/brutally-Honest/llm-gateway/blob/main/docs/install.md";
+
 export const SHORTCUTS = {
   SESSIONS: [["↑/↓", "select"], ["Enter", "open"], ["/", "filter"]],
   // The session page has no key bar (spec 016 AC13, Q4): j/k step through turns, the tabs

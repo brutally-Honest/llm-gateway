@@ -49,6 +49,7 @@ footer#keybar {
 }
 footer#keybar:empty { display: none; }
 footer#keybar .level { color: var(--hi); }
+footer#keybar .help { margin-left: auto; }
 footer#keybar kbd { font-size: 11px; color: var(--hi); border: 1px solid var(--border); border-radius: 4px; padding: 0 .3rem; }
 
 /* ---- shared parts: tables, buttons, notes, badges ---- */
