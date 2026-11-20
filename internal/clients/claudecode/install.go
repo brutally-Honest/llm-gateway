@@ -75,6 +75,23 @@ func CheckSettings(data []byte, hooksAddr, baseURL string) string {
 	return ""
 }
 
+// Routed says why the calling process is a Claude Code session routed through the
+// gateway at baseURL, or "". Claude Code exports its settings' env block to the commands
+// it runs, so a session started with the gateway's settings file (or with
+// ANTHROPIC_BASE_URL set by hand) carries ANTHROPIC_BASE_URL into `gateway uninstall`
+// (023 research D27).
+func Routed(getenv func(string) string, baseURL string) string {
+	got := strings.TrimRight(getenv("ANTHROPIC_BASE_URL"), "/")
+	if got != "" && got == strings.TrimRight(baseURL, "/") {
+		inside := ""
+		if getenv("CLAUDECODE") == "1" {
+			inside = ": this command runs inside a Claude Code session"
+		}
+		return "ANTHROPIC_BASE_URL is " + got + inside
+	}
+	return ""
+}
+
 // ShellFunc is the `claude` function: it loads the gateway's settings only when the
 // gateway answers, so a stopped gateway means plain Claude Code, never a broken one
 // (docs/clients/claude-code.md §6).

@@ -7,11 +7,15 @@ import (
 	"io/fs"
 	"os"
 	"strings"
+
+	"github.com/brutally-honest/llm-gateway/internal/config"
 )
 
 // UninstallOptions are `gateway uninstall`'s flags.
 type UninstallOptions struct {
 	Yes, Purge bool
+	// Force, with Yes, also skips the question about cutting off the calling session.
+	Force bool
 }
 
 type removal struct {
@@ -137,6 +141,18 @@ func Uninstall(e *Env, c Client, o UninstallOptions) int {
 		e.printf("Stopped. Nothing was changed.\n")
 		return ExitStopped
 	}
+	// Stopping the gateway cuts off a client session routed through it, such as the
+	// Claude Code session running this command; --yes still asks, --force does not (D27).
+	if len(stop) > 0 && c.Routed != nil && !o.Force {
+		if why := c.Routed(e.Getenv, uninstallConfig(e, p)); why != "" {
+			e.printf("\nWarning: this command runs in a session routed through this gateway (%s).\n", why)
+			e.printf("Stopping the service cuts that session off: its model calls fail until the gateway runs again.\n")
+			if !e.ask("Stop the service anyway?", false) {
+				e.printf("Stopped. Nothing was changed. Run gateway uninstall from a terminal outside that session, or pass --yes --force.\n")
+				return ExitStopped
+			}
+		}
+	}
 	purge := false
 	if o.Purge {
 		size := humanBytes(dirSize(p.DataDir))
@@ -218,6 +234,16 @@ func Uninstall(e *Env, c Client, o UninstallOptions) int {
 	printKeep(e, keep)
 	e.printf("Open a new terminal: %s then runs plain %s.\n", c.Binary, c.Name)
 	return ExitOK
+}
+
+// uninstallConfig is the config the gateway runs with: the file, else the defaults.
+func uninstallConfig(e *Env, p Paths) config.Config {
+	if _, ok, _ := readMaybe(p.Config); ok && e.LoadConfig != nil {
+		if cfg, err := e.LoadConfig(p.Config); err == nil {
+			return cfg
+		}
+	}
+	return config.Defaults()
 }
 
 func printKeep(e *Env, keep []string) {

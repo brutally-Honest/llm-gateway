@@ -2,6 +2,7 @@ package install
 
 import (
 	"encoding/json"
+	"maps"
 	"strings"
 	"testing"
 )
@@ -114,4 +115,62 @@ func TestLaunchdRestoreCommands(t *testing.T) {
 	if l.RestoreCommands(p, false, false) != nil || l.StopHint(p) != "launchctl bootout gui/501/dev.llm-gateway" {
 		t.Fatal("launchd restore or stop hint")
 	}
+}
+
+// Run from a session routed through the gateway, uninstall warns that stopping the
+// service cuts the session off and asks, even with --yes; "no" changes nothing; --force
+// skips the question; a session not routed through it is not asked (D27).
+func TestUninstallWarnsBeforeCuttingOffItsSession(t *testing.T) {
+	routed := func(t *testing.T) *fake {
+		f := newFake(t, "linux")
+		f.install(InstallOptions{Yes: true})
+		f.setEnv("ANTHROPIC_BASE_URL", "http://127.0.0.1:7197/anthropic")
+		f.run.outputs = nil
+		return f
+	}
+
+	f := routed(t)
+	before := f.snapshot()
+	f.answer("n")
+	if code := f.uninstall(UninstallOptions{Yes: true}); code != ExitStopped {
+		t.Fatalf("no: exit %d\n%s", code, f.out)
+	}
+	out := f.out.String()
+	contains(t, out, "Warning: this command runs in a session routed through this gateway (ANTHROPIC_BASE_URL is http://127.0.0.1:7197/anthropic).")
+	contains(t, out, "Stopping the service cuts that session off")
+	contains(t, out, "Stop the service anyway? [y/N]")
+	contains(t, out, "Stopped. Nothing was changed.")
+	if !maps.Equal(before, f.snapshot()) || len(f.actions()) > 0 {
+		t.Fatalf("changed something after no: %v", f.actions())
+	}
+
+	f = routed(t)
+	f.answer("y")
+	if code := f.uninstall(UninstallOptions{Yes: true}); code != ExitOK {
+		t.Fatalf("yes: exit %d\n%s", code, f.out)
+	}
+	if !strings.Contains(strings.Join(f.run.outputs, "|"), "fake-svc stop") {
+		t.Fatal("service not stopped after yes")
+	}
+
+	f = routed(t)
+	if code := f.uninstall(UninstallOptions{Yes: true, Force: true}); code != ExitOK {
+		t.Fatalf("force: exit %d\n%s", code, f.out)
+	}
+	lacks(t, f.out.String(), "Stop the service anyway?")
+
+	// Without a terminal the question answers no: --yes alone never cuts the session off.
+	f = routed(t)
+	f.env.Interactive = false
+	if code := f.uninstall(UninstallOptions{Yes: true}); code != ExitStopped {
+		t.Fatalf("no terminal: exit %d\n%s", code, f.out)
+	}
+
+	n := newFake(t, "linux")
+	n.install(InstallOptions{Yes: true})
+	n.setEnv("ANTHROPIC_BASE_URL", "http://127.0.0.1:9999/anthropic") // another gateway
+	if code := n.uninstall(UninstallOptions{Yes: true}); code != ExitOK {
+		t.Fatalf("not routed: exit %d\n%s", code, n.out)
+	}
+	lacks(t, n.out.String(), "Warning:")
 }

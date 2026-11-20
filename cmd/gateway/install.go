@@ -51,15 +51,20 @@ Running it again upgrades: config and data are kept, managed files rewritten.
 Guide: ` + install.DocsURL + `
 `
 
-const uninstallHelp = `Usage: gateway uninstall [--yes] [--purge]
+const uninstallHelp = `Usage: gateway uninstall [--yes] [--force] [--purge]
 
 Shows what will be removed and kept, asks, then stops and removes the login service,
 removes the claude function's marker block (putting back a function it replaced) and the
 settings file. The config, the captured data and the gateway binary are kept. No
 dependency is ever uninstalled.
 
-  --yes    do not ask
+  --yes    do not ask; run from a session routed through this gateway it still asks
+           before stopping the service, since that cuts the session off
+  --force  with --yes, do not ask that either
   --purge  also delete the config and the captured data (asks once more, naming the size)
+
+A replaced service file of your own is put back as it was before install: enabled at
+login and running again if it was.
 
 Guide: ` + install.DocsURL + `#uninstall
 `
@@ -121,6 +126,7 @@ func runUninstall(d deps) int {
 	if ok, code := installFlags(d, "uninstall", uninstallHelp, func(fs *flag.FlagSet) {
 		fs.BoolVar(&o.Yes, "yes", false, "")
 		fs.BoolVar(&o.Purge, "purge", false, "")
+		fs.BoolVar(&o.Force, "force", false, "")
 	}); !ok {
 		return code
 	}
@@ -195,6 +201,9 @@ func claudeClient() install.Client {
 		},
 		ShellFunc: claudecode.ShellFunc,
 		HooksPath: claudecode.HooksPath(),
+		Routed: func(getenv func(string) string, cfg config.Config) string {
+			return claudecode.Routed(getenv, baseURL(cfg))
+		},
 	}
 }
 
