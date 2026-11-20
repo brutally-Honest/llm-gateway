@@ -63,6 +63,7 @@ type fakeService struct {
 	systemd
 	ok      bool
 	running bool
+	enabled bool
 }
 
 func (f *fakeService) Check() (bool, string) {
@@ -76,7 +77,7 @@ func (f *fakeService) StopCommands(Paths) [][]string  { return [][]string{{"fake
 func (f *fakeService) Notes() []string                { return nil }
 func (f *fakeService) Status(p Paths) ServiceStatus {
 	_, err := os.Stat(f.File(p))
-	return ServiceStatus{Installed: err == nil, Running: f.running, AtLogin: err == nil && f.running}
+	return ServiceStatus{Installed: err == nil, Running: f.running, AtLogin: err == nil && f.enabled}
 }
 
 type fake struct {
@@ -153,7 +154,7 @@ func newFake(t *testing.T, goos string) *fake {
 		Sleep:            func(time.Duration) {},
 		HealthWait:       time.Second,
 	}
-	f.svc = &fakeService{systemd: systemd{env: f.env}, ok: true, running: true}
+	f.svc = &fakeService{systemd: systemd{env: f.env}, ok: true, running: true, enabled: true}
 	f.env.Service = f.svc
 	f.run.onShell = func(line string) {
 		// A package or the client's installer "installs" what it names.
@@ -294,6 +295,12 @@ func testClient() Client {
 			return "claude() {\n  curl -fsS " + health + " && command claude --settings \"" + settings + "\" \"$@\"\n}\n"
 		},
 		HooksPath: "/_gateway/hooks/claude-code",
+		Routed: func(getenv func(string) string, cfg config.Config) string {
+			if v := getenv("ANTHROPIC_BASE_URL"); v == "http://"+cfg.ListenAddr+"/anthropic" {
+				return "ANTHROPIC_BASE_URL is " + v
+			}
+			return ""
+		},
 	}
 }
 

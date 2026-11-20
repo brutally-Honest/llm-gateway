@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func installed(t *testing.T) *fake {
@@ -173,7 +175,7 @@ func TestDoctorLinksMatchDocs(t *testing.T) {
 	for _, goos := range []string{"linux", "darwin"} {
 		f := installed(t)
 		f.env.GOOS = goos
-		f.env.Service = &fakeService{systemd: systemd{env: f.env}, ok: true, running: true}
+		f.env.Service = &fakeService{systemd: systemd{env: f.env}, ok: true, running: true, enabled: true}
 		seen := map[string]bool{}
 		for _, r := range Diagnose(f.env, testClient()) {
 			if seen[r.ID] {
@@ -207,7 +209,43 @@ func TestDoctorUIUsesItsHealthRoute(t *testing.T) {
 		}
 		return 200, nil
 	}
-	if r := results(f)["listener-ui"]; r.Level != Fail || !strings.Contains(r.Fix, "warm-up") {
+	// API up, UI silent, no start time to read: most likely the warm-up, so a warn.
+	if r := results(f)["listener-ui"]; r.Level != Warn || !strings.Contains(r.Detail, "most likely warming up") {
 		t.Fatalf("%+v", r)
+	}
+}
+
+// A UI that does not answer while the API does is warming up for the first 120 s after
+// the gateway's start (a warn, "about N s"), and broken after (a fail); with the API down
+// too it is a plain fail (user request after the real-machine check, D26).
+func TestDoctorUIWarmingUp(t *testing.T) {
+	now := time.Unix(1_795_185_000, 0)
+	setup := func(sinceStart time.Duration, apiUp bool) Result {
+		f := installed(t)
+		f.env.Now = func() time.Time { return now }
+		f.env.HTTPStatus = func(url string) (int, error) {
+			if strings.Contains(url, ":7199/") || (!apiUp && strings.Contains(url, ":7197/")) {
+				return 0, os.ErrDeadlineExceeded
+			}
+			return 200, nil
+		}
+		f.env.Fetch = func(url string) (string, error) {
+			if url != "http://127.0.0.1:7197/metrics" {
+				t.Fatalf("fetched %s", url)
+			}
+			// As the Prometheus text format writes it: shortest exact form, e.g. 1.79518514687e+09.
+			start := strconv.FormatFloat(float64(now.Add(-sinceStart).Unix())+0.25, 'e', -1, 64)
+			return "# HELP x\ngo_goroutines 9\nprocess_start_time_seconds " + start + "\n", nil
+		}
+		return results(f)["listener-ui"]
+	}
+	if r := setup(12*time.Second, true); r.Level != Warn || !strings.Contains(r.Detail, "warming up, about 12 s since the gateway started") || !strings.Contains(r.Fix, "warm-up ends") {
+		t.Fatalf("12 s: %+v", r)
+	}
+	if r := setup(5*time.Minute, true); r.Level != Fail || !strings.Contains(r.Detail, "300 s after the gateway started") {
+		t.Fatalf("5 min: %+v", r)
+	}
+	if r := setup(12*time.Second, false); r.Level != Fail || r.Detail != "127.0.0.1:7199 does not answer" {
+		t.Fatalf("API down: %+v", r)
 	}
 }

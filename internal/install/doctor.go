@@ -6,7 +6,10 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/brutally-honest/llm-gateway/internal/config"
 )
@@ -210,6 +213,48 @@ func Diagnose(e *Env, c Client) []Result {
 // uiHealthPath is the UI listener's health route.
 const uiHealthPath = "/api/health"
 
+// uiWarmupGrace is how long after a start a silent UI counts as warming up, not broken:
+// the warm-up was 22.5 s on the real store (roadmap), so 120 s leaves room to grow.
+const uiWarmupGrace = 120 * time.Second
+
+var startTimeLine = regexp.MustCompile(`(?m)^process_start_time_seconds ([0-9.e+]+)$`)
+
+// uiWarming judges a UI that does not answer while the API does: the UI accepts only
+// after its start-up warm-up, so within uiWarmupGrace of the gateway's start it is a
+// warn, after it a fail. The start comes from process_start_time_seconds on the API's
+// /metrics (023 research D26).
+func uiWarming(e *Env, cfg config.Config, r Result, addr string) Result {
+	var started time.Time
+	if e.Fetch != nil {
+		if body, err := e.Fetch("http://" + cfg.ListenAddr + "/metrics"); err == nil {
+			if m := startTimeLine.FindStringSubmatch(body); m != nil {
+				if f, perr := strconv.ParseFloat(m[1], 64); perr == nil {
+					started = time.Unix(0, int64(f*float64(time.Second)))
+				}
+			}
+		}
+	}
+	now := time.Now
+	if e.Now != nil {
+		now = e.Now
+	}
+	switch {
+	case started.IsZero():
+		r.Level = Warn
+		r.Detail = addr + " not answering yet while the API does: most likely warming up"
+		r.Fix = "wait about 30 s and run doctor again; if it still fails, see the gateway's log"
+	case now().Sub(started) < uiWarmupGrace:
+		r.Level = Warn
+		r.Detail = fmt.Sprintf("%s warming up, about %d s since the gateway started", addr, int(now().Sub(started).Round(time.Second).Seconds()))
+		r.Fix = "the UI opens when its warm-up ends (about 20–30 s on a large store): wait and run doctor again"
+	default:
+		r.Level = Fail
+		r.Detail = fmt.Sprintf("%s does not answer, %d s after the gateway started", addr, int(now().Sub(started).Round(time.Second).Seconds()))
+		r.Fix = "past the warm-up: see the gateway's log (Login service) and check ui.listen_addr in the config"
+	}
+	return r
+}
+
 func listenerChecks(e *Env, cfg config.Config, cfgOK bool) []Result {
 	type l struct {
 		id, name, addr string
@@ -227,6 +272,7 @@ func listenerChecks(e *Env, cfg config.Config, cfgOK bool) []Result {
 		}
 	}
 	var out []Result
+	apiUp := false
 	for _, x := range ls {
 		r := Result{ID: x.id, Name: x.name, Link: anchor("listeners")}
 		ok := false
@@ -236,8 +282,13 @@ func listenerChecks(e *Env, cfg config.Config, cfgOK bool) []Result {
 		} else {
 			ok = e.Dial(x.addr)
 		}
+		if x.id == "listener-api" {
+			apiUp = ok
+		}
 		if ok {
 			r.Level, r.Detail = Pass, x.addr+" answers"
+		} else if x.id == "listener-ui" && apiUp {
+			r = uiWarming(e, cfg, r, x.addr)
 		} else {
 			r.Level, r.Detail = Fail, x.addr+" does not answer"
 			r.Fix = "start the gateway (see Login service); if it runs, check the port in the config"

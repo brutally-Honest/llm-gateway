@@ -43,7 +43,10 @@ type Env struct {
 	// HTTPStatus GETs url with a short timeout and returns the status code.
 	HTTPStatus func(url string) (int, error)
 	// Dial says whether something accepts TCP connections on addr.
-	Dial      func(addr string) bool
+	Dial func(addr string) bool
+	// Fetch GETs url with a short timeout and returns its body (doctor reads /metrics).
+	Fetch     func(url string) (string, error)
+	Now       func() time.Time
 	FreeBytes func(path string) (uint64, bool)
 	OSRelease string // path of os-release; "" means /etc/os-release
 	// AppArmorRestrict is the path of kernel.apparmor_restrict_unprivileged_userns and
@@ -80,6 +83,9 @@ type Client struct {
 	ShellFunc func(healthURL, settingsPath string) string
 	// HooksPath is the hooks ingest path on the API listener.
 	HooksPath string
+	// Routed says why the process running the installer is itself a client session
+	// routed through the gateway in cfg (so stopping the gateway cuts it off), or "".
+	Routed func(getenv func(string) string, cfg config.Config) string
 }
 
 // Paths are where the installer reads and writes, the same on both OSes but for the

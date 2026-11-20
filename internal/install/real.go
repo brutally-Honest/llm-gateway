@@ -60,6 +60,8 @@ func RealEnv(version string, in io.Reader, out io.Writer, loadConfig func(string
 			}
 			return err == nil
 		},
+		Fetch:       fetchBody,
+		Now:         time.Now,
 		FreeBytes:   freeBytes,
 		In:          in,
 		Out:         out,
@@ -90,6 +92,21 @@ func httpStatus(url string) (int, error) {
 	}
 	_ = resp.Body.Close()
 	return resp.StatusCode, nil
+}
+
+// fetchBody GETs a loopback URL and returns its body, up to 4 MiB.
+func fetchBody(url string) (string, error) {
+	c := http.Client{Timeout: 2 * time.Second}
+	resp, err := c.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("%s: status %d", url, resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	return string(body), err
 }
 
 // probePort binds the port for a moment to see if it is free; a busy port's holder is
