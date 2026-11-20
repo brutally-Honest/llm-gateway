@@ -5,7 +5,7 @@ feature: 023-one-command-install
 
 ## Open questions
 <!-- Answer by changing "(open)" to "(answered)" and writing the answer underneath. -->
-- **Q1** (open) AC29 — The Help link to `docs/install.md` on GitHub breaks
+- **Q1** (answered) AC29 — The Help link to `docs/install.md` on GitHub breaks
   `TestWeb_NoInlineOrExternalReferences` (internal/ui/web_test.go): no embedded web file
   may hold an absolute URL, with one exact exemption (the SVG namespace), and a test pins
   that nothing else is exempt. Making it pass changes a check, which is the human's call,
@@ -15,6 +15,9 @@ feature: 023-one-command-install
   fetched, CSP unaffected) — recommended; B) the gateway serves the guide itself (a
   local `/help` route rendering an embedded docs/install.md; works offline, more code);
   C) drop the Help link from 023.
+  - **Answer** (Karthik, 2026-11-20): C. "i dont think ui help link is required if readme
+    and the docs have it clearly in the repo." AC29 is out of scope; the guard stays as it
+    is, and the revert (7e6853c) stands.
 
 ## Dependencies (each with its source)
 
@@ -159,3 +162,24 @@ install.sh reads SHA256SUMS first and takes the archive name from the line endin
   script; install.sh has no Go package): shellcheck, then the script against an
   httptest server serving a locally built archive whose `gateway` is a recording
   script. `make dist` builds the real assets for the real-machine check.
+- D25 (2026-11-20) — Karthik, after the real-machine check (option B): install records in
+  `install-state.json` (`service.prior`) whether the unit or plist it replaced was enabled
+  at login and running, read from the service manager before replacing it, and keeps that
+  record across upgrades. Uninstall restores the file and then that state (systemd:
+  `enable --now`, `enable` or `start`; launchd: `enable`, `bootstrap`), and prints what it
+  did with the command to stop it. Found on the check: uninstall restored the hand-made
+  unit disabled, which stopped the gateway the session was running through.
+- D26 (2026-11-20) — Karthik: a UI that does not answer while the API does is a warn,
+  not a fail, during its warm-up. "About N s" is read as the seconds since the gateway
+  started (`process_start_time_seconds` on the API's `/metrics`): the warm-up's length is
+  only known once it ends, so the time left cannot be given. Within 120 s of the start it
+  is a warn (the real warm-up was 22.5 s), after that a fail; with no start time to read,
+  a warn saying it is most likely warming up.
+- D27 (2026-11-20) — Karthik: uninstall run from a session routed through this gateway
+  warns and asks "Stop the service anyway?" before stopping it, even with `--yes`;
+  `--force` skips that question; without a terminal it answers no. "Routed" is read as
+  ANTHROPIC_BASE_URL equal to this gateway's base URL: Claude Code exports its settings'
+  env block to the commands it runs, so a session started with the gateway's settings
+  file carries it (seen in this session: `ANTHROPIC_BASE_URL=http://127.0.0.1:7197/anthropic`,
+  `CLAUDECODE=1`). The check is the client's (`claudecode.Routed`), like the rest of
+  what is Claude Code's (D3).

@@ -23,7 +23,7 @@ never uses sudo, except inside a package-manager command the user has seen and a
 
 Four pieces: `install.sh` (download, verify, hand over), `gateway install`,
 `gateway uninstall` and `gateway doctor`, plus the help that explains them
-(`docs/install.md`, README, `gateway help`, a Help link in the UI).
+(`docs/install.md`, README, `gateway help`).
 
 ## Acceptance criteria
 
@@ -93,7 +93,7 @@ Four pieces: `install.sh` (download, verify, hand over), `gateway install`,
   installed, which optional features are off and why, and "open a new terminal, then run
   claude".
 
-### `gateway uninstall [--yes] [--purge]`
+### `gateway uninstall [--yes] [--force] [--purge]`
 - **AC19** — Shows what will be removed and what will be kept, asks, then stops and removes
   the service, removes the marker block and the settings file, and restores a `.bak` if
   install made one. It removes exactly what install added.
@@ -132,7 +132,17 @@ Four pieces: `install.sh` (download, verify, hand over), `gateway install`,
 - **AC27** — README.md has a short Install section: requirements in one line with a link,
   the curl line, `--check`, doctor, uninstall, and a link to install.md.
 - **AC28** — `gateway help` and `--help` on install, uninstall and doctor.
-- **AC29** — The UI's key bar has a "Help" link opening docs/install.md on GitHub.
+- **AC29** — ~~The UI's key bar has a "Help" link opening docs/install.md on GitHub.~~
+  Dropped (research Q1): the README and docs/install.md carry the help.
+
+### Added after the real-machine check (research D25–D27)
+- **AC30** — install-state.json records whether a replaced unit or plist was enabled at
+  login and running; uninstall restores that state (enables and starts it if it was) and
+  prints what it did with the command to stop it.
+- **AC31** — doctor reports a UI still in its warm-up, while the API answers, as a warn
+  ("warming up, about N s since the gateway started"), not a fail.
+- **AC32** — uninstall run from a session routed through this gateway warns that stopping
+  the service cuts that session off and asks first, even with `--yes`, unless `--force`.
 
 ## Edge cases
 - **E1** — `curl | sh`: stdin is the script, so install.sh hands `/dev/tty` to
@@ -162,3 +172,4 @@ Four pieces: `install.sh` (download, verify, hand over), `gateway install`,
 - A CI release workflow (ADR 0001: local gate); `make dist` builds the assets locally.
 - Signing the binaries beyond SHA256SUMS.
 - Shells other than zsh and bash getting the function written for them.
+- A Help link in the UI (AC29, research Q1).
