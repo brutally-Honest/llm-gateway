@@ -9,7 +9,7 @@ NOTES_REFSPEC := +refs/notes/*:refs/notes/*
 # `dev` when git can't describe the tree, e.g. a Docker build without .git.
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-.PHONY: setup setup-git setup-lint setup-shellcheck setup-node build run image test kit-test web-test lint verify \
+.PHONY: setup setup-git setup-lint setup-shellcheck setup-node build run dist image test kit-test web-test lint verify \
 	observability-up observability-down
 
 # Idempotent: safe to run again at any time.
@@ -56,6 +56,28 @@ build:
 
 run: build
 	$(BIN)/gateway
+
+# The release assets install.sh downloads (spec 023, research "Release assets"):
+# dist/llm-gateway_<version>_<os>_<arch>.tar.gz, each holding `gateway`, and
+# dist/SHA256SUMS. <version> is VERSION without a leading v. A release publishes exactly
+# these files.
+DIST         := $(CURDIR)/dist
+DIST_VERSION := $(patsubst v%,%,$(VERSION))
+DIST_TARGETS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+
+dist:
+	@rm -rf $(DIST) && mkdir -p $(DIST)
+	@for t in $(DIST_TARGETS); do \
+		os=$${t%/*}; arch=$${t#*/}; work=$$(mktemp -d) || exit 1; \
+		echo "building $$os/$$arch"; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "-X main.version=$(VERSION)" \
+			-o $$work/gateway ./cmd/gateway || { rm -rf $$work; exit 1; }; \
+		tar -czf $(DIST)/llm-gateway_$(DIST_VERSION)_$${os}_$${arch}.tar.gz -C $$work gateway || { rm -rf $$work; exit 1; }; \
+		rm -rf $$work; \
+	done
+	@cd $(DIST) && if command -v sha256sum >/dev/null 2>&1; then sha256sum llm-gateway_*.tar.gz; \
+		else shasum -a 256 llm-gateway_*.tar.gz; fi > SHA256SUMS
+	@cat $(DIST)/SHA256SUMS
 
 # The self-observability stack (spec 021, docs/observability.md): Prometheus, Grafana and
 # Jaeger on 127.0.0.1, for a gateway running on the host. On Linux the override puts
