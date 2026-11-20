@@ -1,5 +1,5 @@
 import { THEMES, pickTheme } from "./theme.js";
-import { HELP_URL, keyBar } from "./keys.js";
+import { keyBar } from "./keys.js";
 
 // breadcrumb returns the header trail: "Sessions" first (a link back to the list once
 // inside a view), then the session title inside a session. The last part has no href. On
@@ -96,12 +96,6 @@ export function mountShell({ head, bar, storage, root, theme }) {
         item.append(el("kbd", s.key), document.createTextNode(` ${s.label}`));
         frag.append(item);
       }
-      // The install guide, opened in a new tab so the page keeps its place (spec 023 AC29).
-      const help = el("a", "Help", "help");
-      help.href = HELP_URL;
-      help.target = "_blank";
-      help.rel = "noopener noreferrer";
-      frag.append(help);
       bar.replaceChildren(frag);
     },
   };
