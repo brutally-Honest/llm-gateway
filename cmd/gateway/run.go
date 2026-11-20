@@ -21,6 +21,7 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/cost"
 	"github.com/brutally-honest/llm-gateway/internal/effects"
 	"github.com/brutally-honest/llm-gateway/internal/hooks"
+	"github.com/brutally-honest/llm-gateway/internal/install"
 	"github.com/brutally-honest/llm-gateway/internal/logging"
 	"github.com/brutally-honest/llm-gateway/internal/netproxy"
 	"github.com/brutally-honest/llm-gateway/internal/observability"
@@ -44,6 +45,10 @@ type deps struct {
 	// openStore opens the capture store in dir; nil means store.Open. Tests swap it
 	// to hold up or break the store.
 	openStore func(dir string, log *zap.Logger) (capture.Store, error)
+	// stdin is what the install commands read answers from; installEnv replaces the real
+	// machine in their tests (spec 023). Both nil for the gateway itself.
+	stdin      io.Reader
+	installEnv *install.Env
 }
 
 // registered is every protocol adapter and client profile the gateway runs with, in
@@ -150,6 +155,19 @@ func run(ctx context.Context, d deps) int {
 	}
 	if len(d.args) > 0 && d.args[0] == "backfill-sessions" {
 		return runBackfill(d)
+	}
+	if isHelp(d.args) {
+		return runHelp(d)
+	}
+	if len(d.args) > 0 {
+		switch d.args[0] {
+		case "install":
+			return runInstall(d)
+		case "uninstall":
+			return runUninstall(d)
+		case "doctor":
+			return runDoctor(d)
+		}
 	}
 
 	fs := flag.NewFlagSet("gateway", flag.ContinueOnError)

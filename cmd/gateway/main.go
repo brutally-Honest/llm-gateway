@@ -13,7 +13,7 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	context.AfterFunc(ctx, stop) // a second signal gets Go's default behaviour and kills the process
-	code := run(ctx, deps{args: os.Args[1:], lookupEnv: os.LookupEnv, stdout: os.Stdout, listen: net.Listen})
+	code := run(ctx, deps{args: os.Args[1:], lookupEnv: os.LookupEnv, stdout: os.Stdout, stdin: os.Stdin, listen: net.Listen})
 	stop()
 	os.Exit(code)
 }
