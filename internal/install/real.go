@@ -75,13 +75,22 @@ func RealEnv(version string, in io.Reader, out io.Writer, loadConfig func(string
 	return e
 }
 
+// isTerminal says whether r is a terminal a person can answer on: a character device
+// other than /dev/null, which is one too but only ever reads as end of file (install.sh
+// hands it over when there is no terminal).
 func isTerminal(r io.Reader) bool {
 	f, ok := r.(*os.File)
 	if !ok {
 		return false
 	}
 	st, err := f.Stat()
-	return err == nil && st.Mode()&os.ModeCharDevice != 0
+	if err != nil || st.Mode()&os.ModeCharDevice == 0 {
+		return false
+	}
+	if null, err := os.Stat(os.DevNull); err == nil && os.SameFile(st, null) {
+		return false
+	}
+	return true
 }
 
 func httpStatus(url string) (int, error) {
