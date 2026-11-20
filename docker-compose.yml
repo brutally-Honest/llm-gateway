@@ -1,3 +1,6 @@
+# A limited gateway: the native install (docs/install.md) is the supported path. It sees
+# file effects only for folders mounted here at the same path as on the host (ADR 0014),
+# and on macOS it needs Docker Desktop's "Enable host networking" (see network_mode).
 services:
   gateway:
     image: llm-gateway

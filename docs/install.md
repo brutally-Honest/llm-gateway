@@ -281,9 +281,12 @@ rewrite it.
   `localhost`. Any other address stops the gateway at start, and there is no override:
   v1 has no auth, and captures hold prompts and tool results as sent, secrets included.
   Remote access with auth is not planned for now ([roadmap](roadmap.md#not-now)).
-- **docker compose** runs the gateway on the host's network, so its loopback listeners
-  are the host's. That is native on Linux; Docker Desktop needs "Enable host networking"
-  turned on (Settings → Resources → Network).
+- **The native install is the supported path.** `docker-compose.yml` runs a limited
+  gateway. It sees file effects only for folders mounted into the container at the same
+  path as on the host ([ADR 0014](decisions/0014-effect-kind-and-no-root-sensors.md)).
+  It uses the host's network, so its loopback listeners are the host's: native on Linux,
+  while on macOS it needs Docker Desktop's "Enable host networking" (Settings →
+  Resources → Network).
 
 ## Troubleshooting
 
