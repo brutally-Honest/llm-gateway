@@ -90,6 +90,8 @@ below and AC44, the API-key smoke test of Phase 1.
   (`specs/015-effect-attribution/research.md`, 2026-11-10).
 
 ## Not now
+- Remote access with auth: a gateway token on every route, then listeners off loopback.
+  Until then v1 refuses any non-loopback address (spec 022).
 - OpenTelemetry ingestion from harnesses (taking a client's own OTel events as ground
   truth, Phase 6). This is not the gateway's own tracing, which Phase 8 built
   (`docs/observability.md`).

@@ -216,7 +216,8 @@ macOS only: Seatbelt is built in, so this always passes.
 ### Check: config
 `~/.config/llm-gateway/config.yaml` exists, is valid and listens on loopback only. **Fix:**
 the detail names the key; see [config.example.yaml](../config.example.yaml). The gateway
-has no auth, so a non-loopback address fails.
+has no auth, so a non-loopback address fails, with the message the gateway itself stops
+with ([Troubleshooting](#troubleshooting)).
 
 ### Check: service
 The login service is installed, running and starts at login. **Fix:** read its log
@@ -273,6 +274,17 @@ rewrite it.
 | Shell function | `~/.zshrc` (or `$ZDOTDIR/.zshrc`), `~/.bashrc` | `~/.zshrc` (or `$ZDOTDIR/.zshrc`), `~/.bash_profile` |
 | UI | http://127.0.0.1:7199 | http://127.0.0.1:7199 |
 
+## Known limits
+
+- **Loopback only in v1.** Every listener (the API on 7197, with the hooks and `/metrics`,
+  the UI on 7199 and the proxies on 7198 and 7195) binds 127.0.0.0/8, `::1` or
+  `localhost`. Any other address stops the gateway at start, and there is no override:
+  v1 has no auth, and captures hold prompts and tool results as sent, secrets included.
+  Remote access with auth is not planned for now ([roadmap](roadmap.md#not-now)).
+- **docker compose** runs the gateway on the host's network, so its loopback listeners
+  are the host's. That is native on Linux; Docker Desktop needs "Enable host networking"
+  turned on (Settings → Resources → Network).
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
@@ -289,6 +301,7 @@ rewrite it.
 | The gateway stops when you log out (Linux) | lingering is off | `loginctl enable-linger $USER` |
 | Bash commands fail with `apply-seccomp: … nested userns is capability-restricted` | Claude Code's sandbox on Ubuntu 24.04+ | see [Check: apparmor](#check-apparmor); or set `effects.network.sandbox: false` and run `gateway install` |
 | `claude` is defined twice | a hand-written function beside the managed block | `gateway install`, and say yes to replacing it |
+| The gateway won't start, or doctor and install stop, with `listen_addr "0.0.0.0:7197": not loopback: v1 has no auth, and captures hold prompts and secrets as sent; use 127.0.0.1, ::1 or localhost` (or the same for `ui.listen_addr` or an `effects.network` proxy address) | a listener is set to a host other than loopback: `0.0.0.0`, `::`, an empty host, a LAN IP or a hostname. v1 refuses it, with no override, because anyone who can reach the port could read every capture | set the key named in the message to a `127.0.0.1` address (or `::1`, `localhost`) in `~/.config/llm-gateway/config.yaml`, or unset the `GATEWAY_*` env var that sets it, then `gateway doctor`. To use the gateway from another machine, tunnel to it (`ssh -L 7197:127.0.0.1:7197 <host>`) |
 | `gateway: command not found` (Linux) | `~/.local/bin` is not on PATH | add `export PATH="$HOME/.local/bin:$PATH"` to your startup file, or run `~/.local/bin/gateway doctor` |
 
 ## Releases
