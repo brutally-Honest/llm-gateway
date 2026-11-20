@@ -68,7 +68,7 @@ func runPreflight(e *Env, c Client, o checkOpts) *Preflight {
 }
 
 func (p *Preflight) ids() []string {
-	ids := []string{"platform", "client", "curl", "service", "ports", "shell", "git"}
+	ids := []string{"platform", "client", "curl", "service-manager", "ports", "shell", "git"}
 	if p.env.GOOS == "linux" {
 		ids = append(ids, "bwrap", "socat", "apparmor")
 	} else {
@@ -144,7 +144,7 @@ func (p *Preflight) check(id string) Dep {
 			}
 		}
 		return d
-	case "service":
+	case "service-manager":
 		d := Dep{ID: id, Name: "Service manager", Required: true}
 		if p.opts.noService {
 			d.Skipped = true

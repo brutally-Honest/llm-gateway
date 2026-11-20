@@ -13,11 +13,11 @@ import (
 // written, once its offer (if any) is declined (spec AC2).
 func TestRequiredMissingStopsNothingWritten(t *testing.T) {
 	cases := map[string]func(f *fake){
-		"platform": func(f *fake) { f.env.GOARCH = "386" },
-		"client":   func(f *fake) { delete(f.path, "claude") },
-		"curl":     func(f *fake) { delete(f.path, "curl") },
-		"service":  func(f *fake) { f.svc.ok = false },
-		"ports":    func(f *fake) { f.busy[7197] = "nginx (pid 42)" },
+		"platform":        func(f *fake) { f.env.GOARCH = "386" },
+		"client":          func(f *fake) { delete(f.path, "claude") },
+		"curl":            func(f *fake) { delete(f.path, "curl") },
+		"service-manager": func(f *fake) { f.svc.ok = false },
+		"ports":           func(f *fake) { f.busy[7197] = "nginx (pid 42)" },
 	}
 	for id, breakIt := range cases {
 		t.Run(id, func(t *testing.T) {

@@ -66,7 +66,7 @@ func Install(e *Env, c Client, o InstallOptions) int {
 			if o.Yes || e.ask("Continue without the service (--no-service)? The gateway won't start at login.", false) {
 				o.NoService = true
 				pre.opts.noService = true
-				pre.recheck("service")
+				pre.recheck("service-manager")
 			}
 		}
 	}
@@ -122,7 +122,7 @@ func Install(e *Env, c Client, o InstallOptions) int {
 
 func onlyServiceMissing(pre *Preflight) bool {
 	m := pre.MissingRequired()
-	return len(m) == 1 && m[0].ID == "service"
+	return len(m) == 1 && m[0].ID == "service-manager"
 }
 
 func checkVerdict(e *Env, pre *Preflight) int {

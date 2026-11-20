@@ -62,7 +62,8 @@ func TestDoctorEachCheckFails(t *testing.T) {
 		{"platform", Fail, func(f *fake) { f.env.GOARCH = "386" }},
 		{"client", Fail, func(f *fake) { delete(f.path, "claude") }},
 		{"curl", Fail, func(f *fake) { delete(f.path, "curl") }},
-		{"service", Fail, func(f *fake) { f.svc.ok = false; f.svc.running = false }},
+		{"service-manager", Fail, func(f *fake) { f.svc.ok = false }},
+		{"service", Fail, func(f *fake) { f.svc.running = false }},
 		{"shell", Warn, func(f *fake) { f.setEnv("SHELL", "/usr/bin/fish") }},
 		{"git", Warn, func(f *fake) { delete(f.path, "git") }},
 		{"bwrap", Warn, func(f *fake) { delete(f.path, "bwrap") }},
@@ -159,5 +160,30 @@ func TestDoctorAfterUninstall(t *testing.T) {
 	}
 	if r["store"].Level != Pass || !strings.Contains(r["store"].Detail, "4 B used") {
 		t.Fatalf("store %+v", r["store"])
+	}
+}
+
+// Every link doctor prints lands on a "### Check: <id>" section of docs/install.md, and
+// no two checks share an id, on either OS (spec AC21, AC26).
+func TestDoctorLinksMatchDocs(t *testing.T) {
+	doc, err := os.ReadFile(filepath.Join("..", "..", "docs", "install.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, goos := range []string{"linux", "darwin"} {
+		f := installed(t)
+		f.env.GOOS = goos
+		f.env.Service = &fakeService{systemd: systemd{env: f.env}, ok: true, running: true}
+		seen := map[string]bool{}
+		for _, r := range Diagnose(f.env, testClient()) {
+			if seen[r.ID] {
+				t.Errorf("%s: id %s twice", goos, r.ID)
+			}
+			seen[r.ID] = true
+			id := strings.TrimPrefix(r.Link, DocsURL+"#check-")
+			if !strings.Contains(string(doc), "\n### Check: "+id+"\n") {
+				t.Errorf("%s: %s links to #check-%s, which docs/install.md lacks", goos, r.ID, id)
+			}
+		}
 	}
 }
