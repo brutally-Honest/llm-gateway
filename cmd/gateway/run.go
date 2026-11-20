@@ -107,6 +107,10 @@ func loadConfig(boot *zap.Logger, path string, lookupEnv func(string) (string, b
 				zap.String("source", ce.Source),
 				zap.String("reason", ce.Reason),
 			}
+			// Set only for a listener address off loopback (spec 022 research D4).
+			if ce.Value != "" {
+				fields = append(fields, zap.String("value", ce.Value))
+			}
 			if ce.Line > 0 {
 				fields = append(fields, zap.Int("line", ce.Line))
 			}

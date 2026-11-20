@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/brutally-honest/llm-gateway/internal/config"
 )
 
 // sentinel stands in for a secret. It must never appear in the output (AC11).
@@ -348,6 +350,29 @@ func TestRun_InvalidAddressFailsBeforeBind(t *testing.T) {
 		t.Errorf("line = %v", line)
 	}
 	noValue(t, g, sentinel)
+}
+
+// Spec 022 AC2: a listener off loopback stops the gateway before anything is bound,
+// with exit 2 and one line naming the key, the value and the reason.
+func TestRun_NonLoopbackListenerFailsBeforeBind(t *testing.T) {
+	cases := map[string]struct{ env, key string }{
+		"api":        {"GATEWAY_LISTEN_ADDR", "listen_addr"},
+		"ui":         {"GATEWAY_UI_LISTEN_ADDR", "ui.listen_addr"},
+		"http_proxy": {"GATEWAY_EFFECTS_NETWORK_HTTP_PROXY_ADDR", "effects.network.http_proxy_addr"},
+		"socks":      {"GATEWAY_EFFECTS_NETWORK_SOCKS_PROXY_ADDR", "effects.network.socks_proxy_addr"},
+	}
+	for name, c := range cases {
+		for _, v := range []string{"0.0.0.0:7301", "[::]:7301", ":7301", "192.168.1.5:7301", "gateway.lan:7301"} {
+			t.Run(name+"_"+v, func(t *testing.T) {
+				inTempDir(t, nil)
+				g := startGateway(t, options{env: map[string]string{c.env: v}})
+				line := failsBeforeBind(t, g, exitConfig)
+				if line["key"] != c.key || line["value"] != v || line["reason"] != config.ReasonNotLoopback || line["source"] != c.env {
+					t.Errorf("line = %v", line)
+				}
+			})
+		}
+	}
 }
 
 // A bind the OS refuses exits 1 with a fixed reason and no address.
