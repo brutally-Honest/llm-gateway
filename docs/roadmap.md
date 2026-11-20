@@ -81,6 +81,10 @@ below and AC44, the API-key smoke test of Phase 1.
   full exchange page.
 - The 014 Mac check: step 11 of `docs/manual-checks/014-effects.md`, the sandbox part of
   V1, V3 and V4 (`specs/014-file-and-network-effects/research.md`).
+  - [x] Step 11 with the sandbox off, step 10 on launchd, the sandbox part of V1, V3 (HTTP)
+    and V4 — 2026-11-20, macOS 26.5.2, Apple M4 Pro (`docs/manual-checks/macos-v1.md`).
+  - [ ] Node's `fetch` with the sandbox on fails with `ENOTFOUND` (014 Q2); SOCKS (7195)
+    not exercised.
 - On Ubuntu, test `sandbox.network.allowAllUnixSockets: true` as the workaround for the
   sandbox bug (014 D17).
 - The speed follow-ups, re-measured after 016.
