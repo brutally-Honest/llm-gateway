@@ -88,6 +88,9 @@ func Install(e *Env, c Client, o InstallOptions) int {
 		e.printf("Stopped: cannot read %s: %v\n", p.tilde(p.State), err)
 		return ExitStopped
 	}
+	if o.DryRun {
+		e.printf("Dry run: nothing is written or run.\n")
+	}
 	pl, cfg, err := buildPlan(e, c, pre, prev, o)
 	if err != nil {
 		e.printf("Stopped: %v. Nothing was written.\n", err)
@@ -298,8 +301,10 @@ func sandboxReason(pre *Preflight) string {
 func fileChange(prev *State, label, path string, data []byte, pl *plan) change {
 	old, exists, _ := readMaybe(path)
 	ch := change{label: label, path: path, old: old, exists: exists, data: data}
-	// A file install did not write is kept as a .bak before it is replaced (AC16).
-	if exists && !bytes.Equal(old, data) && !managedFile(prev, path, old) {
+	// A file install did not write is kept as a .bak before install takes it over (AC16),
+	// even when its content is already the same, so uninstall can put the user's own file
+	// back instead of deleting it (AC19).
+	if exists && !managedFile(prev, path, old) {
 		ch.backup = true
 	}
 	if ch.backup {
@@ -429,14 +434,13 @@ func describe(p Paths, ch change) string {
 		verb = "update"
 	}
 	s := fmt.Sprintf("%-5s %s  (%s)", verb, p.tilde(ch.path), ch.label)
-	if ch.backup && ch.changed() {
+	if ch.backup {
 		s += ", keeping a .bak of the current one"
 	}
 	return s
 }
 
 func printDryRun(e *Env, p Paths, pl plan) {
-	e.printf("Dry run: nothing is written or run.\n\n")
 	for _, n := range pl.notes {
 		e.printf("• %s\n", n)
 	}
@@ -444,6 +448,9 @@ func printDryRun(e *Env, p Paths, pl plan) {
 		switch {
 		case ch.copyFrom != "":
 			e.printf("\n== copy %s → %s\n", p.tilde(ch.copyFrom), p.tilde(ch.path))
+		case !ch.changed() && ch.backup:
+			e.printf("\n== %s (%s): unchanged, not made by install; a copy is kept as %s for uninstall\n",
+				p.tilde(ch.path), ch.label, p.tilde(backupPath(ch.path)))
 		case !ch.changed():
 			e.printf("\n== %s (%s): unchanged\n", p.tilde(ch.path), ch.label)
 		case !ch.exists:
@@ -479,7 +486,7 @@ func indent(s, pre string) string {
 
 func apply(e *Env, pl plan) error {
 	for _, ch := range pl.changes {
-		if !ch.changed() {
+		if !ch.changed() && !ch.backup {
 			continue
 		}
 		if ch.backup && ch.exists {
@@ -490,6 +497,9 @@ func apply(e *Env, pl plan) error {
 			if err := writeAtomic(b, ch.old, 0o600); err != nil {
 				return fmt.Errorf("backing up %s: %w", ch.path, err)
 			}
+		}
+		if !ch.changed() {
+			continue // taken over as it is: only its copy was written
 		}
 		var err error
 		if ch.copyFrom != "" {
@@ -566,7 +576,7 @@ func summary(e *Env, c Client, p Paths, pl plan, prev *State, cfg config.Config,
 			what = "updated"
 		}
 		line := fmt.Sprintf("    %-8s %-9s %s", ch.label, what, p.tilde(ch.path))
-		if ch.backup && ch.changed() {
+		if ch.backup {
 			line += "  (original kept as " + p.tilde(pl.state.Backups[ch.path]) + ")"
 		}
 		e.printf("%s\n", line)

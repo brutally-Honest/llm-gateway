@@ -559,3 +559,26 @@ func TestClientFoundInLocalBin(t *testing.T) {
 	contains(t, f.out.String(), "~/.local/bin/claude")
 	lacks(t, f.out.String(), "✗")
 }
+
+// A settings file the user made, already identical to install's, is taken over with a
+// .bak, so uninstall puts the user's file back instead of deleting it (AC19).
+func TestIdenticalUnmanagedSettingsRestoredOnUninstall(t *testing.T) {
+	f := newFake(t, "linux")
+	f.install(InstallOptions{Yes: true})
+	settings := f.read(".config/llm-gateway/claude-settings.json")
+	f.uninstall(UninstallOptions{Yes: true})
+	f.write(".config/llm-gateway/claude-settings.json", settings) // the user's own, same bytes
+	before := f.snapshot()
+
+	f.out.Reset()
+	f.install(InstallOptions{DryRun: true})
+	contains(t, f.out.String(), "unchanged, not made by install; a copy is kept as ~/.config/llm-gateway/claude-settings.json.bak")
+	if code := f.install(InstallOptions{Yes: true}); code != ExitOK {
+		t.Fatalf("exit %d\n%s", code, f.out)
+	}
+	contains(t, f.out.String(), "(original kept as ~/.config/llm-gateway/claude-settings.json.bak)")
+	f.uninstall(UninstallOptions{Yes: true})
+	if after := f.snapshot(); !maps.Equal(before, after) {
+		t.Fatalf("before %v\nafter %v", keys(before), keys(after))
+	}
+}
