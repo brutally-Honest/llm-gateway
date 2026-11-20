@@ -98,5 +98,32 @@ The same loopback rule existed three times, with different coverage:
   runs against the copy with `HOME` pointed at a temp dir holding it, at
   `.config/llm-gateway/config.yaml`. The other checks then fail for that fake home,
   which is expected; only the config row matters.
+- D8 (2026-11-20) — "README and docs/install.md known limits": neither had a known-limits
+  section, so each got a short one (`### Known limits` under README's Install,
+  `## Known limits` before docs/install.md's Troubleshooting). AGENTS.md is unchanged:
+  its only line on this is the rule itself, which now holds.
+- D9 (2026-11-20) — Karthik, at the real-check accept: docs/install.md, the Claude Code
+  client page and docker-compose.yml now say the native install is the supported path,
+  and that the compose gateway is limited. It sees file effects only for folders
+  mounted at the same path as on the host (ADR 0014: the gateway must run on the host
+  for the sensors), and on macOS it needs Docker Desktop's "Enable host networking" (D3).
 
 ## Notes
+- Real check (2026-11-20, build 45a4309, accepted by Karthik). `gateway install --yes`
+  upgraded a8807a7 → 45a4309, and `gateway doctor` passed every required check. A copy of
+  the real config with line 9 changed to `listen_addr: 0.0.0.0:7197` was refused three
+  times with the same text, `listen_addr "0.0.0.0:7197": not loopback: v1 has no auth,
+  and captures hold prompts and secrets as sent; use 127.0.0.1, ::1 or localhost`:
+  - `gateway -config <copy>` in the foreground: exit 2, before any bind, with key, value,
+    reason and line 9;
+  - `gateway doctor` with HOME on a temp home (D7): `fail Config`, exit 1;
+  - `gateway install --dry-run`: "Stopped: … Nothing was written."
+  The real config's sha256 was unchanged afterwards.
+- Probes: disabling the loopback check in `CheckListenAddr` fails 33 config tests.
+  Planting `0.0.0.0:7197` in install's default config fails
+  `TestInstallWritesLoopbackOnly`. The old `docker-compose.yml` fails
+  `TestCompose_GatewayLoopbackOnly`. A first probe with `0.0.0.0:9` passed, because the
+  scan only matches ports of two or more digits; the default ports all have four digits.
+- Docker Desktop on macOS was not tried: there is no Mac here. The compose file was
+  checked with `docker compose config -q` and the conventions test, not by running it,
+  because the installed gateway holds 127.0.0.1:7197.
