@@ -7,7 +7,12 @@ configured `upstreams.anthropic.base_url`) as sent.
 ## 1. Setup
 
 Start the gateway (`make run`, or `docker compose up`). It listens on
-`127.0.0.1:7197`. Then point Claude Code at it in the shell you start `claude` from:
+`127.0.0.1:7197`. The native install ([docs/install.md](../install.md)) is the supported
+path; the compose gateway is limited: it sees file effects only for folders mounted at
+the same path as on the host, and on macOS it needs Docker Desktop's "Enable host
+networking" ([known limits](../install.md#known-limits)).
+
+Then point Claude Code at it in the shell you start `claude` from:
 
 ```sh
 export ANTHROPIC_BASE_URL=http://127.0.0.1:7197/anthropic

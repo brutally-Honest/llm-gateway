@@ -3,7 +3,6 @@ package install
 import (
 	"encoding/json"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -147,8 +146,10 @@ func Diagnose(e *Env, c Client) []Result {
 		add("config", "Config", Fail, p.tilde(p.Config)+": "+err.Error(), "fix the key named, see config.example.yaml")
 	} else {
 		cfg, cfgOK = loaded, true
-		if bad := nonLoopback(cfg); bad != "" {
-			add("config", "Config", Fail, bad+" is not loopback", "set it to a 127.0.0.1 address: the gateway has no auth")
+		// LoadConfig already refuses a listener off loopback; this is the same rule,
+		// for a loader that does not (spec 022).
+		if e := config.CheckListeners(cfg); e != nil {
+			add("config", "Config", Fail, p.tilde(p.Config)+": "+e.Message(), "fix the key named, see config.example.yaml")
 		} else {
 			add("config", "Config", Pass, p.tilde(p.Config)+" valid, loopback only", "")
 		}
@@ -391,33 +392,4 @@ func leftoverCheck(e *Env, c Client, p Paths, st *State) Result {
 	r.Level, r.Detail = Warn, strings.Join(found, "; ")
 	r.Fix = "run gateway install to replace it in your shell's file; remove one in another shell's file by hand"
 	return r
-}
-
-// loopback says whether a host:port listens on loopback only.
-func loopback(addr string) bool {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		return false
-	}
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
-}
-
-func nonLoopback(cfg config.Config) string {
-	if !loopback(cfg.ListenAddr) {
-		return "listen_addr " + cfg.ListenAddr
-	}
-	n := cfg.Effects.Network
-	if cfg.Effects.Enabled && n.Enabled {
-		if !loopback(n.HTTPProxyAddr) {
-			return "effects.network.http_proxy_addr " + n.HTTPProxyAddr
-		}
-		if n.SocksProxyAddr != "" && !loopback(n.SocksProxyAddr) {
-			return "effects.network.socks_proxy_addr " + n.SocksProxyAddr
-		}
-	}
-	return ""
 }

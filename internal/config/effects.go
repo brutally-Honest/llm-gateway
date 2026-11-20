@@ -340,9 +340,9 @@ func splitList(v string) []string {
 	return out
 }
 
-// validateEffects runs after file and env are applied. With the network sensor on, each
-// proxy address must be loopback and differ from every other listener. origin says
-// where each key came from.
+// validateEffects runs after file and env are applied, and after CheckListeners has
+// refused an address off loopback. With the network sensor on, each proxy address must
+// differ from every other listener. origin says where each key came from.
 func validateEffects(c *Config, origin map[string]string) error {
 	if !c.Effects.Enabled || !c.Effects.Network.Enabled {
 		return nil
@@ -355,13 +355,6 @@ func validateEffects(c *Config, origin map[string]string) error {
 		src := origin[key]
 		if src == "" {
 			src = "default"
-		}
-		host, _, err := net.SplitHostPort(addr)
-		if err != nil {
-			return &Error{Key: key, Source: src, Reason: reasonInvalidAddress}
-		}
-		if !loopbackHost(host) {
-			return &Error{Key: key, Source: src, Reason: reasonNotLoopback}
 		}
 		for _, o := range others {
 			if sameListen(addr, o) {

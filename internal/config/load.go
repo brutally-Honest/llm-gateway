@@ -119,8 +119,11 @@ func Load(opts Options) (Config, Source, error) {
 	if err != nil {
 		return Config{}, Source{}, err
 	}
+	var lines map[string]int // the file's line of each key it sets
 	if path != "" {
-		values, keys, lines, err := parseFile(path, data, opts.Upstreams)
+		var values map[string]*string
+		var keys map[string]keyFile
+		values, keys, lines, err = parseFile(path, data, opts.Upstreams)
 		if err != nil {
 			return Config{}, Source{}, err
 		}
@@ -154,6 +157,9 @@ func Load(opts Options) (Config, Source, error) {
 			origin[s.key] = name
 			src.EnvOverrides = append(src.EnvOverrides, s.key)
 		}
+	}
+	if err := checkListeners(&cfg, origin, path, lines); err != nil {
+		return Config{}, Source{}, err
 	}
 	if err := validateUI(&cfg, origin[uiListenKey]); err != nil {
 		return Config{}, Source{}, err

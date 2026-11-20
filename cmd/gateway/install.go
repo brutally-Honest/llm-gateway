@@ -164,7 +164,7 @@ func loadInstallConfig(lookupEnv func(string) (string, bool)) func(string) (conf
 		cfg, _, err := config.Load(config.Options{Path: filepath.Clean(path), LookupEnv: env, Upstreams: upstreamSpecs(adapters)})
 		var ce *config.Error
 		if errors.As(err, &ce) {
-			msg := ce.Key + ": " + ce.Reason
+			msg := ce.Message() // the key, the value of a refused listener, the reason
 			if ce.Line > 0 {
 				msg += fmt.Sprintf(" (line %d)", ce.Line)
 			}

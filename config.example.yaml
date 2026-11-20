@@ -2,9 +2,10 @@
 # Every key is optional and shown at its default. Precedence: defaults < this file
 # < env. Secrets never go here; they only ever come from env vars (ADR 0002).
 
-# Address to listen on, as host:port. Loopback only by default: the gateway has no
-# auth yet. An empty host (":7197") is rejected; write 0.0.0.0 or [::] to listen on
-# every interface.
+# Address to listen on, as host:port. Loopback only, like every listener below: the
+# host must be in 127.0.0.0/8, ::1 or localhost. v1 has no auth, and captures hold
+# prompts and secrets as sent, so any other host, an empty one (":7197") included, stops
+# the gateway at start with an error naming the key and the value.
 # Env: GATEWAY_LISTEN_ADDR
 listen_addr: 127.0.0.1:7197
 

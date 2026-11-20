@@ -42,6 +42,13 @@ gateway uninstall    # remove it; keeps your config and captured data
 
 Upgrades, flags, every doctor check, paths and troubleshooting: [docs/install.md](docs/install.md).
 
+### Known limits
+
+- **Loopback only in v1.** Every listener binds 127.0.0.0/8, `::1` or `localhost`; any
+  other address, `0.0.0.0` included, stops the gateway at start, with no override. v1 has
+  no auth, and captures hold prompts and tool results as sent, secrets included
+  ([docs/install.md](docs/install.md#known-limits)).
+
 ## Setup
 
 For working on the gateway itself (building from source).

@@ -18,6 +18,12 @@ below and AC44, the API-key smoke test of Phase 1.
    run, so the benchmark was left as it is (`internal/ui/timeline_bench_test.go`).
 
 ## Done
+- **022 loopback only** (`specs/022-loopback-only/`): every listener (API, UI, HTTP and
+  SOCKS proxies) refuses any address outside 127.0.0.0/8, `::1` and `localhost`, with no
+  override. Config loading, `gateway install` and `gateway doctor` share one check and
+  one message naming the key, the value and the reason. `docker-compose.yml` runs the
+  gateway on the host's network, with no exception in the code; the native install is
+  the supported path (`docs/install.md`, Known limits).
 - **023 one-command install** (`specs/023-one-command-install/`): `curl … install.sh | sh`
   on Linux and macOS. install.sh checks its own needs, downloads the release for the
   machine and verifies its SHA256; `gateway install` prints a preflight table, offers to
@@ -90,6 +96,8 @@ below and AC44, the API-key smoke test of Phase 1.
   (`specs/015-effect-attribution/research.md`, 2026-11-10).
 
 ## Not now
+- Remote access with auth: a gateway token on every route, then listeners off loopback.
+  Until then v1 refuses any non-loopback address (spec 022).
 - OpenTelemetry ingestion from harnesses (taking a client's own OTel events as ground
   truth, Phase 6). This is not the gateway's own tracing, which Phase 8 built
   (`docs/observability.md`).

@@ -46,8 +46,8 @@ func uiSettings() []setting {
 			}
 			return ""
 		}},
-		// The address is checked for shape here; loopback and distinctness are checked
-		// by validateUI once file and env are both applied.
+		// The address is checked for shape here; loopback (CheckListeners) and
+		// distinctness (validateUI) are checked once file and env are both applied.
 		{uiListenKey, func(c *Config, v string) string {
 			if !validAddress(v) {
 				return reasonInvalidAddress
@@ -99,21 +99,15 @@ func canonicalHost(host string) string {
 	return strings.ToLower(host)
 }
 
-// validateUI runs after file and env are applied. It checks nothing when the UI is off.
-// origin says where ui.listen_addr came from, for the error's source.
+// validateUI runs after file and env are applied, and after CheckListeners has
+// refused an address off loopback. It checks nothing when the UI is off. origin says
+// where ui.listen_addr came from, for the error's source.
 func validateUI(c *Config, origin string) error {
 	if !c.UI.Enabled {
 		return nil
 	}
 	if origin == "" {
 		origin = "default"
-	}
-	host, _, err := net.SplitHostPort(c.UI.ListenAddr)
-	if err != nil {
-		return &Error{Key: uiListenKey, Source: origin, Reason: reasonInvalidAddress}
-	}
-	if !loopbackHost(host) {
-		return &Error{Key: uiListenKey, Source: origin, Reason: reasonNotLoopback}
 	}
 	if sameListen(c.UI.ListenAddr, c.ListenAddr) {
 		return &Error{Key: uiListenKey, Source: origin, Reason: reasonSameAsListen}

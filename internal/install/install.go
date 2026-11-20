@@ -194,8 +194,9 @@ func buildPlan(e *Env, c Client, pre *Preflight, prev *State, o InstallOptions) 
 		pl.changes = append(pl.changes, change{label: "config", path: p.Config, data: defaultConfig(sandboxOK)})
 		pl.state.ConfigCreated = true
 	}
-	if !loopback(cfg.ListenAddr) {
-		return pl, cfg, fmt.Errorf("listen_addr %s in %s is not loopback; the installer sets up loopback only", cfg.ListenAddr, p.tilde(p.Config))
+	// The same rule the gateway starts with (spec 022), before anything is written.
+	if e := config.CheckListeners(cfg); e != nil {
+		return pl, cfg, fmt.Errorf("the config %s is not valid (%s); fix it or move it away", p.tilde(p.Config), e.Message())
 	}
 
 	// The client's settings file (AC13, research D5).

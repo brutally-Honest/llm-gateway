@@ -328,7 +328,8 @@ func TestLoad_InvalidDuration(t *testing.T) {
 }
 
 func TestLoad_InvalidAddress(t *testing.T) {
-	for _, v := range []string{"localhost", ":7197", ":http", "127.0.0.1:-1", "127.0.0.1:65536", "127.0.0.1:99999"} {
+	// An empty host (":7197") parses; the loopback rule refuses it (TestLoad_ListenersLoopbackOnly).
+	for _, v := range []string{"localhost", ":http", "127.0.0.1:-1", "127.0.0.1:65536", "127.0.0.1:99999"} {
 		checkInvalid(t, "listen_addr", v, reasonInvalidAddress)
 	}
 	// An empty env var is unset, so an empty address can only come from the file.
@@ -336,8 +337,115 @@ func TestLoad_InvalidAddress(t *testing.T) {
 	if e := loadErr(t, Options{Path: path}); e.Reason != reasonInvalidAddress {
 		t.Errorf("empty address: Reason = %q, want %q", e.Reason, reasonInvalidAddress)
 	}
-	for _, v := range []string{"127.0.0.1:0", "0.0.0.0:7197", "[::1]:7197", "0.0.0.0:65535"} {
+	for _, v := range []string{"127.0.0.1:0", "[::1]:7197", "127.0.0.1:65535"} {
 		checkValid(t, "listen_addr", v)
+	}
+}
+
+// Spec 022 AC1, AC2: every listener key, with its listener on, loads on loopback and
+// refuses anything else, from the file and from env. The error names the key, the
+// value and the reason, and the file's line.
+func TestLoad_ListenersLoopbackOnly(t *testing.T) {
+	// Each key on its own port, so a loopback value never collides with the defaults.
+	keys := map[string]string{
+		"listen_addr":                      "7301",
+		"ui.listen_addr":                   "7302",
+		"effects.network.http_proxy_addr":  "7303",
+		"effects.network.socks_proxy_addr": "7304",
+	}
+	// yamlFor writes key: value, nested under its blocks.
+	yamlFor := func(key, value string) string {
+		parts := strings.Split(key, ".")
+		var b strings.Builder
+		for i, p := range parts[:len(parts)-1] {
+			b.WriteString(strings.Repeat("  ", i) + p + ":\n")
+		}
+		b.WriteString(strings.Repeat("  ", len(parts)-1) + parts[len(parts)-1] + ": \"" + value + "\"\n")
+		return b.String()
+	}
+	allowed := []string{"127.0.0.1", "127.0.0.2", "[::1]", "localhost", "LOCALHOST"}
+	refused := []string{"0.0.0.0", "[::]", "", "192.168.1.5", "gateway.example.com", "[::ffff:192.168.1.5]"}
+	for key, port := range keys {
+		for _, host := range allowed {
+			v := host + ":" + port
+			t.Run("allowed_"+key+"_"+v, func(t *testing.T) {
+				path := writeConfig(t, yamlFor(key, v))
+				if _, _, err := Load(Options{Path: path}); err != nil {
+					t.Errorf("file: %v", err)
+				}
+				if _, _, err := Load(Options{LookupEnv: env(envName(key), v)}); err != nil {
+					t.Errorf("env: %v", err)
+				}
+			})
+		}
+		for _, host := range refused {
+			v := host + ":" + port
+			t.Run("refused_"+key+"_"+v, func(t *testing.T) {
+				path := writeConfig(t, yamlFor(key, v))
+				line := strings.Count(yamlFor(key, v), "\n")
+				want := Error{Key: key, Value: v, Source: path, Reason: ReasonNotLoopback, Line: line}
+				if e := loadErr(t, Options{Path: path}); *e != want {
+					t.Errorf("file: error = %+v, want %+v", *e, want)
+				}
+				name := envName(key)
+				want = Error{Key: key, Value: v, Source: name, Reason: ReasonNotLoopback}
+				e := loadErr(t, Options{LookupEnv: env(name, v)})
+				if *e != want {
+					t.Errorf("env: error = %+v, want %+v", *e, want)
+				}
+				msg := key + " \"" + v + "\": " + ReasonNotLoopback
+				if e.Message() != msg || e.Error() != "config: "+name+": "+msg {
+					t.Errorf("Message() = %q, Error() = %q", e.Message(), e.Error())
+				}
+			})
+		}
+	}
+}
+
+// Spec 022 AC1: the rule itself, and the reason it gives.
+func TestCheckListenAddr(t *testing.T) {
+	for _, v := range []string{"127.0.0.1:7197", "127.255.255.254:1", "[::1]:7197", "localhost:7197", "127.0.0.1:0"} {
+		if e := CheckListenAddr("k", v); e != nil {
+			t.Errorf("%q: %+v, want allowed", v, *e)
+		}
+	}
+	for _, v := range []string{"0.0.0.0:7197", "[::]:7197", ":7197", "10.0.0.1:7197", "128.0.0.1:7197", "[fe80::1]:7197", "host.local:7197", "localhost.:7197"} {
+		e := CheckListenAddr("k", v)
+		if e == nil || *e != (Error{Key: "k", Value: v, Reason: ReasonNotLoopback}) {
+			t.Errorf("%q: %+v, want refused as not loopback", v, e)
+		}
+	}
+	// A malformed address names no value.
+	if e := CheckListenAddr("k", "nope"); e == nil || *e != (Error{Key: "k", Reason: reasonInvalidAddress}) {
+		t.Errorf("malformed: %+v", e)
+	}
+	for _, want := range []string{"no auth", "prompts and secrets", "127.0.0.1, ::1 or localhost"} {
+		if !strings.Contains(ReasonNotLoopback, want) {
+			t.Errorf("reason %q does not say %q", ReasonNotLoopback, want)
+		}
+	}
+}
+
+// Spec 022 AC2: a listener that is off binds nothing, so its address is not checked
+// (research D2); turned on, the same address is refused.
+func TestCheckListeners_OnlyListenersThatBind(t *testing.T) {
+	c := Defaults()
+	if e := CheckListeners(c); e != nil {
+		t.Fatalf("defaults: %+v", *e)
+	}
+	c.UI.ListenAddr = "0.0.0.0:7199"
+	c.Effects.Network.HTTPProxyAddr = "0.0.0.0:7198"
+	c.UI.Enabled, c.Effects.Network.Enabled = false, false
+	if e := CheckListeners(c); e != nil {
+		t.Errorf("listeners off: %+v", *e)
+	}
+	c.UI.Enabled = true
+	if e := CheckListeners(c); e == nil || e.Key != "ui.listen_addr" {
+		t.Errorf("UI on: %+v, want ui.listen_addr refused", e)
+	}
+	c.UI.Enabled, c.Effects.Network.Enabled = false, true
+	if e := CheckListeners(c); e == nil || e.Key != "effects.network.http_proxy_addr" {
+		t.Errorf("network on: %+v, want effects.network.http_proxy_addr refused", e)
 	}
 }
 

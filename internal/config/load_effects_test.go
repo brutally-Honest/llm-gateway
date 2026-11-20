@@ -59,7 +59,7 @@ func TestLoad_EffectsDefaults(t *testing.T) {
 
 	for name, c := range map[string]struct{ env, key, reason string }{
 		"relative extra dir": {"GATEWAY_EFFECTS_FILES_EXTRA_DIRS", "effects.files.extra_dirs", "invalid value"},
-		"not loopback":       {"GATEWAY_EFFECTS_NETWORK_HTTP_PROXY_ADDR", "effects.network.http_proxy_addr", "not loopback"},
+		"not loopback":       {"GATEWAY_EFFECTS_NETWORK_HTTP_PROXY_ADDR", "effects.network.http_proxy_addr", config.ReasonNotLoopback},
 		"same as listen":     {"GATEWAY_EFFECTS_NETWORK_SOCKS_PROXY_ADDR", "effects.network.socks_proxy_addr", "same as another listener"},
 	} {
 		v := map[string]string{
