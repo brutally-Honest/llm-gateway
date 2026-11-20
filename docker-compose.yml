@@ -7,13 +7,13 @@ services:
         VERSION: ${VERSION:-dev}
     # Room for shutdown_timeout (10s) plus the capture drain, before Docker kills it.
     stop_grace_period: 30s
-    # Loopback only on the host: the gateway has no auth yet (spec 000, Do).
-    ports:
-      - "127.0.0.1:7197:7197"
+    # Loopback only: v1 has no auth, so the gateway refuses any other address (spec
+    # 022). On the host's network its default 127.0.0.1 listeners (API 7197, UI 7199,
+    # proxies 7198 and 7195) are the host's loopback, so nothing is published and no
+    # address is overridden. Native on Linux; Docker Desktop needs "Enable host
+    # networking" (spec 022 research D3).
+    network_mode: host
     environment:
-      # A container's own loopback is unreachable from the host, so inside it the
-      # gateway listens on every interface; the publish above keeps it local.
-      GATEWAY_LISTEN_ADDR: 0.0.0.0:7197
       # Captures live on the named volume below, so they outlive the container.
       GATEWAY_CAPTURE_DIR: /var/lib/llm-gateway
     volumes:

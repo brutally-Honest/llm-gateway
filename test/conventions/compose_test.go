@@ -18,6 +18,8 @@ import (
 type composeFile struct {
 	Services map[string]struct {
 		StopGracePeriod string            `yaml:"stop_grace_period"`
+		NetworkMode     string            `yaml:"network_mode"`
+		Ports           []string          `yaml:"ports"`
 		Environment     map[string]string `yaml:"environment"`
 		Volumes         []composeMount    `yaml:"volumes"`
 	} `yaml:"services"`
@@ -119,4 +121,34 @@ func TestCompose_CaptureDirOnVolume(t *testing.T) {
 		return
 	}
 	t.Fatalf("no volume is mounted at GATEWAY_CAPTURE_DIR %s", dir)
+}
+
+// TestCompose_GatewayLoopbackOnly fails unless the gateway service runs on loopback
+// with no exception (spec 022 AC5, research D3): the config its environment gives
+// loads and passes config.CheckListeners, it shares the host's network so those
+// loopback listeners are the host's, and it publishes nothing (a publish reaches only
+// the container's own interfaces, which loopback listeners never are).
+func TestCompose_GatewayLoopbackOnly(t *testing.T) {
+	compose := readCompose(t)
+	gateway, ok := compose.Services["gateway"]
+	if !ok {
+		t.Fatal("docker-compose.yml has no gateway service")
+	}
+	env := func(k string) (string, bool) {
+		v, ok := gateway.Environment[k]
+		return v, ok
+	}
+	cfg, _, err := config.Load(config.Options{LookupEnv: env})
+	if err != nil {
+		t.Fatalf("the gateway service's environment: %v", err)
+	}
+	if e := config.CheckListeners(cfg); e != nil {
+		t.Fatalf("the gateway service's environment: %s", e.Message())
+	}
+	if gateway.NetworkMode != "host" {
+		t.Errorf("network_mode = %q, want host: on a bridge network a loopback listener is unreachable from the host", gateway.NetworkMode)
+	}
+	if len(gateway.Ports) > 0 {
+		t.Errorf("ports = %v, want none: the host network needs no publish", gateway.Ports)
+	}
 }
