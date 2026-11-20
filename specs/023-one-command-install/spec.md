@@ -117,9 +117,10 @@ Four pieces: `install.sh` (download, verify, hand over), `gateway install`,
   missing.
 - **AC24** — Downloads `SHA256SUMS` and `llm-gateway_<version>_<os>_<arch>.tar.gz` from the
   latest GitHub release, or from the release named by a version argument; verifies the
-  checksum; installs `gateway` to `~/.local/bin`; runs `gateway install` with every flag
-  passed through, so `sh -s -- --check`, `--dry-run` and `--install-deps` work through the
-  curl line. `LLM_GATEWAY_BASE_URL` points it at another server (local testing).
+  checksum; runs the verified `gateway install` with every flag passed through, so
+  `sh -s -- --check`, `--dry-run` and `--install-deps` work through the curl line; that
+  install puts `gateway` in `~/.local/bin` as its first planned step (research D21).
+  `LLM_GATEWAY_BASE_URL` points it at another server (local testing).
 - **AC25** — `make dist` builds exactly those assets for linux and darwin on amd64 and arm64.
 
 ### Help

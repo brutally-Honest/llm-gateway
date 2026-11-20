@@ -5,6 +5,16 @@ feature: 023-one-command-install
 
 ## Open questions
 <!-- Answer by changing "(open)" to "(answered)" and writing the answer underneath. -->
+- **Q1** (open) AC29 — The Help link to `docs/install.md` on GitHub breaks
+  `TestWeb_NoInlineOrExternalReferences` (internal/ui/web_test.go): no embedded web file
+  may hold an absolute URL, with one exact exemption (the SVG namespace), and a test pins
+  that nothing else is exempt. Making it pass changes a check, which is the human's call,
+  so the link commit (02e0421, "feat(ui): link the install guide from the key bar")
+  was reverted and AC29 waits. — options: A) a second exact-literal exemption for the
+  help URL, tested like the SVG one (a link the browser only follows on a click; never
+  fetched, CSP unaffected) — recommended; B) the gateway serves the guide itself (a
+  local `/help` route rendering an embedded docs/install.md; works offline, more code);
+  C) drop the Help link from 023.
 
 ## Dependencies (each with its source)
 
@@ -133,3 +143,19 @@ install.sh reads SHA256SUMS first and takes the archive name from the line endin
 - D20 (2026-11-20) — The service is restarted on every install run, so an upgraded binary
   is the one running; "what changed" lists each managed file as new, updated or
   unchanged, and the version before and after.
+- D21 (2026-11-20) — install.sh runs the verified binary from its temp folder, and
+  `gateway install` copies it to `~/.local/bin/gateway` as the first step of its plan
+  (D18). Copying first, as the prompt's step order reads, would write a file under
+  `--check`, `--dry-run` and a "no" at "Proceed?", which promise nothing written; this
+  way the end state is the same and nothing lands before the user agrees.
+- D22 (2026-11-20) — `--yes` also answers the "replace your hand-written setup?"
+  question (it is not a dependency offer, so `--install-deps` does not cover it), and
+  the second `--purge` question. What was found is still printed first.
+- D23 (2026-11-20) — The install, uninstall, doctor and help commands write text for a
+  person to the command's stdout, like the viewer (ADR 0007); `-h`/`-help` on the
+  gateway itself keep their JSON usage line. No lint rule is changed: nothing prints
+  with fmt.Print* or touches os.Stdout outside main.go.
+- D24 (2026-11-20) — The install.sh test lives in `internal/install` (Go tests drive the
+  script; install.sh has no Go package): shellcheck, then the script against an
+  httptest server serving a locally built archive whose `gateway` is a recording
+  script. `make dist` builds the real assets for the real-machine check.
