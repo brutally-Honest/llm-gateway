@@ -128,6 +128,17 @@ the settings file, and restores any `.bak` install made of a file it replaced. I
 config, the captured data and the `gateway` binary (remove that last with
 `rm ~/.local/bin/gateway`). It never uninstalls a dependency.
 
+If install replaced a service file of your own, uninstall puts it back **as it was before
+install**: enabled at login and running again if it was (install recorded both in
+`install-state.json`). It prints what it did and the command to stop it
+(`systemctl --user disable --now llm-gateway.service`, or
+`launchctl bootout gui/$(id -u)/dev.llm-gateway`).
+
+Run from a session routed through this gateway (a `claude` started by the function, whose
+commands carry `ANTHROPIC_BASE_URL` pointing at it), uninstall warns that stopping the
+service cuts that session off, and asks first, even with `--yes`. Answer no and nothing
+changes; run it from a plain terminal instead, or pass `--yes --force` to skip the question.
+
 `gateway uninstall --purge` also deletes the config and the captured data; it asks once more,
 naming the size. `--yes` answers both questions.
 
@@ -217,7 +228,9 @@ Each listener answers on loopback: the API (`/healthz`), the UI (`/api/health`),
 and SOCKS proxies (a TCP connect). **Fix:** start the gateway; if it runs, check the ports
 in the config and whether another process holds one (`ss -ltnp` or `lsof -iTCP -sTCP:LISTEN`).
 The UI accepts connections only after its start-up warm-up, up to about 30 s on a large
-store, so right after an install or restart wait and run doctor again.
+store. While the API answers and the gateway started under 2 minutes ago, a silent UI is a
+**warn**, "warming up, about N s since the gateway started" (from the API's `/metrics`);
+after that it is a **fail**.
 
 ### Check: settings
 `~/.config/llm-gateway/claude-settings.json` exists and points at this gateway (its
@@ -265,6 +278,7 @@ rewrite it.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `claude` runs but nothing shows in the UI | the terminal predates the install, so the function is not defined | open a new terminal; `type claude` should say it is a shell function |
+| Claude Code stops answering (connection errors) while it runs `gateway uninstall` | the session goes through the gateway, and uninstall stopped it | uninstall now warns and asks first; answer no and run it from a plain terminal. To recover a cut-off session: `gateway install` from another terminal, or `systemctl --user start llm-gateway` |
 | The UI does not load right after install or a restart | it builds its sessions list before it accepts connections (up to about 30 s on a large store) | wait, then reload |
 | "llm-gateway is not running: starting plain Claude Code" | the gateway is stopped | `gateway doctor`; then `systemctl --user restart llm-gateway` or `launchctl kickstart -k gui/$(id -u)/dev.llm-gateway` |
 | `install.sh: checksum mismatch` | a corrupted or tampered download | run it again; if it repeats, report it and do not install |
