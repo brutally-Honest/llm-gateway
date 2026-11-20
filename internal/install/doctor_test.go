@@ -187,3 +187,27 @@ func TestDoctorLinksMatchDocs(t *testing.T) {
 		}
 	}
 }
+
+// The UI listener is checked on its own health route, /api/health, which the UI serves;
+// it has no /healthz (found on the real-machine check).
+func TestDoctorUIUsesItsHealthRoute(t *testing.T) {
+	f := installed(t)
+	f.env.HTTPStatus = func(url string) (int, error) {
+		if strings.Contains(url, ":7199/") && !strings.HasSuffix(url, "/api/health") {
+			return 404, nil
+		}
+		return 200, nil
+	}
+	if r := results(f)["listener-ui"]; r.Level != Pass {
+		t.Fatalf("%+v", r)
+	}
+	f.env.HTTPStatus = func(url string) (int, error) {
+		if strings.Contains(url, ":7199/") {
+			return 0, os.ErrDeadlineExceeded
+		}
+		return 200, nil
+	}
+	if r := results(f)["listener-ui"]; r.Level != Fail || !strings.Contains(r.Fix, "warm-up") {
+		t.Fatalf("%+v", r)
+	}
+}

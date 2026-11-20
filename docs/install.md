@@ -213,9 +213,11 @@ The login service is installed, running and starts at login. **Fix:** read its l
 `tail -f ~/Library/Logs/llm-gateway/gateway.log`), then `gateway install` restarts it.
 
 ### Check: listeners
-Each listener answers on loopback: the API (`/healthz`), the UI (`/healthz`), the HTTP and
-SOCKS proxies (a TCP connect). **Fix:** start the gateway; if it runs, check the ports in
-the config and whether another process holds one (`ss -ltnp` or `lsof -iTCP -sTCP:LISTEN`).
+Each listener answers on loopback: the API (`/healthz`), the UI (`/api/health`), the HTTP
+and SOCKS proxies (a TCP connect). **Fix:** start the gateway; if it runs, check the ports
+in the config and whether another process holds one (`ss -ltnp` or `lsof -iTCP -sTCP:LISTEN`).
+The UI accepts connections only after its start-up warm-up, up to about 30 s on a large
+store, so right after an install or restart wait and run doctor again.
 
 ### Check: settings
 `~/.config/llm-gateway/claude-settings.json` exists and points at this gateway (its
@@ -263,6 +265,7 @@ rewrite it.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `claude` runs but nothing shows in the UI | the terminal predates the install, so the function is not defined | open a new terminal; `type claude` should say it is a shell function |
+| The UI does not load right after install or a restart | it builds its sessions list before it accepts connections (up to about 30 s on a large store) | wait, then reload |
 | "llm-gateway is not running: starting plain Claude Code" | the gateway is stopped | `gateway doctor`; then `systemctl --user restart llm-gateway` or `launchctl kickstart -k gui/$(id -u)/dev.llm-gateway` |
 | `install.sh: checksum mismatch` | a corrupted or tampered download | run it again; if it repeats, report it and do not install |
 | `install.sh: this release has no build for …` | an unsupported OS or CPU | build from source |

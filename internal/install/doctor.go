@@ -207,27 +207,31 @@ func Diagnose(e *Env, c Client) []Result {
 	return out
 }
 
+// uiHealthPath is the UI listener's health route.
+const uiHealthPath = "/api/health"
+
 func listenerChecks(e *Env, cfg config.Config, cfgOK bool) []Result {
 	type l struct {
 		id, name, addr string
-		http           bool
+		health         string // the health path, "" for a TCP connect
 	}
-	ls := []l{{"listener-api", "API listener", cfg.ListenAddr, true}}
+	ls := []l{{"listener-api", "API listener", cfg.ListenAddr, "/healthz"}}
 	if cfg.UI.Enabled {
-		ls = append(ls, l{"listener-ui", "UI listener", cfg.UI.ListenAddr, true})
+		// The UI's own health route; it has no /healthz (spec 009).
+		ls = append(ls, l{"listener-ui", "UI listener", cfg.UI.ListenAddr, uiHealthPath})
 	}
 	if cfg.Effects.Enabled && cfg.Effects.Network.Enabled {
-		ls = append(ls, l{"listener-http-proxy", "HTTP proxy", cfg.Effects.Network.HTTPProxyAddr, false})
+		ls = append(ls, l{"listener-http-proxy", "HTTP proxy", cfg.Effects.Network.HTTPProxyAddr, ""})
 		if cfg.Effects.Network.SocksProxyAddr != "" {
-			ls = append(ls, l{"listener-socks", "SOCKS proxy", cfg.Effects.Network.SocksProxyAddr, false})
+			ls = append(ls, l{"listener-socks", "SOCKS proxy", cfg.Effects.Network.SocksProxyAddr, ""})
 		}
 	}
 	var out []Result
 	for _, x := range ls {
 		r := Result{ID: x.id, Name: x.name, Link: anchor("listeners")}
 		ok := false
-		if x.http {
-			code, err := e.HTTPStatus("http://" + x.addr + "/healthz")
+		if x.health != "" {
+			code, err := e.HTTPStatus("http://" + x.addr + x.health)
 			ok = err == nil && code == 200
 		} else {
 			ok = e.Dial(x.addr)
@@ -237,6 +241,9 @@ func listenerChecks(e *Env, cfg config.Config, cfgOK bool) []Result {
 		} else {
 			r.Level, r.Detail = Fail, x.addr+" does not answer"
 			r.Fix = "start the gateway (see Login service); if it runs, check the port in the config"
+			if x.id == "listener-ui" {
+				r.Fix = "the UI accepts only after its start-up warm-up (up to about 30 s on a large store): wait and run doctor again; else start the gateway"
+			}
 			if !cfgOK {
 				r.Fix = "fix the config first"
 			}
