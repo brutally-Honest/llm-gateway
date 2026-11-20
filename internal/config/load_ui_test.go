@@ -63,11 +63,11 @@ func TestLoad_UIPrecedenceAndUnknownKey(t *testing.T) {
 // Loopback hosts and distinct ports load.
 func TestLoad_UIListenAddrMustBeLoopbackAndDistinct(t *testing.T) {
 	refused := []struct{ value, reason string }{
-		{"0.0.0.0:7199", "not loopback"},
-		{"[::]:7199", "not loopback"},
-		{"192.168.1.5:7199", "not loopback"},
+		{"0.0.0.0:7199", config.ReasonNotLoopback},
+		{"[::]:7199", config.ReasonNotLoopback},
+		{"192.168.1.5:7199", config.ReasonNotLoopback},
 		{"127.0.0.1:7197", "same as listen_addr"}, // the proxy's default address
-		{"[::ffff:192.168.1.5]:7199", "not loopback"},
+		{"[::ffff:192.168.1.5]:7199", config.ReasonNotLoopback},
 		{"localhost:7197", "same as listen_addr"}, // localhost resolves to 127.0.0.1 or ::1
 	}
 	for _, tc := range refused {

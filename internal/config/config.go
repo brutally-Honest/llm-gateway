@@ -1,6 +1,7 @@
 // Package config loads the gateway's settings: built-in defaults, then an optional
 // YAML file, then GATEWAY_* env vars (ADR 0002). It is pure: no logging and no
-// network. Errors name the key and where it came from, never its value.
+// network. Errors name the key and where it came from, never its value; the one
+// exception is a listener address off loopback (spec 022 research D4).
 package config
 
 import (
@@ -43,12 +44,13 @@ type Source struct {
 // field by field.
 type Error struct {
 	Key    string // "" for file-level errors (malformed yaml)
+	Value  string // set only for a listener address off loopback; "" otherwise
 	Source string // file path or env var name
 	Reason string // fixed text: "unknown key", "invalid duration", ...
 	Line   int    // 0 if not applicable
 }
 
-// Error is built only from the fields, so it never contains a value.
+// Error is built only from the fields, so it never contains a value other than Value.
 func (e *Error) Error() string {
 	var b strings.Builder
 	b.WriteString("config: ")
@@ -56,11 +58,22 @@ func (e *Error) Error() string {
 	if e.Line > 0 {
 		fmt.Fprintf(&b, ":%d", e.Line)
 	}
-	if e.Key != "" {
-		b.WriteString(": ")
-		b.WriteString(e.Key)
-	}
 	b.WriteString(": ")
+	b.WriteString(e.Message())
+	return b.String()
+}
+
+// Message is the error without its source: the key, the value when set, and the
+// reason. gateway install and gateway doctor show it as it is.
+func (e *Error) Message() string {
+	var b strings.Builder
+	if e.Key != "" {
+		b.WriteString(e.Key)
+		if e.Value != "" {
+			fmt.Fprintf(&b, " %q", e.Value)
+		}
+		b.WriteString(": ")
+	}
 	b.WriteString(e.Reason)
 	return b.String()
 }
@@ -81,7 +94,6 @@ const (
 	reasonInvalidAddress    = "invalid address"
 	reasonInvalidURL        = "invalid url"
 	reasonInvalidValue      = "invalid value"
-	reasonNotLoopback       = "not loopback"
 	reasonSameAsListen      = "same as listen_addr"
 )
 
@@ -135,12 +147,11 @@ func envName(key string) string {
 	return "GATEWAY_" + strings.ToUpper(envNameReplacer.Replace(key))
 }
 
-// validAddress is host:port with a non-empty host and a numeric port.
+// validAddress is host:port with a numeric port. It checks the shape only: an empty
+// host, which binds every interface, is refused by CheckListenAddr (spec 022).
 func validAddress(v string) bool {
-	host, port, err := net.SplitHostPort(v)
-	// An empty host binds every interface. That must be written out as 0.0.0.0 or
-	// [::], so it is never the result of a missing host.
-	if err != nil || host == "" {
+	_, port, err := net.SplitHostPort(v)
+	if err != nil {
 		return false
 	}
 	// Base 10 and 16 bits: an integer from 0 to 65535, so named ports are rejected.
