@@ -140,6 +140,10 @@ on `127.0.0.1:7198`, SOCKS5 on `127.0.0.1:7195`). Everything is configured under
 in `config.example.yaml`; why it works this way is in
 [ADR 0014](../decisions/0014-effect-kind-and-no-root-sensors.md).
 
+`gateway install` ([install.md](../install.md)) does every step of this section for you:
+the binary, the config, the settings file, the login service and the `claude` function.
+The steps below are the same setup by hand.
+
 This needs the gateway **on the host**, not in Docker: a container cannot see your project
 folders or your programs. Docker keeps working for API capture alone.
 

@@ -22,7 +22,29 @@ and awaiting their manual check.
 - `docs/decisions/` — ADRs.
 - `docs/clients/` — one page per client: how to connect, known limits.
 
+## Install
+
+Needs Linux or macOS (amd64 or arm64), Claude Code, curl and a login service manager
+(systemd user session or launchd); git, bubblewrap and socat are optional. The installer
+checks them and offers to install what is missing: [requirements](docs/install.md#requirements).
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/brutally-Honest/llm-gateway/main/install.sh | sh
+```
+
+Then open a new terminal and run `claude`. To see first what it checks or would change,
+end the line with `sh -s -- --check` or `sh -s -- --dry-run` instead of `sh`.
+
+```sh
+gateway doctor       # check the install and the running gateway
+gateway uninstall    # remove it; keeps your config and captured data
+```
+
+Upgrades, flags, every doctor check, paths and troubleshooting: [docs/install.md](docs/install.md).
+
 ## Setup
+
+For working on the gateway itself (building from source).
 
 Prerequisite: `jq` on your `PATH`. `make verify` (which the pre-push hook runs) needs it
 for the agent-loop kit tests, and the kit's commit guard hook refuses every tool call
