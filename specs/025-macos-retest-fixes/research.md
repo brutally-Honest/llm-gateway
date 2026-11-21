@@ -61,3 +61,43 @@ the B13 note).
   listener ports (7195, 7197, 7198, 7199) are its own; 7196 still never is. D5's known
   limit widens to 7199: a foreign process on it while this gateway answers on 7197 is
   taken for the gateway.
+
+## Real check (Linux, 2026-11-21)
+
+Ubuntu, systemd user service, gateway running before each step. `/healthz` was polled
+every 200 ms in the background. "No lsof/ss" means a PATH whose system directory is a copy
+of `/usr/local/{s,}bin` and `/usr/{s,}bin` as symlinks, minus `lsof` and `ss`
+(`command -v` finds neither). Builds: ccb61ce (round 1, before D6) and e7aff24 (round 2,
+the branch's final code).
+
+| Step | Expected | Seen | Match |
+|---|---|---|---|
+| Round 1, reinstall 1 (7cd17e4 → ccb61ce) | installs, ports row names the running gateway | exit 0, "7195, 7197, 7198, 7199 held by the running gateway", binary copied, `Done` | yes |
+| Round 1, reinstall 2 | the same | exit 0, the same row, `Done` | yes |
+| Round 1, `gateway doctor` | green | exit 0, "All required checks pass."; warn: AppArmor/bwrap, hand-written function in `~/.bashrc`, UI warming up 4 s after restart | yes |
+| Round 1, reinstall 3, no lsof/ss | goes on, saying it found its own gateway | exit 0, "… held by the running gateway: no lsof or ss to name the owner, but it answers its health routes", `Done` | yes |
+| Round 1, `--check`, no lsof/ss, python on 7196, ~10 s after reinstall 3 | fails on 7196 only | ✗ on 7196 **and 7199** "held by an unknown process": the UI was still warming up | no → D6 |
+| Round 1, polls | sub-second gaps | 690 polls, 689 × 200, 1 refused | yes |
+| Round 2, reinstalls 1 and 2 (ccb61ce → e7aff24 → e7aff24), 1.5 s apart | install, gateway row | both exit 0, `Done`; stop → start 40 ms and 47 ms | yes |
+| Round 2, `gateway doctor` | green | exit 0, all required pass, same three warns | yes |
+| Round 2, reinstalls 3 and 4, no lsof/ss, 1.2 s apart (4 inside the UI warm-up) | both go on, saying they found their own gateway | both exit 0 with the health-routes row, `Done`; stop → start 42 ms and 50 ms | yes |
+| Round 2, `gateway doctor` | green | exit 0, "All required checks pass." | yes |
+| Round 2, `--check`, python on 7196, no lsof/ss | fails as an unknown process, gateway ports not flagged | exit 1, "7196 held by an unknown process (ss or lsof not found on PATH …)" only | yes |
+| Round 2, the same with the normal PATH | owner named | "7196 held by python3 (pid 1663341)" | yes |
+| Round 2, polls | sub-second gaps | 113 polls, 112 × 200, 1 refused | yes |
+
+Only the Mac can confirm:
+- B15: back-to-back reinstalls under launchd now restart within about a second (the plist
+  key is pinned by the golden file; launchd's handling of it is not seen on Linux).
+- D3: the first upgrade to this build takes the changed-plist path (bootout, wait,
+  bootstrap with EIO retries, kickstart) against real `launchctl`, and doctor is green
+  after it.
+- B16: `TestRoots_LearnedAndRejected`, and so `make verify`, green where `/home` is a symlink.
+- The own-gateway check with `/usr/sbin` off a macOS PATH (lsof only, the darwin wording).
+
+## Wrap-up (2026-11-21)
+
+AC1–AC3 are built, each with a test that failed before its fix (B16's only fails on a
+host with a symlinked `/home`, so its failure is the re-test's own output). The Linux real
+check (AC4) found one bug, the warming UI port (D6), now fixed and re-checked. `make
+verify` is green. No open questions.
