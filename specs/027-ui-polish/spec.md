@@ -43,3 +43,9 @@ accepted change; decisions are in `research.md`.
   its stop reason said once; Lean's context bar telling cache read from input; settings
   opening without a ringed option; turn list marks as glyphs and no empty scrollbar strip.
 - **C8** — A session's turns run newest first, in the turn list and the story alike.
+- **C7b** — Sessions list trimmed: "today" said once in the heading, today's starts as times,
+  status glyphs only for active, failed and hooks-only rows, no zero counts, no needs-a-look
+  prefix, no API-eq. label or unknown cost line, one dash for a hooks-only row's tokens, a
+  hooks-only title without its time, and the unassigned table's Label and Client columns only
+  when they vary; Settings closes on a click outside; the turn list pins where it starts.
+- **C9** — Each turn is one card: header, prompt, "How it got there" and final answer.

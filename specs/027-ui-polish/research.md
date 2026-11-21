@@ -163,4 +163,17 @@
   browser builds the story oldest first, so between-turn entries sit between the right pair,
   then shows it reversed. A live session follows the top.
 
+- **D37** (2026-11-21) C7b — The failed status mark maps counts the server already sends
+  (failed tool calls, errored main calls) to the row's glyph; no new arithmetic. startText is
+  shared, so the ungrouped and unassigned tables also show today's starts as times. The
+  hooks-only title is built by the server, so item 14 changed view_overview.go.
+- **D38** (2026-11-21) C7b — Splitting commits with zero-context patches placed one CSS line a
+  few rows off; it was moved back in its own refactor commit, as the branch has no interactive
+  rebase.
+- **D39** (2026-11-21) C7b — The turn list's sticky offset equals the page's top padding (24px,
+  20px under 1,080px), so it pins where it starts instead of sliding 4px.
+- **D40** (2026-11-21) C9 — One card per turn (option A of three mockups: one card, a thread
+  rail, a tinted band). CSS makes .turn.chapter the card and the prompt and answer parts of it;
+  the chips sit in a "How it got there" strip between them.
+
 ## Open questions
