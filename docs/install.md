@@ -282,6 +282,13 @@ rewrite it.
 
 ## Known limits
 
+- **Node needs 22.21 or later, or 24 or later, for network effects.** The settings file
+  sets `NODE_USE_ENV_PROXY=1`, so Node sends its calls through the gateway's proxy:
+  `fetch` from Node 22.21 (22 line) or 24.0, and the `http`/`https` modules from 22.21 or
+  24.5. Older Node (22.20 and before, 23, 20 and before) ignores it: with the sandbox off
+  its calls go direct and are not seen; with it on they fail with `ENOTFOUND`. Check with
+  `node --version`. Install's summary says the same.
+
 - **Loopback only in v1.** Every listener (the API on 7197, with the hooks and `/metrics`,
   the UI on 7199 and the proxies on 7198 and 7195) binds 127.0.0.0/8, `::1` or
   `localhost`. Any other address stops the gateway at start, and there is no override:
