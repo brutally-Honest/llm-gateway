@@ -138,3 +138,23 @@ macOS from here. The macOS job is the first check there (AC7).
     with the 200 ms pause; and it fails ("extra event: hooks") when `writeLive`'s
     `sent[...] == Hash` dedup is removed. The timer firing on its own stays covered by
     the other hook-window tests in `hub_hook_test.go`.
+- D12 (2026-11-21) — The macOS job tested on Node 24, not 22. Found on the green run
+  44864079366, through Karthik's question about why the Linux log was longer (web-test:
+  697 lines against 123). Node 22 prints TAP when not on a terminal, about 6 lines a
+  test, while Node 24 printed the spec format, one line a test.
+  - Cause: setup-node put 22.23.4 on PATH ("Found in cache"). The macOS step then put
+    all of `$(brew --prefix)/bin` first (D4), and that folder holds the runner image's
+    own Node 24. The job's version step printed `v24.22.2`. The run was still valid
+    (24 meets ADR 0013's 22.12 floor), but the two OSes tested different Node versions,
+    against D3.
+  - Fix (Karthik chose C of A: reorder the steps, B: a bash-only temp folder,
+    C: Homebrew's bash folder): put only `$(brew --prefix bash)/bin` first, which holds
+    bash and bashbug. jq and shellcheck are still found through `/opt/homebrew/bin`,
+    which the runner already has on PATH.
+  - Guard: the major version is set once as the job's `NODE_MAJOR` (22), read by
+    setup-node. "Show tool versions" fails with an `::error::` naming the node found
+    when its major differs. Checked locally: it exits 1 against this machine's v25.2.1
+    with `NODE_MAJOR=22`, and 0 with `NODE_MAJOR=25`.
+  - Why 22 and not 24: it is the oldest supported version, so CI fails on a newer-only
+    API before users on 22 hit it. The newest end is covered by the developer's own
+    `make verify` (Node v25). Raising the floor is a change to ADR 0013, not to CI.
