@@ -28,6 +28,11 @@ gateway refuses at preflight. This fix closes all three.
 - **AC4** — Real check on Linux: two reinstalls of this build over the running gateway
   (doctor green after), and one with lsof and ss off PATH (goes on, saying it found its
   own gateway).
+- **AC5 (crash loop, added in review)** — Under the gateway's own launchd or systemd
+  service, a failed start waits 10 s before it exits and writes the same startup error
+  to the log at most once per 10 minutes. A clean start and stop stay immediate, and a
+  run outside the service exits at once. doctor reports "service is restarting after a
+  startup error" with the error while that is happening.
 
 ## Out of scope
 - B8 (kit on bash 3.2) and B9 (`make verify` stops at the first failing target).

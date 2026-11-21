@@ -29,6 +29,10 @@ the B13 note).
   shows the job loaded but not running and points at the log, and 0 (no throttle at all)
   was rejected because nothing would then bound a crash loop. 2 s was rejected because
   the re-test's own pattern (a reinstall 1.5 s after a start) would still wait.
+  Update (2026-11-21, Karthik's review): the once-a-second crash loop was not accepted,
+  as it floods `~/Library/Logs/llm-gateway/`. The trade-off is now D7's: a failed start
+  under the service waits 10 s before it exits and logs the same error at most once per
+  10 minutes, so a crash loop restarts about every 11 s and a reinstall still is not held.
 - D3 (2026-11-21) — The plist changes (one new key), so the first upgrade of a Mac to this
   build finds a changed plist and takes 024 AC1's changed-plist path: `bootout`, the poll
   of `launchctl print` until the job is gone, `bootstrap` with its EIO retries, then
@@ -61,6 +65,30 @@ the B13 note).
   listener ports (7195, 7197, 7198, 7199) are its own; 7196 still never is. D5's known
   limit widens to 7199: a foreign process on it while this gateway answers on 7197 is
   taken for the gateway.
+- D7 (2026-11-21) — Crash-loop backoff, asked in Karthik's review (spec AC5), in the
+  failure path only. Under the gateway's own service, `cmd/gateway` holds the start's
+  log lines until the gateway serves. If the start fails first (any non-zero exit before
+  "gateway started", not a signal), it writes the held lines only if the error differs
+  from the recorded one or that was logged 10 minutes ago or more, records the error in
+  `$XDG_STATE_HOME/llm-gateway/startup-error.json` (default
+  `~/.local/state/llm-gateway/`, both OSes, `internal/startup`), and waits 10 s before it
+  exits; a stop during the wait ends it at once. A start that serves releases the lines
+  at once and removes the record; a clean stop never waits; outside the service nothing
+  changes. Detection: launchd sets `XPC_SERVICE_NAME` to the job's label, so it must be
+  `dev.llm-gateway` (a Terminal shell has `0` or an app's name); systemd sets
+  `INVOCATION_ID` and `SYSTEMD_EXEC_PID`, and on this machine a terminal inherits
+  `SYSTEMD_EXEC_PID` from the terminal's own unit, so the pid must equal the gateway's.
+  The same error is keyed by its error lines without `ts` and `caller`. The record holds
+  only the error lines' fields, which are fixed reasons, never secrets (ADR 0002). It is a
+  small file outside the process, like the capture store, so the process stays
+  stateless. On systemd this also changes the loop: with the 10 s wait,
+  `StartLimitBurst` (5 starts in 10 s) is never reached, so systemd retries every ~10 s
+  instead of giving up after five; doctor names the loop either way. Doctor shows
+  "service is restarting after a startup error: <error>" when the record's last failure
+  is within 25 s (two waits plus a margin) and the API does not answer. Rejected:
+  a plist-only fix (the plist's only restart-spacing key is ThrottleInterval, and raising
+  it holds reinstalls again, B15); rotating the log (the lines
+  are the problem, not the file size).
 
 ## Real check (Linux, 2026-11-21)
 
