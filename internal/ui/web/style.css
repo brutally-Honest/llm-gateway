@@ -302,10 +302,10 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .sicon { display: inline-block; font-size: 13px; line-height: 1; color: var(--muted); }
 .sicon-active { color: var(--ok); }
 .sicon-hooks-only { color: var(--accent); }
+.sicon-failed { color: var(--bad); }
 /* a row's counts each carry their label in words (017 AC1); the title cell adds the folder
    and model, and what needs a look */
 .sp-list .splace { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; margin-top: 2px; }
-.sicon-failed { color: var(--bad); }
 .sp-list .splace:empty, .sp-list .slook:empty { display: none; }
 .sp-list .slook { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--warn); font-size: 12px; font-weight: 600; margin-top: 2px; }
 .sp-list td.work, .sp-list td.tools, .sp-list td.changes, .sp-list td.dur, .sp-list td.tokens { white-space: nowrap; color: var(--text); font-size: 12.5px; font-variant-numeric: tabular-nums; }
