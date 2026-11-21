@@ -19,3 +19,6 @@ accepted change; decisions are in `research.md`.
 - **C2** — Two styles, Lean (default) and Stark, picked with the theme in a header Settings
   dialog and remembered; one shared dark base (darker) and one shared light base, violet
   accent, red only for failures; Stark uses bundled Geist fonts (ADR 0020).
+- **C3** — Call details as a full-height panel docked on the right: one line of facts, links
+  to each section, one scroll with nothing scrolling inside it; context said once with a bar
+  of its parts; carried-over messages folded; a failed call's health said first.

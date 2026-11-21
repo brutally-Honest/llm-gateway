@@ -62,4 +62,21 @@
   check the new layouts, and small server additions so the browser only formats: which
   calls fold, which turns use the long layout, and files grouped by turn.
 
+- **D13** (2026-11-21) C3 — The call details stay a modal `<dialog>` (the page behind is
+  inert and dimmed; `callScrimDimsOnlyThePageBehind` unchanged), docked with
+  `margin: 8px 8px 8px auto` at full height, 52rem wide. Its top is the title, one line of
+  label-value facts (model, duration, start, end, thread, status, cost) and buttons that
+  scroll to each section; the body is the one scroll. This drops spec 017 AC5's repeated
+  context line and message counts from the top: each is said once, in its section.
+- **D14** (2026-11-21) C3 — No inner scrolls: the reply folds at 12rem with "Show all"
+  (overflow hidden), messages carried over are folded behind one button and one line each,
+  the new ones are shown whole. `callReplyCapAndShowAllCoverRaw` became
+  `callPanelFoldsWithoutInnerScrolls` with Karthik's OK; probed with an inner message scroll.
+- **D15** (2026-11-21) C3 — Empty sections go: no Health section for a healthy call (its
+  status is in the top line), no Tools section when none were asked for, no counts row or bar
+  when no usage was reported. A call in trouble shows Health first, in the failure colour,
+  with its status. The context bar is sized by the server's three counts (flex-grow), with no
+  percent; cache write uses the ink colour so it differs from input in both styles. The
+  footer's Close button is gone; × and Esc close.
+
 ## Open questions
