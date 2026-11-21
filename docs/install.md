@@ -346,7 +346,8 @@ rewrite it.
 For maintainers: `make dist` builds what install.sh downloads, and a release publishes
 exactly these files: `llm-gateway_<version>_<os>_<arch>.tar.gz` for linux and darwin on
 amd64 and arm64, each holding `gateway`, and `SHA256SUMS`. `<version>` is the tag without
-its `v`. To try install.sh before a release exists, serve `dist/` and point it there:
+its `v`. The steps before every release are in [the release checklist](release-checklist.md).
+To try install.sh before a release exists, serve `dist/` and point it there:
 
 ```sh
 make dist
