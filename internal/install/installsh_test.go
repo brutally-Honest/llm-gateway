@@ -202,3 +202,27 @@ func TestInstallShNoBuildForPlatform(t *testing.T) {
 		t.Fatalf("err %v\n%s", err, out)
 	}
 }
+
+// B10 (spec 024 AC7): with --check, install.sh says the archive it fetched for the check
+// was removed, and leaves no temp folder behind; without it, it says nothing of the kind.
+func TestInstallShCheckSaysArchiveRemoved(t *testing.T) {
+	r := newRelease(t, false)
+	tmp := t.TempDir()
+	path := restrictedPath(t, nil, nil)
+	cmd := exec.Command("/bin/sh", installSh, "--check")
+	cmd.Env = []string{"HOME=" + t.TempDir(), "PATH=" + path, "TMPDIR=" + tmp, "LLM_GATEWAY_BASE_URL=" + r.srv.URL + "/rel/"}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "The archive was downloaded to a temporary folder for the check and removed.") {
+		t.Fatalf("output lacks the archive line:\n%s", out)
+	}
+	if left, _ := os.ReadDir(tmp); len(left) != 0 {
+		t.Fatalf("temp folder left behind: %v", left)
+	}
+	_, out2, err := runInstallSh(t, r, restrictedPath(t, nil, nil), "--yes")
+	if err != nil || strings.Contains(out2, "for the check") {
+		t.Fatalf("without --check: %v\n%s", err, out2)
+	}
+}

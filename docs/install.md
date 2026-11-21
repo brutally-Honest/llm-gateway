@@ -73,7 +73,7 @@ curl -fsSL https://raw.githubusercontent.com/brutally-Honest/llm-gateway/main/in
 
 | Flag | What it does |
 |---|---|
-| `--check` | the preflight table only: no offers, nothing written or run |
+| `--check` | the preflight table only: no offers, nothing installed. Through install.sh the archive is downloaded to a temporary folder for the check and removed |
 | `--dry-run` | the preflight table, then every file it would write (full contents for a new file, the exact diff for an existing one) and every command it would run; nothing written or run |
 | `--install-deps` | answers yes to every offer to install a missing dependency |
 | `--yes` | does not ask `Proceed?`, nor before replacing a hand-written setup; does **not** install dependencies |

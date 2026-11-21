@@ -142,7 +142,7 @@ func checkVerdict(e *Env, pre *Preflight) int {
 		e.printf("Not ready: a required dependency is missing. `gateway install` offers to install what it can.\n")
 		return ExitStopped
 	}
-	e.printf("Ready to install. Nothing was written or run.\n")
+	e.printf("Ready to install. Nothing was installed.\n")
 	return ExitOK
 }
 

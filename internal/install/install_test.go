@@ -258,6 +258,10 @@ func TestCheckAndDryRunWriteAndRunNothing(t *testing.T) {
 			t.Fatalf("%+v: ran %v", o, a)
 		}
 		lacks(t, f.out.String(), "Run it now?")
+		if o.Check {
+			// B10 (spec 024 AC7): install.sh adds where the archive went.
+			contains(t, f.out.String(), "Ready to install. Nothing was installed.\n")
+		}
 		if o.DryRun {
 			out := f.out.String()
 			contains(t, out, "Dry run: nothing is written or run.")
