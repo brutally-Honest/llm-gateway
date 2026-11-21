@@ -117,7 +117,10 @@ managed files, restarts the service and lists each file as new, updated or uncha
 the version before and after. Running it twice with nothing new changes no file.
 
 An upgrade (or any install run) restarts the gateway. For a sub-second gap (about 50–80 ms
-when measured on Linux) the gateway's ports refuse connections; Claude Code retries a
+when measured on Linux, about 0.6 s on macOS) the gateway's ports refuse connections. On
+macOS, launchd starts the gateway no sooner than 1 s after its last start (the plist's
+`ThrottleInterval`), so an install within a second of a start waits out the rest of that
+second. Claude Code retries a
 refused request on its own, so a running session carries on. Nothing in flight is lost
 silently: a model call still streaming when the restart begins gets the shutdown grace
 period, then is cut and stored as cut by the gateway.
@@ -323,7 +326,7 @@ rewrite it.
 | `install.sh: this release has no build for …` | an unsupported OS or CPU | build from source |
 | The installer asked nothing and stopped at "Proceed?" | no terminal to ask on (CI, a pipe with no tty) | run with `--yes` (and `--install-deps` to install dependencies) |
 | Preflight: a port held by another process | something else uses 7195–7199 | stop it, or change the ports in the config, then install again |
-| Preflight: a port held by an unknown process | neither `lsof` nor `ss` is on PATH, so the owner (which may be the running gateway) cannot be named | put `/usr/sbin` (macOS) or `/usr/bin` back on PATH, or stop the gateway first, then install again |
+| Preflight: a port held by an unknown process | neither `lsof` nor `ss` is on PATH, so the owner cannot be named, and the port does not answer as this gateway (a running gateway is found by its health routes and counts as free) | put `/usr/sbin` (macOS) or `/usr/bin` back on PATH to see the owner, then stop it, or change the ports in the config, and install again |
 | Preflight: no systemd user session | a container, WSL or a minimal distro | `--no-service`, then start the gateway by hand |
 | The gateway stops when you log out (Linux) | lingering is off | `loginctl enable-linger $USER` |
 | Bash commands fail with `apply-seccomp: … nested userns is capability-restricted` | Claude Code's sandbox on Ubuntu 24.04+ | see [Check: apparmor](#check-apparmor); or set `effects.network.sandbox: false` and run `gateway install` |
