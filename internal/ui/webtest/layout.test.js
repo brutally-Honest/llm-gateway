@@ -29,9 +29,14 @@ test("sessionPageIsOneScrollWithContentsInView", () => {
   assert.equal(cols.display, "grid");
   assert.equal(cols["grid-template-areas"], '"toc story"');
   assert.equal(cols.height, undefined, "the page grows with its story");
+  // the turn list stays in view while the story scrolls (any turn one click away); 027 C7a:
+  // it scrolls on its own only when taller than the window, and keeps no empty strip
   const toc = rule(".toc");
   assert.equal(toc.position, "sticky");
   assert.equal(toc["align-self"], "start");
+  const list = rule(".toc .scroll");
+  assert.equal(list.overflow, "auto", "a scrollbar only when there is more to see");
+  assert.equal(list["scrollbar-gutter"], "auto", "no strip kept for a scrollbar it does not have");
   const story = rule(".story");
   assert.equal(story.overflow, undefined, "the story does not scroll inside a box");
   assert.equal(story["max-height"], undefined);
