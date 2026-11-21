@@ -502,6 +502,16 @@ func TestView_Lists(t *testing.T) {
 	eq(t, "src/a.js lines", fmt.Sprint(v.Files.Changed[0].Lines, v.Files.Changed[0].Added, v.Files.Changed[0].Removed), "true 2 1")
 	eq(t, "dist/out.js lines known", v.Files.Changed[1].Lines, false)
 	eq(t, "reads", len(v.Files.Read), 0)
+	// 027 C5: the same changes split by where they happened, oldest first
+	var groups []string
+	for _, g := range v.Files.ByTurn {
+		var ps []string
+		for _, f := range g.Files {
+			ps = append(ps, fmt.Sprintf("%s(%d)", f.Path, len(f.Changes)))
+		}
+		groups = append(groups, fmt.Sprintf("%s#%d: %s", g.Label, g.Turn, strings.Join(ps, ",")))
+	}
+	eq(t, "files by turn", strings.Join(groups, " | "), "Turn 1#1: src/a.js(1),dist/out.js(1) | Between turns 1 and 2#0: notes.md(1)")
 	if len(v.Files.Searches) != 1 || v.Files.Searches[0].ToolID != "t5" || v.Files.Searches[0].Agent != "Explore" {
 		t.Errorf("searches = %+v", v.Files.Searches)
 	}
@@ -1004,4 +1014,23 @@ func TestView_CallReplyCutOrFailed(t *testing.T) {
 	if !strings.Contains(b.Response.Unavailable, "failed") || !strings.Contains(b.Response.Unavailable, "500 Internal Server Error") {
 		t.Errorf("failed call's reply = %q, want why there is none", b.Response.Unavailable)
 	}
+}
+
+// 027 C5: a file changed in two turns is in both turn groups, each with only that turn's
+// change and lines, while the by-file list keeps one row with both changes.
+func TestView_FilesByTurnSplitsAFileAcrossTurns(t *testing.T) {
+	x := seedFixture(true)
+	x.effect(store.EffectRow{Kind: "file_change", At: vat(10.7), Path: "/w/src/a.js", Change: "modified", Size: 130, BeforeHash: "a1", AfterHash: "a3"},
+		timeline.EffectLabel{Label: "named", Tool: tool("t5", "Grep")})
+	v := x.view(t, true)
+	eq(t, "by file a.js changes", len(v.Files.Changed[0].Changes), 2)
+	var got []string
+	for _, g := range v.Files.ByTurn {
+		for _, f := range g.Files {
+			if f.Path == "src/a.js" {
+				got = append(got, fmt.Sprintf("%s:%d", g.Label, len(f.Changes)))
+			}
+		}
+	}
+	eq(t, "a.js groups", strings.Join(got, ","), "Turn 1:1,Turn 2:1")
 }

@@ -99,6 +99,46 @@ function changeBody(e, path, ctx) {
   return box;
 }
 
+// fileRow is a changed file: its name and its lines added and removed (its size when the
+// lines are not known), the full path on hover (research 2026-11-13); it expands in place to
+// its changes and their diffs (027 C4), and "Details" opens its dialog. `scope` keeps the
+// same file in two turn groups apart.
+function fileRow(it, ctx, scope) {
+  const last = it.last || {};
+  const [, name] = split(it.path);
+  const right = it.lines ? lines(it.added, it.removed) : el("span", "r", last.size !== undefined && last.size !== null ? bytes(last.size) : "");
+  const li = el("li", "file-item");
+  const body = el("div", "file-changes");
+  const key = `${scope}:${it.full_path}`;
+  body.id = `fc-${key}`;
+  let filled = false;
+  const set = (open) => {
+    body.hidden = !open;
+    b.setAttribute("aria-expanded", String(open));
+    if (open) ctx.openFiles.add(key);
+    else ctx.openFiles.delete(key);
+    if (!open || filled) return;
+    filled = true;
+    for (const e of it.changes && it.changes.length ? it.changes : [last]) {
+      const head = el("div", "change-head");
+      head.append(el("span", "", `${cap(e.change)}${where(e) ? ` in ${where(e)}` : ""}`), el("span", "muted", e.at ? clock(e.at) : ""));
+      if (e.by) head.append(el("span", "muted", e.by));
+      body.append(head, changeBody(e, it.path, ctx));
+    }
+    const more = button("linkish small", "Details", () => ctx.open && ctx.open(`file:${it.full_path}`, more));
+    body.append(more);
+  };
+  const b = button("row file", undefined, () => set(body.hidden));
+  b.title = it.full_path;
+  b.setAttribute("aria-controls", body.id);
+  const chev = el("span", "chev", "▸");
+  chev.setAttribute("aria-hidden", "true");
+  b.append(chev, t1(name), right);
+  li.append(b, body);
+  set(ctx.openFiles.has(key));
+  return li;
+}
+
 function filesPanel(f, ctx) {
   const out = [el("p", "lead", f.coverage)];
   if (f.sum) out.push(sumLine(el("span", "a", `+${f.sum.added ?? 0}`), " ", el("span", "d", `−${f.sum.removed ?? 0}`), ` lines · ${f.sum.read ?? 0} read`));
@@ -106,44 +146,43 @@ function filesPanel(f, ctx) {
     out.push(el("p", "muted-note pad", f.empty));
     return out;
   }
-  out.push(el("h3", "", `Changed · ${(f.changed || []).length}`));
-  // a changed file is its name and its lines added and removed (its size when the lines
-  // are not known), the full path on hover (research 2026-11-13); it expands in place to
-  // its changes and their diffs (027 C4), and "Details" opens its dialog
-  out.push(rows((f.changed || []).map((it) => {
-    const last = it.last || {};
-    const [, name] = split(it.path);
-    const right = it.lines ? lines(it.added, it.removed) : el("span", "r", last.size !== undefined && last.size !== null ? bytes(last.size) : "");
-    const li = el("li", "file-item");
-    const body = el("div", "file-changes");
-    body.id = `fc-${it.full_path}`;
-    let filled = false;
-    const set = (open) => {
-      body.hidden = !open;
-      b.setAttribute("aria-expanded", String(open));
-      if (open) ctx.openFiles.add(it.full_path);
-      else ctx.openFiles.delete(it.full_path);
-      if (!open || filled) return;
-      filled = true;
-      for (const e of it.changes && it.changes.length ? it.changes : [last]) {
-        const head = el("div", "change-head");
-        head.append(el("span", "", `${cap(e.change)}${where(e) ? ` in ${where(e)}` : ""}`), el("span", "muted", e.at ? clock(e.at) : ""));
-        if (e.by) head.append(el("span", "muted", e.by));
-        body.append(head, changeBody(e, it.path, ctx));
-      }
-      const more = button("linkish small", "Details", () => ctx.open && ctx.open(`file:${it.full_path}`, more));
-      body.append(more);
-    };
-    const b = button("row file", undefined, () => set(body.hidden));
-    b.title = it.full_path;
-    b.setAttribute("aria-controls", body.id);
-    const chev = el("span", "chev", "▸");
-    chev.setAttribute("aria-hidden", "true");
-    b.append(chev, t1(name), right);
-    li.append(b, body);
-    set(ctx.openFiles.has(it.full_path));
-    return li;
-  })));
+  // Changed is by file or by turn (027 C5): the server sends both, the switch only picks one
+  const head = el("h3", "with-seg", `Changed · ${(f.changed || []).length}`);
+  const box = el("div", "changed");
+  const draw = () => {
+    if (ctx.filesBy.mode === "turn") {
+      // newest turn first, like the story (027 newest-first)
+      const groups = [...(f.by_turn || [])].reverse();
+      box.replaceChildren(...groups.flatMap((g) => [
+        el("h4", "fgroup", `${g.label} · ${plural((g.files || []).length, "file")}`),
+        rows((g.files || []).map((it) => fileRow(it, ctx, `t${g.turn || 0}-${g.label}`))),
+      ]));
+    } else {
+      box.replaceChildren(rows((f.changed || []).map((it) => fileRow(it, ctx, "all"))));
+    }
+  };
+  if ((f.by_turn || []).length > 1) {
+    const seg = el("div", "seg-group");
+    seg.setAttribute("role", "group");
+    seg.setAttribute("aria-label", "Show changed files");
+    const opts = [["file", "By file"], ["turn", "By turn"]].map(([mode, text]) => {
+      const b = button("seg", text, () => {
+        ctx.filesBy.mode = mode;
+        for (const [m, o] of opts) o.setAttribute("aria-pressed", String(m === mode));
+        draw();
+      });
+      return [mode, b];
+    });
+    for (const [m, o] of opts) {
+      o.setAttribute("aria-pressed", String(m === ctx.filesBy.mode));
+      seg.append(o);
+    }
+    head.append(seg);
+  } else {
+    ctx.filesBy.mode = "file";
+  }
+  draw();
+  out.push(head, box);
   out.push(el("h3", "", `Read · ${(f.read || []).length}`));
   out.push(rows((f.read || []).map((it) => {
     const [dir, name] = split(it.path);
@@ -316,8 +355,9 @@ const SOURCE = {
 // ctx.lead, when given, is a first tab the page owns: { id, label, count(view), el }. Its
 // panel is ctx.lead.el, never redrawn here (spec 027 C4: the story is the first tab).
 export function createSideCard(ctx = {}) {
-  // the files expanded in place stay expanded when a live update redraws the Files tab
-  ctx = { ...ctx, openFiles: new Set() };
+  // the files expanded in place, and by file or by turn, stay as they were when a live update
+  // redraws the Files tab
+  ctx = { ...ctx, openFiles: new Set(), filesBy: { mode: "file" } };
   const lead = ctx.lead || null;
   const specs = lead ? [lead, ...TABS] : TABS;
   const root = el(lead ? "section" : "aside", lead ? "sesstabs" : "sidebar card");

@@ -604,3 +604,35 @@ test("aTurnIsOneCardFromPromptToAnswer", () => {
   for (const d of ["border: 1px solid var(--border)", "background: var(--card)", "overflow: hidden"]) assert.ok(card.includes(d), d);
   assert.match(css, /\.chapter \.tx \{[^}]*border: 0;[^}]*box-shadow: none;/, "the prompt and answer are parts, not cards of their own");
 });
+
+// 027 C5: Changed files switch between by file and by turn; by turn is the server's groups,
+// newest turn first, the same file in two turns once in each; one group needs no switch.
+test("changedFilesSwitchBetweenByFileAndByTurn", () => {
+  const v = fixture();
+  const [a, notes] = v.files.changed;
+  const a2 = { ...a, changes: [a.changes[0]] };
+  v.files.by_turn = [
+    { label: "Turn 1", turn: 1, files: [a2] },
+    { label: "Between turns 1 and 2", files: [notes] },
+    { label: "Turn 2", turn: 2, files: [a2] },
+  ];
+  const { page } = mount(v);
+  const panel = byId(page.el, "tp-files");
+  const seg = withClass(panel, "seg");
+  assert.deepEqual(seg.map(textOf), ["By file", "By turn"]);
+  assert.equal(seg[0].attrs["aria-pressed"], "true");
+  assert.equal(withClass(panel, "fgroup").length, 0, "by file has no turn headings");
+  assert.equal(withClass(panel, "file-item").length, 2);
+  seg[1].fire("click");
+  assert.equal(seg[1].attrs["aria-pressed"], "true");
+  assert.deepEqual(withClass(panel, "fgroup").map(textOf), ["Turn 2 · 1 file", "Between turns 1 and 2 · 1 file", "Turn 1 · 1 file"]);
+  const ids = withClass(panel, "file-changes").map((e) => e.id);
+  assert.equal(new Set(ids).size, ids.length, "a file in two turns keeps its rows apart");
+  // a live update keeps the choice
+  page.setView({ ...v });
+  assert.equal(withClass(byId(page.el, "tp-files"), "fgroup").length, 3);
+
+  const one = fixture();
+  one.files.by_turn = [{ label: "Turn 1", turn: 1, files: one.files.changed }];
+  assert.equal(withClass(byId(mount(one).page.el, "tp-files"), "seg").length, 0);
+});

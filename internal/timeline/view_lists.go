@@ -28,29 +28,64 @@ func (b *builder) lists(v *View) {
 	b.contextView(v)
 }
 
+// fileSet gathers changes by path, in the order each path was first changed.
+type fileSet struct {
+	byPath map[string]*FileItem
+	order  []string
+}
+
+func newFileSet() *fileSet { return &fileSet{byPath: map[string]*FileItem{}} }
+
+func (s *fileSet) add(e *vEffect) {
+	it, ok := s.byPath[e.row.Path]
+	if !ok {
+		it = &FileItem{Path: e.line.Path, FullPath: e.row.Path, Lines: true, Changes: []EffectLine{}, Reads: []EffectLine{}}
+		s.byPath[e.row.Path] = it
+		s.order = append(s.order, e.row.Path)
+	}
+	it.Changes = append(it.Changes, e.line)
+	it.Last = e.line
+	if e.line.Added >= 0 {
+		it.Added += e.line.Added
+		it.Removed += e.line.Removed
+	} else {
+		it.Lines = false
+	}
+}
+
+type fileGroup struct {
+	label string
+	turn  int
+	set   *fileSet
+}
+
+// groupLabel is a change's place as a heading: "turn 3" -> "Turn 3"; a change in no turn
+// is "Outside any turn".
+func groupLabel(where string) string {
+	if where == "" {
+		return "Outside any turn"
+	}
+	return strings.ToUpper(where[:1]) + where[1:]
+}
+
 func (b *builder) filesList(v *View) {
-	f := FilesList{Changed: []FileItem{}, Read: []ReadItem{}, Searches: []SearchItem{}, Coverage: filesCoverage}
-	byPath := map[string]*FileItem{}
-	var order []string
+	f := FilesList{Changed: []FileItem{}, Read: []ReadItem{}, Searches: []SearchItem{}, ByTurn: []FileGroup{}, Coverage: filesCoverage}
+	all := newFileSet()
+	groups := map[string]*fileGroup{}
+	var groupOrder []string
 	readBy := map[string]*ReadItem{}
 	var readOrder []string
 	for _, e := range b.effects {
 		switch e.line.Kind {
 		case "change":
-			it, ok := byPath[e.row.Path]
+			all.add(e)
+			g, ok := groups[e.line.Where]
 			if !ok {
-				it = &FileItem{Path: e.line.Path, FullPath: e.row.Path, Lines: true, Changes: []EffectLine{}, Reads: []EffectLine{}}
-				byPath[e.row.Path] = it
-				order = append(order, e.row.Path)
+				g = &fileGroup{label: groupLabel(e.line.Where), turn: e.line.Turn, set: newFileSet()}
+				groups[e.line.Where] = g
+				groupOrder = append(groupOrder, e.line.Where)
 			}
-			it.Changes = append(it.Changes, e.line)
-			it.Last = e.line
-			if e.line.Added >= 0 {
-				it.Added += e.line.Added
-				it.Removed += e.line.Removed
-			} else {
-				it.Lines = false
-			}
+			g.set.add(e)
 		case "read":
 			it, ok := readBy[e.row.Path]
 			if !ok {
@@ -62,12 +97,21 @@ func (b *builder) filesList(v *View) {
 			it.Reads = append(it.Reads, e.line)
 		}
 	}
-	for _, p := range order {
-		it := byPath[p]
-		if r, ok := readBy[p]; ok {
-			it.Reads = r.Reads
+	withReads := func(set *fileSet) []FileItem {
+		out := []FileItem{}
+		for _, p := range set.order {
+			it := set.byPath[p]
+			if r, ok := readBy[p]; ok {
+				it.Reads = r.Reads
+			}
+			out = append(out, *it)
 		}
-		f.Changed = append(f.Changed, *it)
+		return out
+	}
+	f.Changed = withReads(all)
+	for _, w := range groupOrder {
+		g := groups[w]
+		f.ByTurn = append(f.ByTurn, FileGroup{Label: g.label, Turn: g.turn, Files: withReads(g.set)})
 	}
 	for _, p := range readOrder {
 		it := readBy[p]

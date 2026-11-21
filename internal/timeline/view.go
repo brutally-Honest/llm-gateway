@@ -378,8 +378,18 @@ type FilesList struct {
 	Changed  []FileItem   `json:"changed"`
 	Read     []ReadItem   `json:"read"`
 	Searches []SearchItem `json:"searches"`
-	Coverage string       `json:"coverage"`
-	Empty    string       `json:"empty,omitempty"`
+	// ByTurn is Changed again, split by where each change happened, oldest first: a file
+	// changed in two turns is in both groups, each with only that turn's changes (027 C5)
+	ByTurn   []FileGroup `json:"by_turn"`
+	Coverage string      `json:"coverage"`
+	Empty    string      `json:"empty,omitempty"`
+}
+
+// FileGroup is the files changed in one turn, or between two turns.
+type FileGroup struct {
+	Label string     `json:"label"` // "Turn 3", "Between turns 2 and 3", "Outside any turn"
+	Turn  int        `json:"turn,omitempty"`
+	Files []FileItem `json:"files"`
 }
 
 // FileItem is one changed path with all its changes.
