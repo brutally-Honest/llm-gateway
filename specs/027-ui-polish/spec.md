@@ -31,3 +31,5 @@ accepted change; decisions are in `research.md`.
   violet on the same dark page. Sessions list: the day's totals as tiles, a token bar per
   row, a whole row opens its session; an open dialog holds the page and closes on a click
   outside.
+- **F1** — The saved theme and style apply before the first paint, so a refresh never shows
+  the other theme for a moment.
