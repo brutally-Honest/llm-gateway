@@ -18,6 +18,12 @@ below and AC44, the API-key smoke test of Phase 1.
    run, so the benchmark was left as it is (`internal/ui/timeline_bench_test.go`).
 
 ## Done
+- **025 macOS re-test fixes** (`specs/025-macos-retest-fixes/`, fix): the findings of
+  `docs/manual-checks/macos-v1-retest.md`. The launchd plist sets `ThrottleInterval` to
+  1 s, so a reinstall soon after a start is no longer held about 10 s (B15); the roots
+  test expects resolved paths and passes where `/home` is a symlink (B16); with no lsof or
+  ss, preflight finds the running gateway by its health routes and a reinstall over it
+  goes on. Checked on Linux; the launchd parts wait for the next Mac upgrade (Later).
 - **024 macOS fixes** (`specs/024-macos-fixes/`, fix): the v1 blockers of the macOS check
   (`docs/manual-checks/macos-v1.md`). A launchd reinstall waits for bootout and retries
   bootstrap, or only kickstarts an unchanged job, and says plainly if the gateway is left
@@ -69,6 +75,10 @@ below and AC44, the API-key smoke test of Phase 1.
   the ungrouped, unassigned and full exchange pages on 016's theme.
 
 ## Later
+- The 025 Mac check: the first upgrade to 025 takes the changed-plist path (bootout,
+  wait, bootstrap) against real `launchctl`; back-to-back reinstalls restart within about
+  a second; `make verify` green; the own-gateway preflight with `/usr/sbin` off PATH
+  (`specs/025-macos-retest-fixes/research.md`, Real check).
 - The first release: tag it and publish what `make dist` builds (four archives and
   `SHA256SUMS`, names in `specs/023-one-command-install/research.md`), so the curl line
   works; until then install.sh has nothing to download from GitHub.
