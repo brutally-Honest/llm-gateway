@@ -56,9 +56,13 @@ type ServiceManager interface {
 }
 
 const (
-	systemdUnit   = "llm-gateway.service"
-	launchdLabel  = "dev.llm-gateway"
-	stopTimeoutS  = 30
+	systemdUnit  = "llm-gateway.service"
+	launchdLabel = "dev.llm-gateway"
+	stopTimeoutS = 30
+	// throttleS is the plist's ThrottleInterval: launchd starts the job no sooner than
+	// this after its last start. Its default of 10 s held a reinstall soon after a start
+	// down for up to 10 s (spec 025 AC1, macos-v1-retest.md B15; research D2).
+	throttleS     = 1
 	unitDirSuffix = ".config/systemd/user"
 )
 
@@ -205,11 +209,12 @@ func (l *launchd) Render(p Paths) []byte {
     <key>SuccessfulExit</key><false/>
   </dict>
   <key>ExitTimeOut</key><integer>%d</integer>
+  <key>ThrottleInterval</key><integer>%d</integer>
   <key>StandardOutPath</key><string>%s</string>
   <key>StandardErrorPath</key><string>%s</string>
 </dict>
 </plist>
-`, managedMark, launchdLabel, xmlEscape(p.Binary), xmlEscape(p.Config), stopTimeoutS, xmlEscape(logFile), xmlEscape(logFile))
+`, managedMark, launchdLabel, xmlEscape(p.Binary), xmlEscape(p.Config), stopTimeoutS, throttleS, xmlEscape(logFile), xmlEscape(logFile))
 	return b.Bytes()
 }
 
