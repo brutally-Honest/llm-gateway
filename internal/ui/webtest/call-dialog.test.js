@@ -134,11 +134,22 @@ test("callDialogIsModalWithAFixedTop", async () => {
     const body = withClass(h.root, "mb")[0];
     const topText = textOf(top).replace(/\s+/g, " ");
     assert.match(topText, /Model m1/);
-    assert.match(topText, /Context 160 · \+60 since #1/);
-    assert.match(topText, /2 carried over · 1 new/);
+    assert.match(topText, /Status 200 OK/);
+    // spec 027 C3: the context and the message counts are said once, in their sections
+    assert.doesNotMatch(topText, /Context 160|carried over/, "the top does not repeat the sections");
+    assert.match(textOf(body), /Context 160/);
+    assert.match(textOf(body), /2 carried over · 1 new/);
     assert.equal(withClass(top, "call-messages").length, 0, "the messages are not in the top");
-    assert.equal(withClass(body, "call-messages").length, 1, "the messages scroll");
+    assert.ok(withClass(body, "call-messages").length >= 1, "the messages scroll");
     assert.match(textOf(body), /all done/, "later sections scroll too");
+    // the top links each section of the body, in order, and a link scrolls to its section
+    const jumps = byTag(withClass(top, "call-jump")[0], "button");
+    assert.deepEqual(jumps.map((b) => b.textContent), ["Context", "Cost", "What it saw", "Response", "Raw"]);
+    const sections = byTag(body, "section");
+    let scrolled = null;
+    sections[3].scrollIntoView = (o) => { scrolled = o; };
+    jumps[3].fire("click");
+    assert.deepEqual(scrolled, { block: "start" }, "Response scrolls to the top of the one scroll");
 
     const scrim = withClass(h.root, "call-scrim")[0];
     assert.equal(scrim.tagName, "button", "the dimmed page is a real button");
@@ -256,7 +267,10 @@ test("callDialogShowsFactsAndContext", async () => {
   assert.match(t, /2 of 3 · main/);
   const ctx = byTag(h.root, "section").find((s) => /^Context/.test(textOf(s).trim()));
   const c = textOf(ctx).replace(/\s+/g, " ");
-  for (const re of [/Size 160/, /Change \+60 since #1/, /Input 120/, /Cache write 30/, /Cache read 10/, /Output 5/, /added #1's reply/]) assert.match(c, re);
+  // spec 027 C3: size and change are the section's heading; the bar is sized by the counts
+  for (const re of [/^ ?Context 160 ?\+60 since #1/, /Input 120/, /Cache write 30/, /Cache read 10/, /Output 5/, /added #1's reply/]) assert.match(c, re);
+  const bar = withClass(ctx, "ctx-bar")[0];
+  assert.deepEqual(bar.children.map((i) => [i.className, i.style.flexGrow]), [["in", "120"], ["cr", "10"], ["cw", "30"]], "each part grows by its count");
   assert.doesNotMatch(t, /first call of its thread/i, "a later call does not start its thread");
   const first = await openOne(detail("a"));
   assert.match(first.text(), /first call of its thread/);
@@ -441,14 +455,40 @@ test("callDialogHealthAndRaw", async () => {
     { tone: "bad", text: "Gateway error: upstream_timeout." },
   ] } });
   const h = await openOne(sick);
-  for (const re of [/client disconnected/, /reply stopped/, /Gateway error: upstream_timeout/, /Status 200 OK/]) assert.match(h.text(), re);
+  for (const re of [/client disconnected/, /reply stopped/, /Gateway error: upstream_timeout/]) assert.match(h.text(), re);
+  // spec 027 C3: a call in trouble says its status once, in the Health alert
+  assert.match(textOf(withClass(h.root, "call-alert")[0]), /^ ?Health ?200 OK/);
+  assert.doesNotMatch(textOf(withClass(h.root, "call-top")[0]), /Status/);
   assert.equal(withClass(h.root, "tone-bad").length, 2);
   const hrefs = byTag(h.root, "a").map((a) => a.href);
   for (const want of ["/api/exchanges/b/body?part=request", "/api/exchanges/b/body?part=response", "#/exchanges/b"]) assert.ok(hrefs.includes(want), want);
   assert.match(h.text(), /Headers/);
   assert.match(h.text(), /Full exchange page/);
+  // spec 027 C3: trouble is said first, above Context; a healthy call has no Health section,
+  // only its status in the top line
+  assert.match(textOf(byTag(withClass(h.root, "mb")[0], "section")[0]), /^ ?Health/);
+  assert.equal(withClass(h.root, "call-alert").length, 1);
   const well = await openOne(detail("a"));
-  assert.match(well.text(), /No disconnect, abort or error/);
+  assert.match(textOf(withClass(well.root, "call-top")[0]), /Status 200 OK/);
+  assert.equal(byTag(well.root, "section").filter((s) => /^ ?Health/.test(textOf(s))).length, 0);
+});
+
+// spec 027 C3: the messages carried over are folded behind one button and the new ones are
+// shown; a first call has nothing to fold; a call that asked for no tools has no Tools section.
+test("carriedMessagesFoldAndEmptySectionsGo", async () => {
+  const h = await openOne(detail("b"));
+  const carried = withClass(h.root, "carried")[0];
+  assert.equal(carried.hidden, true, "carried over starts folded");
+  assert.equal(withClass(carried, "is-carried").length, 2);
+  const fold = byTag(h.root, "button").find((b) => b.textContent === "Show the 2 carried over");
+  assert.equal(fold.attrs["aria-expanded"], "false");
+  fold.fire("click");
+  assert.equal(carried.hidden, false);
+  assert.equal(fold.textContent, "Hide the 2 carried over");
+  assert.ok(!withClass(h.root, "is-new").some((li) => withClass(carried, "is-new").includes(li)), "new messages are not folded");
+  assert.equal(byTag(h.root, "section").filter((s) => /^ ?Tool calls/.test(textOf(s))).length, 0, "no Tools section");
+  const first = await openOne(detail("a", { saw: { first: true, carried: 0, new: 1, messages: [{ role: "user", text: "hi", new: true }] } }));
+  assert.equal(byTag(first.root, "button").filter((b) => /carried over/.test(b.textContent)).length, 0, "nothing to fold");
 });
 
 // AC11 (carries missingSectionStatesReason, noUsageCallShowsDashesAndNoDelta): a section
@@ -464,7 +504,10 @@ test("callDialogMissingDataSaysWhy", async () => {
   });
   const h = await openOne(d);
   const t = flat(h);
-  for (const re of [/Context —/, /Size —/, /Input —/, /Output —/, /Change —/, /No usage reported/, /request body was not stored/, /Messages: —/, /cut at the capture limit/]) assert.match(t, re);
+  for (const re of [/Context —/, /No usage reported/, /request body was not stored/, /Messages: —/, /cut at the capture limit/]) assert.match(t, re);
+  // spec 027 C3: with no usage there is no bar and no row of dashes; the note says why
+  assert.equal(withClass(h.root, "ctx-bar").length, 0, "no bar without counts");
+  assert.equal(withClass(h.root, "ctx-counts").length, 0, "no counts without usage");
   assert.doesNotMatch(textOf(withClass(h.root, "call-top")[0]), /— · —/, "the top line leaves out a change it does not know");
   assert.doesNotMatch(t, /Size 0|Input 0/);
   assert.doesNotMatch(t, /[+−-]\d+ since/);

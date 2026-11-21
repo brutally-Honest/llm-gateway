@@ -108,14 +108,22 @@ test("dialogTitleBlockIsNotATextBox", () => {
   assert.equal(head.padding, "0");
 });
 
-// The call dialog's reply is capped like a message box until "Show all"; shown all, the Raw
-// view's <pre> drops the generic pre cap too, so the whole reply shows (research D41, seen
-// in the 017 slice 2 check).
-test("callReplyCapAndShowAllCoverRaw", () => {
+// The call dialog's reply is folded until "Show all"; shown all, the Raw view's <pre> drops
+// the generic pre cap too, so the whole reply shows (research D41, seen in the 017 slice 2
+// check). Spec 027 C3 (Karthik, 2026-11-21): the panel is one scroll, so neither the folded
+// reply nor a message box scrolls on its own, and the panel is docked full height on the right.
+test("callPanelFoldsWithoutInnerScrolls", () => {
   const capped = rule(".call-reply.is-capped .tx-b");
-  assert.equal(capped["max-height"], rule(".call-messages .msg")["max-height"], "the same cap as a message box");
-  assert.equal(capped.overflow, "auto");
+  assert.equal(capped["max-height"], "12rem");
+  assert.equal(capped.overflow, "hidden", "folded, not a box that scrolls");
   assert.equal(rule(".call-reply:not(.is-capped) .tx-b pre")["max-height"], "none", "Raw shows all too");
+  const msg = rule(".call-messages .msg");
+  assert.equal(msg["max-height"], undefined, "a message is not capped into a scroll box");
+  assert.equal(msg.overflow, undefined);
+  const panel = rule("dialog.call-details");
+  assert.equal(panel.margin, "8px 8px 8px auto", "docked on the right");
+  assert.equal(panel.height, "calc(100vh - 16px)", "full height");
+  assert.equal(rule(".mb").overflow, "auto", "the body is the one scroll");
 });
 
 // spec 017 AC12: the full exchange page's two header tables line up: the Name column has one

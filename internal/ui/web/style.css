@@ -516,30 +516,47 @@ table.cost-lines tr.total td { border-top: 1px solid var(--border); font-weight:
 .errbox { border-left: 3px solid var(--bad); padding-left: 8px; }
 .mb pre { margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text); font-size: 12.5px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 26rem; overflow: auto; }
 .mb .copy { align-self: flex-end; margin-bottom: 4px; }
-/* the call details dialog (017 AC5–AC11): the 016 dialog, wider, with a fixed top */
-dialog.call-details { width: min(60rem, 96vw); max-height: 90vh; }
+/* the call details (017 AC5–AC11), docked full height on the right (027 C3): a fixed top
+   (title, one line of facts, section links) over one scroll; nothing inside scrolls alone */
+dialog.call-details { width: min(52rem, 96vw); height: calc(100vh - 16px); max-height: calc(100vh - 16px); margin: 8px 8px 8px auto; }
 .call-details .mh .btn { flex: none; }
 .call-details .mh .btn:disabled { opacity: .45; }
 /* the scrim under the dialog's content takes a click outside it; the ::backdrop dims, so
    the scrim paints nothing, and button:hover must not paint it either */
 .call-scrim { all: unset; position: fixed; inset: 0; z-index: -1; }
 .call-scrim, .call-scrim:hover { background: transparent; }
-.call-top { padding: 12px 20px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; background: var(--card); }
-.call-top .mfacts { grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); }
-.call-top .mfact { padding: 6px 9px; }
-.call-top .mfact .v { font-size: 13px; }
+.call-top { padding: 10px 20px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; background: var(--card); }
+.call-meta { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+.call-meta .mfact { border: 0; border-radius: 0; padding: 0; display: inline-flex; gap: 6px; align-items: baseline; }
+.call-meta .mfact .l { display: inline; font-size: 12px; font-weight: 500; }
+.call-meta .mfact .v { display: inline; font-size: 13px; font-weight: 600; white-space: nowrap; overflow-wrap: normal; }
+.call-jump { display: flex; flex-wrap: wrap; gap: 2px; padding-bottom: 8px; }
+.call-jump .jump { font-size: 12.5px; color: var(--muted); background: transparent; border: 0; border-radius: var(--radius-pill); padding: 3px 10px; }
+.call-jump .jump:hover, .call-jump .jump:focus-visible { color: var(--hi); background: var(--panel2); }
 .mfact .v.bad { color: var(--bad); }
-.call-line { margin: 0; font-size: 13px; color: var(--text); }
-.call-saw-counts { color: var(--muted); }
-.call-messages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.call-messages li { display: grid; grid-template-columns: auto auto 1fr; gap: 4px 8px; align-items: baseline; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--radius); font-size: 12.5px; }
-.call-messages li.is-carried { opacity: .72; }
+.ctx-bar { display: flex; gap: 2px; height: 10px; border-radius: var(--radius-pill); overflow: hidden; background: var(--panel2); }
+.ctx-bar i { display: block; flex-basis: 0; }
+.ctx-bar .in, .sw-in .l::before { background: var(--model); }
+.ctx-bar .cr, .sw-cr .l::before { background: var(--accent); }
+.ctx-bar .cw, .sw-cw .l::before { background: var(--hi); }
+.ctx-counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.ctx-counts .mfact { border: 0; border-radius: 0; padding: 0; }
+.ctx-counts .mfact .v { font-size: 16px; font-variant-numeric: tabular-nums; }
+.ctx-counts .sw-in .l::before, .ctx-counts .sw-cr .l::before, .ctx-counts .sw-cw .l::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: var(--radius-round); }
+.call-alert { margin-top: 14px; padding: 12px 14px; border: 0; border-radius: var(--radius-md); background: var(--bad-bg); }
+.call-alert > h3 { color: var(--bad); }
+.call-messages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0; }
+.call-messages li { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 4px 10px; align-items: baseline; padding: 6px 2px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.call-messages li.is-new { padding: 8px 10px; border: 0; border-radius: var(--radius); background: var(--accent-bg); }
 .call-messages li.is-carried .badge { background: var(--panel); color: var(--muted); border-color: var(--border); }
 .call-messages .role { color: var(--muted); font-weight: 600; }
-.call-messages .msg { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12rem; overflow: auto; }
+.call-messages .msg { white-space: pre-wrap; overflow-wrap: anywhere; }
+.call-messages li.is-carried .msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .call-messages li > a { grid-column: 1 / -1; font-size: 12px; }
-/* the reply is capped like a message box until "Show all" (D41); the turn card stays whole (D11) */
-.call-reply.is-capped .tx-b { max-height: 12rem; overflow: auto; }
+.ms > .call-carried { align-self: flex-start; }
+.call-messages.carried[hidden] { display: none; }
+/* the reply is folded at 12rem until "Show all" (D41), with no scroll of its own (027 C3) */
+.call-reply.is-capped .tx-b { max-height: 12rem; overflow: hidden; }
 .call-reply:not(.is-capped) .tx-b pre { max-height: none; }
 .call-health { margin: 0; padding-left: 18px; font-size: 13px; }
 .call-health .tone-bad { color: var(--bad); }
