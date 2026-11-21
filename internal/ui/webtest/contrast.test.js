@@ -4,9 +4,32 @@ import { readFileSync } from "node:fs";
 
 const css = readFileSync(new URL("../web/style.css", import.meta.url), "utf8");
 
+// A colour token is a hex code: #rrggbb, or #rrggbbaa for a see-through (glass) colour, or a
+// gradient token (--name-grad) whose stops are hex codes (spec 027 C6a).
 function tokens(selector) {
   const block = css.split(selector)[1].split("}")[0];
-  return Object.fromEntries([...block.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-fA-F]{6})/g)].map((m) => [m[1], m[2]]));
+  const out = Object.fromEntries([...block.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?)\b/g)].map((m) => [m[1], m[2]]));
+  for (const m of block.matchAll(/--([a-z0-9-]+-grad):\s*([^;]+);/g)) out[m[1]] = [...m[2].matchAll(/#[0-9a-fA-F]{6}\b/g)].map((x) => x[0]);
+  return out;
+}
+
+const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+const alpha = (hex) => (hex.length === 9 ? parseInt(hex.slice(7, 9), 16) / 255 : 1);
+// over lays a colour on an opaque one, as the browser paints it
+function over(hex, under) {
+  const a = alpha(hex);
+  const [f, u] = [rgb(hex), rgb(under)];
+  return `#${f.map((c, i) => Math.round(c * a + u[i] * (1 - a)).toString(16).padStart(2, "0")).join("")}`;
+}
+// shown lists what a background token can look like on screen: an opaque colour as it is; a
+// see-through one over the page and over a card (the card itself over the page), so text is
+// checked against every surface the glass can sit on.
+function shown(t, name) {
+  const v = t[name];
+  if (alpha(v) === 1) return [v];
+  const page = t.bg;
+  const card = over(t.card, page);
+  return [over(v, page), over(v, card)];
 }
 
 function lum(hex) {
@@ -42,9 +65,16 @@ test("everyStyleBlockIsChecked", () => {
 
 test("allTextPairsMeet4_5InBothThemes", () => {
   for (const [name, t] of STYLES.flatMap((s) => THEMES.map((th) => [`${s} ${th}`, merged(s, th)]))) {
+    assert.equal(alpha(t.bg), 1, `${name}: the page colour is opaque`);
     for (const [fg, bg] of PAIRS) {
       assert.ok(t[fg] && t[bg], `${name}: missing ${fg} or ${bg}`);
-      assert.ok(ratio(t[fg], t[bg]) >= 4.5, `${name}: ${fg} on ${bg} is ${ratio(t[fg], t[bg]).toFixed(2)}`);
+      assert.equal(alpha(t[fg]), 1, `${name}: text colour ${fg} is opaque`);
+      for (const back of shown(t, bg)) assert.ok(ratio(t[fg], back) >= 4.5, `${name}: ${fg} on ${bg} (${back}) is ${ratio(t[fg], back).toFixed(2)}`);
+    }
+    // a gradient that holds text (the primary button) passes at every stop
+    for (const [key, stops] of Object.entries(t).filter(([k]) => k.endsWith("-grad"))) {
+      assert.ok(stops.length >= 2, `${name}: ${key} has hex stops`);
+      for (const stop of stops) assert.ok(ratio(t["on-accent"], stop) >= 4.5, `${name}: on-accent on ${key} stop ${stop} is ${ratio(t["on-accent"], stop).toFixed(2)}`);
     }
   }
 });
