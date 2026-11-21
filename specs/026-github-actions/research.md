@@ -121,3 +121,20 @@ macOS from here. The macOS job is the first check there (AC7).
     it failed the same way before the fix and passed after.
   Assertions are unchanged, and nothing is skipped. B8 itself (bash 3.2) stays on the
   roadmap: CI runs the kit under bash 5, not 3.2.
+- D11 (2026-11-21) — The second macOS run (run 44863192822) passed the kit and failed
+  `internal/ui` `TestHub_HookRefreshAndCommitInSameWindowSendEachChangeOnce`:
+  "extra event: {event:exchange … d …}". It passed on the first macOS run and on every
+  Linux run. This is a timing assumption in the test, not a product bug:
+  - A probe showed that the commit of `c` alone sends both `entries:c` and `exchange:a`.
+    So when `take(2)` returns, the 150 ms hook refresh is still armed. If it fires
+    between `save("d")` and the hub handling `publish("d")` (a slow runner), it reads
+    `d` and sends it as `exchange`. The commit then sends nothing new. `d` still goes
+    out exactly once, which is what the product promises.
+  - Reproduced on Linux 3/3 by pausing 200 ms between the save and the publish.
+  - Fix (test only): the window is 10 s, so it never ends on its own, and the test ends
+    it at the point it means: it stops the armed timer and runs that refresh
+    synchronously. The test now also asserts that a refresh was armed, and that the
+    refresh itself adds nothing before `entries:d`. Checked: 50/50 passes; it passes
+    with the 200 ms pause; and it fails ("extra event: hooks") when `writeLive`'s
+    `sent[...] == Hash` dedup is removed. The timer firing on its own stays covered by
+    the other hook-window tests in `hub_hook_test.go`.
