@@ -132,7 +132,9 @@ func byPath(t *testing.T, rows []store.EffectRow) map[string]store.EffectRow {
 func repo(t *testing.T) string {
 	t.Helper()
 	needGit(t)
-	dir := t.TempDir()
+	// Resolved: on macOS t.TempDir is under /var, a symlink to /private/var, and the
+	// runner reports resolved paths (spec 024 AC5).
+	dir := resolve(t.TempDir())
 	git(t, dir, "init", "-q")
 	return dir
 }
@@ -188,7 +190,7 @@ func TestCheckpoint_GitRepoChanges(t *testing.T) {
 // AC3, AC4: a folder with no git is walked: create, modify and delete are reported, and
 // a path under an ignored folder is not.
 func TestCheckpoint_PlainFolder(t *testing.T) {
-	dir := t.TempDir()
+	dir := resolve(t.TempDir())
 	write(t, filepath.Join(dir, "keep.txt"), "v1\n")
 	write(t, filepath.Join(dir, "old.txt"), "x\n")
 	ts := openStore(t)
@@ -244,7 +246,7 @@ func TestCheckpoint_GitIgnoredEnvSeen(t *testing.T) {
 // AC2, E10: a new runner on the same store compares against the saved snapshot, so a
 // change made while the gateway was down is reported, not taken as a new baseline.
 func TestCheckpoint_RestartKeepsSnapshot(t *testing.T) {
-	dir := t.TempDir()
+	dir := resolve(t.TempDir())
 	write(t, filepath.Join(dir, "f.txt"), "before\n")
 	ts := openStore(t)
 	first := newTestRunner(t, ts.st)
@@ -281,7 +283,7 @@ func TestRoots_LearnedAndRejected(t *testing.T) {
 	}
 
 	needGit(t)
-	work, other, plain := t.TempDir(), repo(t), t.TempDir()
+	work, other, plain := resolve(t.TempDir()), repo(t), resolve(t.TempDir())
 	write(t, filepath.Join(other, "lib", "x.go"), "package x\n")
 	ts := openStore(t)
 	r := newTestRunner(t, ts.st)
@@ -345,7 +347,7 @@ func TestRunner_BurstRunsOneFollowUp(t *testing.T) {
 // start to the end of the scan that found it; a runner with no previous checkpoint in
 // memory starts the window at the session's last hook before the one that made it.
 func TestCheckpoint_StoresWindow(t *testing.T) {
-	dir := t.TempDir()
+	dir := resolve(t.TempDir())
 	write(t, filepath.Join(dir, "f.txt"), "one\n")
 	ts := openStore(t)
 	clock := time.Unix(1_800_000_000, 0)

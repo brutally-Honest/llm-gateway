@@ -120,6 +120,9 @@ type Runner struct {
 func NewRunner(cfg config.Effects, st CheckpointStore, rules Rules, onSaved Saved, log *zap.Logger) *Runner {
 	ctx, cancel := context.WithCancel(context.Background())
 	home, _ := os.UserHomeDir()
+	if home != "" {
+		home = resolve(home)
+	}
 	ignore := make(map[string]bool, len(cfg.Files.Ignore))
 	for _, n := range cfg.Files.Ignore {
 		ignore[n] = true
@@ -313,11 +316,12 @@ func (r *Runner) runCheckpoint(ctx context.Context, s *session) error {
 		s.roots = newRootSet(r.home, r.temps)
 		s.snap = map[string]map[string]fileState{}
 		for _, row := range rows {
-			m := s.snap[row.Root]
+			root := resolve(row.Root) // a root saved before spec 024 may be unresolved
+			m := s.snap[root]
 			if m == nil {
 				m = map[string]fileState{}
-				s.snap[row.Root] = m
-				s.roots.add(row.Root)
+				s.snap[root] = m
+				s.roots.add(root)
 			}
 			if row.Path != "" {
 				m[row.Path] = fileState{size: row.Size, mtimeNS: row.MtimeNS, hash: row.Hash, copyHash: row.CopyHash}
@@ -365,6 +369,7 @@ func (r *Runner) runCheckpoint(ctx context.Context, s *session) error {
 // git work tree, or for a write outside any work tree its folder (AC6). Rejected folders
 // (home, /, temp) are never added (E8).
 func (r *Runner) learnRoot(ctx context.Context, s *session, l learned) {
+	l.path = resolve(l.path) // one spelling per folder (spec 024 AC5)
 	if s.roots.covers(l.path) {
 		return
 	}
