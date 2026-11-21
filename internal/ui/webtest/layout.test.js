@@ -50,9 +50,10 @@ test("narrowWindowFallsBackToOnePage", () => {
   assert.match(narrow[1], /\.toc \{ display: none; \}/);
 });
 
-// The header and the key bar can wrap to two lines, so the shell measures them and
-// publishes their heights, which place the fixed rail between them.
-test("shellPublishesHeaderAndKeyBarHeights", async () => {
+// The header can wrap to two lines, so the shell measures it and publishes its height,
+// which places the sticky rail below it. The key bar is gone (027 C7a), so no space is
+// reserved for one.
+test("shellPublishesHeaderHeightAndReservesNoKeyBarRoom", async () => {
   installDom();
   const watched = new Map();
   globalThis.ResizeObserver = class {
@@ -70,18 +71,19 @@ test("shellPublishesHeaderAndKeyBarHeights", async () => {
   try {
     const { mountShell } = await import("../web/shell.js");
     const head = Object.assign(new StubElement("header"), { offsetHeight: 41 });
-    const bar = Object.assign(new StubElement("footer"), { offsetHeight: 29 });
     const props = {};
     const root = new StubElement("html");
     root.style = { setProperty: (k, v) => (props[k] = v) };
-    mountShell({ head, bar, storage: null, root, theme: "dark" });
-    assert.ok(watched.has(head) && watched.has(bar), "the shell watches both");
+    mountShell({ head, storage: null, root, theme: "dark" });
+    assert.ok(watched.has(head), "the shell watches the header");
+    assert.equal(watched.size, 1, "and nothing else");
     for (const fn of new Set(watched.values())) fn([]);
     assert.equal(props["--head-h"], "41px");
-    assert.equal(props["--keybar-h"], "29px");
-    bar.offsetHeight = 52; // the key bar wrapped to two lines
-    watched.get(bar)([]);
-    assert.equal(props["--keybar-h"], "52px");
+    assert.equal(props["--keybar-h"], undefined, "no key bar height is published");
+    head.offsetHeight = 70; // the header wrapped to two lines
+    watched.get(head)([]);
+    assert.equal(props["--head-h"], "70px");
+    assert.doesNotMatch(css, /keybar/, "no CSS is left for the key bar");
   } finally {
     delete globalThis.ResizeObserver;
   }
@@ -122,8 +124,10 @@ test("callPanelFoldsWithoutInnerScrolls", () => {
   assert.equal(msg["max-height"], undefined, "a message is not capped into a scroll box");
   assert.equal(msg.overflow, undefined);
   const panel = rule("dialog.call-details");
-  assert.equal(panel.margin, "8px 8px 8px auto", "docked on the right");
-  assert.equal(panel.height, "calc(100vh - 16px)", "full height");
+  // docked on the right under the header, which stays visible and undimmed (027 C7a)
+  assert.equal(panel.margin, "calc(var(--head-h) + 8px) 8px 8px auto", "docked on the right, under the header");
+  assert.equal(panel.height, "calc(100vh - var(--head-h) - 16px)", "the full height below the header");
+  assert.equal(rule("dialog.call-details::backdrop").top, "var(--head-h)", "the dimming starts below the header");
   assert.equal(rule(".mb").overflow, "auto", "the body is the one scroll");
 });
 

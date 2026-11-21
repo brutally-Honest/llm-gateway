@@ -47,7 +47,7 @@ test("unassignedPageUsesLabelsAndBreadcrumb", async () => {
   assert.deepEqual(cells("bytes"), ["↑ 0 B · ↓ 32 B", "↑ 10 B · ↓ 0 B"]);
   assert.match(textOf(withClass(pg.el, "effects-files")[0]).replace(/\s+/g, " "), /~ modified notes\.md 20 B/);
   assert.equal(withClass(pg.el, "sp-list").length, 2, "connections and files each in a card");
-  assert.deepEqual(breadcrumb({ name: "unassigned" }).map((p) => [p.text, p.href]), [["Sessions", "#/"], ["Unassigned connections", undefined]]);
+  assert.deepEqual(breadcrumb({ name: "unassigned" }).map((p) => [p.text, p.href]), [["Sessions", "#/"]], "the page's own heading names it");
   pg.render({ items: [], loading: true });
   assert.match(textOf(pg.el), /Loading…/);
 });

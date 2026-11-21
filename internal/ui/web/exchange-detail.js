@@ -81,6 +81,32 @@ function headersTable(h) {
   return card(table);
 }
 
+// headersSection folds one header table behind a native <details>, closed until opened;
+// its summary counts the headers.
+function headersSection(title, h, id) {
+  const d = el("details", "hdrs");
+  d.append(el("summary", "", `${title} (${Object.keys(h || {}).length})`));
+  if (id) {
+    d.id = id;
+    d.tabIndex = -1;
+  }
+  d.append(headersTable(h));
+  return d;
+}
+
+// captureProblems are the capture facts that say something went wrong; none means the
+// exchange was captured in full.
+function captureProblems(x) {
+  const out = [];
+  if (x.request_truncated) out.push(fact("Request truncated", "yes"));
+  if (x.response_truncated) out.push(fact("Response truncated", "yes"));
+  if (x.request_incomplete) out.push(fact("Request incomplete", "yes"));
+  if (x.client_disconnected) out.push(fact("Client disconnected", "yes"));
+  if (x.upstream_aborted) out.push(fact("Upstream aborted", "yes"));
+  if (x.gateway_error) out.push(fact("Gateway error", x.gateway_error));
+  return out;
+}
+
 // bodySection is closed until opened. The raw body is fetched on the first open only, and
 // a body the metadata says is not stored is never requested.
 function bodySection(id, part, stored, captureTruncated) {
@@ -148,31 +174,25 @@ export function createExchangePage() {
       started.append(timeElement(x.started_at));
       const ended = el("span");
       ended.append(timeElement(x.ended_at));
-      const reqHead = sub("Request headers", "headers");
+      const reqHead = headersSection("Request headers", x.request_headers, "headers");
+      const problems = captureProblems(x);
       box.append(
         head,
         sub("Summary"),
-        facts(fact("Client", x.client || "unknown"), fact("Protocol", x.protocol || "unknown"), fact("Model", x.model || "none recorded"), fact("Stream", yesNo(x.stream)), fact("Parse", parseText(x.parse)), fact("Session", session)),
+        // Stream shows only for a streamed exchange, Parse only when it did not parse ok
+        facts(...[fact("Client", x.client || "unknown"), fact("Protocol", x.protocol || "unknown"), fact("Model", x.model || "none recorded"), x.stream ? fact("Stream", yesNo(x.stream)) : null, x.parse !== "ok" ? fact("Parse", parseText(x.parse)) : null, fact("Session", session)].filter(Boolean)),
         facts(...usageFacts(x.usage)),
         sub("Timings"),
         facts(fact("Started", started), fact("Time to first byte", ms(x.ttfb_ms)), fact("Ended", ended), fact("Duration", ms(x.duration_ms))),
-        sub("Capture"),
-        facts(
-          fact("Request truncated", yesNo(x.request_truncated)),
-          fact("Response truncated", yesNo(x.response_truncated)),
-          fact("Request incomplete", yesNo(x.request_incomplete)),
-          fact("Client disconnected", yesNo(x.client_disconnected)),
-          fact("Upstream aborted", yesNo(x.upstream_aborted)),
-          fact("Gateway error", x.gateway_error || "none"),
-        ),
+        // Capture is a section only when something is wrong; otherwise one line
+        ...(problems.length ? [sub("Capture"), facts(...problems)] : [el("p", "muted capture-ok", "Captured in full")]),
         reqHead,
-        headersTable(x.request_headers),
-        sub("Response headers"),
-        headersTable(x.response_headers),
+        headersSection("Response headers", x.response_headers),
         sub("Bodies"),
         card(bodySection(x.id, "request", x.request_body_stored, x.request_truncated), bodySection(x.id, "response", x.response_body_stored, x.response_truncated)),
       );
       if (focus === "headers") {
+        reqHead.open = true; // the Headers link asked for them
         if (typeof reqHead.scrollIntoView === "function") reqHead.scrollIntoView({ block: "start" });
         if (typeof reqHead.focus === "function") reqHead.focus();
       }

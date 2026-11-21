@@ -517,10 +517,9 @@ export function turnNode(t, ctx) {
   // the models the turn's calls used, one chip each (spec 027 C4); a turn the hooks alone
   // saw says none was captured
   const mdls = el("div", "mdls");
-  mdls.append(el("span", "l", "Model"));
   if ((t.models || []).length) for (const m of t.models) mdls.append(el("span", "mdl", m));
   else if (t.hooks_only) mdls.append(el("span", "mdl none", "none captured"));
-  if (mdls.children.length > 1) head.append(mdls);
+  if (mdls.children.length) head.append(mdls);
   box.append(head);
 
   const body = el("div", "tb");

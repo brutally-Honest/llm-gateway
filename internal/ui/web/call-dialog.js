@@ -253,6 +253,7 @@ export function createCallDialog(ctx = {}) {
   // costFact is the call's API-equivalent cost in the dialog's top, with its hover.
   function costFact(c) {
     const cc = callCost(c);
+    if (cc.text === "—") return null; // an unknown cost is left out of the top line
     const f = fact(`${LABEL} cost`, cc.text);
     f.title = cc.title;
     return f;
@@ -390,7 +391,7 @@ export function createCallDialog(ctx = {}) {
     box.append(raw.response ? link(raw.response, "Raw response stream", true) : el("span", "muted-note", raw.response_missing || "Response body: not stored"));
     // Headers opened the same page as the full exchange page, scrolled down (027 C4)
     box.append(link(raw.page, "Full exchange page"));
-    return section("Raw", "the stored bodies and headers, unparsed", box);
+    return section("Raw", "", box);
   }
 
   // rawFor is the Raw section when the details did not load: the links need only the id.

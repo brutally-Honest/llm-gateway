@@ -47,9 +47,11 @@ export function createUngroupedPage() {
       el.replaceChildren(pageHead("Ungrouped exchanges", data.error ? [] : ungroupedStats(items, data.next_after)));
       if (data.error) return el.append(card(note("error", data.error)));
       if (items.length === 0) return el.append(card(note("empty", "No ungrouped exchanges.")));
-      const { table, body } = tableWithHead([["Start", "time"], ["Request", "title"], ["Client"], ["Model"], ["Status", "status"], ["Tokens", "tokens"]]);
-      for (const x of items) {
-        const r = ungroupedRow(x);
+      // a Client column that would say "unknown" on every row is left out
+      const rows = items.map(ungroupedRow);
+      const showClient = rows.some((r) => r.client !== "unknown");
+      const { table, body } = tableWithHead([["Start", "time"], ["Request", "title"], ...(showClient ? [["Client"]] : []), ["Model"], ["Status", "status"], ["Tokens", "tokens"]]);
+      for (const r of rows) {
         const tr = document.createElement("tr");
         const t = timeElement(r.at);
         t.textContent = startText(r.at);
@@ -59,7 +61,7 @@ export function createUngroupedPage() {
         a.href = `#/exchanges/${encodeURIComponent(r.id)}`;
         a.textContent = r.title;
         td(tr, null, "title").append(a);
-        td(tr, r.client, "src");
+        if (showClient) td(tr, r.client, "src");
         td(tr, r.model, "src");
         const st = document.createElement("span");
         st.className = `st st-${r.status.key}`;

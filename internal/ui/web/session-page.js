@@ -248,7 +248,8 @@ export function createSessionPage(ctx = {}) {
     const box = el("section", "card hero");
     box.setAttribute("aria-label", "Session overview");
     const st = o.status || { glyph: "", word: "" };
-    box.append(el("span", `status-pill${st.word === "active" ? " active" : ""}`, `${st.glyph} ${st.word}`));
+    // the badge is for a session still running; an ended one says nothing
+    if (st.word === "active") box.append(el("span", "status-pill active", `${st.glyph} ${st.word}`));
     box.append(el("h1", "", o.title || ""));
     const meta = el("div", "meta");
     if (o.from) meta.append(el("span", "", `${clock(o.from, false)}–${clock(o.to, false)}`));
@@ -257,7 +258,8 @@ export function createSessionPage(ctx = {}) {
       f.title = o.folder_full || o.folder;
       meta.append(f);
     }
-    if ((o.models || []).length) meta.append(el("span", "", o.models.join(", ")));
+    // each turn carries its model chip; the summary names models only when there were several
+    if ((o.models || []).length > 1) meta.append(el("span", "", o.models.join(", ")));
     const cl = el("span", "", o.client || "");
     cl.title = `session ${o.key || ""}`;
     meta.append(cl);
@@ -266,13 +268,7 @@ export function createSessionPage(ctx = {}) {
     const kpis = el("div", "kpis");
     const kpi = (label, value, sub, tab) => {
       const k = tab ? button("kpi", undefined, () => side.select(tab, true)) : el("div", "kpi");
-      const l = el("span", "l", label);
-      if (tab) {
-        const i = el("i", "", "→");
-        i.setAttribute("aria-hidden", "true");
-        l.append(i);
-      }
-      k.append(l, el("span", "v", value), sub);
+      k.append(el("span", "l", label), el("span", "v", value), sub);
       kpis.append(k);
     };
     const time = o.time || {};
@@ -305,9 +301,12 @@ export function createSessionPage(ctx = {}) {
     const foot = el("div", "foot");
     const tk = o.tokens || {};
     const cost = totalCost(tk.cost);
-    const costLine = el("span", "cost", `${LABEL_LONG} cost: ${cost.text}`);
-    costLine.title = `${cost.title}\nSide calls included.`;
-    foot.append(costLine);
+    // no cost to state ("—") means no line
+    if (cost.text !== "—") {
+      const costLine = el("span", "cost", `${LABEL_LONG} cost: ${cost.text}`);
+      costLine.title = `${cost.title}\nSide calls included.`;
+      foot.append(costLine);
+    }
     const sideCalls = view.side_calls || [];
     if (sideCalls.length) {
       const d = el("details", "side");
@@ -324,7 +323,7 @@ export function createSessionPage(ctx = {}) {
       d.append(ul, el("p", "muted small", "The client's own calls: never a turn, never counted as an error."));
       foot.append(d);
     }
-    box.append(foot);
+    if (foot.children.length) box.append(foot);
     if (o.empty) box.append(el("p", "page-note", o.empty));
     return box;
   }

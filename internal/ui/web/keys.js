@@ -1,4 +1,4 @@
-// Key bar content and the shortcut reducer. Pure: the page feeds it keyboard events.
+// Shortcut content (shown in the header's "?" dialog) and the shortcut reducer. Pure: the page feeds it keyboard events.
 export const SHORTCUTS = {
   SESSIONS: [["↑/↓", "select"], ["Enter", "open"], ["/", "filter"]],
   // The session page has no key bar (spec 016 AC13, Q4): j/k step through turns, the tabs
@@ -49,6 +49,7 @@ export function handleKey(route, press) {
   if (press.ctrlKey || press.metaKey || press.altKey) return null;
   const k = press.key;
   if (press.inInput) return k === "Escape" ? { type: "leaveInput" } : null;
+  if (k === "?") return { type: "help" };
   const { set } = keyLevel(route);
   if (set === "SESSIONS") {
     if (k === "ArrowUp") return { type: "select", delta: -1 };

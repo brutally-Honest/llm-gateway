@@ -3,17 +3,24 @@ import assert from "node:assert/strict";
 import { breadcrumb } from "../web/shell.js";
 
 test("breadcrumbStartsAtSessions", () => {
-  assert.deepEqual(breadcrumb({ name: "sessions" }, ""), [{ text: "Sessions" }]);
+  assert.deepEqual(breadcrumb({ name: "sessions" }, ""), [], "the list itself shows no trail (027 C7a item 3)");
   for (const route of [{ name: "ungrouped" }, { name: "exchange", id: "e" }, { name: "session", id: "s", call: null }]) {
     const b = breadcrumb(route, "t");
     assert.deepEqual(b[0], { text: "Sessions", href: "#/" });
   }
 });
 
-test("breadcrumbShowsSessionTitle", () => {
-  const b = breadcrumb({ name: "session", id: "s1", call: null }, "Fix the bug");
-  assert.deepEqual(b, [{ text: "Sessions", href: "#/" }, { text: "Fix the bug" }]);
-  assert.equal(breadcrumb({ name: "session", id: "s1", call: null }, "")[1].text, "s1");
+// spec 027 C7a item 4: the page heading says the session's title, so the trail stops at the
+// link back; no crumb repeats the heading
+test("breadcrumbDropsTheCrumbThatRepeatsTheHeading", () => {
+  const back = { text: "Sessions", href: "#/" };
+  assert.deepEqual(breadcrumb({ name: "session", id: "s1", call: null }, "Fix the bug"), [back]);
+  assert.deepEqual(breadcrumb({ name: "ungrouped" }, ""), [back]);
+  assert.deepEqual(breadcrumb({ name: "unassigned" }, ""), [back]);
+  assert.deepEqual(breadcrumb({ name: "exchange", id: "e" }, ""), [back]);
+  assert.deepEqual(breadcrumb({ name: "exchange", id: "e" }, "", { sessionId: "", callN: 0 }), [back, { text: "Ungrouped", href: "#/ungrouped" }]);
+  assert.deepEqual(breadcrumb({ name: "exchange", id: "e" }, "", { sessionId: "s 1", sessionTitle: "Seeded", callN: 2 }), [back, { text: "Seeded", href: "#/sessions/s%201" }]);
+  assert.deepEqual(breadcrumb({ name: "sessions" }, ""), []);
 });
 
 // spec 027 C2: the header's Settings button opens a dialog with a Theme and a Style picker;

@@ -83,7 +83,15 @@ Object.assign(globalThis, {
 });
 
 const settle = () => new Promise((r) => setImmediate(r));
-const liveText = () => all(byId("shell-head")).find((e) => e.attrs.role === "status").textContent;
+// the live indicator is a dot: its word is the accessible name (hidden text) and the title,
+// its tone the class (spec 027 C7a item 2)
+const liveDot = () => all(byId("shell-head")).find((e) => e.attrs.role === "status");
+const liveText = () => {
+  const d = liveDot();
+  assert.equal(d.title, textOf(d).trim(), "the tooltip carries the same word");
+  return textOf(d).trim();
+};
+const liveTone = () => liveDot().className;
 
 test("droppedSessionStreamKeepsCallDialogAndHistoryAndShowsDisconnected", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
@@ -102,12 +110,15 @@ test("droppedSessionStreamKeepsCallDialogAndHistoryAndShowsDisconnected", async 
   assert.equal(first.url, "/api/sessions/s1/stream?view=1");
   first.onopen();
   assert.equal(liveText(), "live");
+  assert.equal(liveTone(), "live-dot live-ok", "green while live");
+  assert.ok(!liveDot().hidden);
   held();
 
   // the browser is retrying by itself
   first.readyState = FakeEventSource.CONNECTING;
   first.onerror();
   assert.equal(liveText(), "live: disconnected, retrying");
+  assert.equal(liveTone(), "live-dot live-warn", "amber while reconnecting");
   held();
 
   // the browser gave up: the page reopens the stream, and the view still holds meanwhile
@@ -251,7 +262,7 @@ test("ungroupedPageUsesLabelsAndBreadcrumb", async () => {
   const links = withClass(page, "stitle").map((a) => [a.textContent, a.href]);
   assert.deepEqual(links, [["hello", "#/exchanges/x1"], ["no prompt captured", "#/exchanges/x2"]]);
   const crumbs = textOf(all(byId("shell-head")).find((e) => e.tagName === "nav")).replace(/\s+/g, " ").trim();
-  assert.equal(crumbs, "Sessions / Ungrouped");
+  assert.equal(crumbs, "Sessions /", "the page's heading says Ungrouped; the crumb is the way back");
 });
 
 // AC12, research D43: the full exchange page sits in the sessions list's column, titled with
@@ -271,22 +282,25 @@ test("exchangePageUsesLabelsAndBreadcrumb", async () => {
   await go("#/exchanges/x1/headers");
   const page = withClass(byId("app"), "exchange-page")[0];
   assert.ok(page && page.className.split(" ").includes("page"), "the sessions list's column");
-  assert.equal(textOf(crumbs()).replace(/\s+/g, " ").trim(), "Sessions / Seeded / Call #2");
+  assert.equal(textOf(crumbs()).replace(/\s+/g, " ").trim(), "Sessions / Seeded /", "no crumb repeats the Call #2 heading");
   assert.equal(all(crumbs()).find((e) => e.tagName === "a" && e.textContent === "Seeded").href, "#/sessions/s1");
   const head = withClass(page, "sp-head")[0];
   assert.match(textOf(head), /Call #2/);
   assert.equal(withClass(head, "st-ok")[0].textContent, "✓ 200 OK");
   const facts = withClass(page, "mfact").map((f) => textOf(f).replace(/\s+/g, " ").trim());
-  for (const want of ["Input tokens 42", "Output tokens 7", "Cache write 0", "Cache read —", "Parse ✓ ok", "Time to first byte 120 ms"]) assert.ok(facts.includes(want), want);
+  for (const want of ["Input tokens 42", "Output tokens 7", "Cache write 0", "Cache read —", "Time to first byte 120 ms"]) assert.ok(facts.includes(want), want);
+  assert.ok(!facts.some((f) => /^Parse|^Stream/.test(f)), "a streamless exchange that parsed ok shows neither tile");
   const headers = page.children.find((c) => c.id === "headers");
-  assert.equal(headers.textContent, "Request headers");
+  assert.equal(headers.tagName, "details");
+  assert.equal(textOf(all(headers).find((e) => e.tagName === "summary")), "Request headers (1)");
+  assert.equal(headers.open, true, "the Headers link opens the folded request headers");
   assert.equal(globalThis.document.activeElement, headers, "the Headers link lands on the request headers");
   assert.match(textOf(page), /\[REDACTED\]/);
   const tops = [];
   window.scrollTo = (x, y) => tops.push([x, y]);
   await go("#/exchanges/x2");
   assert.deepEqual(tops[0], [0, 0], "another page starts at its top");
-  assert.equal(textOf(crumbs()).replace(/\s+/g, " ").trim(), "Sessions / Ungrouped / Exchange");
+  assert.equal(textOf(crumbs()).replace(/\s+/g, " ").trim(), "Sessions / Ungrouped /");
   const page2 = withClass(byId("app"), "exchange-page")[0];
   assert.match(textOf(withClass(page2, "sp-head")[0]), /Exchange/);
   assert.equal(withClass(page2, "st-failed")[0].textContent, "✗ 500 Internal Server Error");

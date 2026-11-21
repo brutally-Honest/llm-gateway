@@ -23,7 +23,6 @@ try {
 }
 const shell = mountShell({
   head: document.getElementById("shell-head"),
-  bar: document.getElementById("keybar"),
   storage,
   root,
   theme: initTheme(storage, root),
@@ -96,11 +95,12 @@ async function loadUngroupedHead() {
   }
 }
 
-// liveText is the header status for a stream state.
+// liveText is the header status for a stream state: its word, and the dot's tone (green
+// when live, amber while it retries).
 function liveText(state) {
-  if (state === "connected") return "live";
-  if (state === "snapshot_error") return "live: snapshot failed, retrying in 30 s";
-  return "live: disconnected, retrying";
+  if (state === "connected") return ["live", "ok"];
+  if (state === "snapshot_error") return ["live: snapshot failed, retrying in 30 s", "warn"];
+  return ["live: disconnected, retrying", "warn"];
 }
 
 function stopStream() {
@@ -124,7 +124,7 @@ function startStream() {
       }
     },
     (st) => {
-      shell.setLive(liveText(st));
+      shell.setLive(...liveText(st));
     },
   );
 }
@@ -238,7 +238,7 @@ async function showSession(id) {
       page.applyEvent(data);
       calls.refresh(); // the open call stays; its details are fetched again (AC10)
     },
-    (state) => shell.setLive(liveText(state)),
+    (state) => shell.setLive(...liveText(state)),
     `sessions/${enc(id)}/stream?view=1`,
   );
 }
@@ -377,7 +377,7 @@ function route() {
 
 // Shortcuts act per level (keys.js); the input guard and Esc-to-leave live in handleKey.
 window.addEventListener("keydown", (e) => {
-  if (shell.settingsOpen()) return; // the Settings dialog takes no page keys
+  if (shell.modalOpen()) return; // the Settings and shortcuts dialogs take no page keys
   const act = handleKey(parseRoute(location.hash), {
     key: e.key,
     ctrlKey: e.ctrlKey,
@@ -388,6 +388,8 @@ window.addEventListener("keydown", (e) => {
   if (!act) return;
   if (act.type === "leaveInput") {
     document.activeElement.blur();
+  } else if (act.type === "help") {
+    shell.openHelp();
   } else if (act.type === "toSessions") {
     location.hash = "#/";
   } else if (act.type === "select" && page) {
