@@ -182,7 +182,7 @@ header#shell-head a, header#shell-head a:hover { text-decoration: none; }
   cursor: pointer; color: var(--muted); }
 .picker button[aria-pressed="true"] { background: var(--card); color: var(--hi); font-weight: 600; box-shadow: var(--shadow); }
 /* Settings (spec 027 C2): a header button opens a small dialog with the theme and style */
-.settings-open { font-size: 12px; font-weight: 500; color: var(--muted); padding: 4px 10px; }
+.settings-open { font-size: 17px; line-height: 1; font-weight: 500; color: var(--muted); padding: 5px 8px; }
 .settings-open:hover { color: var(--hi); }
 dialog.settings { width: min(22rem, 92vw); padding: 18px 20px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--card); color: var(--text); box-shadow: var(--shadow-lg); }
 dialog.settings::backdrop { background: var(--scrim); }
