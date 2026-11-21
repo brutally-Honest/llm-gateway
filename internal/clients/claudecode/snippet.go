@@ -59,6 +59,8 @@ func SettingsDoc(hooksAddr string, net *NetSettings) []byte {
 		"HTTPS_PROXY":        "http://" + net.HTTPProxyAddr,
 		"HTTP_PROXY":         "http://" + net.HTTPProxyAddr,
 		"NO_PROXY":           "127.0.0.1,localhost",
+		// Node ignores the proxy variables without it (spec 024 AC3, NodeNote).
+		"NODE_USE_ENV_PROXY": "1",
 	}
 	if net.Sandbox {
 		network := map[string]any{"httpProxyPort": net.HTTPProxyPort}
@@ -70,3 +72,9 @@ func SettingsDoc(hooksAddr string, net *NetSettings) []byte {
 	out, _ := json.MarshalIndent(doc, "", "  ")
 	return append(out, '\n')
 }
+
+// NodeNote says which Node versions honour NODE_USE_ENV_PROXY, and so are seen by the
+// gateway's proxy (024 research, "Node and NODE_USE_ENV_PROXY").
+const NodeNote = "Node programs' network calls are seen on Node 22.21+ or 24+ (fetch; http/https from 22.21 or 24.5), " +
+	"through NODE_USE_ENV_PROXY=1 in the settings. Older Node ignores it: with the sandbox off its calls are not seen, " +
+	"with it on they fail (ENOTFOUND)."

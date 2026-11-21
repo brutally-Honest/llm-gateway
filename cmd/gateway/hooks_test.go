@@ -152,6 +152,7 @@ func TestHooksPrint_SettingsDoc(t *testing.T) {
 		"HTTPS_PROXY":        "http://127.0.0.1:7198",
 		"HTTP_PROXY":         "http://127.0.0.1:7198",
 		"NO_PROXY":           "127.0.0.1,localhost",
+		"NODE_USE_ENV_PROXY": "1",
 	}
 	if len(on.Hooks) == 0 || !maps.Equal(on.Env, wantEnv) {
 		t.Errorf("network on: hooks %d, env %v; want the hooks and %v", len(on.Hooks), on.Env, wantEnv)

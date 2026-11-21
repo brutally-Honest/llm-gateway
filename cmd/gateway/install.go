@@ -199,8 +199,9 @@ func claudeClient() install.Client {
 		CheckSettings: func(data []byte, cfg config.Config) string {
 			return claudecode.CheckSettings(data, cfg.ListenAddr, baseURL(cfg))
 		},
-		ShellFunc: claudecode.ShellFunc,
-		HooksPath: claudecode.HooksPath(),
+		ShellFunc:   claudecode.ShellFunc,
+		NetworkNote: claudecode.NodeNote,
+		HooksPath:   claudecode.HooksPath(),
 		Routed: func(getenv func(string) string, cfg config.Config) string {
 			return claudecode.Routed(getenv, baseURL(cfg))
 		},

@@ -607,6 +607,9 @@ func summary(e *Env, c Client, p Paths, pl plan, prev *State, cfg config.Config,
 			e.printf("    note     %s\n", n)
 		}
 	}
+	if c.NetworkNote != "" && cfg.Effects.Enabled && cfg.Effects.Network.Enabled {
+		e.printf("    note     %s\n", c.NetworkNote)
+	}
 	if len(pl.off) > 0 {
 		e.printf("  Off\n")
 		for _, o := range pl.off {

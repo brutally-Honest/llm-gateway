@@ -82,3 +82,23 @@ func TestRouted(t *testing.T) {
 		}
 	}
 }
+
+// B5: the env block makes Node (22.21+, 24+) use HTTPS_PROXY, so its fetch reaches the
+// gateway's proxy with the sandbox on or off (spec 024 AC3).
+func TestSettingsDocSetsNodeUseEnvProxy(t *testing.T) {
+	for _, sandbox := range []bool{false, true} {
+		net := &NetSettings{BaseURL: base, HTTPProxyAddr: "127.0.0.1:7198", HTTPProxyPort: 7198, Sandbox: sandbox}
+		var doc struct {
+			Env map[string]string `json:"env"`
+		}
+		if err := json.Unmarshal(SettingsDoc(addr, net), &doc); err != nil {
+			t.Fatal(err)
+		}
+		if doc.Env["NODE_USE_ENV_PROXY"] != "1" {
+			t.Fatalf("sandbox %v: env %v lacks NODE_USE_ENV_PROXY=1", sandbox, doc.Env)
+		}
+	}
+	if !strings.Contains(NodeNote, "22.21") || !strings.Contains(NodeNote, "24") {
+		t.Fatalf("NodeNote %q does not name the Node versions", NodeNote)
+	}
+}

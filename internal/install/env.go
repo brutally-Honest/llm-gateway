@@ -83,6 +83,9 @@ type Client struct {
 	ShellFunc func(healthURL, settingsPath string) string
 	// HooksPath is the hooks ingest path on the API listener.
 	HooksPath string
+	// NetworkNote is a line for the summary when network effects are on, such as which
+	// runtimes honour the proxy settings (spec 024 AC3); "" for none.
+	NetworkNote string
 	// Routed says why the process running the installer is itself a client session
 	// routed through the gateway in cfg (so stopping the gateway cuts it off), or "".
 	Routed func(getenv func(string) string, cfg config.Config) string
