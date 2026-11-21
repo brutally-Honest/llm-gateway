@@ -335,3 +335,21 @@ test("dialogsFocusThemselvesOnOpen", () => {
   assert.equal(settings.open, true);
   assert.equal(focused, settings, "focus lands on the dialog, not its first option");
 });
+
+// a click outside the Settings dialog closes it, as with the other dialogs; a click on the
+// dialog's own blank space does not (its ::after covers the scrim within its box)
+test("settingsClosesOnAClickOutside", () => {
+  const { head } = shell();
+  const settings = byTag(head, "dialog").find((d) => d.className === "settings");
+  settings.showModal = () => { settings.open = true; };
+  settings.close = () => { settings.open = false; };
+  find(head, (e) => e.className === "settings-open").fire("click");
+  assert.equal(settings.open, true);
+  const scrim = withClass(settings, "call-scrim")[0];
+  assert.equal(scrim.tagName, "button", "a real button");
+  assert.equal(scrim.attrs.tabindex, "-1", "out of the Tab order");
+  scrim.fire("click");
+  assert.equal(settings.open, false);
+  const cover = css.match(/dialog\.settings::after \{([^}]*)\}/);
+  assert.ok(cover && /z-index: -1/.test(cover[1]) && /background: inherit/.test(cover[1]), "the dialog's box covers the scrim");
+});

@@ -189,6 +189,9 @@ dialog.settings::backdrop { background: var(--scrim); }
 /* the dialog takes focus on open so no option looks chosen; it shows no ring itself (Tab
    moves on to its options, which do) */
 dialog.settings:focus, dialog.settings:focus-visible { outline: none; }
+/* the scrim inside covers the window, the dialog's own box included: the dialog covers it
+   again within its box, so a click on its blank space does not close it */
+dialog.settings::after { content: ""; position: absolute; inset: 0; z-index: -1; background: inherit; border-radius: inherit; }
 dialog.settings h2 { margin: 0 0 14px; font-size: 15px; color: var(--hi); }
 .setting { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); }
 .setting-name { font-size: 12px; font-weight: 600; color: var(--muted); }

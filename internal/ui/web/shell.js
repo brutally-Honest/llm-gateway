@@ -63,6 +63,12 @@ function settingsDialog({ storage, root, theme, look }) {
   // the dialog itself takes focus on open (focusDialog): a ring on the first option read as
   // a choice
   dlg.tabIndex = -1;
+  // a click outside closes it, on the scrim button the other dialogs use (027 C7a)
+  const scrim = el("button", "", "call-scrim");
+  scrim.type = "button";
+  scrim.setAttribute("aria-label", "Close");
+  scrim.setAttribute("tabindex", "-1");
+  scrim.addEventListener("click", () => dlg.close());
   const title = el("h2", "Settings");
   title.id = "settings-title";
   const themes = [...THEMES].reverse().map((t) => [t, t === "light" ? "Light" : "Dark"]);
@@ -73,6 +79,7 @@ function settingsDialog({ storage, root, theme, look }) {
   const foot = el("div", "", "settings-foot");
   foot.append(close);
   dlg.append(
+    scrim,
     title,
     picker("Theme", themes, theme, (t) => pickTheme(storage, root, t)),
     picker("Style", styles, look, (s) => pickStyle(storage, root, s)),
