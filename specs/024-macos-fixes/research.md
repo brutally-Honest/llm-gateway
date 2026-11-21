@@ -85,3 +85,49 @@ From the Node.js docs (v26.13.1, `cli.html` and `http.html`, read 2026-11-21):
   window, where a freed port is taken by another test before the gateway binds it. The
   failure message now includes stdout, where a "cannot bind" line would show, so a repeat
   names its cause.
+- D12 (2026-11-21) — B7 follow-up (Karthik: if the flake is the free-port race, bind port
+  0 or keep the listener open). Neither is possible without changing a rule: the config
+  refuses two listeners on the same host and port, so `127.0.0.1:0` four times is refused,
+  and exempting port 0 would loosen config validation (AGENTS.md); the gateway binds its
+  own addresses and takes no inherited listener. Instead `freeAddr` picks free ports from
+  20000–32767, below the ephemeral range on Linux (32768–60999) and macOS (49152–65535),
+  so no port-0 listener of another test can be given that port in the window. Only a
+  process that binds that exact port on purpose could still take it.
+  `TestBinary_SignalShutdown` under `-race`, 50 runs: ok.
+- D13 (2026-11-21) — Karthik accepted the restart gap: an upgrade restarts the gateway, and
+  its ports refuse connections for a sub-second gap (about 80 ms and 53 ms in the real
+  check), which Claude Code retries. Zero-gap upgrades (socket hand-over) stay out of
+  scope. `docs/install.md`, Upgrade, says so.
+- D14 (2026-11-21) — With two routed sessions active (this build's own session and the
+  check's prompt), the prompt's connections were stored as unassigned (014 AC10). That is
+  the rule working, not a 024 bug. Karthik put per-session attribution on the roadmap's
+  Later list; `docs/install.md`, Known limits, names it.
+
+## Real check (Linux, 2026-11-21, build 7cd17e4)
+
+Ubuntu, Node v25.2.1, Claude Code 2.1.330. The sandbox is off on this machine (AppArmor
+restricts unprivileged user namespaces, no bwrap profile), so Node was checked through
+`HTTPS_PROXY`. `/healthz` was polled every 200 ms throughout: 1,275 polls, 1 refused.
+
+| Step | Expected | Seen | Match |
+|---|---|---|---|
+| Smoke test of the build on spare ports | starts, answers, stops | `/healthz` 200, clean stop, exit 0 | yes |
+| Reinstall 1 over the running gateway (45a4309 → 7cd17e4) | `/healthz` answers throughout | installed; 12 of 13 polls 200, 1 refused: systemd restart, port closed ~80 ms (shutting down 17.799, started 17.880) | accepted (D13) |
+| Reinstall 2 | the same | 11 of 11 polls 200; restart gap ~53 ms, no poll in it | yes |
+| `gateway doctor` | green | all required pass; warn: AppArmor/bwrap, hand-written function in `~/.bashrc`, UI warming up 9 s after restart | yes |
+| Settings | `NODE_USE_ENV_PROXY=1` | in the dry-run diff and the file; summary prints the Node note | yes |
+| Claude Code prompt (`af3241b5`) | Node fetch and curl run | `node fetch status 200` (example.org), `curl 200` (example.com), `{"status":"ok"}` from the gateway's `/healthz` through `-x http://127.0.0.1:7198` | yes |
+| Both as network effects in the UI | rows for both | `example.org:443`, `example.com:443` in `/api/effects/unassigned` (ids 5673, 5674), unassigned as two sessions were active | yes, unassigned (D14) |
+| No rows for the gateway's own ports | none | 0 rows on 127.0.0.1:7195/7197/7198/7199, although step (3) went through the proxy to 7197 | yes |
+
+Only the Mac re-test can confirm: the launchd reinstall against real `launchctl`
+(bootout wait, EIO retries, kickstart-only path); Node's fetch under Seatbelt; hook traffic
+through the sandbox proxy not recorded; doctor's launchd states; and the macOS-only test
+paths (`/var` symlink, a second listener, EADDRNOTAVAIL, en_IN locale).
+
+## Wrap-up (2026-11-21)
+
+All of AC1–AC10 are built, each with a test that failed before its fix, and
+`make verify` is green. The Linux real check passed with the restart gap accepted (D13) and
+the connections unassigned by 014 AC10 (D14). B8 and B12, and per-session network
+attribution, are on the roadmap's Later list. No open questions.
