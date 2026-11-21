@@ -238,6 +238,13 @@ own fix:
 | `installed, not loaded` | `systemctl --user daemon-reload && systemctl --user enable --now llm-gateway.service` | `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.llm-gateway.plist` |
 | `loaded, not running` | read `journalctl --user -u llm-gateway.service -f`, then `systemctl --user restart llm-gateway.service` | read `tail -f ~/Library/Logs/llm-gateway/gateway.log`, then `launchctl kickstart -k gui/$(id -u)/dev.llm-gateway` |
 | `running, but not started at login` | `gateway install` | `gateway install` |
+| `service is restarting after a startup error: …` | fix what the error names (often a config key); the service tries again every 10 s | the same |
+
+A gateway that fails its start under the service waits 10 s before it exits, so the
+service restarts it about every 10 s, not every second, and writes the same startup error
+to the log at most once every 10 minutes. The last error is kept in
+`~/.local/state/llm-gateway/startup-error.json` for doctor and removed once a start
+succeeds. Run by hand, outside the service, a failed start exits at once.
 
 ### Check: listeners
 Each listener answers on loopback: the API (`/healthz`), the UI (`/api/health`), the HTTP
