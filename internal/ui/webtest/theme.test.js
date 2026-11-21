@@ -56,3 +56,27 @@ test("styleIsStoredAndAppliedDefaultingToLean", async () => {
   assert.equal(pickStyle(broken, r, "stark"), "stark", "it still applies without storage");
   assert.equal(pickStyle(st, r, "bogus"), "lean");
 });
+
+// spec 027: boot.js sets the stored theme and style before the first paint, so a light or
+// stark page never flashes dark lean on load. It cannot import theme.js (it is a plain
+// script, which runs before paint), so it must agree with loadTheme and loadStyle on every
+// stored value, including missing, unknown and unreadable storage; and index.html loads it
+// in <head>, before the stylesheet, as a plain (blocking) script.
+test("bootAppliesTheStoredThemeAndStyleBeforePaint", async () => {
+  const { readFileSync } = await import("node:fs");
+  const vm = await import("node:vm");
+  const { loadStyle } = await import("../web/theme.js");
+  const src = readFileSync(new URL("../web/boot.js", import.meta.url), "utf8");
+  const broken = { getItem() { throw new Error("denied"); }, setItem() {} };
+  const cases = [{}, { theme: "light" }, { theme: "dark", style: "stark" }, { theme: "solarized", style: "clarity" }, { style: "lean" }, null];
+  for (const init of cases) {
+    const storage = init ? memory(init) : broken;
+    const r = root();
+    vm.runInNewContext(src, { document: { documentElement: r }, window: { localStorage: storage } });
+    assert.equal(r.attrs["data-theme"], loadTheme(storage), `theme for ${JSON.stringify(init)}`);
+    assert.equal(r.attrs["data-style"], loadStyle(storage), `style for ${JSON.stringify(init)}`);
+  }
+  const html = readFileSync(new URL("../web/index.html", import.meta.url), "utf8");
+  const head = html.split("</head>")[0];
+  assert.match(head, /<script src="boot\.js"><\/script>\s*<link rel="stylesheet" href="style\.css">/, "boot.js is a plain script before the stylesheet");
+});
