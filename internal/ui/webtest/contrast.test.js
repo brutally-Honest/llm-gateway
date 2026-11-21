@@ -26,9 +26,22 @@ const TEXTS = ["text", "hi", "muted", "accent", "ok", "bad", "warn", "add", "del
 const BACKS = ["bg", "card", "panel", "panel2", "accent-bg", "ok-bg", "bad-bg", "warn-bg", "add-bg", "del-bg", "tool-bg"];
 const PAIRS = [...TEXTS.flatMap((fg) => BACKS.map((bg) => [fg, bg])), ["on-accent", "accent-strong"]];
 
+// spec 027 C2: each theme is one base; a style may override some of its colours. What a
+// page shows is the base with the style's overrides on top, so every style × theme pair is
+// checked as merged, and a style block the list below does not name fails the test.
+const STYLES = ["lean", "stark"];
+const THEMES = ["dark", "light"];
+const styleBlock = (style, theme) => `:root[data-style="${style}"][data-theme="${theme}"]`;
+const merged = (style, theme) => ({ ...tokens(`:root[data-theme="${theme}"]`), ...(css.includes(styleBlock(style, theme)) ? tokens(styleBlock(style, theme)) : {}) });
+
+test("everyStyleBlockIsChecked", () => {
+  const found = [...css.matchAll(/:root\[data-style="([a-z]+)"\]\[data-theme="([a-z]+)"\]/g)].map((m) => [m[1], m[2]]);
+  assert.ok(found.length >= 2, "the style blocks are found");
+  for (const [style, theme] of found) assert.ok(STYLES.includes(style) && THEMES.includes(theme), `${style} ${theme} is not checked`);
+});
+
 test("allTextPairsMeet4_5InBothThemes", () => {
-  for (const [name, selector] of [["dark", ':root[data-theme="dark"]'], ["light", ':root[data-theme="light"]']]) {
-    const t = tokens(selector);
+  for (const [name, t] of STYLES.flatMap((s) => THEMES.map((th) => [`${s} ${th}`, merged(s, th)]))) {
     for (const [fg, bg] of PAIRS) {
       assert.ok(t[fg] && t[bg], `${name}: missing ${fg} or ${bg}`);
       assert.ok(ratio(t[fg], t[bg]) >= 4.5, `${name}: ${fg} on ${bg} is ${ratio(t[fg], t[bg]).toFixed(2)}`);

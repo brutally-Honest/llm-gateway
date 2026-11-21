@@ -5,7 +5,7 @@ import { addUnique, upsertSession } from "./entries.js";
 import { createStore } from "./store.js";
 import { createSessionPage } from "./session-page.js";
 import { createSessionsPage, localMidnight, note, UNASSIGNED_SHOWN } from "./sessions-page.js";
-import { initTheme } from "./theme.js";
+import { initStyle, initTheme } from "./theme.js";
 import { buildRoute, parseRoute } from "./route.js";
 import { handleKey, isTextInput } from "./keys.js";
 import { createCallDialog } from "./call-dialog.js";
@@ -19,7 +19,7 @@ let storage = null;
 try {
   storage = window.localStorage;
 } catch {
-  // storage blocked: the theme falls back to dark
+  // storage blocked: the theme falls back to dark, the style to lean
 }
 const shell = mountShell({
   head: document.getElementById("shell-head"),
@@ -27,6 +27,7 @@ const shell = mountShell({
   storage,
   root,
   theme: initTheme(storage, root),
+  look: initStyle(storage, root),
 });
 const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "", ungrouped: [], ungroupedNext: null, ungroupedError: "", ungroupedHead: { items: [], next_after: null }, today: null, unassigned: 0, unassignedItems: [] });
 let closeStream = null;
@@ -376,6 +377,7 @@ function route() {
 
 // Shortcuts act per level (keys.js); the input guard and Esc-to-leave live in handleKey.
 window.addEventListener("keydown", (e) => {
+  if (shell.settingsOpen()) return; // the Settings dialog takes no page keys
   const act = handleKey(parseRoute(location.hash), {
     key: e.key,
     ctrlKey: e.ctrlKey,
