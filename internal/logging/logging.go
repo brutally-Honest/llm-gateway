@@ -1,5 +1,6 @@
 // Package logging builds the gateway's zap loggers. It is the one place that knows
-// zap's configuration. Every line it produces, zap's own errors included, is JSON.
+// zap's configuration. Every line the running gateway logs, zap's own errors included, is
+// JSON (New); the commands a person runs log plain text (Plain).
 // There is no global logger: callers pass the *zap.Logger in.
 package logging
 
