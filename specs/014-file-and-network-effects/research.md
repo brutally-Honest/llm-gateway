@@ -8,6 +8,14 @@ feature: 014-file-and-network-effects
      Answer by changing "(open)" to "(answered)" and writing the answer underneath:
 - **Q1** (open) T003 — <question> — options: A) … B) …
 -->
+- **Q2** (open) T012 — On the Mac with the sandbox on (step 11, 2026-11-20), Node's built-in
+  `fetch` fails with `ENOTFOUND` instead of showing `example.com:443`: the sandbox blocks the
+  direct DNS lookup and Node ignores `HTTPS_PROXY` unless `NODE_USE_ENV_PROXY=1` is set (with
+  it, the same script returned 200 and `example.com:443` was captured). Should the gateway's
+  Claude Code settings set it? — options: A) add `"NODE_USE_ENV_PROXY": "1"` to the settings
+  `env` block (internal/clients/claudecode/snippet.go), so Node through the sandbox is seen
+  B) keep it out and document that, with the sandbox on, Node's `fetch` fails rather than
+  bypassing the proxy (KI8 extended)
 
 ## Decisions
 - D1 (2026-11-08) — Built outside the agent-loop kit: one branch, Option B order (foundation,
@@ -274,6 +282,28 @@ Answers (2026-11-09, Linux, step 9, sandbox off):
   model-call path. Nothing to fix in the gateway.
 - 2026-11-09 — Step 11 (Mac) is deferred by Karthik to after the merge. V3, V4 and the
   sandbox part of V1 stay open until then.
+- 2026-11-20 — Step 11 at 4d778f4 (macOS 26.5.2, Apple M4 Pro, Claude Code 2.1.329, installed
+  with install.sh and launchd; full record in docs/manual-checks/macos-v1.md). Step 9 on the
+  Mac, sandbox off: pass (the edit and the three files show in their turns with diffs;
+  `example.com:443` for `curl`, `github.com:443` for `git ls-remote`; Node's `fetch` not seen,
+  as KI8 says; with two sessions active, an outside connection to `example.net:443` is under
+  unassigned). Step 10 on launchd: pass (`llm-gateway is not running: starting plain Claude
+  Code`). Sandbox on: `curl` and `git` pass; Node fails with `ENOTFOUND` (Q2).
+- V1 (2026-11-20, macOS 26.5.2, Apple M4 Pro) — Pass for the `sandbox` block: with it on,
+  Bash's environment carries the sandbox's own proxy variables (`HTTPS_PROXY=http://localhost:7198`,
+  `ALL_PROXY`, `GIT_SSH_COMMAND` through `localhost:7195`, and a wider `NO_PROXY`), and Bash
+  traffic reaches the gateway's proxy.
+- V3 (2026-11-20, macOS 26.5.2, Apple M4 Pro) — Pass for HTTP: with the sandbox on, `curl` and
+  `git` arrive at 7198 (CONNECT rows for `example.com:443`, `github.com:443`); with it off the
+  settings have no `sandbox` block and only the `env` proxy variables route traffic. SOCKS
+  (7195) was not exercised: nothing in the run used it.
+- V4 (2026-11-20, macOS 26.5.2, Apple M4 Pro) — With the sandbox on and custom proxy ports,
+  Claude Code did not ask about new domains: `example.com`, `github.com` and `example.net`
+  went through with no PermissionRequest or PermissionDenied hook. Seen in `claude -p` only,
+  not in an interactive session.
+- 2026-11-20 — With the sandbox on, Claude Code's own hook POSTs to `127.0.0.1:7197` go through
+  the proxy and are stored as network effects (35 rows in one session; none with the sandbox
+  off). Listed as a bug in docs/manual-checks/macos-v1.md.
 
 ### Follow-ups after merge (2026-11-09)
 - The Mac check: step 11 of 014-effects.md, including the optional sandbox-on run, V1's
