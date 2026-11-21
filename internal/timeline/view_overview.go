@@ -180,7 +180,8 @@ func (b *builder) title(o *Overview, v *View) {
 	}
 	from, _ := b.sessionRange()
 	when := ""
-	if from > 0 {
+	// a hooks-only title leaves the start out: the list shows it in its own column
+	if from > 0 && src != "hooks_only" {
 		when = " · " + time.Unix(0, from).Local().Format("Jan 2 15:04")
 	}
 	o.Title = kind + " · " + o.Client + when

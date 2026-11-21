@@ -557,6 +557,12 @@ func TestView_Titles(t *testing.T) {
 	v = hooks.view(t, true)
 	eq(t, "hooks only", v.Overview.Title+" ("+v.Overview.TitleSource+")", "Hooks only · /w (hooks_only)")
 
+	// 027 C7b: with no folder the title is the client alone; the start is the list's own column
+	bare := &fixture{f: newFake()}
+	bare.f.vhook(core.PhasePreTool, "h1", "Bash", 1, func(h *store.HookRow) { h.WorkDir = "" })
+	v = bare.view(t, true)
+	eq(t, "hooks only, no folder", v.Overview.Title, "Hooks only · c")
+
 	none := &fixture{f: newFake()}
 	none.f.call(vcallSpec{id: "r", from: 1, to: 2, msgs: []string{"a:hello"}})
 	v = none.view(t, true)
