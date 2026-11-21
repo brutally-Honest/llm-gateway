@@ -184,4 +184,20 @@
   already one line per call, so D12's long layout is that panel. Tool states are glyphs, their
   word in the box's label. The CSS cursor property goes on its own line (009 D17 exemption).
 
+## Wrap-up (2026-11-21)
+- Accepted: C1–C4a, C4b, C5, C6a, C6b, C7a, C7b, C8, C9 and F1, each shown in light and dark,
+  accepted by Karthik, then committed with its spec line. Nothing was rejected; one try (an
+  unpinned turn list) was put back when it stopped turns being reachable.
+- Guards: none weakened. The contrast guard was extended to alpha tokens, gradient stops and
+  glass surfaces (Lean); the SVG namespace exemption was added for the logo and favicon; the
+  layout guards were rewritten only where Karthik approved it in D12. Final run: contrast and
+  layout 15/15, `make verify` green.
+- Server additions so the browser only formats: hourly counts for the sparklines, the
+  needs-a-look merge, the hooks-only title, files grouped by turn and each turn's figure.
+- Lessons: run the full `make verify` after every change, not only the UI tests (the core
+  purity guard caught "Stop" and a mid-line CSS cursor property); verify split commits alone
+  in a worktree; let theme transitions settle before a screenshot.
+- Left for later: the turn-figure thresholds are constants; sub-agent steps are not drawn as
+  boxes; the Files by-turn choice lasts for the page only.
+
 ## Open questions
