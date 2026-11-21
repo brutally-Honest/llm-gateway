@@ -57,53 +57,58 @@ func noValue(t *testing.T, g *gateway, value string) {
 	}
 }
 
-// -h and -help print usage as one JSON line and exit 0 without loading config or
-// binding. An invalid config.yaml and env prove nothing was loaded (research Q7).
+// plainBeforeBind asserts run exited with want before calling listen and printed plain
+// text, no log line (spec 024 AC10), and returns it.
+func plainBeforeBind(t *testing.T, g *gateway, want int) string {
+	t.Helper()
+	if code := g.wait(); code != want {
+		t.Errorf("exit code = %d, want %d", code, want)
+	}
+	if got := g.listened(); len(got) != 0 {
+		t.Errorf("listen was called with %v, want never", got)
+	}
+	out := g.stdout.String()
+	if strings.Contains(out, `{"level"`) {
+		t.Errorf("printed a JSON log line:\n%s", out)
+	}
+	return out
+}
+
+// -h, -help and --help print the help text and exit 0 without loading config or
+// binding. An invalid config.yaml and env prove nothing was loaded (research Q7). Plain
+// text since spec 024 AC10 (it was one JSON line).
 func TestRun_Help(t *testing.T) {
 	for _, arg := range []string{"-h", "-help", "--help"} {
 		t.Run(arg, func(t *testing.T) {
 			inTempDir(t, ptr("nope: x\n"))
 			g := startGateway(t, options{args: []string{arg}, env: map[string]string{"GATEWAY_LOG_LEVEL": "bogus"}})
-			line := failsBeforeBind(t, g, exitOK)
-			flags, _ := line["flags"].([]any)
-			if line["level"] != "info" || line["msg"] != "usage" || len(flags) != 1 || flags[0] != "-config <path>" {
-				t.Errorf("usage line = %v", line)
+			if out := plainBeforeBind(t, g, exitOK); out != helpText {
+				t.Errorf("output = %q, want the help text", out)
 			}
 		})
 	}
 }
 
-// Unknown flags and positional arguments exit 2 with one line, before config loads
-// or listen is called, and without the value.
+// Unknown flags and positional arguments exit 2 with a plain message and the help text,
+// before config loads or listen is called, and without the value.
 func TestRun_InvalidFlags(t *testing.T) {
 	cases := []struct {
 		name string
 		args []string
-		want map[string]any // fields beyond level and msg
+		want string
 	}{
-		{name: "unknown_flag", args: []string{"-token=" + sentinel}},
-		{
-			name: "positional", args: []string{"config.yaml"},
-			want: map[string]any{"reason": "unexpected argument", "count": float64(1)},
-		},
-		{
-			name: "positional_after_flag", args: []string{"-config", "a.yaml", sentinel, sentinel},
-			want: map[string]any{"reason": "unexpected argument", "count": float64(2)},
-		},
+		{name: "unknown_flag", args: []string{"-token=" + sentinel}, want: "gateway: flag provided but not defined: -token\n"},
+		{name: "positional", args: []string{"config.yaml"}, want: "gateway: unexpected argument (the gateway takes none"},
+		{name: "positional_after_flag", args: []string{"-config", "a.yaml", sentinel, sentinel}, want: "gateway: unexpected argument (the gateway takes none"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			// A config.yaml that exists shows the argument is not read as one.
 			inTempDir(t, ptr("log_level: info\n"))
 			g := startGateway(t, options{args: tc.args})
-			line := failsBeforeBind(t, g, exitConfig)
-			if line["level"] != "error" || line["msg"] != "invalid flags" {
-				t.Errorf("line = %v", line)
-			}
-			for k, v := range tc.want {
-				if line[k] != v {
-					t.Errorf("%s = %v, want %v", k, line[k], v)
-				}
+			out := plainBeforeBind(t, g, exitConfig)
+			if !strings.HasPrefix(out, tc.want) || !strings.HasSuffix(out, helpText) {
+				t.Errorf("output = %q, want %q and the help text", out, tc.want)
 			}
 			noValue(t, g, sentinel)
 			if tc.name == "positional" {

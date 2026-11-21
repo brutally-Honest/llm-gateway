@@ -22,7 +22,7 @@ import (
 // canonical events, and never writes gateway.db or a blob (spec 002, gateway dump).
 // It knows no wire format: it prints stored bytes and canonical events only.
 func runDump(d deps) int {
-	boot := logging.Bootstrap(d.stdout)
+	boot := logging.Plain(d.stdout, "gateway dump", "info")
 
 	flags := flag.NewFlagSet("dump", flag.ContinueOnError)
 	flags.SetOutput(io.Discard) // the flag package never prints usage text
@@ -31,10 +31,10 @@ func runDump(d deps) int {
 	last := flags.Bool("last", false, "print the most recent exchange")
 	switch err := flags.Parse(d.args[1:]); {
 	case errors.Is(err, flag.ErrHelp):
-		boot.Info("usage", zap.Strings("forms", []string{
+		printUsage(d.stdout,
 			"dump [-config <path>] [-raw] <request-id>",
 			"dump [-config <path>] [-raw] -last",
-		}))
+		)
 		return exitOK
 	case err != nil:
 		boot.Error("invalid flags")
@@ -56,7 +56,7 @@ func runDump(d deps) int {
 	if !ok {
 		return exitConfig
 	}
-	log := logging.New(d.stdout, cfg.LogLevel)
+	log := logging.Plain(d.stdout, "gateway dump", cfg.LogLevel)
 	dir, ok := captureDir(cfg.Capture, d.lookupEnv, log)
 	if !ok {
 		return exitConfig

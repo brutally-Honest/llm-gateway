@@ -26,7 +26,8 @@ Usage:
   gateway hooks print          print the Claude Code settings document
   gateway sessions | timeline | dump | backfill-sessions
                                read the capture store
-  gateway help                 this text
+  gateway help                 this text (also -h, --help)
+  gateway --version            print the version
 
 Run "gateway <command> --help" for a command's flags.
 Install guide: ` + install.DocsURL + `
@@ -208,8 +209,28 @@ func claudeClient() install.Client {
 	}
 }
 
-// isHelp says whether args ask for the top-level help: the `help` command. The -h and
-// -help flags keep their JSON usage line (spec 000).
+// isHelp says whether args ask for the top-level help: the `help` command, or -h, -help
+// or --help alone. All print the help text; the JSON usage line of spec 000 is gone, since
+// structured logging is for the running gateway only (spec 024 AC10).
 func isHelp(args []string) bool {
+	if len(args) == 1 && (args[0] == "-h" || args[0] == "-help" || args[0] == "--help") {
+		return true
+	}
 	return len(args) > 0 && strings.TrimSpace(args[0]) == "help"
+}
+
+// printUsage writes a command's usage forms as plain text (spec 024 AC10).
+func printUsage(w io.Writer, forms ...string) {
+	for i, f := range forms {
+		lead := "Usage: "
+		if i > 0 {
+			lead = "       "
+		}
+		_, _ = fmt.Fprintf(w, "%sgateway %s\n", lead, f)
+	}
+}
+
+// isVersion says whether args ask for the version: --version, -version or `version`.
+func isVersion(args []string) bool {
+	return len(args) == 1 && (args[0] == "--version" || args[0] == "-version" || args[0] == "version")
 }

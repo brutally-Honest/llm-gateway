@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"io/fs"
 	"net"
@@ -163,6 +164,10 @@ func run(ctx context.Context, d deps) int {
 	if isHelp(d.args) {
 		return runHelp(d)
 	}
+	if isVersion(d.args) {
+		_, _ = fmt.Fprintf(d.stdout, "gateway %s\n", version)
+		return exitOK
+	}
 	if len(d.args) > 0 {
 		switch d.args[0] {
 		case "install":
@@ -179,17 +184,16 @@ func run(ctx context.Context, d deps) int {
 	configPath := fs.String("config", "", "path to the config file (default ./config.yaml if present)")
 	switch err := fs.Parse(d.args); {
 	case errors.Is(err, flag.ErrHelp):
-		// -h or -help: usage as one JSON line; nothing is loaded or bound.
-		boot.Info("usage", zap.Strings("flags", []string{"-config <path>"}))
-		return exitOK
+		return runHelp(d) // -h with other flags; nothing is loaded or bound
 	case err != nil:
-		// The flag package's message can quote the value, so only the fact is logged.
-		boot.Error("invalid flags")
+		// A person typed this, so it is plain text, not a log line (spec 024 AC10). It goes
+		// to the terminal only, never to the store.
+		_, _ = fmt.Fprintf(d.stdout, "gateway: %v\n\n%s", err, helpText)
 		return exitConfig
 	case fs.NArg() > 0:
-		// The gateway takes no arguments; -config is the only way to name a file. A
-		// positional one can be anything, a path included, so only the count is logged.
-		boot.Error("invalid flags", zap.String("reason", "unexpected argument"), zap.Int("count", fs.NArg()))
+		// The gateway takes no arguments; -config is the only way to name a file. The
+		// argument itself can be anything, a path or a secret, so it is not echoed.
+		_, _ = fmt.Fprintf(d.stdout, "gateway: unexpected argument (the gateway takes none; -config names the config file)\n\n%s", helpText)
 		return exitConfig
 	}
 

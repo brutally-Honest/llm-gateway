@@ -290,22 +290,18 @@ func TestDump_Last(t *testing.T) {
 	}
 }
 
-// dumpFailure asserts dump printed exactly one dump failed line with reason, and
-// returns it.
-func dumpFailure(t *testing.T, out, reason string) map[string]any {
+// dumpFailure asserts dump printed exactly one plain dump failed line with reason (spec
+// 024 AC10), and returns it.
+func dumpFailure(t *testing.T, out, reason string) string {
 	t.Helper()
 	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
 	if len(lines) != 1 {
 		t.Fatalf("got %d lines, want 1:\n%s", len(lines), out)
 	}
-	var m map[string]any
-	if err := json.Unmarshal([]byte(lines[0]), &m); err != nil {
-		t.Fatalf("line is not JSON: %q", lines[0])
+	if !strings.HasPrefix(lines[0], "gateway dump: dump failed (") || !strings.Contains(lines[0], "reason: "+reason) {
+		t.Errorf("line = %q, want a plain dump failed line with reason %q", lines[0], reason)
 	}
-	if m["level"] != "error" || m["msg"] != "dump failed" || m["reason"] != reason {
-		t.Errorf("line = %v, want an error dump failed line with reason %q", m, reason)
-	}
-	return m
+	return lines[0]
 }
 
 // AC56: an unknown ID or a missing store exits 1 with the reason.
@@ -327,8 +323,8 @@ func TestDump_UnknownIDFails(t *testing.T) {
 			if code != exitRuntime {
 				t.Errorf("dump %v: exit code = %d, want 1", args, code)
 			}
-			if line := dumpFailure(t, out, "store not found"); line["path"] != dir {
-				t.Errorf("path = %v, want %s", line["path"], dir)
+			if line := dumpFailure(t, out, "store not found"); !strings.Contains(line, "(path: "+dir+",") {
+				t.Errorf("line %q does not name the path %s", line, dir)
 			}
 		}
 	})
@@ -466,7 +462,7 @@ func TestDump_BadArguments(t *testing.T) {
 		{"-unknown"},
 	} {
 		code, out := dump(t, dir, args...)
-		if code != exitConfig || !strings.Contains(out, `"msg":"invalid flags"`) {
+		if code != exitConfig || !strings.HasPrefix(out, "gateway dump: invalid flags") {
 			t.Errorf("dump %v: exit code %d, output %q; want 2 and invalid flags", args, code, out)
 		}
 	}
@@ -475,7 +471,7 @@ func TestDump_BadArguments(t *testing.T) {
 	}
 	var out syncBuffer
 	code := run(t.Context(), deps{args: []string{"dumpx"}, lookupEnv: func(string) (string, bool) { return "", false }, stdout: &out})
-	if code != exitConfig || !strings.Contains(out.String(), `"reason":"unexpected argument"`) {
+	if code != exitConfig || !strings.HasPrefix(out.String(), "gateway: unexpected argument") {
 		t.Errorf("gateway dumpx: exit code %d, output %q; want 2 and unexpected argument", code, out.String())
 	}
 }
