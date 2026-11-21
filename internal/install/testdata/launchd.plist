@@ -16,6 +16,7 @@
     <key>SuccessfulExit</key><false/>
   </dict>
   <key>ExitTimeOut</key><integer>30</integer>
+  <key>ThrottleInterval</key><integer>1</integer>
   <key>StandardOutPath</key><string>/Users/u/Library/Logs/llm-gateway/gateway.log</string>
   <key>StandardErrorPath</key><string>/Users/u/Library/Logs/llm-gateway/gateway.log</string>
 </dict>

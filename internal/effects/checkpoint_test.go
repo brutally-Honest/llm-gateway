@@ -275,8 +275,11 @@ func TestRoots_LearnedAndRejected(t *testing.T) {
 	if added, _ := rs.add("/home/u/a/b"); !added {
 		t.Fatal("/home/u/a/b not added")
 	}
-	if added, folded := rs.add("/home/u/a"); !added || len(folded) != 1 || folded[0] != "/home/u/a/b" {
-		t.Errorf("adding /home/u/a: added=%v folded=%v, want /home/u/a/b folded", added, folded)
+	// Stored paths are resolved, so the expected one is too: on macOS /home is a symlink
+	// to /System/Volumes/Data/home (macos-v1-retest.md B16).
+	wantFolded := resolve("/home/u/a/b")
+	if added, folded := rs.add("/home/u/a"); !added || len(folded) != 1 || folded[0] != wantFolded {
+		t.Errorf("adding /home/u/a: added=%v folded=%v, want %s folded", added, folded, wantFolded)
 	}
 	if added, _ := rs.add("/home/u/a/c"); added {
 		t.Error("a folder inside a watched one was added")

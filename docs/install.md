@@ -117,7 +117,10 @@ managed files, restarts the service and lists each file as new, updated or uncha
 the version before and after. Running it twice with nothing new changes no file.
 
 An upgrade (or any install run) restarts the gateway. For a sub-second gap (about 50–80 ms
-when measured on Linux) the gateway's ports refuse connections; Claude Code retries a
+when measured on Linux, about 0.6 s on macOS) the gateway's ports refuse connections. On
+macOS, launchd starts the gateway no sooner than 1 s after its last start (the plist's
+`ThrottleInterval`), so an install within a second of a start waits out the rest of that
+second. Claude Code retries a
 refused request on its own, so a running session carries on. Nothing in flight is lost
 silently: a model call still streaming when the restart begins gets the shutdown grace
 period, then is cut and stored as cut by the gateway.
@@ -235,6 +238,13 @@ own fix:
 | `installed, not loaded` | `systemctl --user daemon-reload && systemctl --user enable --now llm-gateway.service` | `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.llm-gateway.plist` |
 | `loaded, not running` | read `journalctl --user -u llm-gateway.service -f`, then `systemctl --user restart llm-gateway.service` | read `tail -f ~/Library/Logs/llm-gateway/gateway.log`, then `launchctl kickstart -k gui/$(id -u)/dev.llm-gateway` |
 | `running, but not started at login` | `gateway install` | `gateway install` |
+| `service is restarting after a startup error: …` | fix what the error names (often a config key); the service tries again every 10 s | the same |
+
+A gateway that fails its start under the service waits 10 s before it exits, so the
+service restarts it about every 10 s, not every second, and writes the same startup error
+to the log at most once every 10 minutes. The last error is kept in
+`~/.local/state/llm-gateway/startup-error.json` for doctor and removed once a start
+succeeds. Run by hand, outside the service, a failed start exits at once.
 
 ### Check: listeners
 Each listener answers on loopback: the API (`/healthz`), the UI (`/api/health`), the HTTP
@@ -323,7 +333,7 @@ rewrite it.
 | `install.sh: this release has no build for …` | an unsupported OS or CPU | build from source |
 | The installer asked nothing and stopped at "Proceed?" | no terminal to ask on (CI, a pipe with no tty) | run with `--yes` (and `--install-deps` to install dependencies) |
 | Preflight: a port held by another process | something else uses 7195–7199 | stop it, or change the ports in the config, then install again |
-| Preflight: a port held by an unknown process | neither `lsof` nor `ss` is on PATH, so the owner (which may be the running gateway) cannot be named | put `/usr/sbin` (macOS) or `/usr/bin` back on PATH, or stop the gateway first, then install again |
+| Preflight: a port held by an unknown process | neither `lsof` nor `ss` is on PATH, so the owner cannot be named, and the port does not answer as this gateway (a running gateway is found by its health routes and counts as free) | put `/usr/sbin` (macOS) or `/usr/bin` back on PATH to see the owner, then stop it, or change the ports in the config, and install again |
 | Preflight: no systemd user session | a container, WSL or a minimal distro | `--no-service`, then start the gateway by hand |
 | The gateway stops when you log out (Linux) | lingering is off | `loginctl enable-linger $USER` |
 | Bash commands fail with `apply-seccomp: … nested userns is capability-restricted` | Claude Code's sandbox on Ubuntu 24.04+ | see [Check: apparmor](#check-apparmor); or set `effects.network.sandbox: false` and run `gateway install` |

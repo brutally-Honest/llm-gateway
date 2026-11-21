@@ -55,3 +55,79 @@ func TestPortsUnknownHolderWording(t *testing.T) {
 	contains(t, f.out.String(), "7197 held by an unknown process")
 	lacks(t, f.out.String(), "another process")
 }
+
+// ownGatewayFake is a linux install fake with no lsof or ss on PATH and ports 7195,
+// 7197, 7198 and 7199 busy, their owner asked of the real portHolder. healthz and uiHealth
+// are the bodies the API and UI health routes give, "" for no answer.
+func ownGatewayFake(t *testing.T, healthz, uiHealth string) *fake {
+	t.Helper()
+	f := newFake(t, "linux")
+	delete(f.path, "lsof")
+	delete(f.path, "ss")
+	for _, port := range []int{7195, 7197, 7198, 7199} {
+		f.busy[port] = portHolder(f.env, port)
+	}
+	f.env.Fetch = func(url string) (string, error) {
+		switch url {
+		case "http://127.0.0.1:7197/healthz":
+			if healthz != "" {
+				return healthz, nil
+			}
+		case "http://127.0.0.1:7199/api/health":
+			if uiHealth != "" {
+				return uiHealth, nil
+			}
+		}
+		return "", os.ErrDeadlineExceeded
+	}
+	return f
+}
+
+// Spec 025 AC3: with no tool to name a port's owner, ports held by a process that
+// answers this gateway's health routes are the running gateway's, so a reinstall goes on
+// and says how the gateway was found.
+func TestPortsOwnGatewayFoundByHealth(t *testing.T) {
+	f := ownGatewayFake(t, `{"status":"ok"}`, `{"ok":true}`)
+	if code := f.install(InstallOptions{Yes: true}); code != ExitOK {
+		t.Fatalf("exit %d\n%s", code, f.out)
+	}
+	contains(t, f.out.String(), "7195, 7197, 7198, 7199 held by the running gateway")
+	contains(t, f.out.String(), "it answers its health routes")
+	lacks(t, f.out.String(), "unknown process")
+}
+
+// Spec 025 AC3: a process that does not answer as this gateway (nothing, or another
+// service's health body) keeps the ports busy with an unknown owner, and preflight fails.
+func TestPortsUnknownProcessNotTakenForGateway(t *testing.T) {
+	for name, bodies := range map[string][2]string{
+		"no answer":     {"", ""},
+		"other service": {`{"status":"healthy"}`, "ok"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := ownGatewayFake(t, bodies[0], bodies[1])
+			if code := f.install(InstallOptions{Yes: true}); code == ExitOK {
+				t.Fatalf("exit %d, want a preflight failure\n%s", code, f.out)
+			}
+			contains(t, f.out.String(), "7197 held by an unknown process")
+			lacks(t, f.out.String(), "held by the running gateway")
+		})
+	}
+}
+
+// Spec 025 AC3, research D6: right after a restart the UI holds 7199 but does not answer
+// while it warms up. The API answering is enough for all four of the gateway's ports, so
+// a second reinstall soon after the first goes on. 7196 is never the gateway's.
+func TestPortsOwnGatewayWhileUIWarmsUp(t *testing.T) {
+	f := ownGatewayFake(t, `{"status":"ok"}`, "")
+	f.busy[7196] = portHolder(f.env, 7196)
+	f.install(InstallOptions{Check: true})
+	contains(t, f.out.String(), "7196 held by an unknown process")
+	lacks(t, f.out.String(), "7199 held by an unknown process")
+	lacks(t, f.out.String(), "7195 held by an unknown process")
+
+	f = ownGatewayFake(t, `{"status":"ok"}`, "")
+	if code := f.install(InstallOptions{Yes: true}); code != ExitOK {
+		t.Fatalf("exit %d\n%s", code, f.out)
+	}
+	contains(t, f.out.String(), "7195, 7197, 7198, 7199 held by the running gateway")
+}

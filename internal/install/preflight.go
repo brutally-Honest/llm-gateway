@@ -238,15 +238,21 @@ func (p *Preflight) checkClient() Dep {
 func (p *Preflight) checkPorts() Dep {
 	d := Dep{ID: "ports", Name: "Ports 7195–7199", Required: true}
 	var busy, gw []string
+	byHealth := false
+	answers := p.gatewayAnswers()
 	for _, port := range gatewayPorts {
 		free, holder := p.env.Ports(port)
 		switch {
 		case free:
 		case isGatewayHolder(holder):
 			gw = append(gw, strconv.Itoa(port)) // the running gateway: an upgrade (spec E2)
+		case isUnknownHolder(holder) && answers(port):
+			// No tool named the owner, but this gateway answers there (spec 025 AC3).
+			gw = append(gw, strconv.Itoa(port))
+			byHealth = true
 		default:
 			if holder == "" {
-				holder = "an unknown process"
+				holder = unknownHolder
 			}
 			busy = append(busy, fmt.Sprintf("%d held by %s", port, holder))
 		}
@@ -261,12 +267,58 @@ func (p *Preflight) checkPorts() Dep {
 	d.Detail = "free on 127.0.0.1"
 	if len(gw) > 0 {
 		d.Detail = "free on 127.0.0.1 (" + strings.Join(gw, ", ") + " held by the running gateway)"
+		if byHealth {
+			d.Detail = "free on 127.0.0.1 (" + strings.Join(gw, ", ") + " held by the running gateway: " +
+				"no lsof or ss to name the owner, but it answers its health routes)"
+		}
 	}
 	return d
 }
 
 func isGatewayHolder(holder string) bool {
 	return holder == "gateway" || strings.HasPrefix(holder, "gateway ")
+}
+
+func isUnknownHolder(holder string) bool {
+	return holder == "" || strings.HasPrefix(holder, unknownHolder)
+}
+
+// The health routes and bodies of this gateway's API and UI listeners on their default
+// ports (internal/server healthz, internal/ui /api/health).
+const (
+	apiHealthURL  = "http://127.0.0.1:7197/healthz"
+	apiHealthBody = `{"status":"ok"}`
+	uiHealthURL   = "http://127.0.0.1:7199/api/health"
+	uiHealthBody  = `{"ok":true}`
+)
+
+// gatewayAnswers says, per port, whether this gateway holds it. The health routes are
+// asked once, on the first listener port: if either answers as this gateway, all four of
+// its listener ports (7195, 7197, 7198, 7199) are its own. The proxies have no health
+// route, and the UI holds its port without answering while it warms up after a restart
+// (research D6). 7196 is never the gateway's: nothing binds it.
+func (p *Preflight) gatewayAnswers() func(port int) bool {
+	var asked, ours bool
+	return func(port int) bool {
+		switch port {
+		case 7195, 7197, 7198, 7199:
+		default:
+			return false
+		}
+		if !asked {
+			asked = true
+			ours = p.answersWith(apiHealthURL, apiHealthBody) || p.answersWith(uiHealthURL, uiHealthBody)
+		}
+		return ours
+	}
+}
+
+func (p *Preflight) answersWith(url, want string) bool {
+	if p.env.Fetch == nil {
+		return false
+	}
+	body, err := p.env.Fetch(url)
+	return err == nil && strings.TrimSpace(body) == want
 }
 
 // checkAppArmor passes unless Ubuntu's unprivileged-userns restriction is on with no

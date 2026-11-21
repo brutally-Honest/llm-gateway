@@ -129,6 +129,9 @@ func probePort(e *Env, port int) (bool, string) {
 	return false, portHolder(e, port)
 }
 
+// unknownHolder starts the holder of a busy port whose owner nothing could name.
+const unknownHolder = "an unknown process"
+
 var ssUser = regexp.MustCompile(`users:\(\("([^"]+)",pid=(\d+)`)
 
 func portHolder(e *Env, port int) string {
@@ -141,7 +144,7 @@ func portHolder(e *Env, port int) string {
 		if e.GOOS == "darwin" {
 			tool = "lsof"
 		}
-		return "an unknown process (" + tool + " not found on PATH, so the owner cannot be named)"
+		return unknownHolder + " (" + tool + " not found on PATH, so the owner cannot be named)"
 	}
 	if lsofErr == nil {
 		out, _ := e.Run.Output("lsof", "-nP", "-iTCP:"+strconv.Itoa(port), "-sTCP:LISTEN", "-Fpc")
