@@ -1,5 +1,7 @@
 # LLM Gateway
 
+[![verify](https://github.com/brutally-Honest/llm-gateway/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/brutally-Honest/llm-gateway/actions/workflows/verify.yml)
+
 An observability-first LLM gateway in Go. It sits between any LLM client (Claude Code,
 Codex, …) and any LLM provider (Anthropic, OpenAI, …), forwards traffic faithfully,
 and captures what flows through: prompts, responses, tool calls, tool results, tokens
