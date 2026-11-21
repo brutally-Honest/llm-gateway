@@ -9,7 +9,7 @@ R=specs/001-e2e/research.md
 kit_of() { git log -1 --format='%(trailers:key=Kit,valueonly)' "${1:-HEAD}" | sed '/^$/d'; }
 
 # an open question to answer later, committed before the task starts
-sed -i 's/^## Open questions$/## Open questions\n- **Q1** (open) T001 — which greeting? — options: A) hello B) hi/' "$R"
+add_open_questions "$R" '- **Q1** (open) T001 — which greeting? — options: A) hello B) hi'
 git commit -q -m "docs(001-e2e): ask q1" -- "$R"
 
 $L start --session attr >/dev/null

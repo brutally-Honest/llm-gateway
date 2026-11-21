@@ -355,5 +355,5 @@ The skill gets the message right when it is written. The repo assumes it wasn't:
 - A **`commit-msg` hook** at `.githooks/commit-msg`, enabled with `git config core.hooksPath .githooks`:
   - rejects a subject that doesn't match `^(feat|fix|refactor|perf|test|docs|build|ci|chore|revert)(\([a-z0-9-]+\))!?: .+$`, ends in a period, or runs over 72 characters;
   - rejects any `Co-authored-by:` or AI-attribution trailer.
-- A **`pre-push` hook** at `.githooks/pre-push` re-runs `.githooks/commit-msg` on every commit in the pushed range, so a commit made with `git commit --no-verify` can't sneak through. There is no CI; this local gate replaces it ([ADR 0001](docs/decisions/0001-local-gate-instead-of-ci.md)).
+- A **`pre-push` hook** at `.githooks/pre-push` re-runs `.githooks/commit-msg` on every commit in the pushed range, so a commit made with `git commit --no-verify` can't sneak through. CI runs `make verify` on Linux and macOS for every PR and every push to main, beside this local gate ([ADR 0019](docs/decisions/0019-ci-on-linux-and-macos.md), which supersedes [ADR 0001](docs/decisions/0001-local-gate-instead-of-ci.md)).
 - Never bypass either with `--no-verify`.

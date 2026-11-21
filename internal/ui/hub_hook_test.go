@@ -196,7 +196,11 @@ func TestHub_HookRefreshCancelledWhenLastStreamCloses(t *testing.T) {
 }
 
 func TestHub_HookRefreshAndCommitInSameWindowSendEachChangeOnce(t *testing.T) {
-	e := newStreamEnv(t, func(h *Hub) { h.hookEvery = 150 * time.Millisecond })
+	// The window never ends on its own here: the test ends it (below), so the refresh
+	// runs after the commit and before the next one on every machine. With a 150 ms
+	// window it could fire between saving d and publishing it on a slow runner, and send
+	// d itself (each change still once, but as a refresh: spec 026 D11).
+	e := newStreamEnv(t, func(h *Hub) { h.hookEvery = 10 * time.Second })
 	e.toolSession(`{"a":1}`)
 	s := e.openRaw(e.sessionPath())
 	s.sessionFirst()
@@ -214,7 +218,16 @@ func TestHub_HookRefreshAndCommitInSameWindowSendEachChangeOnce(t *testing.T) {
 	if counts["entries:c"] != 1 || counts["exchange:a"] != 1 {
 		t.Fatalf("events = %v", counts)
 	}
-	// Nothing else follows: the next event is the next commit.
+	// The window ends: its refresh runs now, as its timer would.
+	who := sessIdent{core.PrincipalLocal, "cc", "k"}
+	e.hub.mu.Lock()
+	p := e.hub.pending[who]
+	e.hub.mu.Unlock()
+	if p == nil || !p.timer.Stop() {
+		t.Fatal("no hook refresh armed for the session")
+	}
+	e.hub.refresh(who, p)
+	// Nothing else follows, the refresh included: the next event is the next commit.
 	e.save("d", "k", "cc", 20)
 	e.parseMsgs("d", "ok", []any{"user", text("last")})
 	e.publish("d")

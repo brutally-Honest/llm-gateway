@@ -1,0 +1,86 @@
+# make verify on Linux and macOS for every PR and every push to main (spec 026, ADR 0019).
+name: verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer push to the same PR or branch cancels the run it supersedes.
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      # The oldest Node the project supports (ADR 0013: 22.12 or later), so a newer-only
+      # API fails here. Read by setup-node and checked in "Show tool versions".
+      NODE_MAJOR: "22"
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The Go version comes from go.mod, so there is no second pin to drift (ADR 0019).
+      # The action caches the module and build caches, keyed on go.sum.
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+
+      # make web-test needs node 22.12 or later (ADR 0013).
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_MAJOR }}
+
+      - name: Install jq and shellcheck (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q jq shellcheck
+
+      # macOS's /bin/bash is 3.2, which cannot parse the agent-loop kit's scripts (B8).
+      # Only bash's own folder goes first on PATH, so `#!/usr/bin/env bash` finds it.
+      # Putting all of $(brew --prefix)/bin first would also put the image's own node
+      # ahead of setup-node's (spec 026 D12). jq and shellcheck are found through it
+      # anyway, since the runner already has it on PATH.
+      - name: Install bash, jq and shellcheck (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install bash jq shellcheck
+          echo "$(brew --prefix bash)/bin" >> "$GITHUB_PATH"
+
+      # Fails if PATH hands make verify a node other than setup-node's (spec 026 D12).
+      - name: Show tool versions
+        run: |
+          go version
+          node --version
+          got=$(node -p 'process.versions.node.split(".")[0]')
+          [ "$got" = "$NODE_MAJOR" ] || {
+            echo "::error::node on PATH is $(node --version) at $(command -v node), want major $NODE_MAJOR from setup-node"
+            exit 1
+          }
+          bash -c 'echo "bash $BASH_VERSION at $(command -v bash)"'
+          jq --version
+          shellcheck --version | sed -n 's/^version: //p'
+
+      # setup-lint skips the download when ./bin holds the pinned version, so the key is
+      # the Makefile, where GOLANGCI_LINT_VERSION lives.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: bin/golangci-lint
+          key: golangci-lint-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+
+      - run: make setup
+
+      - run: make verify

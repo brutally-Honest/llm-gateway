@@ -28,11 +28,21 @@ assert_not_contains() { # haystack needle [what]
 	case $1 in *"$2"*) fail "${3:-output} contains '$2': $1" ;; *) pass ;; esac
 }
 
+# add_open_questions <file> <line>... — inserts the lines right under "## Open questions".
+# Portable: GNU sed's `sed -i 's/…\n…/'` neither edits in place nor makes newlines on BSD sed.
+add_open_questions() {
+	local f=$1; shift
+	Q=$(printf '%s\n' "$@") awk '{ print } $0 == "## Open questions" { print ENVIRON["Q"] }' "$f" > "$f.new" &&
+		mv "$f.new" "$f"
+}
+
 # mk_repo — creates a temp git repo holding a copy of the kit, cds into it, and sets
 # TMP_REPO. Removed on exit.
 mk_repo() {
 	TMP_REPO=$(mktemp -d "${TMPDIR:-/tmp}/al-test.XXXXXX") || exit 1
 	trap 'rm -rf "$TMP_REPO"' EXIT
+	# git reports the physical path; on macOS $TMPDIR is under /var, a symlink to /private/var
+	TMP_REPO=$(cd "$TMP_REPO" && pwd -P) || exit 1
 	cd "$TMP_REPO" || exit 1
 	git init -q -b main
 	git config user.name test
@@ -56,6 +66,7 @@ mk_e2e() {
 	local bundle="$KIT_SRC/scripts/tests/fixtures/e2e/repo.bundle" line
 	[ -f "$bundle" ] || { echo "  FAIL missing $bundle — build it with fixtures/e2e/make.sh" >&2; exit 1; }
 	TMP_REPO=$(mktemp -d "${TMPDIR:-/tmp}/al-e2e.XXXXXX") || exit 1
+	TMP_REPO=$(cd "$TMP_REPO" && pwd -P) || exit 1   # physical path, as in mk_repo
 	E2E_TMPS="${E2E_TMPS:-} $TMP_REPO"   # a test may build several; all go on exit
 	# shellcheck disable=SC2064
 	trap "rm -rf $E2E_TMPS" EXIT

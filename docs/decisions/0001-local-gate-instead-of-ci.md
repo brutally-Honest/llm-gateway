@@ -1,9 +1,12 @@
 ---
-status: approved
+status: superseded
 date: 2026-09-23
 ---
 
 # 0001 — Local gate instead of CI
+
+> Superseded by [ADR 0019](0019-ci-on-linux-and-macos.md), which adds CI on Linux and macOS
+> beside the local gate. The pre-push gate and the golangci-lint binary install still stand.
 
 ## Context
 The gateway is a local, single-user tool: one developer, one machine, one remote.
