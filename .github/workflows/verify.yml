@@ -24,6 +24,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     env:
+      # The oldest Node the project supports (ADR 0013: 22.12 or later), so a newer-only
+      # API fails here. Read by setup-node and checked in "Show tool versions".
+      NODE_MAJOR: "22"
       HOMEBREW_NO_AUTO_UPDATE: "1"
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
     steps:
@@ -38,7 +41,7 @@ jobs:
       # make web-test needs node 22.12 or later (ADR 0013).
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22"
+          node-version: ${{ env.NODE_MAJOR }}
 
       - name: Install jq and shellcheck (Linux)
         if: runner.os == 'Linux'
@@ -47,17 +50,26 @@ jobs:
           sudo apt-get install -y -q jq shellcheck
 
       # macOS's /bin/bash is 3.2, which cannot parse the agent-loop kit's scripts (B8).
-      # Homebrew's bash goes first on PATH, so `#!/usr/bin/env bash` finds it.
+      # Only bash's own folder goes first on PATH, so `#!/usr/bin/env bash` finds it.
+      # Putting all of $(brew --prefix)/bin first would also put the image's own node
+      # ahead of setup-node's (spec 026 D12). jq and shellcheck are found through it
+      # anyway, since the runner already has it on PATH.
       - name: Install bash, jq and shellcheck (macOS)
         if: runner.os == 'macOS'
         run: |
           brew install bash jq shellcheck
-          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix bash)/bin" >> "$GITHUB_PATH"
 
+      # Fails if PATH hands make verify a node other than setup-node's (spec 026 D12).
       - name: Show tool versions
         run: |
           go version
           node --version
+          got=$(node -p 'process.versions.node.split(".")[0]')
+          [ "$got" = "$NODE_MAJOR" ] || {
+            echo "::error::node on PATH is $(node --version) at $(command -v node), want major $NODE_MAJOR from setup-node"
+            exit 1
+          }
           bash -c 'echo "bash $BASH_VERSION at $(command -v bash)"'
           jq --version
           shellcheck --version | sed -n 's/^version: //p'
