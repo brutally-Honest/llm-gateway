@@ -103,3 +103,21 @@ macOS from here. The macOS job is the first check there (AC7).
   binary that reports the rc. Builds are `-trimpath` and `CGO_ENABLED=0` from the same
   commit, so only the version string differs. `VERSION` is passed explicitly for both,
   because the two tags share a commit and `git describe` would have to choose one.
+- D10 (2026-11-21) — The first macOS run (PR #58, run 44862083462) needed three kit-test
+  fixes. This corrects the Evidence section's "No test needed a skip": that was checked
+  on Linux only. With Homebrew's bash 5.3 first on PATH, B8's parse error is gone and
+  lint, `make test` and `make web-test` all passed. `make kit-test` failed 3 of its
+  scripts, all on test fixtures, none in the kit's scripts:
+  - `test_answer_colon.sh` and `test_commit_attribution.sh` seeded research.md with
+    GNU-only `sed -i 's/…\n…/'`. BSD sed takes the argument after `-i` as a backup
+    suffix and does not turn `\n` into a newline, so no question was written, and
+    `answer` rightly said "Q1 is not an open question". The fix is
+    `add_open_questions` in `helpers.sh` (awk, portable). Its output is byte-identical
+    to the old GNU sed's on Linux.
+  - `test_harness.sh` compared the `mktemp` path with `git rev-parse --show-toplevel`.
+    macOS's `$TMPDIR` is under `/var`, a symlink to `/private/var`, and git reports the
+    physical path (the same shape as B16). The fix: `mk_repo` and `mk_e2e` take
+    `pwd -P` of the temp dir. Reproduced on Linux first with `TMPDIR` behind a symlink:
+    it failed the same way before the fix and passed after.
+  Assertions are unchanged, and nothing is skipped. B8 itself (bash 3.2) stays on the
+  roadmap: CI runs the kit under bash 5, not 3.2.
