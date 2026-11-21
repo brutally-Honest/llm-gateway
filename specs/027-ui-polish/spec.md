@@ -26,3 +26,8 @@ accepted change; decisions are in `research.md`.
   led by the story, a model chip per turn, prompt and answer cards with one Preview/Raw
   switch and a copy icon, file diffs expanding in place in Files, every fact said once,
   loaders while data loads, and an even scrollbar strip on both sides so nothing shifts.
+- **C6a** — Lean restyled as neutral glass: near-black (#0a0a0b) or near-white page, green
+  as its only accent, frosted cards, small corners, layered shadows and Geist; Stark keeps
+  violet on the same dark page. Sessions list: the day's totals as tiles, a token bar per
+  row, a whole row opens its session; an open dialog holds the page and closes on a click
+  outside.

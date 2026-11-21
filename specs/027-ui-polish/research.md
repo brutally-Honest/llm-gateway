@@ -109,4 +109,31 @@
   surfaces (pure black dark, near-white light), green as the only accent, frosted glass cards
   with a top highlight, small radii, layered shadows; Stark keeps violet.
 
+- **D24** (2026-11-21) C6a — Contrast for glass: the contrast test reads `#rrggbbaa` tokens,
+  blends each over the page and over a card, and checks text against both; it checks
+  on-accent at every stop of a `*-grad` token, and every text colour on `glass` and
+  `glass-strong` for a style that paints glass (Lean). Text colours and the page stay
+  opaque. Option A, approved by Karthik; probed with planted failures.
+- **D25** (2026-11-21) C6a — Lean's colours sit in `:root[data-style="lean"][data-theme=…]`
+  over the shared bases, which stay Stark's, so Stark renders as before. Lean: dark page
+  #0a0a0b (from mockup v9's #000, lightened a step on request), light #fafafa, accent green
+  (#34d399 dark, #055f46 light), gradient on the primary button only. Stark's dark page
+  moved to the same #0a0a0b.
+- **D26** (2026-11-21) C6a — The day's totals are tiles (both styles; layout, not colour);
+  each row has a token bar whose segments take the server's raw counts as flex-grow. No
+  status column (it would undo C1's glyph); sparklines are C6b (they need per-hour counts
+  from the server).
+- **D27** (2026-11-21) C6a — A whole row opens its session: the title link's `::after`
+  stretches over the row, so it stays one real link (keyboard, screen readers, new tab) and
+  `TestWeb_ActionsAreButtonsOrLinks` holds; a row click handler was rejected.
+- **D28** (2026-11-21) C6a — Dialogs get no backdrop-filter, filter or transform: any of
+  them makes the dialog the containing block of its fixed click-outside scrim, which then
+  covers only the dialog (seen after the first Lean pass). Dialogs use near-solid
+  `glass-strong`. `html:has(dialog:modal)` hides the page's overflow so the page behind does
+  not scroll; the reserved gutters keep it from shifting.
+- **D29** (2026-11-21) C6a — Built by a Sonnet agent from mockup v9 and reviewed: its token
+  bar read the formatted counts and lived inside the cost text (fixed: raw counts, own
+  element); tiles rendered ~300 px tall because the head was a wrapping flex column (fixed:
+  no wrap).
+
 ## Open questions
