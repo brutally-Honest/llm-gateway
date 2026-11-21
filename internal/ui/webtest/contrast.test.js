@@ -48,6 +48,11 @@ const ratio = (a, b) => {
 const TEXTS = ["text", "hi", "muted", "accent", "ok", "bad", "warn", "add", "del", "model", "toolc"];
 const BACKS = ["bg", "card", "panel", "panel2", "accent-bg", "ok-bg", "bad-bg", "warn-bg", "add-bg", "del-bg", "tool-bg"];
 const PAIRS = [...TEXTS.flatMap((fg) => BACKS.map((bg) => [fg, bg])), ["on-accent", "accent-strong"]];
+// spec 027 C6a: the see-through surfaces that hold text (the header and key bar, the dialogs).
+// A style that paints with glass defines them and every text colour is checked on them; Lean
+// must define them, so the check cannot be skipped by leaving one out.
+const GLASS = ["glass", "glass-strong"];
+const GLASS_STYLES = ["lean"];
 
 // spec 027 C2: each theme is one base; a style may override some of its colours. What a
 // page shows is the base with the style's overrides on top, so every style × theme pair is
@@ -70,6 +75,11 @@ test("allTextPairsMeet4_5InBothThemes", () => {
       assert.ok(t[fg] && t[bg], `${name}: missing ${fg} or ${bg}`);
       assert.equal(alpha(t[fg]), 1, `${name}: text colour ${fg} is opaque`);
       for (const back of shown(t, bg)) assert.ok(ratio(t[fg], back) >= 4.5, `${name}: ${fg} on ${bg} (${back}) is ${ratio(t[fg], back).toFixed(2)}`);
+    }
+    for (const bg of GLASS) {
+      if (GLASS_STYLES.some((st) => name.startsWith(`${st} `))) assert.ok(t[bg], `${name}: missing ${bg}`);
+      if (!t[bg]) continue;
+      for (const fg of TEXTS) for (const back of shown(t, bg)) assert.ok(ratio(t[fg], back) >= 4.5, `${name}: ${fg} on ${bg} (${back}) is ${ratio(t[fg], back).toFixed(2)}`);
     }
     // a gradient that holds text (the primary button) passes at every stop
     for (const [key, stops] of Object.entries(t).filter(([k]) => k.endsWith("-grad"))) {
