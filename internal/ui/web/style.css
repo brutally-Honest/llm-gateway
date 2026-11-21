@@ -11,6 +11,7 @@
   --add: #4cc38a; --add-bg: #0f2519; --del: #f58f92; --del-bg: #2a1416;
   --model: #92c0ee; --toolc: #c3b8fb; --tool-bg: #1d1836;
   --scrim: #000000c0;
+  --gutter-dim: #020203;
   --live-on: #34d399; --live-off: #f87171;
   --card-solid: #0e0e0f; --tok-in: #92c0ee; --tok-out: #a594f9; --tok-cache: #525257;
   --shadow: 0 1px 0 #ffffff0a inset, 0 1px 2px #00000099, 0 8px 24px #00000080;
@@ -24,6 +25,7 @@
   --add: #0e7a4c; --add-bg: #e9f6ef; --del: #c42e38; --del-bg: #fcefef;
   --model: #1f5aa6; --toolc: #5b4fd6; --tool-bg: #f0eefd;
   --scrim: #11121566;
+  --gutter-dim: #9b9b9d;
   --live-on: #059669; --live-off: #dc2626;
   --card-solid: #ffffff; --tok-in: #1f5aa6; --tok-out: #5b4fd6; --tok-cache: #b4b3bc;
   --shadow: 0 0 0 1px #1012180a, 0 1px 2px #10121814, 0 4px 14px #1012180f;
@@ -54,6 +56,7 @@
   --bg-glow-1: #10b9810d; --bg-glow-2: #14b8a606;
   --blur: saturate(180%) blur(20px);
   --scrim: #000000a0;
+  --gutter-dim: #040404;
   --shadow: 0 0 0 1px #00000066, 0 1px 0 #ffffff21 inset, 0 1px 2px #00000066, 0 6px 14px -6px #00000080;
   --shadow-lg: 0 0 0 1px #00000073, 0 1px 0 #ffffff26 inset, 0 2px 4px #00000059, 0 12px 24px -8px #00000080, 0 32px 64px -24px #0000008c;
 }
@@ -70,6 +73,7 @@
   --bg-glow-1: #10b9811a; --bg-glow-2: #14b8a60d;
   --blur: saturate(180%) blur(14px);
   --scrim: #09090b66;
+  --gutter-dim: #9a9a9a;
   --shadow: 0 1px 0 #ffffffe6 inset, 0 1px 2px #09090b0f, 0 4px 10px -2px #09090b0f, 0 10px 22px -8px #09090b1a;
   --shadow-lg: 0 1px 0 #ffffffe6 inset, 0 1px 2px #09090b12, 0 6px 14px -4px #09090b17, 0 22px 44px -14px #09090b2e;
 }
@@ -146,6 +150,10 @@ body { min-height: 100vh; }
 /* while a modal dialog is open the page behind it stays put: it does not scroll under the
    dimmed backdrop (027 C6a) */
 html:has(dialog:modal), html:has(dialog.call-details[open]) { overflow: hidden; }
+/* the strips at the page's edges show only the root's flat colour, so the call panel's
+   dimming cannot reach them: while it is open they take the dimmed colour, the scrim over
+   the page colour beside them, worked out per theme as --gutter-dim */
+html:has(dialog.call-details[open]) { background: var(--gutter-dim); }
 a { color: var(--accent); }
 code, pre, kbd, .mono { font-family: var(--font-mono); }
 code { font-size: 12.5px; }
