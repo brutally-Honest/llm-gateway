@@ -97,7 +97,7 @@ test("rendersTurnsTabsAndDialogFromTheView", async () => {
   const links = withClass(page.el, "call-link").map((a) => a.href);
   assert.deepEqual(links.slice(0, 4), ["#/sessions/s1/call/e3", "#/sessions/s1/call/e4", "#/sessions/s1/call/e5", "#/sessions/s1/call/e6"]);
   assert.match(story, /Read the thinking/);
-  assert.match(story, /Final answer Preview Raw Fixed the retry\./);
+  assert.match(story, /Final answer Fixed the retry\./, "the answer has no switch of its own; its copy control is an icon (027 C4)");
   // tool lines: state as glyph and word (✓ alone), summary, lines, first error
   const t1 = byId(page.el, "tool-t1");
   assert.match(textOf(t1), /✗ failed Bash npm test/);
@@ -111,22 +111,25 @@ test("rendersTurnsTabsAndDialogFromTheView", async () => {
   assert.match(textOf(btw), /Seen between turns 1 and 2/);
   assert.ok(byId(btw, "eff-4"));
   // hooks-only turn
-  assert.match(textOf(byId(page.el, "turn-3")), /No model calls captured\. The hooks saw:.*\? unmatched Bash ls/s);
-  // turn list: one entry per turn and one for the between block
-  assert.equal(page.entries().length, 4);
+  assert.match(textOf(byId(page.el, "turn-3")), /The hooks saw:.*\? unmatched Bash ls/s);
+  assert.doesNotMatch(textOf(byId(page.el, "turn-3")), /No model calls captured/, "said once, by the model chip (027 C4)");
+  // turn list: one entry per turn; the between block is in the story, not the list (027 C4)
+  assert.equal(page.entries().length, 3);
 
-  // the right card: counts and rows from the view's lists
+  // the tabs (027 C4: the story first, then the old right card) with counts and rows from the view
   const tabs = withClass(page.el, "tab");
-  assert.deepEqual(tabs.map((t) => `${t.textContent}${t.children[0].textContent}`), ["Files2", "Commands1", "Sites1", "Context"]);
+  assert.deepEqual(tabs.map((t) => `${t.textContent}${t.children[0].textContent}`), ["Story", "Files2", "Commands1", "Sites1", "Context"]);
+  assert.equal(byId(page.el, "tp-story").hidden, false, "the story is the tab shown first");
+  assert.ok(byId(byId(page.el, "tp-story"), "turn-1"), "the turns are in the Story tab");
   // a changed file in the Files tab is its name and its lines alone; the folder, turn and
   // attribution are in its dialog, the full path on hover (research 2026-11-13)
   const fileRows = withClass(byId(page.el, "tp-files"), "row").filter((r) => r.className.split(" ").includes("file"));
   const rows = fileRows.map((r) => textOf(r).replace(/\s+/g, " ").trim());
-  assert.deepEqual(rows, ["a.js +2 −1", "notes.md"]);
+  assert.deepEqual(rows, ["▸ a.js +2 −1", "▸ notes.md"]);
   assert.equal(fileRows[0].title, "/w/src/a.js");
   assert.match(textOf(byId(page.el, "eff-1")).replace(/\s+/g, " "), /● named/);
   assert.match(textOf(byId(page.el, "eff-4")).replace(/\s+/g, " "), /○ outside any tool call/);
-  tabs[3].fire("click");
+  tabs[4].fire("click");
   assert.equal(byId(page.el, "tp-context").hidden, false);
   assert.equal(byId(page.el, "tp-files").hidden, true);
   assert.deepEqual(withClass(page.el, "bars").flatMap((b) => b.children.map((a) => a.style.transform)), ["scaleY(0.167)", "scaleY(1.000)"]);
@@ -307,11 +310,12 @@ test("hooksOnlyTurnOpensItsHookTools", () => {
   withClass(t3, "chip")[1].fire("click");
   assert.deepEqual(withClass(byId(t3, "cp-3-tools"), "frow").map((r) => textOf(r).replace(/\s+/g, " ").trim()), ["hooks ? unmatched Bash ls 0.4s"]);
   withClass(t3, "chip")[0].fire("click");
-  assert.match(textOf(byId(t3, "cp-3-all")), /No model calls captured\. The hooks saw: 1 tool call/);
+  assert.match(textOf(byId(t3, "cp-3-all")), /The hooks saw: 1 tool call/);
 });
 
 // The prompt and the answer render as Markdown by default, with the raw text a click away;
-// the choice is kept in the browser (017 AC13).
+// the choice is kept in the browser (017 AC13). Spec 027 C4: one switch above the story sets
+// it for every prompt and answer; the cards have no switch of their own.
 test("promptAndAnswerSwitchBetweenPreviewAndRaw", () => {
   const store = new Map();
   globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
@@ -324,11 +328,15 @@ test("promptAndAnswerSwitchBetweenPreviewAndRaw", () => {
     assert.ok(md, "Preview by default");
     assert.equal(textOf(byTag(md, "strong")[0]).trim(), "Done.");
     assert.equal(byTag(md, "li").length, 2);
-    const raw = withClass(answer, "seg").find((b) => b.dataset.mode === "raw");
+    assert.equal(withClass(answer, "seg").length, 0, "no switch on the card");
+    const bar = withClass(page.el, "story-bar")[0];
+    const raw = withClass(bar, "seg").find((b) => b.dataset.mode === "raw");
     raw.fire("click");
     assert.equal(raw.attrs["aria-pressed"], "true");
     assert.equal(withClass(answer, "raw")[0].textContent, "**Done.**\n\n- one\n- two", "Raw is the stored text as is");
     assert.equal(withClass(answer, "md").length, 0);
+    const prompt = withClass(byId(page.el, "turn-2"), "prompt")[0];
+    assert.ok(withClass(prompt, "raw")[0], "every prompt and answer follows the one switch");
     assert.equal(store.get("gw.textMode"), "raw", "the choice is kept");
     const later = mount(v).page;
     assert.ok(withClass(withClass(byId(later.el, "turn-1"), "answer")[0], "raw")[0], "a new page starts in the kept mode");
@@ -369,9 +377,14 @@ test("showInTurnOpensTheFoldAroundTheRow", async () => {
 // Each turn names the models its calls used, from the view (AC4 as amended).
 test("turnHeaderNamesItsModels", () => {
   const { page } = mount();
+  // spec 027 C4: one chip per model under the turn's header; a turn the hooks alone saw says
+  // none was captured; a turn with neither has no model row
   const head = withClass(byId(page.el, "turn-2"), "th")[0];
-  assert.equal(withClass(head, "mdl")[0].textContent, "m1, m2");
+  assert.deepEqual(withClass(head, "mdl").map((m) => m.textContent), ["m1", "m2"]);
   assert.equal(withClass(withClass(byId(page.el, "turn-1"), "th")[0], "mdl").length, 0, "no models, no tag");
+  assert.equal(withClass(withClass(byId(page.el, "turn-1"), "th")[0], "mdls").length, 0, "no model row");
+  const hooks = withClass(withClass(byId(page.el, "turn-3"), "th")[0], "mdl");
+  assert.deepEqual(hooks.map((m) => [m.textContent, m.className]), [["none captured", "mdl none"]]);
 });
 
 // The Context chart is one bar per turn: its height the context at the turn's last call,
@@ -482,4 +495,56 @@ test("backgroundTurnIsMarkedAndNotCountedAsAPrompt", () => {
   assert.equal(withClass(withClass(byId(page.el, "turn-1"), "th")[0], "bg").length, 0, "a typed prompt has no tag");
   assert.ok(withClass(page.el, "toc-item").some((e) => textOf(e).includes("background task")));
   assert.equal(withClass(page.el, "sub").find((e) => /prompt/.test(e.textContent)).textContent, "1 prompt");
+});
+
+// spec 027 C4: a prompt and an answer each have a copy icon, last in their header row, that
+// copies the text as it was stored, says so for a moment, and says when the browser refuses.
+test("promptAndAnswerCopyTheirText", async () => {
+  const { page } = mount();
+  const copied = [];
+  const realNav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { clipboard: { writeText: async (t) => { copied.push(t); } } } });
+  try {
+    const turn = byId(page.el, "turn-1");
+    const [promptCopy, answerCopy] = withClass(turn, "copy");
+    assert.equal(promptCopy.textContent, "", "an icon, no word");
+    assert.equal(promptCopy.attrs["aria-label"], "Copy");
+    assert.equal(promptCopy.parentNode.children.at(-1), promptCopy, "the icon ends its header row");
+    promptCopy.fire("click");
+    await settle();
+    assert.deepEqual(copied, ["prompt 1"]);
+    assert.equal(promptCopy.attrs["aria-label"], "Copied");
+    assert.equal(promptCopy.dataset.state, "copied");
+    answerCopy.fire("click");
+    await settle();
+    assert.equal(copied[1], "Fixed the retry.");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { clipboard: { writeText: async () => { throw new Error("denied"); } } } });
+    const [again] = withClass(byId(page.el, "turn-2"), "copy");
+    again.fire("click");
+    await settle();
+    assert.equal(again.attrs["aria-label"], "Copy failed");
+    assert.equal(again.dataset.state, "failed");
+  } finally {
+    if (realNav) Object.defineProperty(globalThis, "navigator", realNav);
+    else delete globalThis.navigator;
+  }
+});
+
+// spec 027 C4: until the view arrives the page shows loaders, in the story and in the turn
+// list, read out as statuses; a note ("building session…") keeps the loader, an error
+// replaces it, and the view replaces both.
+test("sessionPageShowsLoadersUntilItsView", () => {
+  const page = createSessionPage({});
+  const loaders = () => withClass(page.el, "loading");
+  assert.equal(loaders().length, 2, "one in the story, one in the turn list");
+  assert.ok(loaders().every((l) => l.attrs.role === "status"));
+  assert.match(textOf(page.el), /Loading the session…/);
+  assert.match(textOf(page.el), /Loading turns…/);
+  page.setStatus("building session…");
+  assert.match(textOf(page.el), /building session…\s+Loading the session…/);
+  page.setStatus("boom", "error");
+  assert.doesNotMatch(textOf(page.el), /Loading the session…/);
+  page.setStatus("");
+  page.setView(fixture());
+  assert.equal(loaders().length, 0, "the view replaces the loaders");
 });

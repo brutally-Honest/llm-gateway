@@ -169,7 +169,7 @@ func TestWeb_NoHTMLInjectionSinks(t *testing.T) {
 func TestWeb_ServesHarnessBadgeRendering(t *testing.T) {
 	files := webFiles(t)
 	want := map[string][]string{
-		"story.js":         {"markText(l.state, ok)", "l.agent", "t.hook_tools", "No model calls captured. The hooks saw:"},
+		"story.js":         {"markText(l.state, ok)", "l.agent", "t.hook_tools", "The hooks saw:"},
 		"dialog.js":        {"det.input_differs", "det.hook_input", "det.hook_omitted_bytes", "det.hooks"},
 		"sessions-page.js": {"hooks_only", "hooks only"},
 	}

@@ -1,4 +1,5 @@
-import { button, bytes, clock, dur, el, num, plural } from "./fmt.js";
+import { button, bytes, clock, dur, el, num, plural, skeleton } from "./fmt.js";
+import { diffNode } from "./dialog.js";
 
 // The right card (spec 016 AC9, AC10): the session's Files, Commands, Sites and Context
 // as four tabs. Every row, count and sentence comes from the view; rows open the details
@@ -62,25 +63,85 @@ const lines = (a, d) => {
   return s;
 };
 
+// sumLine is a tab's one-line summary, under its lead (027 C4: it was the overview's card).
+function sumLine(...parts) {
+  const p = el("p", "sum");
+  p.append(...parts);
+  return p;
+}
+
+const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : "");
+const where = (e) => e.where || (e.turn ? `turn ${e.turn}` : "");
+
+// changeBody is one change of a file, filled once loaded: its diff, else its content when
+// no earlier copy was kept, else why there is none (the dialog's file view says the same).
+function changeBody(e, path, ctx) {
+  const box = el("div", "change-body");
+  const note = (t) => box.replaceChildren(el("p", "muted-note", t));
+  const fail = (err) => note(`Could not load it: ${(err && err.message) || "request failed"}`);
+  if (e.has_diff && ctx.loadDiff) {
+    box.replaceChildren(skeleton("Loading the diff…", 4, "lines"));
+    Promise.resolve().then(() => ctx.loadDiff(e.id)).then((d) => {
+      box.replaceChildren(d.diff ? diffNode(d.diff, path) : el("p", "muted-note", "No difference."));
+      if (d.truncated) box.append(el("p", "muted-note", "The diff is cut short."));
+    }, fail);
+  } else if (e.has_copy && ctx.loadContent) {
+    box.replaceChildren(skeleton("Loading the content…", 4, "lines"));
+    Promise.resolve().then(() => ctx.loadContent(e.id)).then((c) => {
+      if (c.valid === false) return note("Binary content: not shown.");
+      box.replaceChildren(el("p", "muted-note", "No earlier copy: the full content."), el("pre", "content", c.content || ""));
+    }, fail);
+  } else if (e.change === "deleted") {
+    note("The file was deleted.");
+  } else {
+    note("No copy of this version is kept, so there is no diff.");
+  }
+  return box;
+}
+
 function filesPanel(f, ctx) {
   const out = [el("p", "lead", f.coverage)];
+  if (f.sum) out.push(sumLine(el("span", "a", `+${f.sum.added ?? 0}`), " ", el("span", "d", `−${f.sum.removed ?? 0}`), ` lines · ${f.sum.read ?? 0} read`));
   if (f.empty) {
     out.push(el("p", "muted-note pad", f.empty));
     return out;
   }
   out.push(el("h3", "", `Changed · ${(f.changed || []).length}`));
   // a changed file is its name and its lines added and removed (its size when the lines
-  // are not known); the folder, change, turn and attribution are in its dialog, and the
-  // full path is on hover (research 2026-11-13)
+  // are not known), the full path on hover (research 2026-11-13); it expands in place to
+  // its changes and their diffs (027 C4), and "Details" opens its dialog
   out.push(rows((f.changed || []).map((it) => {
     const last = it.last || {};
     const [, name] = split(it.path);
     const right = it.lines ? lines(it.added, it.removed) : el("span", "r", last.size !== undefined && last.size !== null ? bytes(last.size) : "");
-    const li = el("li");
-    const b = button("row file", undefined, () => ctx.open && ctx.open(`file:${it.full_path}`, b));
+    const li = el("li", "file-item");
+    const body = el("div", "file-changes");
+    body.id = `fc-${it.full_path}`;
+    let filled = false;
+    const set = (open) => {
+      body.hidden = !open;
+      b.setAttribute("aria-expanded", String(open));
+      if (open) ctx.openFiles.add(it.full_path);
+      else ctx.openFiles.delete(it.full_path);
+      if (!open || filled) return;
+      filled = true;
+      for (const e of it.changes && it.changes.length ? it.changes : [last]) {
+        const head = el("div", "change-head");
+        head.append(el("span", "", `${cap(e.change)}${where(e) ? ` in ${where(e)}` : ""}`), el("span", "muted", e.at ? clock(e.at) : ""));
+        if (e.by) head.append(el("span", "muted", e.by));
+        body.append(head, changeBody(e, it.path, ctx));
+      }
+      const more = button("linkish small", "Details", () => ctx.open && ctx.open(`file:${it.full_path}`, more));
+      body.append(more);
+    };
+    const b = button("row file", undefined, () => set(body.hidden));
     b.title = it.full_path;
-    b.append(t1(name), right);
-    li.append(b);
+    b.setAttribute("aria-controls", body.id);
+    const chev = el("span", "chev", "▸");
+    chev.setAttribute("aria-hidden", "true");
+    b.append(chev, t1(name), right);
+    li.append(b, body);
+    set(ctx.openFiles.has(it.full_path));
     return li;
   })));
   out.push(el("h3", "", `Read · ${(f.read || []).length}`));
@@ -101,6 +162,12 @@ function filesPanel(f, ctx) {
 
 function commandsPanel(c, ctx) {
   const out = [el("p", "lead", c.coverage)];
+  if (c.sum) {
+    // the longest command on one line, cut with an ellipsis; the whole command on hover
+    const longest = el("span", "one-line", c.sum.longest ? `longest ${dur(c.sum.longest_ms)} · ${c.sum.longest}` : "none ran");
+    if (c.sum.longest) longest.title = c.sum.longest;
+    out.push(sumLine(longest));
+  }
   if (c.empty) {
     out.push(el("p", "muted-note pad", c.empty));
     return out;
@@ -118,6 +185,7 @@ function commandsPanel(c, ctx) {
 
 function sitesPanel(s, ctx) {
   const out = [el("p", "lead", s.coverage)];
+  if (s.sum) out.push(sumLine(plural(s.sum.connections ?? 0, "connection")));
   if (s.empty) out.push(el("p", "muted-note pad", s.empty));
   else {
     // a site is its host alone, like a file's row; connections, bytes, turns and tools
@@ -203,6 +271,8 @@ function chart(c, ctx, pick) {
 
 function contextPanel(c, ctx) {
   const out = [el("p", "lead", c.coverage)];
+  const tk = c.tokens;
+  if (tk) out.push(sumLine(`Tokens: ${num(tk.input)} input · ${num(tk.output)} output · ${num(tk.cache_write)} cache write · ${num(tk.cache_read)} cache read${tk.incomplete ? " (some calls did not report)" : ""}`));
   const facts = el("div", "mfacts ctxfacts");
   const fact = (l, v) => {
     const f = el("div", "mfact");
@@ -234,17 +304,30 @@ function contextPanel(c, ctx) {
 }
 
 const PANELS = { files: filesPanel, commands: commandsPanel, sites: sitesPanel, context: contextPanel };
-const SOURCE = { files: (v) => v.files, commands: (v) => v.commands, sites: (v) => v.sites, context: (v) => v.context };
+// each tab draws its part of the view and, under its lead, the overview's summary of it (027 C4)
+const ov = (v) => v.overview || {};
+const SOURCE = {
+  files: (v) => v.files && { ...v.files, sum: ov(v).files },
+  commands: (v) => v.commands && { ...v.commands, sum: ov(v).commands },
+  sites: (v) => v.sites && { ...v.sites, sum: ov(v).sites },
+  context: (v) => v.context && { ...v.context, tokens: ov(v).tokens },
+};
 
+// ctx.lead, when given, is a first tab the page owns: { id, label, count(view), el }. Its
+// panel is ctx.lead.el, never redrawn here (spec 027 C4: the story is the first tab).
 export function createSideCard(ctx = {}) {
-  const root = el("aside", "sidebar card");
-  root.setAttribute("aria-label", "What this session touched");
+  // the files expanded in place stay expanded when a live update redraws the Files tab
+  ctx = { ...ctx, openFiles: new Set() };
+  const lead = ctx.lead || null;
+  const specs = lead ? [lead, ...TABS] : TABS;
+  const root = el(lead ? "section" : "aside", lead ? "sesstabs" : "sidebar card");
+  root.setAttribute("aria-label", lead ? "The session" : "What this session touched");
   const list = el("div", "tabs");
   list.setAttribute("role", "tablist");
-  list.setAttribute("aria-label", "Files, commands, sites and context");
-  const scroll = el("div", "scroll");
+  list.setAttribute("aria-label", lead ? `${lead.label}, files, commands, sites and context` : "Files, commands, sites and context");
+  const scroll = el("div", lead ? "tabpanels" : "scroll");
   root.append(list, scroll);
-  let selected = "files";
+  let selected = lead ? lead.id : "files";
   const tabs = new Map();
   const panels = new Map();
   const sigs = new Map();
@@ -261,7 +344,7 @@ export function createSideCard(ctx = {}) {
     }
   }
 
-  TABS.forEach((spec, i) => {
+  specs.forEach((spec, i) => {
     const btn = button("tab", spec.label, () => select(spec.id, true));
     btn.id = `tab-${spec.id}`;
     btn.setAttribute("role", "tab");
@@ -270,10 +353,10 @@ export function createSideCard(ctx = {}) {
     btn.append(count);
     // arrow keys move between tabs (roving tabindex)
     btn.addEventListener("keydown", (e) => {
-      const k = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: TABS.length - 1 }[e.key];
+      const k = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: specs.length - 1 }[e.key];
       if (k === undefined) return;
       if (e.preventDefault) e.preventDefault();
-      select(TABS[(k + TABS.length) % TABS.length].id, true);
+      select(specs[(k + specs.length) % specs.length].id, true);
     });
     list.append(btn);
     tabs.set(spec.id, { btn, count, spec });
@@ -281,6 +364,7 @@ export function createSideCard(ctx = {}) {
     panel.id = `tp-${spec.id}`;
     panel.setAttribute("role", "tabpanel");
     panel.setAttribute("aria-labelledby", btn.id);
+    if (spec === lead) panel.append(lead.el);
     scroll.append(panel);
     panels.set(spec.id, panel);
   });
@@ -293,6 +377,11 @@ export function createSideCard(ctx = {}) {
     update(view) {
       if (!view) return;
       for (const [id, t] of tabs) {
+        if (t.spec === lead) {
+          const n = lead.count(view);
+          t.count.textContent = n === null || n === undefined ? "" : String(n);
+          continue;
+        }
         const data = SOURCE[id](view) || {};
         const n = t.spec.count({ ...view, files: view.files || {}, commands: view.commands || {}, sites: view.sites || {} });
         t.count.textContent = n === null ? "" : String(n);

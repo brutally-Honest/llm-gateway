@@ -1,13 +1,15 @@
-import { button, clock, dur, el, num, plural } from "./fmt.js";
+import { button, clock, dur, el, num, plural, skeleton } from "./fmt.js";
 import { LABEL_LONG, totalCost } from "./cost.js";
 import { createDialog } from "./dialog.js";
 import { createSideCard } from "./side-card.js";
-import { betweenNode, reveal, turnNode } from "./story.js";
+import { betweenNode, reveal, setTextMode, textMode, turnNode } from "./story.js";
 
-// The session page (spec 016): the turn list on the left, the story in the middle, the
-// session's files, commands, sites and context on the right, one details dialog. It
-// renders the server's view (GET /api/sessions/{id}/view and the stream's view events)
-// and computes nothing: every count, time, label and place comes from the view.
+// The session page (spec 016, laid out as chapters in spec 027 C4): one page that scrolls,
+// the turns as contents on the left (they stay in view), then the overview and the tabs
+// Story · Files · Commands · Sites · Context, the story being the turns as chapters; one
+// details dialog. It renders the server's view (GET /api/sessions/{id}/view and the
+// stream's view events) and computes nothing: every count, time, label and place comes
+// from the view.
 
 // reconcile makes parent's children exactly `want`, in order, touching only what differs.
 function reconcile(parent, want) {
@@ -39,7 +41,7 @@ export function mergeView(held, ev) {
 // details dialog (spec 017 AC5).
 export function createSessionPage(ctx = {}) {
   const root = el("div", "cols");
-  const toc = el("nav", "toc card");
+  const toc = el("nav", "toc");
   toc.setAttribute("aria-label", "Turns");
   const tocHead = el("div", "colhead");
   const tocSub = el("span", "sub");
@@ -48,13 +50,13 @@ export function createSessionPage(ctx = {}) {
   const tocList = el("ol");
   tocScroll.append(tocList);
   toc.append(tocHead, tocScroll);
-  // the story scrolls inside its own card, as the turn list and the side card do
-  const storyCard = el("section", "storycol card");
+  // the main column: the overview, then the tabs, the story first; the page scrolls
+  const storyCard = el("div", "storycol");
+  const heroSlot = el("div", "hero-slot");
   const story = el("div", "story");
   story.setAttribute("role", "region");
   story.setAttribute("aria-label", "Story");
   story.tabIndex = -1;
-  storyCard.append(story);
   const status = el("div", "page-status");
   root.append(toc, storyCard);
 
@@ -78,6 +80,15 @@ export function createSessionPage(ctx = {}) {
   function place(id, { flash = true } = {}) {
     const target = globalThis.document.getElementById ? globalThis.document.getElementById(id) : null;
     if (!target) return false;
+    // a place in the story is shown on the Story tab
+    if (side && side.selected() !== "story") {
+      for (let n = target; n; n = n.parentNode) {
+        if (n === story) {
+          side.select("story");
+          break;
+        }
+      }
+    }
     const section = typeof target.closest === "function" ? target.closest(".turn, .btwentry") : null;
     if (section) setCurrentById(section.id, true);
     reveal(target);
@@ -99,8 +110,35 @@ export function createSessionPage(ctx = {}) {
     callHref: ctx.callHref,
     place,
   });
-  const side = createSideCard({ open: (key, opener) => dialog.open(key, opener), callHref: ctx.callHref, noteOpener: ctx.noteOpener });
-  root.append(side.el, dialog.el);
+  // the story is the first tab, with no count: the turn list says how many prompts (027 C4)
+  const side = createSideCard({
+    open: (key, opener) => dialog.open(key, opener),
+    callHref: ctx.callHref,
+    noteOpener: ctx.noteOpener,
+    loadDiff: ctx.loadDiff,
+    loadContent: ctx.loadContent,
+    lead: { id: "story", label: "Story", count: () => null, el: story },
+  });
+  // one Preview / Raw switch for every prompt and answer in the story (027 C4)
+  const storyBar = el("div", "story-bar");
+  const modes = el("div", "mode");
+  modes.setAttribute("role", "group");
+  modes.setAttribute("aria-label", "Prompts and answers: preview or raw");
+  const markMode = () => {
+    for (const b of modes.children) b.setAttribute("aria-pressed", String(b.dataset.mode === textMode()));
+  };
+  for (const [m, word] of [["preview", "Preview"], ["raw", "Raw"]]) {
+    const b = button("seg", word, () => {
+      setTextMode(m);
+      markMode();
+    });
+    b.dataset.mode = m;
+    modes.append(b);
+  }
+  markMode();
+  storyBar.append(el("span", "muted-note", "Prompts and answers as"), modes);
+  storyCard.append(heroSlot, side.el);
+  root.append(dialog.el);
 
   // open handles a target from the overview, the story or a list: a tool, file or site
   // opens the dialog; a call opens the call details dialog; a turn, between block or several group
@@ -176,7 +214,6 @@ export function createSessionPage(ctx = {}) {
 
   function drawTurnList() {
     const items = [];
-    const between = new Map((view.between || []).map((b) => [b.after, b]));
     const next = [];
     const entry = (id, cls) => {
       const b = button(cls, undefined, () => select(next.findIndex((x) => x.id === id)));
@@ -186,13 +223,7 @@ export function createSessionPage(ctx = {}) {
       items.push(li);
       return b;
     };
-    const btwEntry = (b) => {
-      const btn = entry(betweenId(b.after), "toc-item btw");
-      const n = el("span", "n", "○");
-      n.setAttribute("aria-hidden", "true");
-      btn.append(n, el("span", "p", `${b.effects.length === 1 ? "you edited" : "edits"} ${b.effects.map((e) => e.path).join(", ")}`));
-    };
-    if (between.has(0)) btwEntry(between.get(0));
+    // an edit between turns is in the story and in Needs a look, not in the turn list (027 C4)
     for (const t of view.turns || []) {
       const b = entry(turnId(t.n), "toc-item");
       const meta = el("span", "m");
@@ -203,7 +234,6 @@ export function createSessionPage(ctx = {}) {
       if (c.failed) meta.append(el("span", "bad", `✗ ${c.failed} failed`));
       if (t.end) meta.append(el("span", t.end.word === "ended by error" ? "bad" : "", `${t.end.glyph} ${t.end.word}`));
       b.append(el("span", "n", t.n ? String(t.n) : "·"), el("span", "p clamp", t.prompt || "(no prompt text)"), meta);
-      if (t.n > 0 && between.has(t.n)) btwEntry(between.get(t.n));
     }
     entries = next;
     tocList.replaceChildren(...items);
@@ -247,17 +277,7 @@ export function createSessionPage(ctx = {}) {
     };
     const time = o.time || {};
     kpi("Time", dur(time.clock_ms ?? 0), el("span", "s", `model ${dur(time.model_ms ?? 0)} · tools ${dur(time.tool_ms ?? 0)} · waiting ${dur(time.wait_ms ?? 0)} · between turns ${dur(time.between_ms ?? 0)}`));
-    const files = o.files || {};
-    const fs = el("span", "s");
-    fs.append(el("span", "a", `+${files.added ?? 0}`), " ", el("span", "d", `−${files.removed ?? 0}`), ` lines · ${files.read ?? 0} read`);
-    kpi("Files changed", num(files.changed ?? 0), fs, "files");
-    const cmds = o.commands || {};
-    // the longest command on one line, cut with an ellipsis; the whole command on hover
-    const longest = el("span", "s one-line", cmds.longest ? `longest ${dur(cmds.longest_ms)} · ${cmds.longest}` : "none ran");
-    if (cmds.longest) longest.title = cmds.longest;
-    kpi("Commands", num(cmds.count ?? 0), longest, "commands");
-    const sites = o.sites || {};
-    kpi("Sites", num(sites.count ?? 0), el("span", "s", plural(sites.connections ?? 0, "connection")), "sites");
+    // Files, Commands and Sites are tabs below with their counts and lines (027 C4)
     kpi("Context", num((o.context || {}).last), el("span", "s", "tokens in the last call"), "context");
     box.append(kpis);
 
@@ -281,9 +301,9 @@ export function createSessionPage(ctx = {}) {
       box.append(attn);
     }
 
+    // the token counts are in the Context tab (027 C4); the cost and side calls stay here
     const foot = el("div", "foot");
     const tk = o.tokens || {};
-    foot.append(el("span", "", `Tokens: ${num(tk.input)} input · ${num(tk.output)} output · ${num(tk.cache_write)} cache write · ${num(tk.cache_read)} cache read${tk.incomplete ? " (some calls did not report)" : ""}`));
     const cost = totalCost(tk.cost);
     const costLine = el("span", "cost", `${LABEL_LONG} cost: ${cost.text}`);
     costLine.title = `${cost.title}\nSide calls included.`;
@@ -318,9 +338,9 @@ export function createSessionPage(ctx = {}) {
     const nextBtw = new Map();
     const between = new Map();
     for (const b of view.between || []) between.set(b.after, b);
-    const want = [status];
+    const want = [storyBar, status];
     hero = heroNode();
-    want.push(hero);
+    heroSlot.replaceChildren(hero);
     const btw = (after) => {
       const b = between.get(after);
       if (!b) return;
@@ -345,22 +365,32 @@ export function createSessionPage(ctx = {}) {
     reconcile(story, want);
   }
 
-  const atBottom = () => typeof story.scrollHeight === "number" && story.scrollHeight - story.scrollTop - story.clientHeight <= 8;
+  // the page scrolls: a live session follows its end when the window was at the bottom
+  const pageEl = () => globalThis.document && globalThis.document.scrollingElement;
+  const atBottom = () => {
+    const p = pageEl();
+    return Boolean(p) && typeof p.scrollHeight === "number" && p.scrollHeight - p.scrollTop - p.clientHeight <= 8;
+  };
 
   page.setView = (next) => {
     const follow = view !== null && atBottom();
     view = next;
+    if (loader) loader.remove();
     drawTurnList();
     drawStory();
     side.update(view);
     dialog.update(view);
-    if (follow) story.scrollTop = story.scrollHeight;
+    if (follow) pageEl().scrollTop = pageEl().scrollHeight;
     onScroll();
   };
   page.applyEvent = (ev) => page.setView(mergeView(view, ev));
+  let loader = null; // the story's loader, until the view arrives
   page.setStatus = (text, kind = "note") => {
     status.replaceChildren();
     if (text) status.append(el("p", `page-note${kind === "error" ? " error" : ""}`, text));
+    // until the view arrives the page keeps its loader, under any note ("building session…")
+    loader = !view && kind !== "error" ? skeleton("Loading the session…", 4, "cards") : null;
+    if (loader) status.append(loader);
     if (!view) reconcile(story, [status]);
   };
   page.moveTurn = (delta) => select(current + delta);
@@ -376,6 +406,9 @@ export function createSessionPage(ctx = {}) {
   page.dialog = dialog;
   page.entries = () => entries;
   page.current = () => current;
-  reconcile(story, [status]);
+  const waiting = el("li");
+  waiting.append(skeleton("Loading turns…", 6, "rows"));
+  tocList.replaceChildren(waiting);
+  page.setStatus("");
   return page;
 }

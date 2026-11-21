@@ -1,6 +1,6 @@
 import { timeElement } from "./entries.js";
 import { COVERAGE, attributionText, changeGlyph, formatBytes, outcomeGlyph } from "./effects.js";
-import { formatDuration } from "./fmt.js";
+import { formatDuration, skeleton } from "./fmt.js";
 import { card, note, pageBox, pageHead, startText, tableWithHead, unassignedRow } from "./sessions-page.js";
 
 // The unassigned connections page (spec 014 AC15, restyled by spec 017 AC12): the coverage
@@ -111,7 +111,7 @@ export function createUnassignedPage(ctx) {
       box.replaceChildren(pageHead("Unassigned connections", loading || error ? [] : unassignedStats(items)));
       box.append(note("muted", "Connections made while no session, or more than one, was active."), note("muted effects-coverage", COVERAGE));
       if (error) return box.append(card(note("error", error)));
-      if (loading) return box.append(card(note("empty", "Loading…")));
+      if (loading) return box.append(card(skeleton("Loading…", 4, "rows")));
       const conns = items.filter((e) => e.kind === "net_conn");
       const files = items.filter((e) => e.kind === "file_change" || e.kind === "file_read");
       if (!conns.length && !files.length) return box.append(card(note("empty", "No unassigned connections.")));

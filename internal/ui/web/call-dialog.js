@@ -1,4 +1,4 @@
-import { button, clock, dur, el, num, signed } from "./fmt.js";
+import { button, clock, dur, el, num, signed, skeleton } from "./fmt.js";
 import { textBlock, toolNode } from "./story.js";
 import { LABEL, LABEL_LONG, callCost, costLines } from "./cost.js";
 
@@ -191,8 +191,8 @@ export function createCallDialog(ctx = {}) {
       fact("Model", f.model),
       fact("Duration", f.dur_ms === null || f.dur_ms === undefined ? "—" : dur(f.dur_ms)),
       fact("Started", f.start ? clock(f.start) : "—"),
-      fact("Ended", f.stop.word, f.stop.bad ? "bad" : ""),
-      fact("Thread", f.thread.label),
+      // a call in trouble says its error once, in the Health alert (027 C4)
+      d.health.ok ? fact("Ended", f.stop.word, f.stop.bad ? "bad" : "") : null,
       // a call in trouble says its status in the Health alert at the top of the body
       d.health.ok ? fact("Status", d.health.status) : null,
       costFact(d.context.cost),
@@ -245,7 +245,7 @@ export function createCallDialog(ctx = {}) {
     if (h.ok) return null;
     const ul = el("ul", "call-health");
     for (const i of h.items) ul.append(el("li", `tone-${i.tone}`, i.text));
-    const s = section("Health", h.status, ul);
+    const s = section("Health", "", ul);
     s.className = "ms call-alert";
     return s;
   }
@@ -264,7 +264,8 @@ export function createCallDialog(ctx = {}) {
     const cc = callCost(c);
     const rows = costLines(c);
     const sub = c && c.source ? `at ${c.source}'s published API prices, not what was charged` : "at published API prices, not what was charged";
-    if (!rows.length) return section(`${LABEL_LONG} cost`, sub, el("p", "muted-note", `${cc.text} · ${cc.title.split("\n").pop()}`));
+    // with no breakdown the top line already says the cost and why (its hover): no section
+    if (!rows.length) return null;
     const table = el("table", "cost-lines");
     const head = el("tr");
     for (const h of ["Tokens", "Count", "Price", "Amount"]) {
@@ -387,7 +388,8 @@ export function createCallDialog(ctx = {}) {
     const box = el("div", "call-raw");
     box.append(raw.request ? link(raw.request, "Raw request body", true) : el("span", "muted-note", raw.request_missing || "Request body: not stored"));
     box.append(raw.response ? link(raw.response, "Raw response stream", true) : el("span", "muted-note", raw.response_missing || "Response body: not stored"));
-    box.append(link(raw.headers, "Headers"), link(raw.page, "Full exchange page"));
+    // Headers opened the same page as the full exchange page, scrolled down (027 C4)
+    box.append(link(raw.page, "Full exchange page"));
     return section("Raw", "the stored bodies and headers, unparsed", box);
   }
 
@@ -417,7 +419,7 @@ export function createCallDialog(ctx = {}) {
       kick.textContent = "Model call";
       title.textContent = "Call";
       subt.textContent = "";
-      top.replaceChildren(el("p", "muted-note", got.state === "loading" ? "Loading call…" : `Call details unavailable: ${got.error}`));
+      top.replaceChildren(got.state === "loading" ? skeleton("Loading call…", 5, "cards") : el("p", "muted-note", `Call details unavailable: ${got.error}`));
       body.replaceChildren(rawFor(got.id));
     } else {
       replyFit = () => {};
@@ -428,7 +430,8 @@ export function createCallDialog(ctx = {}) {
         ["Cost", costSection(d.context.cost)],
         ["What it saw", sawSection(d)],
         ["Thinking", thinkingSection(d)],
-        ["Response", responseSection(d)],
+        // a call that failed has no reply: the Health alert already says so
+        ["Response", d.health.ok || !d.response.unavailable ? responseSection(d) : null],
         [`Tools · ${tools}`, toolsSection(d)],
         ["Raw", rawSection(d.raw)],
       ].filter(([, s]) => s);

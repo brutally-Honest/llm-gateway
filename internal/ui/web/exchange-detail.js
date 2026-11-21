@@ -2,6 +2,7 @@ import { getBody } from "./api.js";
 import { timeElement } from "./entries.js";
 import { card, note, pageBox, tableWithHead } from "./sessions-page.js";
 import { copyButton } from "./tool-card.js";
+import { skeleton } from "./fmt.js";
 
 // The full exchange page (spec 013, restyled by spec 017 AC12): one stored exchange in the
 // sessions list's column — its title and status as glyph and word, its facts as labelled
@@ -97,7 +98,7 @@ function bodySection(id, part, stored, captureTruncated) {
   d.addEventListener("toggle", async () => {
     if (!d.open || loaded) return;
     loaded = true;
-    const notice = el("p", "muted", "Loading...");
+    const notice = skeleton("Loading the body…", 4, "lines");
     holder.append(notice);
     try {
       const { text, truncated } = await getBody(id, part);
@@ -131,7 +132,7 @@ export function createExchangePage() {
     render({ exchange: x, error = "", focus = "" }) {
       box.replaceChildren();
       if (error) return box.append(card(note("error", error)));
-      if (!x) return box.append(card(note("empty", "Loading...")));
+      if (!x) return box.append(card(skeleton("Loading the exchange…", 5, "rows")));
       const head = el("div", "sp-head");
       const st = statusOf(x);
       const line = el("p", "stats");

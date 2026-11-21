@@ -18,35 +18,36 @@ function rule(sel) {
   return out;
 }
 
-// The session page fills the window below the header in three columns: the turn list, the
-// story and the right card. Only the story and the two side lists scroll (spec 016 AC3,
-// mockups/v4-story.html); the story ends at its last turn, with no empty space after it
-// (Karthik, 2026-11-13).
-test("storyScrollsAloneBetweenTheTwoCards", () => {
-  const body = rule('body[data-page="session"]');
-  assert.equal(body.height, "100vh");
-  assert.equal(body.overflow, "hidden");
+// The session page is one page that scrolls (spec 027 C4, replacing spec 016 AC3's three
+// scrolling columns with Karthik's OK, 2026-11-21): the turns as contents on the left stay
+// in view, the main column holds the overview and the tabs, the story first; the tab bar
+// stays under the header. Nothing in the story scrolls on its own, and the story ends at its
+// last turn, with no empty space after it (Karthik, 2026-11-13).
+test("sessionPageIsOneScrollWithContentsInView", () => {
+  assert.doesNotMatch(css, /body\[data-page="session"\] \{[^}]*(height: 100vh|overflow: hidden)/, "the window scrolls, not columns");
   const cols = rule(".cols");
   assert.equal(cols.display, "grid");
-  assert.equal(cols["grid-template-areas"], '"toc story side"');
-  assert.equal(cols.height, "calc(100vh - var(--head-h))");
-  assert.equal(rule(".story").overflow, "auto");
-  assert.equal(rule(".toc, .storycol, .sidebar").overflow, "hidden", "the story sits in a card like the two side columns");
-  assert.match(rule(".scroll").overflow, /auto/);
+  assert.equal(cols["grid-template-areas"], '"toc story"');
+  assert.equal(cols.height, undefined, "the page grows with its story");
+  const toc = rule(".toc");
+  assert.equal(toc.position, "sticky");
+  assert.equal(toc["align-self"], "start");
+  const story = rule(".story");
+  assert.equal(story.overflow, undefined, "the story does not scroll inside a box");
+  assert.equal(story["max-height"], undefined);
+  assert.equal(rule(".sesstabs > .tabs").position, "sticky");
   assert.ok(!/\.story::after/.test(css), "no empty space under the last turn");
 });
 
-// Narrower windows fall back to one scrolling page with the turn list sticky on the left;
-// below 760 px the story and the right card stack.
+// Narrower windows give the contents less room; below 760 px they go and the story is alone.
 test("narrowWindowFallsBackToOnePage", () => {
   const mid = css.match(/@media \(max-width: 1080px\) \{([\s\S]*?)\n\}/);
   assert.ok(mid, "style.css has a 1080px media block");
-  assert.match(mid[1], /body\[data-page="session"\] \{ height: auto; overflow: auto; \}/);
-  assert.match(mid[1], /\.toc \{ position: sticky;/);
-  assert.match(mid[1], /\.story \{ overflow: visible; \}/);
+  assert.match(mid[1], /\.cols \{ grid-template-columns: 15rem minmax\(0, 1fr\);/);
   const narrow = css.match(/@media \(max-width: 760px\) \{([\s\S]*?)\n\}/);
   assert.ok(narrow, "style.css has a 760px media block");
-  assert.match(narrow[1], /grid-template-areas: "story" "side"/);
+  assert.match(narrow[1], /grid-template-areas: "story"/);
+  assert.match(narrow[1], /\.toc \{ display: none; \}/);
 });
 
 // The header and the key bar can wrap to two lines, so the shell measures them and
@@ -149,4 +150,13 @@ test("sessionColumnKeepsItsMinimumAt1440", () => {
   assert.equal(rule(".sp-list td.tokens .cost")["white-space"], "nowrap", "and never breaks inside");
   // wider, every count cell stays on one line
   assert.equal(rule(".sp-list td.work, .sp-list td.tools, .sp-list td.changes, .sp-list td.dur, .sp-list td.tokens")["white-space"], "nowrap");
+});
+
+// spec 027 C4 (Karthik, 2026-11-21): nothing shifts sideways when a scrollbar comes or goes:
+// the page and every box that scrolls on its own keep room for their scrollbar.
+test("scrollbarsNeverShiftTheLayout", () => {
+  assert.equal(rule("html")["scrollbar-gutter"], "stable both-edges", "the page, with a matching strip on the left");
+  assert.equal(rule(".scroll")["scrollbar-gutter"], "stable", "the turn list");
+  assert.equal(rule(".mb")["scrollbar-gutter"], "stable", "a dialog's body");
+  assert.equal(rule(".cols")["grid-template-columns"], "20rem minmax(0, 1fr)", "the turn list is 20rem wide");
 });

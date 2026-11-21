@@ -144,11 +144,12 @@ test("callDialogIsModalWithAFixedTop", async () => {
     assert.match(textOf(body), /all done/, "later sections scroll too");
     // the top links each section of the body, in order, and a link scrolls to its section
     const jumps = byTag(withClass(top, "call-jump")[0], "button");
-    assert.deepEqual(jumps.map((b) => b.textContent), ["Context", "Cost", "What it saw", "Response", "Raw"]);
+    // no Cost link: with no breakdown the top line says the cost (027 C4)
+    assert.deepEqual(jumps.map((b) => b.textContent), ["Context", "What it saw", "Response", "Raw"]);
     const sections = byTag(body, "section");
     let scrolled = null;
-    sections[3].scrollIntoView = (o) => { scrolled = o; };
-    jumps[3].fire("click");
+    sections[2].scrollIntoView = (o) => { scrolled = o; };
+    jumps[2].fire("click");
     assert.deepEqual(scrolled, { block: "start" }, "Response scrolls to the top of the one scroll");
 
     const scrim = withClass(h.root, "call-scrim")[0];
@@ -261,7 +262,9 @@ const flat = (h) => h.text().replace(/:\s+/g, ": ");
 test("callDialogShowsFactsAndContext", async () => {
   const h = await openOne(detail("b"));
   const t = h.text();
-  for (const re of [/Model m1/, /Duration 1\.0s/, /Ended end turn/, /Thread main/, /Context 160/]) assert.match(t, re);
+  for (const re of [/Model m1/, /Duration 1\.0s/, /Ended end turn/, /Context 160/]) assert.match(t, re);
+  // the thread is said once, under the title (027 C4)
+  assert.doesNotMatch(textOf(withClass(h.root, "call-top")[0]), /Thread/);
   assert.match(t, /Model call · turn 1/);
   assert.match(t, /Call #2/);
   assert.match(t, /2 of 3 · main/);
@@ -457,12 +460,12 @@ test("callDialogHealthAndRaw", async () => {
   const h = await openOne(sick);
   for (const re of [/client disconnected/, /reply stopped/, /Gateway error: upstream_timeout/]) assert.match(h.text(), re);
   // spec 027 C3: a call in trouble says its status once, in the Health alert
-  assert.match(textOf(withClass(h.root, "call-alert")[0]), /^ ?Health ?200 OK/);
+  assert.match(textOf(withClass(h.root, "call-alert")[0]), /^\s*Health\s+The client disconnected/, "the alert lists what went wrong, nothing before it");
   assert.doesNotMatch(textOf(withClass(h.root, "call-top")[0]), /Status/);
   assert.equal(withClass(h.root, "tone-bad").length, 2);
   const hrefs = byTag(h.root, "a").map((a) => a.href);
   for (const want of ["/api/exchanges/b/body?part=request", "/api/exchanges/b/body?part=response", "#/exchanges/b"]) assert.ok(hrefs.includes(want), want);
-  assert.match(h.text(), /Headers/);
+  assert.doesNotMatch(h.text(), /Headers/, "no Headers link: it opened the full exchange page too (027 C4)");
   assert.match(h.text(), /Full exchange page/);
   // spec 027 C3: trouble is said first, above Context; a healthy call has no Health section,
   // only its status in the top line
@@ -529,7 +532,7 @@ test("sideCallIsNotRed", async () => {
   const d = detail("a", { turn: 0, facts: { model: "m1", dur_ms: 100, start: "", stop: { word: "429 Too Many Requests" }, thread: { kind: "side", label: "quota probe" }, ctx: 10 } });
   const h = await openOne(d);
   assert.match(h.text(), /Side call/);
-  assert.match(h.text(), /Thread quota probe/);
+  assert.match(h.text(), /1 of 3 · quota probe/);
   assert.match(h.text(), /429 Too Many Requests/);
   assert.equal(withClass(h.root, "bad").length, 0, "not marked bad");
 });

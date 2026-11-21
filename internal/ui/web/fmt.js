@@ -47,6 +47,21 @@ export function el(tag, cls, text) {
   return e;
 }
 
+// skeleton is what a part of the page shows while its data loads (027 C4): one line saying
+// what is coming, read out as a status, over a few shimmering bars of the size of the
+// rows to come. cls adds a shape ("rows", "lines", "cards").
+export function skeleton(label, bars = 3, cls = "") {
+  const box = el("div", `loading${cls ? ` ${cls}` : ""}`);
+  box.setAttribute("role", "status");
+  box.append(el("p", "muted-note", label));
+  for (let i = 0; i < bars; i++) {
+    const bar = el("div", "skel");
+    bar.setAttribute("aria-hidden", "true");
+    box.append(bar);
+  }
+  return box;
+}
+
 // button builds a real button that runs onClick.
 export function button(cls, text, onClick) {
   const b = el("button", cls, text);
