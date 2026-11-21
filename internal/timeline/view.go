@@ -271,8 +271,21 @@ type Turn struct {
 	Loose      []EffectLine `json:"loose,omitempty"`
 	Answer     string       `json:"answer,omitempty"`
 	AnswerCall int          `json:"answer_call,omitempty"`
-	atNS       int64
+	// Figure is how the turn's work is drawn between its prompt and answer (027 C4b):
+	// FigureBoxes, one column per model call with its tool calls under it, for a short
+	// turn; FigureList, one line per call in the All panel, for a long one; empty when
+	// there is nothing to draw.
+	Figure string `json:"figure,omitempty"`
+	atNS   int64
 }
+
+// The turn figures, and the most a turn may hold and still be drawn as boxes.
+const (
+	FigureBoxes   = "boxes"
+	FigureList    = "list"
+	figureMaxCall = 5
+	figureMaxBox  = 12
+)
 
 // TurnCounts are a turn's chips (017 AC14); Calls counts its model calls, sub-agents'
 // included.

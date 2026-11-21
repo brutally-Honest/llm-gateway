@@ -636,3 +636,24 @@ test("changedFilesSwitchBetweenByFileAndByTurn", () => {
   one.files.by_turn = [{ label: "Turn 1", turn: 1, files: one.files.changed }];
   assert.equal(withClass(byId(mount(one).page.el, "tp-files"), "seg").length, 0);
 });
+
+// 027 C4b: a turn the server marks "boxes" draws a column per model call with its tool
+// calls under it, each box opening what it names; a "list" turn draws no figure.
+test("shortTurnIsDrawnCallByCall", async () => {
+  const v = fixture();
+  v.turns[0].figure = "boxes";
+  v.turns[1].figure = "list";
+  const { page } = mount(v);
+  const flow = withClass(byId(page.el, "turn-1"), "flow");
+  assert.equal(flow.length, 1);
+  const cols = withClass(flow[0], "fcol");
+  assert.deepEqual(cols.map((c) => withClass(c, "fcall").map(textOf).join("").trim()), ["#3 1.0s", "#4 1.0s", "#5 1.0s"]);
+  assert.deepEqual(cols.map((c) => withClass(c, "ftool").length), [1, 2, 0]);
+  const bash = withClass(cols[0], "ftool")[0];
+  assert.match(bash.className, /\bbad\b/, "a failed tool call is marked");
+  assert.equal(withClass(cols[0], "fcall")[0].href, "#/sessions/s1/call/e3");
+  bash.fire("click");
+  await settle();
+  assert.equal(page.dialogOpen(), true, "a tool box opens the tool's details");
+  assert.equal(withClass(byId(page.el, "turn-2"), "flow").length, 0);
+});

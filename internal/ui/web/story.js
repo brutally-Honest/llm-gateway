@@ -440,6 +440,40 @@ const CHIPS = [
   { id: "failed", bad: true, text: (c) => c.failed && `✗ ${c.failed} failed`, panel: (t, ctx) => frows(walkTurn(t).tools.filter((x) => x.l.chip === "failed").map((x) => toolRow(x, ctx)), "Nothing failed.") },
 ];
 
+// figureNode draws a short turn's work (027 C4b): one column per model call, its "#n" and
+// time on top and the tool calls it asked for under it, columns in order left to right.
+// The server picks the turn's figure; a long turn has none here and reads in its All panel,
+// one line per call. Every box opens what it names.
+function figureNode(t, ctx) {
+  if (t.figure !== "boxes") return null;
+  const ol = el("ol", "flow");
+  ol.setAttribute("aria-label", `Turn ${t.n}, call by call`);
+  for (const s of t.steps || []) {
+    const tools = s.tools || [];
+    const bad = s.errored;
+    const col = el("li", "fcol");
+    const call = callLink(ctx, s.exchange_id, "", `fbox fcall${bad ? " bad" : ""}`);
+    call.append(el("b", "", `#${s.n}`), el("span", "", bad ? `✗ ${s.status || "failed"}` : dur(s.dur_ms)));
+    call.title = `Call #${s.n}: ${s.errored ? s.status || "failed" : `${s.did} for ${dur(s.dur_ms)}`}`;
+    col.append(call);
+    if (s.agent) col.append(el("span", "fagent", s.agent));
+    for (const l of tools) {
+      const failed = l.chip === "failed";
+      const b = button(`fbox ftool${failed ? " bad" : ""}`, undefined, () => run(ctx, { kind: "tool", id: l.id }, b));
+      // the state is its glyph alone; its word leads the box's name and tooltip
+      const si = el("span", `si ${l.chip || ""}`.trim(), markText(l.state, true));
+      si.setAttribute("aria-hidden", "true");
+      b.append(si, el("span", "fn", l.name));
+      if (l.summary) b.append(el("code", "", l.summary));
+      b.setAttribute("aria-label", [l.state && l.state.word, l.name, l.summary].filter(Boolean).join(" "));
+      b.title = [l.state && l.state.word, l.name, l.summary, l.sub ? `sub-agent ${l.sub.label} · ${plural(l.sub.calls, "model call")}` : ""].filter(Boolean).join(" · ");
+      col.append(b);
+    }
+    ol.append(col);
+  }
+  return ol;
+}
+
 // chipsNode is a turn's chips and their panels: one open at a time, the selected chip
 // marked, the choice kept across live redraws (AC14–AC16, E10). The "All" panel is built
 // at once, since "Show in turn" finds rows in it; the others when first opened.
@@ -490,7 +524,10 @@ function chipsNode(t, ctx) {
   }
   // a row the page shows (Show in turn) sits in the All panel: open it there
   folds.set(panelOf(CHIPS[0]), () => select("all"));
-  box.append(bar, holder);
+  const figure = figureNode(t, ctx);
+  box.append(bar);
+  if (figure) box.append(figure);
+  box.append(holder);
   select(CHIPS.map((c) => c.id).find((id) => chips.some((b) => b.dataset.chip === id) && ctx && ctx.isOpen && ctx.isOpen(key(id))) || null, false);
   return box;
 }

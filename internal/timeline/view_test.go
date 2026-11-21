@@ -1034,3 +1034,36 @@ func TestView_FilesByTurnSplitsAFileAcrossTurns(t *testing.T) {
 	}
 	eq(t, "a.js groups", strings.Join(got, ","), "Turn 1:1,Turn 2:1")
 }
+
+// 027 C4b: a turn is drawn as boxes while its main calls and their tool calls fit, as one
+// line per call beyond that; a hooks-only turn or one with no call draws nothing.
+func TestView_TurnFigure(t *testing.T) {
+	v := seedFixture(true).view(t, true)
+	eq(t, "fixture turn 1", v.Turns[1].Figure, timeline.FigureBoxes)
+	steps := func(calls, tools int) []timeline.Step {
+		out := make([]timeline.Step, calls)
+		for i := 0; i < tools; i++ {
+			out[i%calls].Tools = append(out[i%calls].Tools, timeline.ToolLine{})
+		}
+		return out
+	}
+	for _, c := range []struct {
+		name        string
+		calls, tool int
+		hooks       bool
+		want        string
+	}{
+		{"no calls", 0, 0, false, ""},
+		{"hooks only", 1, 0, true, ""},
+		{"one call", 1, 0, false, timeline.FigureBoxes},
+		{"five calls, twelve boxes", 5, 7, false, timeline.FigureBoxes},
+		{"six calls", 6, 0, false, timeline.FigureList},
+		{"thirteen boxes", 5, 8, false, timeline.FigureList},
+	} {
+		turn := &timeline.Turn{Steps: steps(max(c.calls, 1), c.tool), HooksOnly: c.hooks}
+		if c.calls == 0 {
+			turn.Steps = nil
+		}
+		eq(t, c.name, timeline.TurnFigureOf(turn), c.want)
+	}
+}
