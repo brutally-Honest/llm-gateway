@@ -133,3 +133,97 @@ func TestToday_SessionsCountHooksOnlyActivity(t *testing.T) {
 		t.Fatalf("today sessions = %v calls = %v, want 2 and 1", m["sessions"], m["calls"])
 	}
 }
+
+// nowAt sets the clock the handler reads, seconds after baseTime.
+func (e *digestEnv) nowAt(sec int) {
+	e.d.Now = func() time.Time { return baseTime.Add(time.Duration(sec) * time.Second) }
+	e.h = Handler(e.d)
+}
+
+func hourly(t *testing.T, m map[string]any) (calls, sessions []float64, h map[string]any) {
+	t.Helper()
+	h = m["hourly"].(map[string]any)
+	f := func(k string) []float64 {
+		var out []float64
+		for _, v := range h[k].([]any) {
+			out = append(out, v.(float64))
+		}
+		return out
+	}
+	return f("calls"), f("sessions"), h
+}
+
+func eqInts(got, want []float64) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// 027 C6b: calls per whole hour from since, side calls included; the last bucket is the
+// hour holding now.
+func TestTodayHourly_CallsPerBucketSideCallsIncluded(t *testing.T) {
+	e := withRules(t)
+	const h = 3600
+	e.call("a", 10, 0, 1, "user:one")
+	e.call("b", h-1, 0, 1, "user:two")
+	e.call("c", h, 0, 1, "user:"+titlePrompt, `assistant:{"title":"T"}`) // side call, bucket 1
+	e.call("d", 3*h+5, 0, 1, "user:four")
+	e.nowAt(3*h + 100)
+	calls, _, hj := hourly(t, e.today(sinceAt(0)))
+	if !eqInts(calls, []float64{2, 1, 0, 1}) || hj["peak_calls"] != float64(2) {
+		t.Fatalf("hourly = %v", hj)
+	}
+	if hj["start"] != baseTime.UTC().Format(time.RFC3339) {
+		t.Fatalf("start = %v", hj["start"])
+	}
+}
+
+// Sessions per bucket come from exchanges and from hooks; an empty session key is not
+// counted; one session counts once per bucket.
+func TestTodayHourly_SessionsFromCallsAndHooks(t *testing.T) {
+	e := withRules(t)
+	const h = 3600
+	e.save("x1", "s1", "cc", 10)
+	e.save("x2", "s1", "cc", 20) // same session, same bucket
+	e.save("x3", "s2", "cc", 30)
+	e.save("x4", "", "cc", 40) // empty key: a call, no session
+	e.hook("s1", core.HarnessEvent{Phase: core.PhasePrompt}, h+5)
+	e.hook("hooks-only", core.HarnessEvent{Phase: core.PhasePrompt}, h+6)
+	e.hook("", core.HarnessEvent{Phase: core.PhaseNotice}, h+7)
+	e.nowAt(2*h + 1)
+	calls, sessions, hj := hourly(t, e.today(sinceAt(0)))
+	if !eqInts(calls, []float64{4, 0, 0}) || !eqInts(sessions, []float64{2, 2, 0}) ||
+		hj["peak_calls"] != float64(4) || hj["peak_sessions"] != float64(2) {
+		t.Fatalf("hourly = %v", hj)
+	}
+}
+
+func TestTodayHourly_CappedAt48Buckets(t *testing.T) {
+	e := withRules(t)
+	e.call("a", 10, 0, 1, "user:hi")
+	e.nowAt(100 * 3600)
+	calls, sessions, _ := hourly(t, e.today(sinceAt(0)))
+	if len(calls) != 48 || len(sessions) != 48 || calls[0] != 1 {
+		t.Fatalf("len = %d %d, calls[0] = %v", len(calls), len(sessions), calls[0])
+	}
+}
+
+func TestTodayHourly_NowBeforeSinceIsEmpty(t *testing.T) {
+	e := withRules(t)
+	e.call("a", 500, 0, 1, "user:hi")
+	e.nowAt(100)
+	m := e.today(sinceAt(200))
+	calls, sessions, hj := hourly(t, m)
+	if len(calls) != 0 || len(sessions) != 0 || hj["peak_calls"] != float64(0) || hj["peak_sessions"] != float64(0) {
+		t.Fatalf("hourly = %v", hj)
+	}
+	if m["calls"] != float64(1) {
+		t.Fatalf("the totals must not change: %v", m)
+	}
+}

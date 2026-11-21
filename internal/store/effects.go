@@ -366,6 +366,38 @@ func (c *CtxReader) HookSessionsSince(since int64) ([]SessionIdent, error) {
 	return out, nil
 }
 
+// HookBucket is one session's hook activity in one whole-hour bucket counted from a start.
+type HookBucket struct {
+	Session SessionIdent
+	Bucket  int
+}
+
+// HookSessionsByHour lists, for hook events received from since (unix ns) on, each
+// session once per whole-hour bucket (bucket i covers [since + i h, since + (i+1) h)),
+// for the first buckets buckets only. Hooks with no session are left out.
+func (c *CtxReader) HookSessionsByHour(since int64, buckets int) ([]HookBucket, error) {
+	const hourNS = int64(time.Hour)
+	rows, err := c.r.db.QueryContext(c.ctx, `SELECT DISTINCT principal_id, client, session_key, (received_at - ?) / ?
+		FROM hook_events WHERE session_key IS NOT NULL AND session_key != ''
+		AND received_at >= ? AND received_at < ? + ? * ?`, since, hourNS, since, since, int64(buckets), hourNS)
+	if err != nil {
+		return nil, fmt.Errorf("store %s: hook sessions by hour: %w", c.r.path, err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []HookBucket
+	for rows.Next() {
+		var h HookBucket
+		if err := rows.Scan(&h.Session.Principal, &h.Session.Client, &h.Session.Key, &h.Bucket); err != nil {
+			return nil, fmt.Errorf("store %s: hook sessions by hour: %w", c.r.path, err)
+		}
+		out = append(out, h)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store %s: hook sessions by hour: %w", c.r.path, err)
+	}
+	return out, nil
+}
+
 // UnassignedConnections counts network effects with no session.
 func (c *CtxReader) UnassignedConnections() (int, error) {
 	var n int
