@@ -198,3 +198,13 @@ test("wholeSessionRowOpensTheSession", () => {
   assert.equal(cover.inset, "0");
   assert.equal(cover.content, '""');
 });
+
+// the turn list pins exactly where it starts: its sticky offset under the header equals the
+// page's top padding, so it does not slide a few pixels when scrolling begins (027 C7a)
+test("turnListPinsWhereItStarts", () => {
+  const pad = (decl) => decl.trim().split(/\s+/)[0];
+  assert.equal(rule(".toc").top, `calc(var(--head-h) + ${pad(rule(".cols").padding)})`);
+  const mid = css.match(/@media \(max-width: 1080px\) \{([\s\S]*?)\n\}/)[1];
+  const midPad = mid.match(/\.cols \{[^}]*padding: ([^;]+);/)[1];
+  assert.match(mid, new RegExp(`\\.toc \\{ top: calc\\(var\\(--head-h\\) \\+ ${pad(midPad)}\\);`));
+});

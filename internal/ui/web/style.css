@@ -397,7 +397,7 @@ body[data-page="session"] main#app { padding: 0; }
 /* the turn list stays in view while the story scrolls, so any turn is one click away; it
    scrolls on its own only when it is taller than the window, and keeps no strip for a
    scrollbar it does not have (027 C7a) */
-.toc { grid-area: toc; position: sticky; top: calc(var(--head-h) + 20px); align-self: start; max-height: calc(100vh - var(--head-h) - 40px); min-height: 0; display: flex; flex-direction: column; }
+.toc { grid-area: toc; position: sticky; top: calc(var(--head-h) + 24px); align-self: start; max-height: calc(100vh - var(--head-h) - 48px); min-height: 0; display: flex; flex-direction: column; }
 .toc .scroll { overflow: auto; scrollbar-gutter: auto; }
 .storycol { grid-area: story; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
 .colhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px 8px; }
@@ -768,6 +768,7 @@ dialog:modal .call-scrim, dialog:modal .call-scrim:hover { top: 0; background: t
 /* narrower: the contents get less room; on a phone they go and the story is alone */
 @media (max-width: 1080px) {
   .cols { grid-template-columns: 15rem minmax(0, 1fr); gap: 24px; padding: 20px; }
+  .toc { top: calc(var(--head-h) + 20px); max-height: calc(100vh - var(--head-h) - 40px); }
   .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
