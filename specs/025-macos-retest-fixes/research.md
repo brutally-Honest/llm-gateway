@@ -53,3 +53,11 @@ the B13 note).
   because the checked port range is the fixed 7195–7199. Known limit: a process that
   holds 7195 or 7198 while this gateway answers on 7197 is taken for the gateway; the
   gateway then fails to bind at restart, and install reports it did not answer /healthz.
+- D6 (2026-11-21) — Correction to D5, found in the Linux real check: right after a
+  restart the UI holds 7199 but does not answer `/api/health` while it warms up (doctor:
+  "warming up, about 4 s since the gateway started"), so D5's per-port rule read 7199 as
+  an unknown process, and a second reinstall within the warm-up with no port tool would
+  have refused. Now if either health route answers as this gateway, all four of its
+  listener ports (7195, 7197, 7198, 7199) are its own; 7196 still never is. D5's known
+  limit widens to 7199: a foreign process on it while this gateway answers on 7197 is
+  taken for the gateway.

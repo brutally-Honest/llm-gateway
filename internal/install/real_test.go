@@ -114,11 +114,20 @@ func TestPortsUnknownProcessNotTakenForGateway(t *testing.T) {
 	}
 }
 
-// Spec 025 AC3: only the API's health makes 7197 the gateway's, so with the UI alone
-// answering, 7199 and the proxy ports are the gateway's and 7197 stays unknown.
-func TestPortsOwnGatewayPerListener(t *testing.T) {
-	f := ownGatewayFake(t, "", `{"ok":true}`)
+// Spec 025 AC3, research D6: right after a restart the UI holds 7199 but does not answer
+// while it warms up. The API answering is enough for all four of the gateway's ports, so
+// a second reinstall soon after the first goes on. 7196 is never the gateway's.
+func TestPortsOwnGatewayWhileUIWarmsUp(t *testing.T) {
+	f := ownGatewayFake(t, `{"status":"ok"}`, "")
+	f.busy[7196] = portHolder(f.env, 7196)
 	f.install(InstallOptions{Check: true})
-	contains(t, f.out.String(), "7197 held by an unknown process")
+	contains(t, f.out.String(), "7196 held by an unknown process")
 	lacks(t, f.out.String(), "7199 held by an unknown process")
+	lacks(t, f.out.String(), "7195 held by an unknown process")
+
+	f = ownGatewayFake(t, `{"status":"ok"}`, "")
+	if code := f.install(InstallOptions{Yes: true}); code != ExitOK {
+		t.Fatalf("exit %d\n%s", code, f.out)
+	}
+	contains(t, f.out.String(), "7195, 7197, 7198, 7199 held by the running gateway")
 }

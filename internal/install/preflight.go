@@ -292,27 +292,24 @@ const (
 	uiHealthBody  = `{"ok":true}`
 )
 
-// gatewayAnswers asks the API and UI health routes once and says, per port, whether this
-// gateway holds it: 7197 if the API answers, 7199 if the UI does, and the proxy ports
-// 7195 and 7198, which have no health route, if either does. 7196 is never the
-// gateway's: nothing binds it.
+// gatewayAnswers says, per port, whether this gateway holds it. The health routes are
+// asked once, on the first listener port: if either answers as this gateway, all four of
+// its listener ports (7195, 7197, 7198, 7199) are its own. The proxies have no health
+// route, and the UI holds its port without answering while it warms up after a restart
+// (research D6). 7196 is never the gateway's: nothing binds it.
 func (p *Preflight) gatewayAnswers() func(port int) bool {
-	var asked, api, ui bool
+	var asked, ours bool
 	return func(port int) bool {
+		switch port {
+		case 7195, 7197, 7198, 7199:
+		default:
+			return false
+		}
 		if !asked {
 			asked = true
-			api = p.answersWith(apiHealthURL, apiHealthBody)
-			ui = p.answersWith(uiHealthURL, uiHealthBody)
+			ours = p.answersWith(apiHealthURL, apiHealthBody) || p.answersWith(uiHealthURL, uiHealthBody)
 		}
-		switch port {
-		case 7197:
-			return api
-		case 7199:
-			return ui
-		case 7195, 7198:
-			return api || ui
-		}
-		return false
+		return ours
 	}
 }
 
