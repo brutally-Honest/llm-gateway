@@ -4,7 +4,9 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 mk_e2e
 R=specs/001-e2e/research.md
-sed -i 's/^## Open questions$/## Open questions\n- **Q1** (open) T001 — which greeting? — options: A) hello B) hi\n- **Q2** (open) T001 — which name? — options: A) world B) you/' "$R"
+add_open_questions "$R" \
+	'- **Q1** (open) T001 — which greeting? — options: A) hello B) hi' \
+	'- **Q2** (open) T001 — which name? — options: A) world B) you'
 git commit -q -m "docs(001-e2e): ask q1 and q2" -- "$R"
 
 t "Q1: is read as Q1"
