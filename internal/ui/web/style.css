@@ -247,7 +247,7 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
    numbers as the inline line they replace. */
 .sessions-page .sp-head { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 10px; }
 .sessions-page .sp-head .today { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 10px; align-items: stretch; }
-.today-label { grid-column: 1 / -1; font-size: 12px; font-weight: 600; color: var(--muted); }
+.sp-head h1 .sp-when { font-size: 13px; font-weight: 400; color: var(--muted); letter-spacing: 0; margin-left: 4px; }
 .today .stat { display: flex; flex-direction: column-reverse; justify-content: flex-end; gap: 2px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); background-color: var(--card); font-size: 12px; color: var(--muted); }
 /* sparkline under a tile's number: one thin bar per hour, height = --v / --peak of the row's
    height (both the server's numbers); a zero hour keeps a 1px stub. */
@@ -302,6 +302,7 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 /* a row's counts each carry their label in words (017 AC1); the title cell adds the folder
    and model, and what needs a look */
 .sp-list .splace { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.sicon-failed { color: var(--bad); }
 .sp-list .splace:empty, .sp-list .slook:empty { display: none; }
 .sp-list .slook { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--warn); font-size: 12px; font-weight: 600; margin-top: 2px; }
 .sp-list td.work, .sp-list td.tools, .sp-list td.changes, .sp-list td.dur, .sp-list td.tokens { white-space: nowrap; color: var(--text); font-size: 12.5px; font-variant-numeric: tabular-nums; }
