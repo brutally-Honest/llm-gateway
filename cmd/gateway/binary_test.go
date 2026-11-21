@@ -78,7 +78,10 @@ func TestBinary_SignalShutdown(t *testing.T) {
 				_ = cmd.Process.Kill()
 				<-readDone
 				_ = cmd.Wait()
-				t.Fatalf("no startup line\nstderr: %s", stderr.String())
+				mu.Lock()
+				defer mu.Unlock()
+				// Startup errors (a port taken, a bad config) are log lines on stdout.
+				t.Fatalf("no startup line\nstdout: %s\nstderr: %s", strings.Join(lines, "\n"), stderr.String())
 			}
 			resp, err := http.Get("http://" + addr + "/healthz")
 			if err != nil {
