@@ -80,7 +80,7 @@ func (f *fakeService) StopCommands(Paths) [][]string { return [][]string{{"fake-
 func (f *fakeService) Notes() []string               { return nil }
 func (f *fakeService) Status(p Paths) ServiceStatus {
 	_, err := os.Stat(f.File(p))
-	return ServiceStatus{Installed: err == nil, Running: f.running, AtLogin: err == nil && f.enabled}
+	return ServiceStatus{Installed: err == nil, Loaded: err == nil, Running: f.running, AtLogin: err == nil && f.enabled}
 }
 
 type fake struct {

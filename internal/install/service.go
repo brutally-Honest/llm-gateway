@@ -18,6 +18,7 @@ const managedMark = "Managed by gateway install"
 // ServiceStatus is the live state of the login service.
 type ServiceStatus struct {
 	Installed bool // the unit or plist exists
+	Loaded    bool // the manager knows the job (launchd: bootstrapped; systemd: LoadState=loaded)
 	Running   bool
 	AtLogin   bool
 }
@@ -43,6 +44,10 @@ type ServiceManager interface {
 	RestoreCommands(p Paths, enabled, running bool) [][]string
 	// StopHint is the command a user runs to stop and disable the service.
 	StopHint(p Paths) string
+	// LoadHint is the command that loads an installed service that is not loaded, and
+	// StartHint the one that starts a loaded one that is not running (spec 024 AC2).
+	LoadHint(p Paths) string
+	StartHint(p Paths) string
 	Status(p Paths) ServiceStatus
 	// Notes are extra lines for the summary, such as lingering being off.
 	Notes() []string
@@ -125,12 +130,20 @@ func (s *systemd) StopHint(Paths) string {
 	return "systemctl --user disable --now " + systemdUnit
 }
 
+func (s *systemd) LoadHint(Paths) string {
+	return "systemctl --user daemon-reload && systemctl --user enable --now " + systemdUnit
+}
+
+func (s *systemd) StartHint(Paths) string { return "systemctl --user restart " + systemdUnit }
+
 func (s *systemd) Status(p Paths) ServiceStatus {
 	st := ServiceStatus{}
 	if _, err := os.Stat(s.File(p)); err == nil {
 		st.Installed = true
 	}
-	out, _ := s.env.Run.Output("systemctl", "--user", "is-active", systemdUnit)
+	out, _ := s.env.Run.Output("systemctl", "--user", "show", "-p", "LoadState", "--value", systemdUnit)
+	st.Loaded = strings.TrimSpace(out) == "loaded"
+	out, _ = s.env.Run.Output("systemctl", "--user", "is-active", systemdUnit)
 	st.Running = strings.TrimSpace(out) == "active"
 	out, _ = s.env.Run.Output("systemctl", "--user", "is-enabled", systemdUnit)
 	st.AtLogin = strings.TrimSpace(out) == "enabled"
@@ -378,6 +391,9 @@ func (l *launchd) StopHint(Paths) string {
 	return "launchctl bootout " + l.domain() + "/" + launchdLabel
 }
 
+func (l *launchd) LoadHint(p Paths) string { return strings.Join(l.bootstrapCmd(p), " ") }
+func (l *launchd) StartHint(Paths) string  { return "launchctl kickstart -k " + l.target() }
+
 func (l *launchd) Status(p Paths) ServiceStatus {
 	st := ServiceStatus{}
 	if _, err := os.Stat(l.File(p)); err == nil {
@@ -385,6 +401,7 @@ func (l *launchd) Status(p Paths) ServiceStatus {
 	}
 	out, err := l.env.Run.Output("launchctl", "print", l.domain()+"/"+launchdLabel)
 	if err == nil {
+		st.Loaded = true
 		st.Running = strings.Contains(out, "state = running")
 		st.AtLogin = st.Installed // loaded from a LaunchAgent with RunAtLoad
 	}
@@ -415,6 +432,8 @@ func (noService) RestoreCommands(Paths, bool, bool) [][]string {
 	return nil
 }
 func (noService) StopHint(Paths) string      { return "" }
+func (noService) LoadHint(Paths) string      { return "" }
+func (noService) StartHint(Paths) string     { return "" }
 func (noService) Status(Paths) ServiceStatus { return ServiceStatus{} }
 func (noService) Notes() []string            { return nil }
 func (noService) LogHint(Paths) string       { return "" }

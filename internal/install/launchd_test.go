@@ -220,3 +220,54 @@ func TestLaunchd_BootoutTimeoutIsBounded(t *testing.T) {
 	contains(t, out, "The gateway is not running")
 	contains(t, out, "launchctl bootstrap gui/1000 "+f.plistPath())
 }
+
+// B3: doctor tells a launchd job that is not loaded, loaded but stopped, and running
+// apart, each with its own exact command.
+func TestDoctor_LaunchdServiceStates(t *testing.T) {
+	f, lc := launchdFake(t)
+	if code := f.install(InstallOptions{Yes: true}); code != ExitOK {
+		t.Fatalf("install exit %d\n%s", code, f.out)
+	}
+	if r := results(f)["service"]; r.Level != Pass {
+		t.Fatalf("running: %+v", r)
+	}
+	lc.running = false
+	r := results(f)["service"]
+	if r.Level != Fail || r.Detail != "loaded, not running" ||
+		!strings.Contains(r.Fix, "launchctl kickstart -k gui/1000/dev.llm-gateway") {
+		t.Fatalf("loaded, not running: %+v", r)
+	}
+	lc.loaded = false
+	r = results(f)["service"]
+	if r.Level != Fail || r.Detail != "installed, not loaded" ||
+		!strings.Contains(r.Fix, "launchctl bootstrap gui/1000 "+f.plistPath()) || strings.Contains(r.Fix, "gateway install") {
+		t.Fatalf("not loaded: %+v", r)
+	}
+}
+
+// B3: the same three states on systemd.
+func TestDoctor_SystemdServiceStates(t *testing.T) {
+	f := installed(t)
+	f.env.Service = &systemd{env: f.env}
+	set := func(load, active string) {
+		f.run.answers["systemctl --user show -p LoadState --value llm-gateway.service"] = load + "\n"
+		f.run.answers["systemctl --user is-active llm-gateway.service"] = active + "\n"
+		f.run.answers["systemctl --user is-enabled llm-gateway.service"] = "enabled\n"
+	}
+	set("loaded", "active")
+	if r := results(f)["service"]; r.Level != Pass {
+		t.Fatalf("running: %+v", r)
+	}
+	set("loaded", "inactive")
+	r := results(f)["service"]
+	if r.Level != Fail || r.Detail != "loaded, not running" ||
+		!strings.Contains(r.Fix, "systemctl --user restart llm-gateway.service") {
+		t.Fatalf("loaded, not running: %+v", r)
+	}
+	set("not-found", "inactive")
+	r = results(f)["service"]
+	if r.Level != Fail || r.Detail != "installed, not loaded" ||
+		!strings.Contains(r.Fix, "systemctl --user daemon-reload && systemctl --user enable --now llm-gateway.service") {
+		t.Fatalf("not loaded: %+v", r)
+	}
+}

@@ -220,9 +220,15 @@ has no auth, so a non-loopback address fails, with the message the gateway itsel
 with ([Troubleshooting](#troubleshooting)).
 
 ### Check: service
-The login service is installed, running and starts at login. **Fix:** read its log
-(`journalctl --user -u llm-gateway.service -f`, or
-`tail -f ~/Library/Logs/llm-gateway/gateway.log`), then `gateway install` restarts it.
+The login service is installed, loaded, running and starts at login. Each state has its
+own fix:
+
+| doctor says | Linux (systemd) | macOS (launchd) |
+|---|---|---|
+| `… not found` | `gateway install` | `gateway install` |
+| `installed, not loaded` | `systemctl --user daemon-reload && systemctl --user enable --now llm-gateway.service` | `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.llm-gateway.plist` |
+| `loaded, not running` | read `journalctl --user -u llm-gateway.service -f`, then `systemctl --user restart llm-gateway.service` | read `tail -f ~/Library/Logs/llm-gateway/gateway.log`, then `launchctl kickstart -k gui/$(id -u)/dev.llm-gateway` |
+| `running, but not started at login` | `gateway install` | `gateway install` |
 
 ### Check: listeners
 Each listener answers on loopback: the API (`/healthz`), the UI (`/api/health`), the HTTP
