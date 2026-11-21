@@ -92,9 +92,10 @@ below and AC44, the API-key smoke test of Phase 1.
   V1, V3 and V4 (`specs/014-file-and-network-effects/research.md`).
   - [x] Step 11 with the sandbox off, step 10 on launchd, the sandbox part of V1, V3 (HTTP)
     and V4 — 2026-11-20, macOS 26.5.2, Apple M4 Pro (`docs/manual-checks/macos-v1.md`).
-  - [ ] Node's `fetch` with the sandbox on fails with `ENOTFOUND` (014 Q2); SOCKS (7195)
-    not exercised. 024 sets `NODE_USE_ENV_PROXY=1` (Q2 answered A); the Mac re-test
-    checks Node under Seatbelt.
+  - [x] Node's `fetch` with the sandbox on (014 Q2): `example.com:443` shown under its
+    Bash call, through 024's `NODE_USE_ENV_PROXY=1`, Node 26.12.0 — 2026-11-21, macOS
+    26.5.2, Apple M4 Pro (`docs/manual-checks/macos-v1-retest.md`).
+  - [ ] SOCKS (7195) not exercised.
 - On Ubuntu, test `sandbox.network.allowAllUnixSockets: true` as the workaround for the
   sandbox bug (014 D17).
 - Per-session network attribution when several Claude Code sessions run at once (today

@@ -310,6 +310,12 @@ Answers (2026-11-09, Linux, step 9, sandbox off):
 - 2026-11-20 — With the sandbox on, Claude Code's own hook POSTs to `127.0.0.1:7197` go through
   the proxy and are stored as network effects (35 rows in one session; none with the sandbox
   off). Listed as a bug in docs/manual-checks/macos-v1.md.
+- 2026-11-21, macOS 26.5.2, Apple M4 Pro — Step 11 with the sandbox on, re-tested at 8255fdf
+  (after 024), Claude Code 2.1.330, Node 26.12.0: pass. Node's `fetch` returned 200 and
+  `example.com:443` is shown under its Bash call (Q2 fixed by `NODE_USE_ENV_PROXY=1`);
+  `curl` the same. No rows for the gateway's own ports 7195/7197/7198/7199 (the hook-traffic
+  note above is fixed by 024 AC4). SOCKS (7195) still not exercised. Full record in
+  docs/manual-checks/macos-v1-retest.md.
 
 ### Follow-ups after merge (2026-11-09)
 - The Mac check: step 11 of 014-effects.md, including the optional sandbox-on run, V1's
