@@ -483,3 +483,17 @@ func humanBytes(n uint64) string {
 	}
 	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
+
+// installedDeps names the dependencies preflight checks on this OS that a user installs
+// as packages, in preflight order, for uninstall's keep list (spec 024 AC8). The OS, the
+// service manager, ports, the shell and built-in parts are left out.
+func installedDeps(e *Env, c Client) []string {
+	names := map[string]string{"client": c.Name, "curl": "curl", "git": "git", "bwrap": "bubblewrap", "socat": "socat", "docker": "Docker"}
+	var out []string
+	for _, id := range (&Preflight{env: e}).ids() {
+		if n, ok := names[id]; ok {
+			out = append(out, n)
+		}
+	}
+	return out
+}
