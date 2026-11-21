@@ -25,7 +25,7 @@ test("rowShowsLabelledCounts", () => {
   assert.equal(c.folder, "~/work/proj");
   assert.equal(c.folderFull, "/home/u/work/proj");
   assert.equal(c.model, "m1 +1");
-  assert.equal(c.sources, "⇄ API + ⚑ hooks");
+  assert.equal(c.sources, undefined, "no Sources column (027)");
   assert.deepEqual([c.status.glyph, c.status.text], ["■", "ended"]);
   assert.equal(c.prompts, "2 prompts");
   assert.equal(c.calls, "3 calls · 1 side");
@@ -49,11 +49,11 @@ test("hooksOnlyRowSaysNoModelCalls", () => {
   const h = rowCells(session({ hooks_only: true, has_calls: false, active: false, usage: {}, models: [] }));
   assert.equal(h.calls, "no model calls captured");
   assert.deepEqual([h.status.glyph, h.status.text], ["◇", "hooks only"], "a finished hooks-only session");
-  assert.equal(h.sources, "⚑ hooks");
-  // D33: Status says whether it is still going; Sources already says hooks only
+  // D33: Status says whether it is still going; with no Sources column (027) the Work cell
+  // says a hooks-only session has no model calls
   const live = rowCells(session({ hooks_only: true, has_calls: false, active: true, usage: {}, models: [] }));
   assert.deepEqual([live.status.glyph, live.status.text], ["●", "active"], "an active hooks-only session");
-  assert.equal(live.sources, "⚑ hooks");
+  assert.equal(live.calls, "no model calls captured");
   assert.deepEqual([h.input, h.output, h.cacheRead], ["—", "—", "—"]);
   assert.equal(h.model, "");
 });
@@ -200,7 +200,7 @@ test("focusedRowSurvivesALiveUpdate", () => {
   assert.equal(p.row("s1"), tr, "the same row element is kept");
   assert.equal(document.activeElement, a, "focus stays on the link");
   assert.equal(a.textContent, "Fix it again", "the title updates in place");
-  assert.equal(p.cell("s1", 4), "2 prompts · 2001 calls", "the Work cell updates in place");
+  assert.equal(p.cell("s1", 3), "2 prompts · 2001 calls · 8 tool calls · 1 failed", "the Work cell updates in place");
 });
 
 test("focusedRowKeepsFocusWhenTheOrderChanges", () => {
@@ -261,18 +261,29 @@ test("listFormatsForReading", () => {
 
   const p = livePage([session({ usage: { input: counter(3707), output: counter(null), cache_write: counter(0), cache_read: counter(15074885) } })]);
   const tds = byTag(p.row("s1"), "td");
-  const toks = withClass(tds[8], "tok");
+  const toks = withClass(tds[6], "tok");
   assert.deepEqual(toks.map((t) => t.textContent), ["3.7k in", "— out", "15.1M cache read"]);
   assert.equal(toks[0].title, "in: 3707", "the exact value is kept");
   assert.equal(toks[1].title, "out: not reported");
   assert.equal(p.link("s1").title, "session key k-123", "the key shows on hover only");
-  assert.equal(withClass(tds[1], "splace")[0].textContent, "~/work/proj · m1 +1");
-  assert.equal(withClass(tds[1], "splace")[0].title, "/home/u/work/proj");
-  assert.equal(byTag(tds[5], "span").map((x) => x.textContent).join(""), "8 tool calls · 1 failed");
-  assert.equal(withClass(tds[5], "bad")[0].textContent, " · 1 failed", "failures stand out");
-  assert.equal(p.cell("s1", 6), "2 files changed · 4 commands · 1 site");
-  assert.deepEqual(withClass(tds[6], "seg").map((x) => x.textContent), ["2 files changed", "4 commands", "1 site"], "it wraps only at the dots (D49)");
-  assert.equal(p.cell("s1", 7), "2m 05s");
+  assert.equal(withClass(tds[2], "splace")[0].textContent, "~/work/proj · m1 +1");
+  assert.equal(withClass(tds[2], "splace")[0].title, "/home/u/work/proj");
+  // 027: Work and Tools are one cell, every part a segment, failures standing out
+  assert.equal(p.cell("s1", 3), "2 prompts · 3 calls · 1 side · 8 tool calls · 1 failed");
+  assert.deepEqual(withClass(tds[3], "seg").map((x) => x.textContent), ["2 prompts", "3 calls", "1 side", "8 tool calls", "1 failed"], "it wraps only at the dots (D49)");
+  assert.equal(withClass(tds[3], "bad")[0].textContent, "1 failed", "failures stand out");
+  assert.equal(p.cell("s1", 4), "2 files changed · 4 commands · 1 site");
+  assert.deepEqual(withClass(tds[4], "seg").map((x) => x.textContent), ["2 files changed", "4 commands", "1 site"], "it wraps only at the dots (D49)");
+  assert.equal(p.cell("s1", 5), "2m 05s");
+  // 027: the status is a glyph alone, named by its word for hover and screen readers
+  const icon = withClass(tds[0], "sicon")[0];
+  assert.equal(icon.textContent, "■");
+  assert.equal(icon.title, "ended");
+  assert.equal(icon.attrs["aria-label"], "ended");
+  assert.equal(icon.attrs.role, "img");
+  const ths = byTag(p.page.el, "th").map((x) => x.textContent);
+  assert.deepEqual(ths.slice(0, 7), ["", "Start", "Session", "Work", "Changes", "Time", "Tokens"], "no Sources, Status or Tools header");
+  assert.equal(byTag(p.page.el, "th")[0].attrs["aria-label"], byTag(p.page.el, "th")[0].title, "the icon column is named");
 });
 
 test("listShowsALoaderUntilItsFirstPage", () => {

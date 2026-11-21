@@ -28,6 +28,8 @@ export function tableWithHead(columns) {
     if (cls) th.className = cls;
     if (title) th.title = title;
     th.textContent = label;
+    // a column with no visible header (the status icons) is still named for screen readers
+    if (!label && title) th.setAttribute("aria-label", title);
     head.append(th);
   }
   thead.append(head);
@@ -95,14 +97,6 @@ export function statusOf(s) {
   return { key: "ended", glyph: "■", text: "ended" };
 }
 
-// sourcesOf is how a session was captured, as glyph and word: API calls, hook events.
-export function sourcesOf(s) {
-  const out = [];
-  if (s.has_calls) out.push("⇄ API");
-  if (s.has_hooks || s.hooks_only) out.push("⚑ hooks");
-  return out.join(" + ") || DASH;
-}
-
 // lookText says how many items need a look and of what kinds, in the server's words
 // (spec 017 AC2); "" when nothing does.
 export function lookText(l) {
@@ -139,7 +133,6 @@ export function rowCells(s) {
     folder: l.folder || "",
     folderFull: l.folder_full || l.folder || "",
     model: models.length ? models[0] + (models.length > 1 ? ` +${models.length - 1}` : "") : "",
-    sources: sourcesOf(s),
     status: statusOf(s),
     prompts: plural(l.prompts ?? 0, "prompt"),
     calls: hooksOnly ? "no model calls captured" : calls,
@@ -259,14 +252,17 @@ function rowNode(id) {
   parts.a.href = `#/sessions/${encodeURIComponent(id)}`;
   parts.a.className = "stitle";
   for (const cls of COLUMNS.map((c) => c[1])) parts.cells.push(td(tr, null, cls));
-  parts.cells[1].append(parts.a, parts.place, parts.look);
+  parts.cells[2].append(parts.a, parts.place, parts.look);
   // each count an unbreakable part, " · " between them as text, so the cell wraps only at
   // the dots, as Work and Changes do (setSegments); the cost is a line of its own
   parts.tokens = [span("tok seg"), span("tok seg"), span("tok seg")];
   parts.cost = span("cost");
-  parts.cells[8].append(parts.tokens[0], " · ", parts.tokens[1], " · ", parts.tokens[2], parts.cost);
-  parts.tools = [span(""), span("bad")];
-  parts.cells[5].append(...parts.tools);
+  parts.cells[6].append(parts.tokens[0], " · ", parts.tokens[1], " · ", parts.tokens[2], parts.cost);
+  // Work: prompts, calls and tool calls as segments, then the failed tools standing out
+  parts.work = span("");
+  parts.failedSep = span("");
+  parts.failed = span("bad seg");
+  parts.cells[3].append(parts.work, parts.failedSep, parts.failed);
   return parts;
 }
 
@@ -311,7 +307,7 @@ function fillRow(parts, s, selected) {
     key.start = c.start;
     const t = timeElement(c.start);
     t.textContent = startText(c.start);
-    cells[0].replaceChildren(t);
+    cells[1].replaceChildren(t);
   }
   setText(a, c.title);
   setTitle(a, c.key ? `session key ${c.key}` : "");
@@ -319,17 +315,20 @@ function fillRow(parts, s, selected) {
   setTitle(place, c.folderFull);
   setText(look, c.look);
   setTitle(look, c.look);
-  setText(cells[2], c.sources);
   if (key.status !== c.status.key) {
     key.status = c.status.key;
-    const pill = span(`spill spill-${c.status.key}`, `${c.status.glyph} ${c.status.text}`);
-    cells[3].replaceChildren(pill);
+    // the glyph alone; the word is its hover and its accessible name (027, research D2)
+    const icon = span(`sicon sicon-${c.status.key}`, c.status.glyph);
+    icon.setAttribute("role", "img");
+    icon.setAttribute("aria-label", c.status.text);
+    icon.title = c.status.text;
+    cells[0].replaceChildren(icon);
   }
-  setSegments(cells[4], `${c.prompts} · ${c.calls}`);
-  setText(parts.tools[0], c.tools);
-  setText(parts.tools[1], c.failed ? ` · ${c.failed} failed` : "");
-  setSegments(cells[6], c.changes);
-  setText(cells[7], c.time);
+  setSegments(parts.work, `${c.prompts} · ${c.calls} · ${c.tools}`);
+  setText(parts.failedSep, c.failed ? " · " : "");
+  setText(parts.failed, c.failed ? `${c.failed} failed` : "");
+  setSegments(cells[4], c.changes);
+  setText(cells[5], c.time);
   setToken(parts.tokens[0], c.input, "in");
   setToken(parts.tokens[1], c.output, "out");
   setToken(parts.tokens[2], c.cacheRead, "cache read");
@@ -340,8 +339,8 @@ function fillRow(parts, s, selected) {
 // COLUMNS are the list's headers and each column's class; every count carries its own label
 // in words (spec 017 AC1).
 const COLUMNS = [
-  ["Start", "time"], ["Session", "title"], ["Sources", "src"], ["Status", "status"], ["Work", "work"],
-  ["Tools", "tools"], ["Changes", "changes"], ["Time", "dur"], ["Tokens", "tokens", `Second line: ${explain("")}`],
+  ["", "status", "Status: ● active, ■ ended, ◇ hooks only"], ["Start", "time"], ["Session", "title"], ["Work", "work"],
+  ["Changes", "changes"], ["Time", "dur"], ["Tokens", "tokens", `Second line: ${explain("")}`],
 ];
 
 // unassignedShown is how many unassigned connections the list's section lists; the rest are
