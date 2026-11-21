@@ -132,7 +132,18 @@ func probePort(e *Env, port int) (bool, string) {
 var ssUser = regexp.MustCompile(`users:\(\("([^"]+)",pid=(\d+)`)
 
 func portHolder(e *Env, port int) string {
-	if _, err := e.LookPath("lsof"); err == nil {
+	_, lsofErr := e.LookPath("lsof")
+	_, ssErr := e.LookPath("ss")
+	if lsofErr != nil && ssErr != nil {
+		// Nothing to ask: the owner is unknown, which may be the running gateway itself
+		// (spec 024 AC9, macos-v1.md B13).
+		tool := "ss or lsof"
+		if e.GOOS == "darwin" {
+			tool = "lsof"
+		}
+		return "an unknown process (" + tool + " not found on PATH, so the owner cannot be named)"
+	}
+	if lsofErr == nil {
 		out, _ := e.Run.Output("lsof", "-nP", "-iTCP:"+strconv.Itoa(port), "-sTCP:LISTEN", "-Fpc")
 		var pid, cmd string
 		for line := range strings.SplitSeq(out, "\n") {
@@ -147,7 +158,7 @@ func portHolder(e *Env, port int) string {
 			return fmt.Sprintf("%s (pid %s)", cmd, pid)
 		}
 	}
-	if _, err := e.LookPath("ss"); err == nil {
+	if ssErr == nil {
 		out, _ := e.Run.Output("ss", "-Hltnp", "sport = :"+strconv.Itoa(port))
 		if m := ssUser.FindStringSubmatch(out); m != nil {
 			return fmt.Sprintf("%s (pid %s)", m[1], m[2])

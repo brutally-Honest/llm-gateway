@@ -313,6 +313,7 @@ rewrite it.
 | `install.sh: this release has no build for …` | an unsupported OS or CPU | build from source |
 | The installer asked nothing and stopped at "Proceed?" | no terminal to ask on (CI, a pipe with no tty) | run with `--yes` (and `--install-deps` to install dependencies) |
 | Preflight: a port held by another process | something else uses 7195–7199 | stop it, or change the ports in the config, then install again |
+| Preflight: a port held by an unknown process | neither `lsof` nor `ss` is on PATH, so the owner (which may be the running gateway) cannot be named | put `/usr/sbin` (macOS) or `/usr/bin` back on PATH, or stop the gateway first, then install again |
 | Preflight: no systemd user session | a container, WSL or a minimal distro | `--no-service`, then start the gateway by hand |
 | The gateway stops when you log out (Linux) | lingering is off | `loginctl enable-linger $USER` |
 | Bash commands fail with `apply-seccomp: … nested userns is capability-restricted` | Claude Code's sandbox on Ubuntu 24.04+ | see [Check: apparmor](#check-apparmor); or set `effects.network.sandbox: false` and run `gateway install` |

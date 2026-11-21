@@ -246,7 +246,7 @@ func (p *Preflight) checkPorts() Dep {
 			gw = append(gw, strconv.Itoa(port)) // the running gateway: an upgrade (spec E2)
 		default:
 			if holder == "" {
-				holder = "another process"
+				holder = "an unknown process"
 			}
 			busy = append(busy, fmt.Sprintf("%d held by %s", port, holder))
 		}
