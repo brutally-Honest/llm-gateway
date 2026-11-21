@@ -116,6 +116,12 @@ Run the same curl line again. Install keeps the config and the captured data, re
 managed files, restarts the service and lists each file as new, updated or unchanged, with
 the version before and after. Running it twice with nothing new changes no file.
 
+An upgrade (or any install run) restarts the gateway. For a sub-second gap (about 50–80 ms
+when measured on Linux) the gateway's ports refuse connections; Claude Code retries a
+refused request on its own, so a running session carries on. Nothing in flight is lost
+silently: a model call still streaming when the restart begins gets the shutdown grace
+period, then is cut and stored as cut by the gateway.
+
 ## Uninstall
 
 ```sh
@@ -281,6 +287,10 @@ rewrite it.
 | UI | http://127.0.0.1:7199 | http://127.0.0.1:7199 |
 
 ## Known limits
+
+- **Several sessions at once: network effects may show as unassigned.** A connection
+  through the proxy is linked to a session only when exactly one routed session is
+  active; with two or more open, it is listed under "unassigned connections" instead.
 
 - **Node needs 22.21 or later, or 24 or later, for network effects.** The settings file
   sets `NODE_USE_ENV_PROXY=1`, so Node sends its calls through the gateway's proxy:
