@@ -175,5 +175,13 @@
 - **D40** (2026-11-21) C9 — One card per turn (option A of three mockups: one card, a thread
   rail, a tinted band). CSS makes .turn.chapter the card and the prompt and answer parts of it;
   the chips sit in a "How it got there" strip between them.
+- **D41** (2026-11-21) C5 — FilesList gains by_turn: Changed split by each change's place
+  (turn N, between two turns, outside any turn), oldest first; the page lists it newest first.
+  A file changed in two turns is in both groups with only that turn's changes. The switch shows
+  only when there is more than one group.
+- **D42** (2026-11-21) C4b — Turn.figure is "boxes" for at most 5 main calls and 12 boxes
+  (a sub-agent counts as one), "list" beyond. A list turn draws nothing new: the All panel is
+  already one line per call, so D12's long layout is that panel. Tool states are glyphs, their
+  word in the box's label. The CSS cursor property goes on its own line (009 D17 exemption).
 
 ## Open questions

@@ -49,3 +49,5 @@ accepted change; decisions are in `research.md`.
   hooks-only title without its time, and the unassigned table's Label and Client columns only
   when they vary; Settings closes on a click outside; the turn list pins where it starts.
 - **C9** — Each turn is one card: header, prompt, "How it got there" and final answer.
+- **C5** — The Files tab switches Changed between by file and by turn, from groups the view sends.
+- **C4b** — A short turn's card draws its calls as boxes, tools under each call; long turns keep the All list.
