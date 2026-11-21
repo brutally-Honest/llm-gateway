@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/brutally-honest/llm-gateway/internal/config"
+	"github.com/brutally-honest/llm-gateway/internal/startup"
 )
 
 // DocsURL is docs/install.md on GitHub; doctor links each check to its section there.
@@ -162,7 +163,14 @@ func Diagnose(e *Env, c Client) []Result {
 			"run gateway install without --no-service, or start it by hand: "+manualStart(p))
 	} else if svc.Kind() != "none" {
 		s := svc.Status(p)
+		loopErr, looping := startupLoop(e, p, cfg, cfgOK)
 		switch {
+		case s.Installed && s.Loaded && looping:
+			// Running or not at this instant, it is failing its start every few seconds
+			// (spec 025 AC5): the error says why, the state alone would not.
+			add("service", "Login service", Fail, "service is restarting after a startup error: "+loopErr,
+				"fix the error named (see the log: "+svc.LogHint(p)+"); the service tries again every "+
+					strconv.Itoa(int(startup.Wait.Seconds()))+" s on its own")
 		case !s.Installed:
 			add("service", "Login service", Fail, p.tilde(svc.File(p))+" not found", "run gateway install")
 		case !s.Loaded:
@@ -394,4 +402,29 @@ func leftoverCheck(e *Env, c Client, p Paths, st *State) Result {
 	r.Level, r.Detail = Warn, strings.Join(found, "; ")
 	r.Fix = "run gateway install to replace it in your shell's file; remove one in another shell's file by hand"
 	return r
+}
+
+// startupLoop reports the startup error the service's gateway last recorded, if its
+// start failed within the last few waits and the API does not answer now (spec 025 AC5).
+func startupLoop(e *Env, p Paths, cfg config.Config, cfgOK bool) (string, bool) {
+	if p.StartupError == "" {
+		return "", false
+	}
+	r, err := startup.Read(p.StartupError)
+	if err != nil {
+		return "", false
+	}
+	now := time.Now
+	if e.Now != nil {
+		now = e.Now
+	}
+	if !startup.Restarting(r, now()) {
+		return "", false
+	}
+	if cfgOK && e.HTTPStatus != nil {
+		if code, err := e.HTTPStatus("http://" + cfg.ListenAddr + "/healthz"); err == nil && code == 200 {
+			return "", false // it started since: the record is from before
+		}
+	}
+	return r.Error, true
 }

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/brutally-honest/llm-gateway/internal/startup"
 )
 
 func installed(t *testing.T) *fake {
@@ -247,5 +249,36 @@ func TestDoctorUIWarmingUp(t *testing.T) {
 	}
 	if r := setup(12*time.Second, false); r.Level != Fail || r.Detail != "127.0.0.1:7199 does not answer" {
 		t.Fatalf("API down: %+v", r)
+	}
+}
+
+// Spec 025 AC5: a gateway failing its start under the service records the error;
+// doctor names it while the record is fresh and the API is down, and not otherwise.
+func TestDoctorServiceRestartingAfterStartupError(t *testing.T) {
+	now := time.Unix(1_795_185_000, 0)
+	setup := func(age time.Duration, apiUp bool) Result {
+		f := installed(t)
+		f.env.Now = func() time.Time { return now }
+		f.env.HTTPStatus = func(url string) (int, error) {
+			if !apiUp {
+				return 0, os.ErrDeadlineExceeded
+			}
+			return 200, nil
+		}
+		rec, _ := json.Marshal(startup.Record{Error: "invalid config (key=listen_addr, reason=invalid address)",
+			Key: "k", LoggedAt: now.Add(-age), FailedAt: now.Add(-age)})
+		f.write(".local/state/llm-gateway/startup-error.json", string(rec))
+		return results(f)["service"]
+	}
+	r := setup(4*time.Second, false)
+	if r.Level != Fail || r.Detail != "service is restarting after a startup error: invalid config (key=listen_addr, reason=invalid address)" ||
+		!strings.Contains(r.Fix, "journalctl --user -u llm-gateway.service -f") || !strings.Contains(r.Fix, "every 10 s") {
+		t.Fatalf("fresh record, API down: %+v", r)
+	}
+	if r := setup(4*time.Second, true); r.Level != Pass {
+		t.Fatalf("fresh record, API up (started since): %+v", r)
+	}
+	if r := setup(5*time.Minute, false); strings.Contains(r.Detail, "startup error") {
+		t.Fatalf("old record: %+v", r)
 	}
 }

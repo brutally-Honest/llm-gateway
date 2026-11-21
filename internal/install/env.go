@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/brutally-honest/llm-gateway/internal/config"
+	"github.com/brutally-honest/llm-gateway/internal/startup"
 )
 
 // Runner runs outside commands. Tests swap it for a fake that records every call.
@@ -102,26 +103,32 @@ type Paths struct {
 	Settings  string
 	State     string
 	DataDir   string
+	// StartupError is the record a gateway under its service writes when its start
+	// fails (spec 025 AC5); "" when no HOME places it.
+	StartupError string
 }
 
 func paths(e *Env, c Client) Paths {
 	cfgDir := filepath.Join(e.Home, ".config", "llm-gateway")
-	data, _ := config.DefaultCaptureDir(func(k string) (string, bool) {
+	lookup := func(k string) (string, bool) {
 		if k == "HOME" {
 			return e.Home, true
 		}
 		v := e.Getenv(k)
 		return v, v != ""
-	})
+	}
+	data, _ := config.DefaultCaptureDir(lookup)
+	startErr, _ := startup.Path(lookup)
 	return Paths{
-		Home:      e.Home,
-		BinDir:    filepath.Join(e.Home, ".local", "bin"),
-		Binary:    filepath.Join(e.Home, ".local", "bin", "gateway"),
-		ConfigDir: cfgDir,
-		Config:    filepath.Join(cfgDir, "config.yaml"),
-		Settings:  filepath.Join(cfgDir, c.SettingsFile),
-		State:     filepath.Join(cfgDir, "install-state.json"),
-		DataDir:   data,
+		StartupError: startErr,
+		Home:         e.Home,
+		BinDir:       filepath.Join(e.Home, ".local", "bin"),
+		Binary:       filepath.Join(e.Home, ".local", "bin", "gateway"),
+		ConfigDir:    cfgDir,
+		Config:       filepath.Join(cfgDir, "config.yaml"),
+		Settings:     filepath.Join(cfgDir, c.SettingsFile),
+		State:        filepath.Join(cfgDir, "install-state.json"),
+		DataDir:      data,
 	}
 }
 
