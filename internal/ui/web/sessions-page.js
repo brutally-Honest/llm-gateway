@@ -203,6 +203,32 @@ export function todayCells(t) {
   };
 }
 
+// sparkCounts is the server's per-hour counts and peak for one tile ("sessions" or
+// "calls"), or null when there is nothing to draw: no buckets, or a peak of 0.
+export function sparkCounts(t, name) {
+  const h = (t && t.hourly) || {};
+  const counts = h[name];
+  const peak = h[`peak_${name}`];
+  if (!Array.isArray(counts) || counts.length === 0 || !(peak > 0)) return null;
+  return { counts, peak };
+}
+
+// sparkline is a row of thin bars, one per hour. Heights are set by CSS from --v and
+// --peak, both the server's numbers; nothing is computed here. Null when empty.
+export function sparkline(spec) {
+  if (!spec) return null;
+  const el = document.createElement("span");
+  el.className = "spark";
+  el.setAttribute("aria-hidden", "true");
+  el.style.setProperty("--peak", String(spec.peak));
+  for (const n of spec.counts) {
+    const bar = document.createElement("i");
+    bar.style.setProperty("--v", String(n));
+    el.append(bar);
+  }
+  return el;
+}
+
 // localMidnight is the start of the browser-local day, as an RFC 3339 instant (AC4).
 export function localMidnight(now = new Date()) {
   const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -522,19 +548,22 @@ export function createSessionsPage(handlers) {
     for (const [k, b] of kinds) b.setAttribute("aria-pressed", String(k === kind));
     const t = todayCells(state.today);
     today.replaceChildren();
-    const stat = (value, label, exact) => {
+    const stat = (value, label, exact, spark) => {
       const sp = document.createElement("span");
       sp.className = "stat";
       const b = document.createElement("b");
       b.textContent = value;
       if (exact !== undefined && exact !== value) sp.title = exact === DASH ? "not reported" : exact;
       sp.append(b, ` ${label}`);
+      // The tile stacks bottom-up (column-reverse), so the first child sits lowest.
+      const bars = sparkline(spark);
+      if (bars) sp.prepend(bars);
       today.append(sp);
     };
     today.append(span("today-label", "Today"));
     today.title = "since local midnight";
-    stat(String(t.sessions), t.sessions === 1 ? "session" : "sessions");
-    stat(String(t.calls), t.calls === 1 ? "model call" : "model calls", "side calls included");
+    stat(String(t.sessions), t.sessions === 1 ? "session" : "sessions", undefined, sparkCounts(state.today, "sessions"));
+    stat(String(t.calls), t.calls === 1 ? "model call" : "model calls", "side calls included", sparkCounts(state.today, "calls"));
     stat(String(t.changed), t.changed === 1 ? "file changed" : "files changed");
     stat(String(t.sites), t.sites === 1 ? "site" : "sites");
     stat(compact(t.input), "input", t.input);

@@ -391,3 +391,37 @@ test("tokenBarSegmentsGrowByTheirCounts", () => {
   p.page.update({ items: [session({ usage: {} })] });
   assert.ok(withClass(byTag(p.row("s1"), "td")[6], "tokbar")[0].hidden);
 });
+
+// spec 027 C6b: the sessions and model-calls tiles carry a sparkline of the server's hourly
+// counts: one bar per bucket with --v from the count, --peak on the container, hidden from
+// assistive tech (the numbers are in text). No other tile gets one.
+const hourlyToday = (h) => ({ sessions: 2, calls: 5, changed: 7, sites: 1, input: counter(3), output: counter(1), hourly: h });
+const tileFor = (today, word) => withClass(today, "stat").find((t) => textOf(t).includes(word));
+
+test("sparklinesShowOneBarPerBucketFromServerNumbers", () => {
+  const p = livePage([session()]);
+  p.page.update({ today: hourlyToday({ start: "2026-01-01T00:00:00Z", calls: [3, 0, 12], sessions: [1, 0, 2], peak_calls: 12, peak_sessions: 2 }) });
+  const today = withClass(p.page.el, "today")[0];
+  const calls = withClass(tileFor(today, "model calls"), "spark")[0];
+  assert.equal(calls.attrs["aria-hidden"], "true");
+  assert.equal(calls.styleProps["--peak"], "12");
+  assert.deepEqual(byTag(calls, "i").map((b) => b.styleProps["--v"]), ["3", "0", "12"]);
+  const sess = withClass(tileFor(today, "sessions"), "spark")[0];
+  assert.equal(sess.styleProps["--peak"], "2");
+  assert.deepEqual(byTag(sess, "i").map((b) => b.styleProps["--v"]), ["1", "0", "2"]);
+  assert.equal(withClass(today, "spark").length, 2, "only the sessions and model-calls tiles");
+  assert.equal(textOf(today).replace(/\s+/g, " ").trim(), "Today 2 sessions 5 model calls 7 files changed 1 site 3 input 1 output — API-eq. cost");
+});
+
+test("sparklineIsAbsentWhenPeakIsZeroOrHourlyMissing", () => {
+  for (const h of [undefined, { calls: [0, 0], sessions: [0, 0], peak_calls: 0, peak_sessions: 0 }, { calls: [], sessions: [], peak_calls: 0, peak_sessions: 0 }]) {
+    const p = livePage([session()]);
+    p.page.update({ today: hourlyToday(h) });
+    assert.equal(withClass(withClass(p.page.el, "today")[0], "spark").length, 0);
+  }
+  const p = livePage([session()]);
+  p.page.update({ today: hourlyToday({ calls: [0, 4], sessions: [0, 0], peak_calls: 4, peak_sessions: 0 }) });
+  const today = withClass(p.page.el, "today")[0];
+  assert.equal(withClass(tileFor(today, "model calls"), "spark").length, 1);
+  assert.equal(withClass(tileFor(today, "sessions"), "spark").length, 0, "peak 0 hides just that one");
+});

@@ -225,6 +225,11 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .sessions-page .sp-head .today { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 10px; align-items: stretch; }
 .today-label { grid-column: 1 / -1; font-size: 12px; font-weight: 600; color: var(--muted); }
 .today .stat { display: flex; flex-direction: column-reverse; justify-content: flex-end; gap: 2px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); background-color: var(--card); font-size: 12px; color: var(--muted); }
+/* sparkline under a tile's number: one thin bar per hour, height = --v / --peak of the row's
+   height (both the server's numbers); a zero hour keeps a 1px stub. */
+.today .spark { display: flex; align-items: flex-end; gap: 1px; height: 18px; margin-top: 4px; }
+.today .spark i { flex: 1 1 0; min-width: 1px; max-width: 6px; height: calc(var(--v) / var(--peak) * 100%); min-height: 1px; border-radius: 1px 1px 0 0; background: var(--accent); }
+:root[data-style="lean"] .today .spark i { background: var(--accent-grad); }
 .sp-head .today .stat b { font-size: 22px; line-height: 1.2; letter-spacing: -.02em; }
 /* the bar under a row's token figures: input, output and cache read, each segment as wide as
    its own count (flex-grow is set from the count, in sessions-page.js) */
