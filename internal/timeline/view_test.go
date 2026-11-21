@@ -688,13 +688,19 @@ func TestView_LookKinds(t *testing.T) {
 	for _, l := range v.Overview.NeedsLook {
 		kinds = append(kinds, l.Kind)
 	}
-	eq(t, "item kinds", strings.Join(kinds, ","), "failed_tool,outside_change,unpinned,hooks_only_turn,unmatched")
+	// spec 027 C4: the fixture's unmatched tool ran in its hooks-only turn, so that turn's item
+	// names it instead of the tool being an item of its own
+	eq(t, "item kinds", strings.Join(kinds, ","), "failed_tool,outside_change,unpinned,hooks_only_turn")
 	var words []string
 	for _, k := range v.Overview.LookKinds {
 		words = append(words, fmt.Sprintf("%s=%d %s", k.Kind, k.Count, k.Words))
 	}
 	eq(t, "look kinds", strings.Join(words, "; "), "failed_tool=1 1 failed tool call; outside_change=1 1 change with no tool running; "+
-		"unpinned=1 1 group of effects not pinned to one tool call; hooks_only_turn=1 1 hooks-only turn; unmatched=1 1 unmatched tool call")
+		"unpinned=1 1 group of effects not pinned to one tool call; hooks_only_turn=1 1 hooks-only turn")
+	hooks := v.Overview.NeedsLook[3]
+	if !strings.HasPrefix(hooks.Sub, "only the hooks saw it: ") || strings.Contains(hooks.Sub, "the conversation does not") {
+		t.Errorf("hooks-only turn's item sub = %q, want the unmatched tool named", hooks.Sub)
+	}
 }
 
 // 017 AC2 narrowed (D31): a session that is hooks only has no hooks-only-turn item to look
