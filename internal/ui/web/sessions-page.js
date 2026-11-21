@@ -257,7 +257,13 @@ function rowNode(id) {
   // the dots, as Work and Changes do (setSegments); the cost is a line of its own
   parts.tokens = [span("tok seg"), span("tok seg"), span("tok seg")];
   parts.cost = span("cost");
-  parts.cells[6].append(parts.tokens[0], " · ", parts.tokens[1], " · ", parts.tokens[2], parts.cost);
+  // the bar under the figures: input, output and cache read side by side, each as wide as its
+  // own count; the numbers are already in text, so the bar is hidden from screen readers
+  parts.bar = span("tokbar");
+  parts.bar.setAttribute("aria-hidden", "true");
+  parts.barSegs = ["in", "out", "cache"].map((k) => span(`tokseg tokseg-${k}`));
+  parts.bar.append(...parts.barSegs);
+  parts.cells[6].append(parts.tokens[0], " · ", parts.tokens[1], " · ", parts.tokens[2], parts.cost, parts.bar);
   // Work: prompts, calls and tool calls as segments, then the failed tools standing out
   parts.work = span("");
   parts.failedSep = span("");
@@ -297,6 +303,21 @@ function setToken(e, text, label) {
   setTitle(e, text === DASH ? `${label}: not reported` : `${label}: ${text}`);
 }
 
+// setTokenBar hands each of the server's raw counts to its segment's flex-grow, so the
+// browser sizes the segments; a count that is missing or zero gets no segment, and a row
+// with none (a hooks-only session) shows no bar.
+export function setTokenBar(parts, counts) {
+  let any = false;
+  parts.barSegs.forEach((seg, i) => {
+    const n = counts[i];
+    const has = typeof n === "number" && Number.isFinite(n) && n > 0;
+    seg.hidden = !has;
+    seg.style.flexGrow = has ? String(n) : "";
+    any = any || has;
+  });
+  parts.bar.hidden = !any;
+}
+
 function fillRow(parts, s, selected) {
   const c = rowCells(s);
   const { tr, cells, a, place, look, key } = parts;
@@ -332,6 +353,8 @@ function fillRow(parts, s, selected) {
   setToken(parts.tokens[0], c.input, "in");
   setToken(parts.tokens[1], c.output, "out");
   setToken(parts.tokens[2], c.cacheRead, "cache read");
+  const u = s.usage || {};
+  setTokenBar(parts, s.hooks_only ? [] : [u.input, u.output, u.cache_read].map((x) => x && x.value));
   setText(parts.cost, `${c.cost.text} ${LABEL}`);
   setTitle(parts.cost, c.cost.title);
 }
@@ -508,7 +531,7 @@ export function createSessionsPage(handlers) {
       sp.append(b, ` ${label}`);
       today.append(sp);
     };
-    today.append("Today");
+    today.append(span("today-label", "Today"));
     today.title = "since local midnight";
     stat(String(t.sessions), t.sessions === 1 ? "session" : "sessions");
     stat(String(t.calls), t.calls === 1 ? "model call" : "model calls", "side calls included");

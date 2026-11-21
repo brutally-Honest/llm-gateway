@@ -5,12 +5,13 @@
    with its word as its name; colour only repeats it. */
 :root, :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #050505; --card: #0e0e0f; --panel: #151516; --panel2: #1c1c1e; --border: #262628; --line: #1a1a1c;
+  --bg: #0a0a0b; --card: #0e0e0f; --panel: #151516; --panel2: #1c1c1e; --border: #262628; --line: #1a1a1c;
   --text: #e6e6e6; --hi: #f5f5f5; --muted: #959595; --accent: #a594f9; --accent-strong: #6a5ae0; --accent-bg: #1d1836; --on-accent: #ffffff;
   --ok: #4cc38a; --ok-bg: #0f2519; --bad: #ef6b70; --bad-bg: #2a1416; --warn: #e3aa58; --warn-bg: #2a1f10;
   --add: #4cc38a; --add-bg: #0f2519; --del: #f58f92; --del-bg: #2a1416;
   --model: #92c0ee; --toolc: #c3b8fb; --tool-bg: #1d1836;
   --scrim: #000000c0;
+  --card-solid: #0e0e0f; --tok-in: #92c0ee; --tok-out: #a594f9; --tok-cache: #525257;
   --shadow: 0 1px 0 #ffffff0a inset, 0 1px 2px #00000099, 0 8px 24px #00000080;
   --shadow-lg: 0 1px 0 #ffffff0d inset, 0 4px 12px #00000099, 0 24px 64px #000000cc;
 }
@@ -22,29 +23,65 @@
   --add: #0e7a4c; --add-bg: #e9f6ef; --del: #c42e38; --del-bg: #fcefef;
   --model: #1f5aa6; --toolc: #5b4fd6; --tool-bg: #f0eefd;
   --scrim: #11121566;
+  --card-solid: #ffffff; --tok-in: #1f5aa6; --tok-out: #5b4fd6; --tok-cache: #b4b3bc;
   --shadow: 0 0 0 1px #1012180a, 0 1px 2px #10121814, 0 4px 14px #1012180f;
   --shadow-lg: 0 0 0 1px #1012180d, 0 2px 6px #1012181a, 0 24px 56px #10121829;
 }
 /* Stark keeps to black, white, violet and light blue, with red only for failures: success
-   is plain ink, and warnings and added lines are light blue. Lean uses the bases as they are
-   (green for done, amber for warnings). */
+   is plain ink, and warnings and added lines are light blue. Lean has its own blocks below. */
 :root[data-style="stark"][data-theme="dark"] {
   --ok: #e6e6e6; --ok-bg: #151516; --warn: #92c0ee; --warn-bg: #0d1a2b; --add: #92c0ee; --add-bg: #0d1a2b; --toolc: #a594f9;
 }
 :root[data-style="stark"][data-theme="light"] {
   --ok: #282a30; --ok-bg: #f3f3f5; --warn: #1f5aa6; --warn-bg: #eaf1fb; --add: #1f5aa6; --add-bg: #eaf1fb;
 }
-/* Fonts and corners belong to the style, the same in both themes. Lean is smooth: Inter and
-   round corners. Stark is square: Geist, Geist Mono and mono caps labels. Geist and Geist
+/* Lean (spec 027 C6a): neutral surfaces with green as the only accent, frosted glass cards
+   (a see-through #rrggbbaa colour over the page, blurred behind), a one-pixel highlight along
+   each top edge. A glass colour is hex with alpha; text and the page colour stay opaque.
+   card-solid is the opaque twin of a card, for what must not show through. */
+:root[data-style="lean"][data-theme="dark"] {
+  --bg: #0a0a0b; --card: #ffffff0d; --card-solid: #18181b; --panel: #ffffff0f; --panel2: #ffffff17; --border: #ffffff16; --line: #ffffff12;
+  --text: #d4d4d8; --hi: #fafafa; --muted: #a1a1aa; --accent: #34d399; --accent-strong: #34d399; --accent-bg: #10b98129; --on-accent: #03231a;
+  --accent-grad: linear-gradient(135deg, #6ee7b7 0%, #34d399 50%, #2dd4bf 100%);
+  --ok: #4ade80; --ok-bg: #4ade801a; --bad: #f87171; --bad-bg: #f871711c; --warn: #fbbf24; --warn-bg: #fbbf241a;
+  --add: #4ade80; --add-bg: #4ade801a; --del: #f87171; --del-bg: #f871711c;
+  --model: #34d399; --toolc: #a1a1aa; --tool-bg: #ffffff0f;
+  --tok-in: #6ee7b7; --tok-out: #10b981; --tok-cache: #52525b;
+  --card-sheen: linear-gradient(180deg, #ffffff0d 0%, #ffffff05 100%);
+  --glass: #0a0a0c8c; --glass-strong: #0c0c0eeb; --glass-border: #ffffff1a; --glass-hi: #ffffff1a; --accent-wash: #10b98112; --accent-ring: #34d39966;
+  --bg-glow-1: #10b9810d; --bg-glow-2: #14b8a606;
+  --blur: saturate(180%) blur(20px);
+  --scrim: #000000a0;
+  --shadow: 0 0 0 1px #00000066, 0 1px 0 #ffffff21 inset, 0 1px 2px #00000066, 0 6px 14px -6px #00000080;
+  --shadow-lg: 0 0 0 1px #00000073, 0 1px 0 #ffffff26 inset, 0 2px 4px #00000059, 0 12px 24px -8px #00000080, 0 32px 64px -24px #0000008c;
+}
+:root[data-style="lean"][data-theme="light"] {
+  --bg: #fafafa; --card: #ffffffa6; --card-solid: #ffffff; --panel: #09090b0a; --panel2: #09090b14; --border: #09090b1a; --line: #09090b12;
+  --text: #3f3f46; --hi: #09090b; --muted: #52525b; --accent: #055f46; --accent-strong: #047857; --accent-bg: #05966914; --on-accent: #ffffff;
+  --accent-grad: linear-gradient(135deg, #065f46 0%, #047857 50%, #0f766e 100%);
+  --ok: #166534; --ok-bg: #16a34a17; --bad: #b91c1c; --bad-bg: #dc262612; --warn: #92400e; --warn-bg: #d9770619;
+  --add: #166534; --add-bg: #16a34a17; --del: #b91c1c; --del-bg: #dc262612;
+  --model: #065f46; --toolc: #52525b; --tool-bg: #09090b0f;
+  --tok-in: #0f766e; --tok-out: #047857; --tok-cache: #a1a1aa;
+  --card-sheen: linear-gradient(180deg, #ffffffa6 0%, #ffffffa6 100%);
+  --glass: #ffffff8c; --glass-strong: #fffffff0; --glass-border: #09090b1a; --glass-hi: #fffffff2; --accent-wash: #0596690f; --accent-ring: #05966959;
+  --bg-glow-1: #10b9811a; --bg-glow-2: #14b8a60d;
+  --blur: saturate(180%) blur(14px);
+  --scrim: #09090b66;
+  --shadow: 0 1px 0 #ffffffe6 inset, 0 1px 2px #09090b0f, 0 4px 10px -2px #09090b0f, 0 10px 22px -8px #09090b1a;
+  --shadow-lg: 0 1px 0 #ffffffe6 inset, 0 1px 2px #09090b12, 0 6px 14px -4px #09090b17, 0 22px 44px -14px #09090b2e;
+}
+/* Fonts and corners belong to the style, the same in both themes. Lean is glass: Geist and
+   small corners (no pills). Stark is square: Geist, Geist Mono and mono caps labels. Geist and Geist
    Mono ship with the UI (fonts/, SIL OFL 1.1 in docs/licenses/geist-OFL.txt, ADR 0020): no
    font is fetched from anywhere else. */
 @font-face { font-family: "Geist"; src: url("fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
 @font-face { font-family: "Geist Mono"; src: url("fonts/GeistMono-Variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
 :root, :root[data-style="lean"] {
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --radius-xs: 4px; --radius-sm: 8px; --radius: 8px; --radius-md: 10px; --radius-lg: 14px; --radius-xl: 16px;
-  --radius-pill: 999px; --radius-round: 50%;
+  --font-sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --radius-xs: 3px; --radius-sm: 3px; --radius: 4px; --radius-md: 4px; --radius-lg: 6px; --radius-xl: 6px;
+  --radius-pill: 3px; --radius-round: 50%;
 }
 :root[data-style="stark"] {
   --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -59,6 +96,35 @@
   font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .08em;
 }
 :root[data-style="stark"] header#shell-head h1 { font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .1em; font-size: 13px; }
+/* Lean's glass: the header, cards, panels, key bar and call panel are see-through and blur what
+   is behind them; the page carries a faint green glow so there is something to blur. Stark is
+   untouched: every rule here is scoped to Lean. */
+:root[data-style="lean"] body {
+  background-color: var(--bg);
+  background-image: radial-gradient(60rem 28rem at 12% -12%, var(--bg-glow-1), transparent 60%), radial-gradient(50rem 26rem at 98% 0%, var(--bg-glow-2), transparent 60%);
+  background-attachment: fixed; letter-spacing: -.005em;
+}
+:root[data-style="lean"] { background: var(--bg); }
+:root[data-style="lean"] header#shell-head, :root[data-style="lean"] footer#keybar {
+  background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); border-color: var(--glass-border);
+}
+:root[data-style="lean"] header#shell-head { box-shadow: 0 1px 0 var(--glass-hi) inset; }
+:root[data-style="lean"] .sp-list, :root[data-style="lean"] .today .stat {
+  background-color: var(--card); background-image: var(--card-sheen); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); box-shadow: var(--shadow);
+}
+:root[data-style="lean"] .sp-list th { background: var(--panel); }
+:root[data-style="lean"] .picker, :root[data-style="lean"] .seg-group { background: var(--panel); }
+:root[data-style="lean"] .picker button[aria-pressed="true"], :root[data-style="lean"] .seg-group .seg[aria-pressed="true"] { background: var(--card-solid); }
+/* dialogs sit over the dimmed page, so their glass is nearly solid: thin glass over a scrim
+   reads as a grey wash. No backdrop-filter on a dialog: it would make the dialog the box a
+   fixed child is placed in, so the click-outside scrim would cover only the dialog. */
+:root[data-style="lean"] dialog.settings, :root[data-style="lean"] dialog.details {
+  background: var(--glass-strong); border-color: var(--glass-border);
+}
+:root[data-style="lean"] dialog.details .mf, :root[data-style="lean"] .call-top { background: transparent; }
+:root[data-style="lean"] .mf .primary, :root[data-style="lean"] .btn.primary { background: var(--accent-grad); border-color: transparent; color: var(--on-accent); }
+/* "done" is neutral grey, not green; only a live or failed state takes a colour */
+:root[data-style="lean"] .badge { background: var(--panel); color: var(--muted); border-color: var(--border); }
 /* A theme switch eases over 200 ms instead of snapping; off for reduced motion. */
 body, header#shell-head, footer#keybar, .card, .sp-list, dialog { transition: background-color .2s ease, color .2s ease, border-color .2s ease, box-shadow .2s ease; }
 @media (prefers-reduced-motion: reduce) {
@@ -76,6 +142,9 @@ html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.
    notch beside the header (027 C4); the body paints the page's own background */
 html { background: var(--card); scrollbar-color: var(--border) transparent; }
 body { min-height: 100vh; }
+/* while a modal dialog is open the page behind it stays put: it does not scroll under the
+   dimmed backdrop (027 C6a) */
+html:has(dialog:modal) { overflow: hidden; }
 a { color: var(--accent); }
 code, pre, kbd, .mono { font-family: var(--font-mono); }
 code { font-size: 12.5px; }
@@ -149,6 +218,21 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .sp-head h1 { margin: 0; font-size: 20px; font-weight: 700; color: var(--hi); letter-spacing: -.01em; }
 .sp-head .today, .sp-head .stats { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; font-size: 13px; color: var(--muted); }
 .sp-head .today .stat b, .sp-head .stats .stat b { color: var(--hi); font-weight: 600; font-variant-numeric: tabular-nums; }
+/* the day's totals as stat tiles (027 C6a): a row of small cards, the label above and the big
+   number below; the markup is the number first, so the tile reverses it. Same order, same
+   numbers as the inline line they replace. */
+.sessions-page .sp-head { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 10px; }
+.sessions-page .sp-head .today { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 10px; align-items: stretch; }
+.today-label { grid-column: 1 / -1; font-size: 12px; font-weight: 600; color: var(--muted); }
+.today .stat { display: flex; flex-direction: column-reverse; justify-content: flex-end; gap: 2px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); background-color: var(--card); font-size: 12px; color: var(--muted); }
+.sp-head .today .stat b { font-size: 22px; line-height: 1.2; letter-spacing: -.02em; }
+/* the bar under a row's token figures: input, output and cache read, each segment as wide as
+   its own count (flex-grow is set from the count, in sessions-page.js) */
+.tokbar { display: flex; gap: 1px; height: 4px; width: 100%; min-width: 7rem; max-width: 12rem; margin-top: 5px; border-radius: var(--radius-xs); overflow: hidden; background: var(--panel2); }
+.tokseg { display: block; flex: 0 1 0; min-width: 0; }
+.tokseg-in { background: var(--tok-in); }
+.tokseg-out { background: var(--tok-out); }
+.tokseg-cache { background: var(--tok-cache); }
 .sessions-page .filter-bar { align-items: center; gap: 10px; padding: 0; }
 .sessions-page .filter-bar input { width: 18rem; max-width: 100%; padding: 6px 10px; }
 .seg-group { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--card); }
@@ -171,7 +255,13 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .sp-list td.time { color: var(--muted); font-variant-numeric: tabular-nums; }
 .sp-list th.title, .sp-list td.title { width: 100%; max-width: 0; min-width: 20rem; }
 .sp-list .stitle { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--hi); font-weight: 500; text-decoration: none; }
-.sp-list .stitle:hover { color: var(--accent); text-decoration: underline; }
+/* the whole row opens the session (027 C6a): the title is still the row's one real link
+   (keyboard, screen readers, open in a new tab), and its ::after stretches over the row */
+.sp-list tbody tr:has(a.stitle) { position: relative; }
+.sp-list a.stitle::after { content: ""; position: absolute; inset: 0; }
+.sp-list tbody tr:has(a.stitle):hover td { background: var(--panel); }
+.sp-list a.stitle:focus-visible { outline: none; }
+.sp-list tbody tr:has(a.stitle:focus-visible) { outline: 2px solid var(--accent-strong); outline-offset: -2px; }
 .sp-list td.src { color: var(--muted); white-space: nowrap; font-size: 12px; }
 /* status as a glyph alone, in a narrow first column; the word is its hover and its
    accessible name (027 research D2); the glyph's shape, not its colour, tells them apart */

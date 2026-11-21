@@ -160,3 +160,24 @@ test("scrollbarsNeverShiftTheLayout", () => {
   assert.equal(rule(".mb")["scrollbar-gutter"], "stable", "a dialog's body");
   assert.equal(rule(".cols")["grid-template-columns"], "20rem minmax(0, 1fr)", "the turn list is 20rem wide");
 });
+
+// spec 027 C6a: a click outside an open dialog lands on its scrim, a fixed child that must
+// cover the window. backdrop-filter (and filter, transform) on a dialog would make the dialog
+// the box that scrim is placed in, so the click outside would hit nothing; and while a modal
+// is open the page behind it does not scroll.
+test("dialogsCloseOnAClickOutsideAndHoldThePage", () => {
+  const dialogRules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter((m) => /\bdialog\b/.test(m[1]) && !/::backdrop/.test(m[1]));
+  assert.ok(dialogRules.length >= 3, "the dialog rules are found");
+  for (const [, sel, body] of dialogRules) assert.doesNotMatch(body, /(^|[;\s])(-webkit-)?(backdrop-filter|filter|transform)\s*:/, `${sel.trim()} would trap the scrim`);
+  assert.equal(rule("html:has(dialog:modal)").overflow, "hidden");
+});
+
+// spec 027 C6a: a whole session row opens the session. The title stays the row's one real
+// link and stretches over the row, rather than a click handler on the row.
+test("wholeSessionRowOpensTheSession", () => {
+  assert.equal(rule(".sp-list tbody tr:has(a.stitle)").position, "relative");
+  const cover = rule(".sp-list a.stitle::after");
+  assert.equal(cover.position, "absolute");
+  assert.equal(cover.inset, "0");
+  assert.equal(cover.content, '""');
+});

@@ -352,9 +352,42 @@ test("rowShowsApiEquivalentCost", () => {
   const line = withClass(p.page.el, "cost")[0];
   assert.equal(textOf(line).trim(), "$12.35 API-eq.", "the cost is the Tokens cell's second line, labelled");
   // 020 D17: the counts are unbreakable parts with " · " as text between them, so the cell
-  // wraps only at the dots, as Work and Changes do; the cost comes last, a line of its own
+  // wraps only at the dots, as Work and Changes do; the cost follows, a line of its own, and
+  // under it the token bar (027 C6a), which holds no text
   const cell = byTag(p.page.el, "td").find((x) => x.className === "tokens");
   assert.deepEqual(cell.children.map((c) => [c.className || "", c.textContent]),
-    [["tok seg", "10 in"], ["", " · "], ["tok seg", "— out"], ["", " · "], ["tok seg", "7 cache read"], ["cost", "$12.35 API-eq."]]);
+    [["tok seg", "10 in"], ["", " · "], ["tok seg", "— out"], ["", " · "], ["tok seg", "7 cache read"], ["cost", "$12.35 API-eq."], ["tokbar", ""]]);
   assert.match(line.title, /not what was charged/);
+});
+
+// spec 027 C6a: the day's totals are stat tiles, each a number with its label, in the same
+// order as the line they replace; the "Today" word labels the row and is not a tile.
+test("todayTotalsAreStatTiles", () => {
+  const p = livePage([session()]);
+  p.page.update({ today: { sessions: 2, calls: 5, changed: 7, sites: 1, input: counter(3707), output: counter(null) } });
+  const today = withClass(p.page.el, "today")[0];
+  const tiles = withClass(today, "stat");
+  assert.deepEqual(tiles.map((t) => textOf(t).replace(/\s+/g, " ").trim()), ["2 sessions", "5 model calls", "7 files changed", "1 site", "3.7k input", "— output", "— API-eq. cost"]);
+  for (const t of tiles) assert.equal(byTag(t, "b").length, 1, "each tile has one big number");
+  assert.equal(withClass(today, "today-label")[0].textContent, "Today");
+});
+
+// spec 027 C6a: under a row's token figures a thin bar, one segment per count, each sized by
+// handing the count to flex-grow; a missing or zero count gets no segment.
+test("tokenBarSegmentsGrowByTheirCounts", () => {
+  const p = livePage([session({ usage: { input: counter(3000), output: counter(0), cache_write: counter(0), cache_read: counter(7000) } })]);
+  const bar = withClass(byTag(p.row("s1"), "td")[6], "tokbar")[0];
+  assert.equal(bar.attrs["aria-hidden"], "true", "the numbers are in text already");
+  const segs = withClass(bar, "tokseg");
+  assert.equal(segs.length, 3);
+  assert.deepEqual(segs.map((s) => s.style.flexGrow), ["3000", "", "7000"]);
+  assert.deepEqual(segs.map((s) => Boolean(s.hidden)), [false, true, false], "a zero count has no segment");
+  assert.ok(!bar.hidden);
+  // a live update with other counts re-sizes the same segments
+  p.page.update({ items: [session({ usage: { input: counter(5), output: counter(10), cache_write: counter(0), cache_read: counter(null) } })] });
+  const again = withClass(byTag(p.row("s1"), "td")[6], "tokseg");
+  assert.deepEqual(again.map((s) => s.style.flexGrow), ["5", "10", ""]);
+  // nothing reported: no bar at all
+  p.page.update({ items: [session({ usage: {} })] });
+  assert.ok(withClass(byTag(p.row("s1"), "td")[6], "tokbar")[0].hidden);
 });
