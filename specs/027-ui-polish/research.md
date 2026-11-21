@@ -79,4 +79,34 @@
   percent; cache write uses the ink colour so it differs from input in both styles. The
   footer's Close button is gone; × and Esc close.
 
+- **D16** (2026-11-21) C4a — One page scroll: the turns list (20rem, was 15rem) and the tab
+  bar stick under the header; the story has no card around it, each turn is a chapter. Under
+  1,080 px the list narrows to 15rem; under 760 px it hides. `storyScrollsAloneBetweenTheTwoCards`
+  became `sessionPageIsOneScrollWithContentsInView` with Karthik's OK.
+- **D17** (2026-11-21) C4a — Tabs: Story first, then Files, Commands, Sites, Context; each
+  non-story tab starts with its own summary line, so the overview keeps only the Time and
+  Context cards. The token line moved into Context.
+- **D18** (2026-11-21) C4a — Twelve repeated facts removed (Headers link, Ended/Status/Thread
+  on a failed call, empty Cost and Response sections, per-card Preview/Raw switches, the
+  hooks-only sentence, the between-turn list entry, the hero token line, …). The hooks-only
+  turn says "none captured" once, in its model chip; the fold reads "The hooks saw: N".
+  `TestWeb_ServesHarnessBadgeRendering` now pins "The hooks saw:" with Karthik's OK.
+- **D19** (2026-11-21) C4a — A hooks-only turn's unmatched tools join that turn's needs-a-look
+  item on the server (`needsLook`), not in the browser.
+- **D20** (2026-11-21) C4a — Files: a changed file expands in place to its changes and diff
+  (or content, or why there is none); a Details link still opens the attribution dialog.
+  Open files stay open across live redraws.
+- **D21** (2026-11-21) C4a — Copy is an icon drawn in CSS from `data-state` (copy, tick,
+  failed), last in its row, labelled for screen readers; one `copyButton` in tool-card.js
+  serves the story, dialogs and the exchange page. Loaders are one `skeleton()` helper: a
+  status line over bars shaped like what is coming; no shimmer under reduced motion.
+- **D22** (2026-11-21) C4a — Scrollbar shift: `scrollbar-gutter: stable both-edges` on the
+  page (and stable on inner scrolls). The gutter shows only the root's flat background colour
+  (a gradient there was tried and does not reach it), so `html` takes the header colour and
+  the body the page colour: the strips read as tracks on both sides, with no notch beside the
+  header. Guarded by `scrollbarsNeverShiftTheLayout`.
+- **D23** (2026-11-21) Next — Lean restyle agreed from mockup v9 (scratchpad): neutral
+  surfaces (pure black dark, near-white light), green as the only accent, frosted glass cards
+  with a top highlight, small radii, layered shadows; Stark keeps violet.
+
 ## Open questions

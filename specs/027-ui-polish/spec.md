@@ -22,3 +22,7 @@ accepted change; decisions are in `research.md`.
 - **C3** — Call details as a full-height panel docked on the right: one line of facts, links
   to each section, one scroll with nothing scrolling inside it; context said once with a bar
   of its parts; carried-over messages folded; a failed call's health said first.
+- **C4a** — Session page as chapters in one page scroll: a wider sticky turns list, tabs
+  led by the story, a model chip per turn, prompt and answer cards with one Preview/Raw
+  switch and a copy icon, file diffs expanding in place in Files, every fact said once,
+  loaders while data loads, and an even scrollbar strip on both sides so nothing shifts.
