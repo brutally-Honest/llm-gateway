@@ -73,6 +73,11 @@ func TestBinary_SignalShutdown(t *testing.T) {
 			select {
 			case addr = <-started:
 			case <-time.After(10 * time.Second):
+				// exec copies the process's stderr into the buffer on its own goroutine until
+				// Wait returns, so the buffer is read only after that (spec 024 AC6, B7).
+				_ = cmd.Process.Kill()
+				<-readDone
+				_ = cmd.Wait()
 				t.Fatalf("no startup line\nstderr: %s", stderr.String())
 			}
 			resp, err := http.Get("http://" + addr + "/healthz")
