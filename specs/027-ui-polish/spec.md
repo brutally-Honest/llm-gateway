@@ -16,3 +16,6 @@ accepted change; decisions are in `research.md`.
 ## Accepted changes
 - **C1** — Sessions list: no Sources column, Work and Tools in one Work cell, status as a
   glyph alone in a narrow first column (word on hover and for screen readers).
+- **C2** — Two styles, Lean (default) and Stark, picked with the theme in a header Settings
+  dialog and remembered; one shared dark base (darker) and one shared light base, violet
+  accent, red only for failures; Stark uses bundled Geist fonts (ADR 0020).

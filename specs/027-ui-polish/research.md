@@ -24,4 +24,42 @@
   `td.tools` in a selector it matches exactly, so that selector keeps `td.tools` (now
   unused) rather than editing the guard. Offered to Karthik as a one-word guard cleanup.
 
+- **D5** (2026-11-21) C2 — Two styles only, Lean (Supabase x Linear: Inter, rounded, soft)
+  and Stark (from the Clarity report style: Geist, square, mono caps labels). The old look
+  is not kept as a third style (Karthik). Lean is the default; any other stored value,
+  including an old "clarity", falls back to Lean.
+- **D6** (2026-11-21) C2 — Colours are one base per theme shared by both styles, plus a few
+  per-style overrides (Stark keeps to black, white, violet and light blue: success is plain
+  ink, warnings and added lines are light blue). Light was the same for both styles at
+  Karthik's request, and the dark base is darker (page #050505) so switching theme is not
+  a jump in contrast; the switch eases over 200 ms, off for reduced motion.
+- **D7** (2026-11-21) C2 — Accent is the violet Karthik picked (#a594f9 for text in dark,
+  #6a5ae0 for fills under white text, #5b4fd6 in light). Red is kept for failures only.
+- **D8** (2026-11-21) C2 — The contrast test now checks each style x theme as the base with
+  that style's overrides on top, and `everyStyleBlockIsChecked` fails if the stylesheet has
+  a style block the test does not name. Both were probed: a bad Stark light colour (1.93:1)
+  and an unknown style block each failed. Lowest real pairs: 5.38 Lean dark, 4.56 Lean light,
+  5.67 Stark dark, 4.69 Stark light.
+- **D9** (2026-11-21) C2 — Settings is a modal `<dialog>` opened from a header button, with
+  Theme and Style rows; Esc closes it (the dialog does that itself) and no backdrop click
+  handler is added, because click handlers belong on buttons and links only. Page keys are
+  ignored while it is open. The style variable is named `look` so no source line reads
+  `style =`, which the web guard bans.
+- **D10** (2026-11-21) C2 — Geist and Geist Mono are bundled (ADR 0020) because the CSP
+  allows fonts only from the gateway; the OFL licence sits in `docs/licenses/` since served
+  files may not contain URLs.
+- **D11** (2026-11-21) — A "% cached" field was considered and skipped (Karthik): spec 013
+  AC35 and `TestWeb_NoContextPercentAndMoneyOnlyFromCost` keep percentages out of the UI,
+  and a ratio in tokens was not wanted for now.
+- **D12** (2026-11-21) — Next changes, agreed from mockups v4–v6 (scratchpad, not in the
+  repo): C3 the call details as a full-height panel on the right with a one-line header,
+  section links and folded lists in one scroll (mockup C); C4 the session page as chapters,
+  one page scroll, a sticky contents list, prompt and answer cards with Copy, a model chip per
+  turn, boxes for short turns and a one-line-per-call list for long ones; C5 tabs under the
+  summary (Story, Files changed, Commands, Sites, Context) with Files changed by turn or by
+  file, and file changes shown only there. Karthik approved rewriting the guards
+  `storyScrollsAloneBetweenTheTwoCards` (016 AC3) and `callReplyCapAndShowAllCoverRaw` to
+  check the new layouts, and small server additions so the browser only formats: which
+  calls fold, which turns use the long layout, and files grouped by turn.
+
 ## Open questions
