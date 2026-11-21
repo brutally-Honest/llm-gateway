@@ -280,7 +280,12 @@ func run(ctx context.Context, d deps) int {
 	}
 	// The proxy listeners bind before anything serves too, so a taken port stops the
 	// gateway with one line (spec 014, E14).
-	if code := capt.startProxy(cfg.Effects, d.listen, log); code != exitOK {
+	// The gateway's own listeners, so traffic to them is not stored as effects (spec 024).
+	own := []string{cfg.ListenAddr, ln.Addr().String()}
+	if uiLn != nil {
+		own = append(own, cfg.UI.ListenAddr, uiLn.Addr().String())
+	}
+	if code := capt.startProxy(cfg.Effects, d.listen, own, log); code != exitOK {
 		_, _ = capt.close(context.Background())
 		_ = ln.Close()
 		if uiLn != nil {
@@ -681,8 +686,9 @@ func (e *effectsRun) callbacks() []func(hooks.HookStored) {
 // startProxy binds the HTTP proxy listener and, when set, the SOCKS5 one, then serves
 // them; it links each connection to the runner's one active session (AC10). With effects
 // or the network sensor off it does nothing. A bind failure logs one line and closes
-// what was bound.
-func (c *captureRun) startProxy(e config.Effects, listen func(network, addr string) (net.Listener, error), log *zap.Logger) int {
+// what was bound. Connections to own (the API and UI listeners) or to the proxies
+// themselves are forwarded but not recorded (spec 024 AC4).
+func (c *captureRun) startProxy(e config.Effects, listen func(network, addr string) (net.Listener, error), own []string, log *zap.Logger) int {
 	if c == nil || c.effects == nil || !e.Network.Enabled {
 		return exitOK
 	}
@@ -714,6 +720,11 @@ func (c *captureRun) startProxy(e config.Effects, listen func(network, addr stri
 	}
 	run := c.effects
 	run.rec = netproxy.NewRecorder(run.store, run.runner.ActiveSession, netproxy.Saved(run.saved), log)
+	for _, b := range lns {
+		own = append(own, b.ln.Addr().String())
+	}
+	own = append(own, e.Network.HTTPProxyAddr, e.Network.SocksProxyAddr)
+	run.rec.SkipTargets(own...)
 	run.proxy = netproxy.New(run.rec, log)
 	for _, b := range lns {
 		if b.key == "effects.network.http_proxy_addr" {
