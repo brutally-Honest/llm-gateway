@@ -223,8 +223,9 @@ export function createSessionPage(ctx = {}) {
       items.push(li);
       return b;
     };
-    // an edit between turns is in the story and in Needs a look, not in the turn list (027 C4)
-    for (const t of view.turns || []) {
+    // an edit between turns is in the story and in Needs a look, not in the turn list (027 C4);
+    // the newest turn comes first, as in the story (027 C8)
+    for (const t of [...(view.turns || [])].reverse()) {
       const b = entry(turnId(t.n), "toc-item");
       const meta = el("span", "m");
       if (t.background) meta.append(el("span", "", "background task"));
@@ -337,7 +338,9 @@ export function createSessionPage(ctx = {}) {
     const nextBtw = new Map();
     const between = new Map();
     for (const b of view.between || []) between.set(b.after, b);
-    const want = [storyBar, status];
+    // the story runs newest first (027 C8): it is built oldest first, as the server sends it,
+    // so each between-turns entry sits between the right two turns, then read backwards
+    const seq = [];
     hero = heroNode();
     heroSlot.replaceChildren(hero);
     const btw = (after) => {
@@ -347,16 +350,17 @@ export function createSessionPage(ctx = {}) {
       let k = btwEls.get(after);
       if (!k || k.sig !== sig) k = { sig, node: betweenNode(b, storyCtx) };
       nextBtw.set(after, k);
-      want.push(k.node);
+      seq.push(k.node);
     };
     btw(0);
     for (const t of view.turns || []) {
       let k = turnEls.get(t.n);
       if (!k || k.hash !== t.hash) k = { hash: t.hash, node: turnNode(t, storyCtx) };
       next.set(t.n, k);
-      want.push(k.node);
+      seq.push(k.node);
       if (t.n > 0) btw(t.n);
     }
+    const want = [storyBar, status, ...seq.reverse()];
     turnEls.clear();
     for (const [n, k] of next) turnEls.set(n, k);
     btwEls.clear();
@@ -364,22 +368,23 @@ export function createSessionPage(ctx = {}) {
     reconcile(story, want);
   }
 
-  // the page scrolls: a live session follows its end when the window was at the bottom
+  // the page scrolls: the newest turn is at the top (027 C8), so a live session follows it
+  // when the window was at the top
   const pageEl = () => globalThis.document && globalThis.document.scrollingElement;
-  const atBottom = () => {
+  const atTop = () => {
     const p = pageEl();
-    return Boolean(p) && typeof p.scrollHeight === "number" && p.scrollHeight - p.scrollTop - p.clientHeight <= 8;
+    return Boolean(p) && typeof p.scrollTop === "number" && p.scrollTop <= 8;
   };
 
   page.setView = (next) => {
-    const follow = view !== null && atBottom();
+    const follow = view !== null && atTop();
     view = next;
     if (loader) loader.remove();
     drawTurnList();
     drawStory();
     side.update(view);
     dialog.update(view);
-    if (follow) pageEl().scrollTop = pageEl().scrollHeight;
+    if (follow) pageEl().scrollTop = 0;
     onScroll();
   };
   page.applyEvent = (ev) => page.setView(mergeView(view, ev));

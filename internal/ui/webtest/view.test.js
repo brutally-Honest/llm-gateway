@@ -95,7 +95,8 @@ test("rendersTurnsTabsAndDialogFromTheView", async () => {
   assert.match(story, /\+1 reminder/);
   assert.match(story, /All 3 model calls 3 tool calls 2 files changed 1 site ✗ 1 failed/);
   const links = withClass(page.el, "call-link").map((a) => a.href);
-  assert.deepEqual(links.slice(0, 4), ["#/sessions/s1/call/e3", "#/sessions/s1/call/e4", "#/sessions/s1/call/e5", "#/sessions/s1/call/e6"]);
+  // the newest turn comes first (027 C8): turn 2's call, then turn 1's three
+  assert.deepEqual(links.slice(0, 4), ["#/sessions/s1/call/e6", "#/sessions/s1/call/e3", "#/sessions/s1/call/e4", "#/sessions/s1/call/e5"]);
   assert.match(story, /Read the thinking/);
   assert.match(story, /Final answer Fixed the retry\./, "the answer has no switch of its own; its copy control is an icon (027 C4)");
   // tool lines: state as glyph and word (✓ alone), summary, lines, first error
@@ -547,4 +548,32 @@ test("sessionPageShowsLoadersUntilItsView", () => {
   page.setStatus("");
   page.setView(fixture());
   assert.equal(loaders().length, 0, "the view replaces the loaders");
+});
+
+// spec 027 C8: the turn list and the story run newest first, and stay in step: the first
+// entry is the newest turn, j moves to the next older one, and a live session that was
+// read from the top stays at the top when a turn arrives.
+test("turnsRunNewestFirstInTheListAndTheStory", () => {
+  const { page } = mount();
+  const listed = page.entries().map((e) => e.id);
+  assert.deepEqual(listed, ["turn-3", "turn-2", "turn-1"], "the turn list, newest first");
+  const turns = withClass(page.el, "turn").filter((t) => /^turn-\d+$/.test(t.id)).map((t) => t.id);
+  assert.deepEqual(turns, ["turn-3", "turn-2", "turn-1"], "the story, in the same order");
+  assert.equal(page.current(), 0, "the newest turn is current on load");
+  page.moveTurn(1);
+  assert.equal(page.entries()[page.current()].id, "turn-2", "j steps to the older turn");
+  const doc = globalThis.document;
+  const scroller = { scrollTop: 5, scrollHeight: 4000, clientHeight: 800 };
+  const real = Object.getOwnPropertyDescriptor(doc, "scrollingElement");
+  Object.defineProperty(doc, "scrollingElement", { configurable: true, value: scroller });
+  try {
+    page.setView(fixture());
+    assert.equal(scroller.scrollTop, 0, "read from the top: stays at the newest turn");
+    scroller.scrollTop = 900;
+    page.setView(fixture());
+    assert.equal(scroller.scrollTop, 900, "scrolled down: left where the reader is");
+  } finally {
+    if (real) Object.defineProperty(doc, "scrollingElement", real);
+    else delete doc.scrollingElement;
+  }
 });
