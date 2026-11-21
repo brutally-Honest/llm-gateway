@@ -113,8 +113,17 @@ the branch's final code).
 | Round 2, `--check`, python on 7196, no lsof/ss | fails as an unknown process, gateway ports not flagged | exit 1, "7196 held by an unknown process (ss or lsof not found on PATH …)" only | yes |
 | Round 2, the same with the normal PATH | owner named | "7196 held by python3 (pid 1663341)" | yes |
 | Round 2, polls | sub-second gaps | 113 polls, 112 × 200, 1 refused | yes |
+| Round 3 (5d26daa, D7), reinstalls 1 and 2, 1.5 s apart | timing as before: no wait on a clean stop and start | both exit 0 in 1.49 s and 1.46 s; stop → start 42 ms and 43 ms; 114 polls, 113 × 200, 1 refused | yes |
+| Round 3, the unit's environment | D7's systemd rule holds for the real unit | `INVOCATION_ID` set, `SYSTEMD_EXEC_PID` = MainPID (1908209) | yes |
+| Round 3, `gateway doctor` | green, no startup record | exit 0, "systemd: installed, running, starts at login"; no `~/.local/state/llm-gateway/` | yes |
+
+A real crash loop was not run: it needs a broken config in `~/.config/llm-gateway/`,
+outside this repo. The fake-service tests cover the wait, the once-per-10-minutes log and
+the doctor row.
 
 Only the Mac can confirm:
+- D7 under launchd: `XPC_SERVICE_NAME` is `dev.llm-gateway` in the job, and a broken config
+  restarts about every 11 s with one log line per 10 minutes; doctor's restarting row.
 - B15: back-to-back reinstalls under launchd now restart within about a second (the plist
   key is pinned by the golden file; launchd's handling of it is not seen on Linux).
 - D3: the first upgrade to this build takes the changed-plist path (bootout, wait,
@@ -129,3 +138,7 @@ AC1–AC3 are built, each with a test that failed before its fix (B16's only fai
 host with a symlinked `/home`, so its failure is the re-test's own output). The Linux real
 check (AC4) found one bug, the warming UI port (D6), now fixed and re-checked. `make
 verify` is green. No open questions.
+
+Update (2026-11-21): AC5, the crash-loop backoff from review, is built (D7) with tests
+that fail when the service check or the once-per-interval rule is broken; reinstall
+timing is unchanged in round 3. `make verify` is green.
