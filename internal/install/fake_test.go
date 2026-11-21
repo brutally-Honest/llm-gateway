@@ -72,9 +72,12 @@ func (f *fakeService) Check() (bool, string) {
 	}
 	return false, "no systemd user session"
 }
-func (f *fakeService) StartCommands(Paths) [][]string { return [][]string{{"fake-svc", "start"}} }
-func (f *fakeService) StopCommands(Paths) [][]string  { return [][]string{{"fake-svc", "stop"}} }
-func (f *fakeService) Notes() []string                { return nil }
+func (f *fakeService) StartCommands(Paths, bool) [][]string { return [][]string{{"fake-svc", "start"}} }
+func (f *fakeService) Start(p Paths, changed bool) error {
+	return runCommands(f.env, f.StartCommands(p, changed))
+}
+func (f *fakeService) StopCommands(Paths) [][]string { return [][]string{{"fake-svc", "stop"}} }
+func (f *fakeService) Notes() []string               { return nil }
 func (f *fakeService) Status(p Paths) ServiceStatus {
 	_, err := os.Stat(f.File(p))
 	return ServiceStatus{Installed: err == nil, Running: f.running, AtLogin: err == nil && f.enabled}

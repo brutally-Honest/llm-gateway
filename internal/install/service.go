@@ -2,11 +2,13 @@ package install
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // managedMark is in every service file install writes, so a lost state file still tells
@@ -28,8 +30,12 @@ type ServiceManager interface {
 	// File is the unit or plist path; Render is its content for the given paths.
 	File(p Paths) string
 	Render(p Paths) []byte
-	// StartCommands are run after the file is written: reload, enable and (re)start.
-	StartCommands(p Paths) [][]string
+	// StartCommands are what Start runs after the file is written (reload, enable and
+	// (re)start), for the plan; fileChanged says the service file is new or changed.
+	StartCommands(p Paths, fileChanged bool) [][]string
+	// Start runs StartCommands, with the waits and retries the manager needs. On error
+	// the service may be down; a *startError says so and how to start it.
+	Start(p Paths, fileChanged bool) error
 	// StopCommands are run before the file is removed.
 	StopCommands(p Paths) [][]string
 	// RestoreCommands put a user's own service file, restored by uninstall, back in the
@@ -87,12 +93,16 @@ WantedBy=default.target
 `, managedMark, p.Binary, p.Config, stopTimeoutS)
 }
 
-func (s *systemd) StartCommands(Paths) [][]string {
+func (s *systemd) StartCommands(Paths, bool) [][]string {
 	return [][]string{
 		{"systemctl", "--user", "daemon-reload"},
 		{"systemctl", "--user", "enable", systemdUnit},
 		{"systemctl", "--user", "restart", systemdUnit},
 	}
+}
+
+func (s *systemd) Start(p Paths, changed bool) error {
+	return runCommands(s.env, s.StartCommands(p, changed))
 }
 
 func (s *systemd) StopCommands(Paths) [][]string {
@@ -207,17 +217,143 @@ func xmlEscape(s string) string {
 	return b.String()
 }
 
-func (l *launchd) StartCommands(p Paths) [][]string {
-	target := l.domain() + "/" + launchdLabel
-	return [][]string{
-		{"mkdir", "-p", logDir(p)},
-		// bootout fails harmlessly when the agent is not loaded; bootstrap then loads the
-		// new plist, enable keeps it on at login and kickstart -k restarts it.
-		{"launchctl", "bootout", target},
-		{"launchctl", "bootstrap", l.domain(), l.File(p)},
-		{"launchctl", "enable", target},
-		{"launchctl", "kickstart", "-k", target},
+func (l *launchd) target() string { return l.domain() + "/" + launchdLabel }
+
+// loaded says whether launchd knows the job: `launchctl print` fails once it is gone.
+func (l *launchd) loaded() bool {
+	_, err := l.env.Run.Output("launchctl", "print", l.target())
+	return err == nil
+}
+
+// StartCommands: a loaded job whose plist is unchanged is only restarted with kickstart
+// -k. Otherwise the old job is booted out, enable keeps it on at login (and lets a job a
+// user disabled load at all), bootstrap loads the new plist and kickstart makes sure it
+// runs (spec 024 AC1, macos-v1.md B2).
+func (l *launchd) StartCommands(p Paths, changed bool) [][]string {
+	mkdir := []string{"mkdir", "-p", logDir(p)}
+	enable := []string{"launchctl", "enable", l.target()}
+	loaded := l.loaded()
+	if !changed && loaded {
+		return [][]string{mkdir, enable, {"launchctl", "kickstart", "-k", l.target()}}
 	}
+	out := [][]string{mkdir}
+	if loaded {
+		out = append(out, []string{"launchctl", "bootout", l.target()})
+	}
+	return append(out, enable, l.bootstrapCmd(p), []string{"launchctl", "kickstart", l.target()})
+}
+
+func (l *launchd) bootstrapCmd(p Paths) []string {
+	return []string{"launchctl", "bootstrap", l.domain(), l.File(p)}
+}
+
+// Waits of a launchd start: bootout returns before launchd has removed the job, so it is
+// polled for up to the job's ExitTimeOut and a little more; bootstrap can still fail with
+// EIO just after, so it is retried with a backoff.
+const (
+	launchdPoll      = 200 * time.Millisecond
+	launchdGoneLimit = (stopTimeoutS + 5) * time.Second
+	launchdTries     = 5
+	launchdBackoff   = 250 * time.Millisecond
+)
+
+func (l *launchd) Start(p Paths, changed bool) error {
+	cmds := l.StartCommands(p, changed)
+	start := func() *startError {
+		return &startError{Fix: strings.Join(l.bootstrapCmd(p), " ")}
+	}
+	for _, cmd := range cmds {
+		line := strings.Join(cmd, " ")
+		switch {
+		case cmd[0] == "launchctl" && cmd[1] == "bootout":
+			// Fails harmlessly if the job left in the meantime; the poll decides.
+			_, _ = l.env.Run.Output(cmd[0], cmd[1:]...)
+			if !l.waitGone() {
+				e := start()
+				e.Err = fmt.Errorf("%s: launchd had not removed the old job after %s", line, launchdGoneLimit)
+				return e
+			}
+		case cmd[0] == "launchctl" && cmd[1] == "bootstrap":
+			if err := l.bootstrap(cmd); err != nil {
+				e := start()
+				e.Err = err
+				return e
+			}
+		default:
+			if err := runCommands(l.env, [][]string{cmd}); err != nil {
+				e := start()
+				if cmd[0] == "launchctl" && cmd[1] == "kickstart" {
+					e.Fix = "launchctl kickstart -k " + l.target() // loaded, not running
+				}
+				e.Err = err
+				return e
+			}
+		}
+	}
+	return nil
+}
+
+func (l *launchd) waitGone() bool {
+	for waited := time.Duration(0); waited <= launchdGoneLimit; waited += launchdPoll {
+		if !l.loaded() {
+			return true
+		}
+		l.env.Sleep(launchdPoll)
+	}
+	return false
+}
+
+func (l *launchd) bootstrap(cmd []string) error {
+	wait := launchdBackoff
+	var err error
+	var out string
+	try := 1
+	for ; try <= launchdTries; try++ {
+		if out, err = l.env.Run.Output(cmd[0], cmd[1:]...); err == nil {
+			return nil
+		}
+		if !isEIO(err, out) || try == launchdTries {
+			break
+		}
+		l.env.Sleep(wait)
+		wait *= 2
+	}
+	return fmt.Errorf("%s: %w %s (%d of %d tries)", strings.Join(cmd, " "), err, strings.TrimSpace(out), try, launchdTries)
+}
+
+// isEIO says launchctl failed with error 5, Input/output error: the job is still being
+// removed, or launchd is busy with it.
+func isEIO(err error, out string) bool {
+	var ec interface{ ExitCode() int }
+	if errors.As(err, &ec) && ec.ExitCode() == 5 {
+		return true
+	}
+	return strings.Contains(out, "Input/output error") || strings.Contains(out, "failed: 5:")
+}
+
+// startError is a service start that failed and may have left the gateway down.
+type startError struct {
+	Err error
+	Fix string // the exact command that starts it
+}
+
+func (e *startError) Error() string { return e.Err.Error() }
+func (e *startError) Unwrap() error { return e.Err }
+
+// runCommands runs cmds in order; mkdir is done in-process.
+func runCommands(e *Env, cmds [][]string) error {
+	for _, cmd := range cmds {
+		if cmd[0] == "mkdir" {
+			if err := os.MkdirAll(cmd[len(cmd)-1], 0o755); err != nil {
+				return err
+			}
+			continue
+		}
+		if out, err := e.Run.Output(cmd[0], cmd[1:]...); err != nil {
+			return fmt.Errorf("%s: %w %s", strings.Join(cmd, " "), err, strings.TrimSpace(out))
+		}
+	}
+	return nil
 }
 
 func (l *launchd) StopCommands(Paths) [][]string {
@@ -268,12 +404,13 @@ func (l *launchd) LogHint(p Paths) string {
 // noService stands in on an unsupported OS; preflight has already stopped there.
 type noService struct{}
 
-func (noService) Kind() string                   { return "none" }
-func (noService) Check() (bool, string)          { return false, "unsupported OS" }
-func (noService) File(Paths) string              { return "" }
-func (noService) Render(Paths) []byte            { return nil }
-func (noService) StartCommands(Paths) [][]string { return nil }
-func (noService) StopCommands(Paths) [][]string  { return nil }
+func (noService) Kind() string                         { return "none" }
+func (noService) Check() (bool, string)                { return false, "unsupported OS" }
+func (noService) File(Paths) string                    { return "" }
+func (noService) Render(Paths) []byte                  { return nil }
+func (noService) StartCommands(Paths, bool) [][]string { return nil }
+func (noService) Start(Paths, bool) error              { return nil }
+func (noService) StopCommands(Paths) [][]string        { return nil }
 func (noService) RestoreCommands(Paths, bool, bool) [][]string {
 	return nil
 }
