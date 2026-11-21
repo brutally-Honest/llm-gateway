@@ -87,6 +87,10 @@ below and AC44, the API-key smoke test of Phase 1.
     not exercised.
 - On Ubuntu, test `sandbox.network.allowAllUnixSockets: true` as the workaround for the
   sandbox bug (014 D17).
+- The agent-loop kit on macOS's bash 3.2: `loop.sh:91` (a `case` inside `$( )`) fails to
+  parse, so 14 kit scripts fail (`docs/manual-checks/macos-v1.md` B8).
+- A `claude` run that fails at argument parsing still sends one SessionEnd hook, which
+  shows as an active "Hooks only" session for minutes (`docs/manual-checks/macos-v1.md` B12).
 - The speed follow-ups, re-measured after 016.
   - Cold view build for large sessions (2.3 s server build at 2,000 calls; 016 research
     2026-11-13).
