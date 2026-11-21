@@ -71,3 +71,35 @@ macOS from here. The macOS job is the first check there (AC7).
   (`docs/install.md` "Releases"). It still runs the install.sh that the curl line
   serves from main. "Upgrade over it once" is read as running the same install again
   over the running gateway (024 B2's path), then doctor.
+  Update (2026-11-21, Karthik's review): the draft and `gh release download` smoke test
+  is replaced by a release candidate. Tag `vX.Y.Z-rc.N` and publish it as a pre-release.
+  Smoke-test it with the real curl line, pinned to the rc, with no gh and no
+  `LLM_GATEWAY_BASE_URL`. On a failure, fix and make rc.N+1. When it is clean, tag
+  `vX.Y.Z` on the same commit and make a draft that Karthik publishes. D8 and D9 hold
+  the checks behind this.
+- D8 (2026-11-21) — install.sh and release candidates:
+  - **"latest" ignores pre-releases.** With no version argument, install.sh downloads
+    from `https://github.com/$REPO/releases/latest/download/`. GitHub resolves that to
+    the newest release that is neither a draft nor a pre-release. Checked on a public
+    repo whose pre-release is newer than its stable release: neovim's `nightly`
+    (prerelease, created 2026-11-19) is newer than `v0.12.6` (2026-10-09), and
+    `releases/latest/download/SHA256SUMS` redirects to `…/download/v0.12.6/SHA256SUMS`.
+    So an rc published as a pre-release never becomes what the plain curl line installs.
+    No change to install.sh was needed. This repo has no releases yet, so the first rc
+    is the first check here. Its step-2 box in the release checklist covers it.
+  - **The version argument accepts an rc tag.** install.sh takes any first argument not
+    starting with `-` as the version, strips one leading `v`, and builds
+    `releases/download/v<version>`, with no format check. `sh install.sh v0.4.0-rc.1 --check`
+    asked for `…/releases/download/v0.4.0-rc.1/SHA256SUMS` (a 404, since no such release
+    exists). `make dist VERSION=v0.4.0-rc.1` named the archives
+    `llm-gateway_0.4.0-rc.1_<os>_<arch>.tar.gz`, and the binary printed
+    `gateway v0.4.0-rc.1`. install.sh's name parse on that SHA256SUMS line gives
+    `0.4.0-rc.1`, which equals the asked version. The rc has no `_`, and the parse
+    strips only the `_<os>_<arch>.tar.gz` suffix.
+- D9 (2026-11-21) — The final release is rebuilt with `make dist VERSION=vX.Y.Z` on the
+  rc's commit, not given the rc's files. The archive names and the binary's version
+  string carry the version, so the rc's files would fail install.sh's check
+  ("asked for X.Y.Z, the release holds X.Y.Z-rc.N"), and a plain install would get a
+  binary that reports the rc. Builds are `-trimpath` and `CGO_ENABLED=0` from the same
+  commit, so only the version string differs. `VERSION` is passed explicitly for both,
+  because the two tags share a commit and `git describe` would have to choose one.
