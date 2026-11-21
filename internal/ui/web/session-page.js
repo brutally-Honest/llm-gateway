@@ -232,8 +232,16 @@ export function createSessionPage(ctx = {}) {
       meta.append(el("span", "", t.hooks_only ? "hooks only" : dur(t.clock_ms ?? 0)));
       const c = t.counts || {};
       if (c.changed) meta.append(el("span", "", `${plural(c.changed, "file")} changed`));
-      if (c.failed) meta.append(el("span", "bad", `✗ ${c.failed} failed`));
-      if (t.end) meta.append(el("span", t.end.word === "ended by error" ? "bad" : "", `${t.end.glyph} ${t.end.word}`));
+      // marks, not words, so a row's prompt keeps the same room as its neighbours'; the words
+      // are the mark's name and tooltip (027 C7a)
+      const mark = (cls, glyph, word) => {
+        const m = el("span", cls, glyph);
+        m.title = word;
+        m.setAttribute("aria-label", word);
+        meta.append(m);
+      };
+      if (c.failed) mark("bad", "✗", `${c.failed} failed`);
+      if (t.end) mark(t.end.word === "ended by error" ? "bad" : "", t.end.glyph, t.end.word);
       b.append(el("span", "n", t.n ? String(t.n) : "·"), el("span", "p clamp", t.prompt || "(no prompt text)"), meta);
     }
     entries = next;

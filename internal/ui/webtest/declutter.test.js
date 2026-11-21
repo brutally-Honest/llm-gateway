@@ -308,3 +308,30 @@ test("browserTabIsNamedAndCarriesTheLogo", () => {
   }
 });
 
+// the call panel's scrim is in the panel's own layer, so the panel repaints its background
+// over it: the panel is never dimmed by its own scrim
+test("callPanelIsNotDimmedByItsOwnScrim", () => {
+  const m = css.match(/dialog\.call-details::after \{([^}]*)\}/);
+  assert.ok(m, "the panel repaints its background");
+  for (const d of ["content: \"\"", "position: absolute", "inset: 0", "z-index: -1", "background: inherit"]) assert.ok(m[1].includes(d), d);
+});
+
+// Lean's input and cache read differ in the context bar (its model colour is its accent)
+test("leanContextBarTellsInputFromCacheRead", () => {
+  assert.match(css, /:root\[data-style="lean"\] \.ctx-bar \.cr, :root\[data-style="lean"\] \.sw-cr \.l::before \{ background: var\(--muted\); \}/);
+});
+
+// the settings and shortcuts dialogs take focus themselves, so no option shows a ring on open
+test("dialogsFocusThemselvesOnOpen", () => {
+  const { head } = shell();
+  const dialogs = byTag(head, "dialog");
+  assert.equal(dialogs.length, 2, "settings and shortcuts");
+  for (const d of dialogs) assert.equal(d.tabIndex, -1, `${d.className} can take focus`);
+  const settings = dialogs.find((d) => d.className === "settings");
+  settings.showModal = () => { settings.open = true; };
+  let focused = null;
+  settings.focus = () => { focused = settings; };
+  find(head, (e) => e.className === "settings-open").fire("click");
+  assert.equal(settings.open, true);
+  assert.equal(focused, settings, "focus lands on the dialog, not its first option");
+});

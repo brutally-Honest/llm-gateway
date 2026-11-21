@@ -577,3 +577,15 @@ test("turnsRunNewestFirstInTheListAndTheStory", () => {
     else delete doc.scrollingElement;
   }
 });
+
+// spec 027 C7a: the turn list shows failures and endings as marks, not words, so every row
+// keeps the same room for its prompt; the words are the mark's name and tooltip
+test("turnListMarksFailuresWithAGlyphNamedByItsWords", () => {
+  const { page } = mount();
+  const row = page.entries().find((e) => e.id === "turn-1").button;
+  const bad = withClass(row, "bad")[0];
+  assert.equal(bad.textContent, "✗");
+  assert.equal(bad.title, "1 failed");
+  assert.equal(bad.attrs["aria-label"], "1 failed");
+  assert.doesNotMatch(textOf(row), /failed|ended by/, "no words in the row");
+});

@@ -204,7 +204,8 @@ export function createCallDialog(ctx = {}) {
       fact("Duration", f.dur_ms === null || f.dur_ms === undefined ? "—" : dur(f.dur_ms)),
       fact("Started", f.start ? clock(f.start) : "—"),
       // a call in trouble says its error once, in the Health alert (027 C4)
-      d.health.ok ? fact("Ended", f.stop.word, f.stop.bad ? "bad" : "") : null,
+      // the stop reason, not a time: said here once, not again over the Response (027 C7a)
+      d.health.ok ? fact("Stop reason", f.stop.word, f.stop.bad ? "bad" : "") : null,
       // a call in trouble says its status in the Health alert at the top of the body
       d.health.ok ? fact("Status", d.health.status) : null,
       costFact(d.context.cost),
@@ -356,7 +357,7 @@ export function createCallDialog(ctx = {}) {
       : null;
     if (!r.text) {
       const none = el("p", "muted-note", (d.tools || []).length ? "No text in the reply: it asked for the tool calls below." : "No text in the reply.");
-      return section("Response", r.stop_reason ? `stop: ${r.stop_reason}` : "", none, cutNote);
+      return section("Response", "", none, cutNote);
     }
     // the reply is capped like a message box; "Show all" expands it in place, and stays
     // expanded through live redraws of the same call (the turn card stays whole, D11)
@@ -370,7 +371,7 @@ export function createCallDialog(ctx = {}) {
     });
     all.setAttribute("aria-expanded", String(replyAll));
     replyFit = () => fitReply(reply, all);
-    return section("Response", r.stop_reason ? `stop: ${r.stop_reason}` : "", reply, all, cutNote);
+    return section("Response", "", reply, all, cutNote);
   }
 
   // fitReply hides "Show all" while the capped reply fits its box, so a short reply has no

@@ -60,6 +60,9 @@ function picker(label, choices, current, pick) {
 function settingsDialog({ storage, root, theme, look }) {
   const dlg = el("dialog", "", "settings");
   dlg.setAttribute("aria-labelledby", "settings-title");
+  // the dialog itself takes focus on open (focusDialog): a ring on the first option read as
+  // a choice
+  dlg.tabIndex = -1;
   const title = el("h2", "Settings");
   title.id = "settings-title";
   const themes = [...THEMES].reverse().map((t) => [t, t === "light" ? "Light" : "Dark"]);
@@ -84,6 +87,7 @@ function settingsDialog({ storage, root, theme, look }) {
 // a click outside, on the scrim button the call dialog uses.
 function helpDialog() {
   const dlg = el("dialog", "", "settings help");
+  dlg.tabIndex = -1;
   dlg.setAttribute("aria-labelledby", "help-title");
   const scrim = el("button", "", "call-scrim");
   scrim.type = "button";
@@ -102,6 +106,13 @@ function helpDialog() {
   return { dlg, list };
 }
 
+// openDialog opens a header dialog as a modal and puts focus on the dialog itself, not on
+// its first option, so nothing looks chosen by a focus ring (027 C7a).
+function openDialog(dlg) {
+  dlg.showModal();
+  if (typeof dlg.focus === "function") dlg.focus();
+}
+
 // mountShell fills the header and returns the updaters the page uses.
 export function mountShell({ head, storage, root, theme, look = "lean" }) {
   const crumbs = el("nav", "", "crumbs");
@@ -118,7 +129,7 @@ export function mountShell({ head, storage, root, theme, look = "lean" }) {
   open.setAttribute("aria-label", "Settings");
   open.title = "Settings";
   open.setAttribute("aria-haspopup", "dialog");
-  open.addEventListener("click", () => settings.showModal());
+  open.addEventListener("click", () => openDialog(settings));
   // the page's shortcuts open with the "?" key (no button in the header, 027 C7a)
   const help = helpDialog();
   let bar = { level: "", position: "", shortcuts: [] };
@@ -134,7 +145,7 @@ export function mountShell({ head, storage, root, theme, look = "lean" }) {
       frag.append(row);
     }
     help.list.replaceChildren(frag);
-    help.dlg.showModal();
+    openDialog(help.dlg);
   };
   // the brand is a logo-only home link: no visible text, a name for assistive tech
   const brand = el("a", "", "brand");

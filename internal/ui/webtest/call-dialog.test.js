@@ -271,7 +271,7 @@ const flat = (h) => h.text().replace(/:\s+/g, ": ");
 test("callDialogShowsFactsAndContext", async () => {
   const h = await openOne(detail("b"));
   const t = h.text();
-  for (const re of [/Model m1/, /Duration 1\.0s/, /Ended end turn/, /Context 160/]) assert.match(t, re);
+  for (const re of [/Model m1/, /Duration 1\.0s/, /Stop reason end turn/, /Context 160/]) assert.match(t, re);
   // the thread is said once, under the title (027 C4)
   assert.doesNotMatch(textOf(withClass(h.root, "call-top")[0]), /Thread/);
   assert.match(t, /Model call · turn 1/);
@@ -301,7 +301,8 @@ test("callDialogShowsSawThinkingResponse", async () => {
   assert.equal(withClass(h.root, "is-carried").length, 2);
   assert.equal(withClass(h.root, "is-new").length, 1);
   assert.match(h.text(), /all done/);
-  assert.match(h.text(), /stop: end turn/);
+  assert.doesNotMatch(h.text(), /stop: end turn/, "the stop reason is said once, in the top line (027 C7a)");
+  assert.match(h.text(), /Stop reason end turn/);
   // a reply of tool calls alone, and messages with no text, say so instead of showing blank
   const toolsOnly = await openOne(detail("b", { tools: [t1], response: { text: "", stop_reason: "tool use" },
     saw: { first: false, carried: 1, new: 1, messages: [{ role: "assistant", text: "", new: false }, { role: "user", text: "", new: true }] } }));
