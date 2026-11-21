@@ -52,8 +52,10 @@ function host({ start = [null], load, missing } = {}) {
     back: () => { hist.moves.push(["back"]); hist.stack.pop(); sync(); },
   };
   const asked = [];
+  const behind = doc.createElement("div"); // the session page under the panel
   dialog = createCallDialog({
     nav,
+    behind: () => behind,
     loadCall: async (id) => {
       asked.push(id);
       return load ? load(id) : detail(id);
@@ -68,7 +70,7 @@ function host({ start = [null], load, missing } = {}) {
   sync();
   const root = dialog.el;
   const btn = (label) => byTag(root, "button").find((b) => b.textContent.includes(label));
-  return { dialog, root, hist, top, links, heading, asked, clickTo, btn, text: () => textOf(root).replace(/\s+/g, " ") };
+  return { dialog, root, hist, top, links, heading, asked, clickTo, btn, behind, text: () => textOf(root).replace(/\s+/g, " ") };
 }
 
 // AC5 (carries opensFromLinkBarAndEnter, backClosesDrawer): a link opens the call in the
@@ -110,17 +112,21 @@ test("missingCallShowsNote", async () => {
   assert.equal(noted, 1, "the page is told, so it shows the note");
 });
 
-// AC21 (carries drawerIsModalWithAFixedTop): the dialog is modal — opened with showModal(),
-// so the page behind is dimmed and inert; a click on the dimmed page closes it, as Esc does;
-// its top (title, facts, context line, message counts) stays while the rest scrolls.
-test("callDialogIsModalWithAFixedTop", async () => {
+// AC21 (carries drawerIsModalWithAFixedTop), changed by 027 C7a with Karthik's OK: the page
+// behind is dimmed and inert while the panel is open, but the header above stays usable, so
+// the panel opens with show() and makes the page inert itself (showModal would take the
+// header too); a click on the dimmed page closes it, as Esc does; its top (title, facts,
+// context line, message counts) stays while the rest scrolls.
+test("callPanelHoldsThePageButNotTheHeaderWithAFixedTop", async () => {
   const doc = globalThis.document;
   let modal = 0;
+  let shown = 0;
   const realCreate = doc.createElement;
   doc.createElement = (tag) => {
     const e = realCreate(tag);
     if (tag === "dialog") {
       e.showModal = () => { modal++; e.open = true; };
+      e.show = () => { shown++; e.open = true; };
       e.close = () => { e.open = false; };
     }
     return e;
@@ -128,7 +134,9 @@ test("callDialogIsModalWithAFixedTop", async () => {
   try {
     const h = host({ start: [null, "b"] });
     await tick();
-    assert.equal(modal, 1, "opened with showModal, which makes the page behind inert");
+    assert.equal(modal, 0, "not a browser modal: that would make the header inert too");
+    assert.equal(shown, 1, "opened with show()");
+    assert.equal(h.behind.inert, true, "the page under the panel is inert while it is open");
     assert.equal(globalThis.document.activeElement.attrs["aria-label"], "Close call", "focus starts on Close");
     const top = withClass(h.root, "call-top")[0];
     const body = withClass(h.root, "mb")[0];
@@ -158,6 +166,7 @@ test("callDialogIsModalWithAFixedTop", async () => {
     scrim.fire("click");
     assert.deepEqual(h.hist.moves.at(-1), ["replace", { name: "session", id: "s1", call: null }], "a click on the dimmed page closes the dialog");
     assert.equal(h.root.open, false, "the page works again once the dialog closes");
+    assert.equal(h.behind.inert, false, "and is no longer inert");
 
     const e = host({ start: [null, "b"] });
     await tick();

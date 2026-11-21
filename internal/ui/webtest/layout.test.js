@@ -93,14 +93,21 @@ test("shellPublishesHeaderHeightAndReservesNoKeyBarRoom", async () => {
 // 013 drawer's scrim, painted the same way, dimmed the drawer itself and turned opaque under
 // the global button:hover rule (Karthik, 2026-11-14). The dialog's ::backdrop does the
 // dimming, so its scrim paints nothing, hovered or not, and the dialog's card stays bright.
+// changed by 027 C7a with Karthik's OK: the call panel is not a browser modal (the header
+// stays usable), so its scrim does the dimming, from below the header down; in the browser
+// modals (settings, shortcuts) the ::backdrop dims and the scrim stays clear.
 test("callScrimDimsOnlyThePageBehind", () => {
   const scrim = rule(".call-scrim");
   assert.equal(scrim.all, "unset");
   assert.equal(scrim.position, "fixed");
   assert.equal(scrim.inset, "0");
+  assert.equal(scrim.top, "var(--head-h)", "the header is never covered");
   assert.equal(scrim["z-index"], "-1");
-  assert.equal(rule(".call-scrim, .call-scrim:hover").background, "transparent", "hover keeps it clear");
-  assert.equal(rule("dialog.details::backdrop").background, "var(--scrim)", "the backdrop dims the page");
+  assert.equal(rule(".call-scrim, .call-scrim:hover").background, "var(--scrim)", "it dims the page, on hover too");
+  const inModal = rule("dialog:modal .call-scrim, dialog:modal .call-scrim:hover");
+  assert.equal(inModal.background, "transparent", "a browser modal's backdrop dims instead");
+  assert.equal(inModal.top, "0");
+  assert.equal(rule("dialog.details::backdrop").background, "var(--scrim)", "the backdrop dims behind a modal");
 });
 
 // A dialog's title block is class "tx", as is a turn's prompt and answer box (017 AC13): the
@@ -127,7 +134,8 @@ test("callPanelFoldsWithoutInnerScrolls", () => {
   // docked on the right under the header, which stays visible and undimmed (027 C7a)
   assert.equal(panel.margin, "calc(var(--head-h) + 8px) 8px 8px auto", "docked on the right, under the header");
   assert.equal(panel.height, "calc(100vh - var(--head-h) - 16px)", "the full height below the header");
-  assert.equal(rule("dialog.call-details::backdrop").top, "var(--head-h)", "the dimming starts below the header");
+  assert.equal(panel.position, "fixed", "placed by itself: it is not in the top layer");
+  assert.ok(Number(panel["z-index"]) < 20, "under the header's layer");
   assert.equal(rule(".mb").overflow, "auto", "the body is the one scroll");
 });
 
@@ -173,7 +181,7 @@ test("dialogsCloseOnAClickOutsideAndHoldThePage", () => {
   const dialogRules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter((m) => /\bdialog\b/.test(m[1]) && !/::backdrop/.test(m[1]));
   assert.ok(dialogRules.length >= 3, "the dialog rules are found");
   for (const [, sel, body] of dialogRules) assert.doesNotMatch(body, /(^|[;\s])(-webkit-)?(backdrop-filter|filter|transform)\s*:/, `${sel.trim()} would trap the scrim`);
-  assert.equal(rule("html:has(dialog:modal)").overflow, "hidden");
+  assert.equal(rule("html:has(dialog:modal), html:has(dialog.call-details[open])").overflow, "hidden", "the call panel holds the page too");
 });
 
 // spec 027 C6a: a whole session row opens the session. The title stays the row's one real

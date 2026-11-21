@@ -166,6 +166,8 @@ async function showSession(id) {
   let missingNoted = false; // the "no such call" note is up; the next call URL clears it
   const calls = createCallDialog({
     nav,
+    // the session page goes inert under the open call; the header stays usable (027 C7a)
+    behind: () => (page ? page.el : null),
     // a call's details get the view's single retry on 504; the dialog shows "Loading call…"
     // meanwhile (F9)
     loadCall: (callId) => retryOn504(() => getJSON(`sessions/${enc(id)}/calls/${enc(callId)}`), () => {}),

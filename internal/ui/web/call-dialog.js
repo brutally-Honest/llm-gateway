@@ -81,8 +81,10 @@ export function createCallDialog(ctx = {}) {
   // the top (one line of facts, the section links) stays; the sections scroll under it
   const top = el("div", "call-top");
   const body = el("div", "mb");
-  // the dimmed page behind is one button that closes the dialog: it covers the window
-  // under the dialog's content, transparent (the ::backdrop dims), and out of the Tab order
+  // the dimmed page behind is one button that closes the dialog: it covers the window below
+  // the header, under the dialog's content, dims it, and is out of the Tab order. The panel
+  // is not a browser modal (027 C7a): the header above stays usable, and the page behind is
+  // made inert instead (ctx.behind)
   const scrim = el("button", "call-scrim");
   scrim.type = "button";
   scrim.setAttribute("aria-label", "Close call");
@@ -124,23 +126,33 @@ export function createCallDialog(ctx = {}) {
     const a = globalThis.document.activeElement;
     opener = pendingOpener || (a && a !== globalThis.document.body ? a : null);
     shown = true;
-    if (typeof root.showModal === "function" && root.isConnected !== false) {
+    // opened with show(), not showModal(): a modal would make the header inert too
+    if (typeof root.show === "function" && root.isConnected !== false) {
       try {
-        root.showModal();
+        root.show();
       } catch {
         root.open = true;
       }
     } else {
       root.open = true;
     }
+    setBehind(true);
     // focus starts on Close, as in the 016 dialog; Tab reaches Previous and Next
     if (typeof x.focus === "function") x.focus();
+  }
+
+  // setBehind makes the page under the panel inert while it is open: no clicks, no focus, no
+  // screen reader (what showModal did), leaving the header out of it
+  function setBehind(on) {
+    const b = typeof ctx.behind === "function" ? ctx.behind() : null;
+    if (b) b.inert = on;
   }
 
   function hide() {
     if (!shown) return;
     shown = false;
     closing = false;
+    setBehind(false);
     if (typeof root.close === "function" && root.open) root.close();
     else root.open = false;
     const target = opener && opener.isConnected !== false ? opener : ctx.turnHeading ? ctx.turnHeading() : null;

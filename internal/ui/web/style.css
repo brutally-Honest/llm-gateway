@@ -145,7 +145,7 @@ html { background: var(--card); scrollbar-color: var(--border) transparent; }
 body { min-height: 100vh; }
 /* while a modal dialog is open the page behind it stays put: it does not scroll under the
    dimmed backdrop (027 C6a) */
-html:has(dialog:modal) { overflow: hidden; }
+html:has(dialog:modal), html:has(dialog.call-details[open]) { overflow: hidden; }
 a { color: var(--accent); }
 code, pre, kbd, .mono { font-family: var(--font-mono); }
 code { font-size: 12.5px; }
@@ -678,15 +678,19 @@ table.cost-lines tr.total td { border-top: 1px solid var(--border); font-weight:
 .mb .copy { align-self: flex-end; margin-bottom: 4px; }
 /* the call details (017 AC5–AC11), docked full height on the right (027 C3): a fixed top
    (title, one line of facts, section links) over one scroll; nothing inside scrolls alone */
-/* the call panel docks under the header, which stays visible and undimmed above it */
-dialog.call-details { width: min(52rem, 96vw); height: calc(100vh - var(--head-h) - 16px); max-height: calc(100vh - var(--head-h) - 16px); margin: calc(var(--head-h) + 8px) 8px 8px auto; }
-dialog.call-details::backdrop { top: var(--head-h); }
+/* the call panel docks under the header, which stays visible and undimmed above it; it is
+   not a browser modal (the header stays usable), so it is placed fixed itself, under the
+   header's layer: z-index below the header's 20 */
+dialog.call-details { position: fixed; inset: 0; z-index: 15; width: min(52rem, 96vw); height: calc(100vh - var(--head-h) - 16px); max-height: calc(100vh - var(--head-h) - 16px); margin: calc(var(--head-h) + 8px) 8px 8px auto; }
 .call-details .mh .btn { flex: none; }
 .call-details .mh .btn:disabled { opacity: .45; }
-/* the scrim under the dialog's content takes a click outside it; the ::backdrop dims, so
-   the scrim paints nothing, and button:hover must not paint it either */
-.call-scrim { all: unset; position: fixed; inset: 0; z-index: -1; }
-.call-scrim, .call-scrim:hover { background: transparent; }
+/* the scrim dims the page below the header and takes a click outside the panel; it sits
+   under the panel's content (z-index -1 in the panel's layer) and never over the header */
+.call-scrim { all: unset; position: fixed; inset: 0; top: var(--head-h); z-index: -1; }
+.call-scrim, .call-scrim:hover { background: var(--scrim); }
+/* the settings and shortcuts dialogs are browser modals: their ::backdrop dims, the scrim
+   inside them only takes the click */
+dialog:modal .call-scrim, dialog:modal .call-scrim:hover { top: 0; background: transparent; }
 .call-top { padding: 10px 20px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; background: var(--card); }
 .call-meta { display: flex; flex-wrap: wrap; gap: 4px 18px; }
 .call-meta .mfact { border: 0; border-radius: 0; padding: 0; display: inline-flex; gap: 6px; align-items: baseline; }
