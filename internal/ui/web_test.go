@@ -69,12 +69,20 @@ var jsLineComment = regexp.MustCompile("(?m)(^|[^:\"'`])//.*$")
 // SVG namespace, an identifier createElementNS needs and the browser never fetches.
 const svgNamespaceLiteral = `"http://www.w3.org/2000/svg"`
 
+// svgNamespaceAttr is the same namespace as a standalone .svg file must declare it on its
+// root (spec 027 C7a, the logo mark): an identifier, never fetched.
+const svgNamespaceAttr = `xmlns="http://www.w3.org/2000/svg"`
+
 // inlineOrExternalFindings lists what a web file breaks. Line comments of a script are
-// ignored and the SVG namespace literal is exempt, in scripts only.
+// ignored; the SVG namespace is exempt as a script's string literal and as an .svg file's
+// xmlns attribute, nowhere else.
 func inlineOrExternalFindings(name, src string) []string {
 	if strings.HasSuffix(name, ".js") {
 		src = jsLineComment.ReplaceAllString(src, "$1")
 		src = strings.ReplaceAll(src, svgNamespaceLiteral, `""`)
+	}
+	if strings.HasSuffix(name, ".svg") {
+		src = strings.ReplaceAll(src, svgNamespaceAttr, `xmlns=""`)
 	}
 	var out []string
 	for what, re := range inlineOrExternalBad {
@@ -126,6 +134,22 @@ func TestWeb_GuardExemptsOnlyTheSVGNamespace(t *testing.T) {
 	}
 	if got := inlineOrExternalFindings("index.html", `<svg xmlns="http://www.w3.org/2000/svg"></svg>`); !slices.Contains(got, "absolute url") {
 		t.Error("the exemption reached a file that is not a script")
+	}
+	// an .svg file may declare the namespace on its root, exactly, and nothing more
+	if got := inlineOrExternalFindings("logo.svg", `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M0 0"/></svg>`); len(got) != 0 {
+		t.Errorf("an svg's own namespace flagged %v", got)
+	}
+	svgBanned := map[string]string{
+		"xlink namespace": `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"></svg>`,
+		"linked image":    `<svg xmlns="http://www.w3.org/2000/svg"><image href="https://evil.example.com/x.png"/></svg>`,
+		"https namespace": `<svg xmlns="https://www.w3.org/2000/svg"></svg>`,
+		"single quotes":   `<svg xmlns='http://www.w3.org/2000/svg'></svg>`,
+		"css url inside":  `<svg xmlns="http://www.w3.org/2000/svg"><style>@import url(//evil.example.com/a.css)</style></svg>`,
+	}
+	for what, src := range svgBanned {
+		if got := inlineOrExternalFindings("logo.svg", src); len(got) == 0 {
+			t.Errorf("svg %s: not flagged: %s", what, src)
+		}
 	}
 }
 
