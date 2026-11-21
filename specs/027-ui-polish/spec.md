@@ -33,3 +33,13 @@ accepted change; decisions are in `research.md`.
   outside.
 - **F1** — The saved theme and style apply before the first paint, so a refresh never shows
   the other theme for a moment.
+- **C6b** — Hourly sparklines on the sessions and model calls tiles, from per-hour counts and
+  peaks the server sends with the day's totals.
+- **C7a** — Decluttered header and pages: a funnel logo that links home (also the tab icon),
+  a round green or red stream dot, a larger gear, no key bar (shortcuts on the ? key), no
+  header underlines, breadcrumbs that stop at the parent; no ended badge, lone model, empty
+  cost lines, Model label, all-normal capture facts or all-unknown client column; folded
+  headers; the call panel docked under a usable header, not greyed by its own dimming, with
+  its stop reason said once; Lean's context bar telling cache read from input; settings
+  opening without a ringed option; turn list marks as glyphs and no empty scrollbar strip.
+- **C8** — A session's turns run newest first, in the turn list and the story alike.

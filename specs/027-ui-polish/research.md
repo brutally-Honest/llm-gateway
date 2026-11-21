@@ -136,4 +136,31 @@
   element); tiles rendered ~300 px tall because the head was a wrapping flex column (fixed:
   no wrap).
 
+- **D30** (2026-11-21) C6b — /api/today gains `hourly`: model calls (side calls included) and
+  distinct active sessions per whole hour from `since`, with each series' peak; at most 48
+  buckets. Hook activity is bucketed in SQL (`HookSessionsByHour`) so hourly sessions follow
+  the total's 017 D30 rule. Bars are sized by `calc(var(--v) / var(--peak) * 100%)`; the
+  browser computes nothing.
+- **D31** (2026-11-21) C7a — From an audit of what each page shows (27 items), Karthik kept 25.
+  Two of mine were wrong and withdrawn on review: the "All" chip opens a turn's whole stepper
+  (not a default view), and the side calls do open a list (they keep a disclosure mark).
+- **D32** (2026-11-21) C7a — The logo is the funnel (option E of five mockups): `logo.svg` used
+  as a CSS mask so it takes each style's colours, and `favicon.svg` for the tab. The external
+  reference guard now exempts `xmlns="http://www.w3.org/2000/svg"` in .svg files, exactly
+  (option A, approved). The tab keeps the name Gateway.
+- **D33** (2026-11-21) C7a — The call panel is no longer a browser modal: `showModal` made the
+  header inert with the page. It opens with `show()`, the session page under it is made inert,
+  its own scrim dims from below the header, and a `::after` repaints the panel's background
+  over that scrim. This changes 017 AC21 (the call dialog was modal); guards updated with
+  Karthik's OK. While it is open the edge strips take `--gutter-dim`.
+- **D34** (2026-11-21) C7a — The stream dot has its own `--live-on`/`--live-off` pair, the same in
+  both styles (Stark's `--ok` is ink), and is always round. The stop reason is labelled "Stop
+  reason": a bare "Stop" is a hook event name the core purity test keeps inside
+  clients/claudecode (found by make verify after the change; my miss).
+- **D35** (2026-11-21) C7a — The turn list stays pinned (unpinning it was tried and reverted:
+  no turn could be jumped to) but keeps no scrollbar strip it does not use.
+- **D36** (2026-11-21) C8 — Newest first: the server keeps sending turns oldest first; the
+  browser builds the story oldest first, so between-turn entries sit between the right pair,
+  then shows it reversed. A live session follows the top.
+
 ## Open questions
