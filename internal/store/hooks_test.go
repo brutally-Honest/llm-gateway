@@ -198,3 +198,45 @@ func TestSaveHook_SeqStoredAsGiven(t *testing.T) {
 		t.Fatalf("stored seq = %v, want [7 3]", got)
 	}
 }
+
+// HookSessionsByHour: each session once per whole-hour bucket counted from since; hooks
+// before since, past the bucket count, or with no session are left out.
+func TestHookSessionsByHour_BucketsPerSession(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := open(t, dir)
+	since := time.Unix(10_000, 0)
+	seq := 0
+	save := func(key string, after time.Duration) {
+		t.Helper()
+		seq++
+		rec := hookRec(`{"n":`+string(rune('0'+seq))+`}`, core.HarnessEvent{Phase: core.PhasePrompt, SessionKey: key}, since.Add(after))
+		rec.Seq = int64(seq)
+		if err := s.SaveHook(t.Context(), rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save("a", 10*time.Minute)
+	save("a", 20*time.Minute) // same session, same bucket: once
+	save("a", time.Hour)      // bucket 1 (lower edge)
+	save("b", 2*time.Hour+59*time.Minute)
+	save("c", -time.Second)  // before since
+	save("d", 3*time.Hour)   // bucket 3, outside the 3 asked for
+	save("", 30*time.Minute) // no session
+	got, err := openReader(t, dir).WithContext(t.Context()).HookSessionsByHour(since.UnixNano(), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[store.HookBucket]bool{
+		{Session: store.SessionIdent{Principal: "local", Client: "client-a", Key: "a"}, Bucket: 0}: true,
+		{Session: store.SessionIdent{Principal: "local", Client: "client-a", Key: "a"}, Bucket: 1}: true,
+		{Session: store.SessionIdent{Principal: "local", Client: "client-a", Key: "b"}, Bucket: 2}: true,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for _, g := range got {
+		if !want[g] {
+			t.Fatalf("unexpected %v in %v", g, got)
+		}
+	}
+}

@@ -5,7 +5,7 @@ import { addUnique, upsertSession } from "./entries.js";
 import { createStore } from "./store.js";
 import { createSessionPage } from "./session-page.js";
 import { createSessionsPage, localMidnight, note, UNASSIGNED_SHOWN } from "./sessions-page.js";
-import { initTheme } from "./theme.js";
+import { initStyle, initTheme } from "./theme.js";
 import { buildRoute, parseRoute } from "./route.js";
 import { handleKey, isTextInput } from "./keys.js";
 import { createCallDialog } from "./call-dialog.js";
@@ -19,14 +19,14 @@ let storage = null;
 try {
   storage = window.localStorage;
 } catch {
-  // storage blocked: the theme falls back to dark
+  // storage blocked: the theme falls back to dark, the style to lean
 }
 const shell = mountShell({
   head: document.getElementById("shell-head"),
-  bar: document.getElementById("keybar"),
   storage,
   root,
   theme: initTheme(storage, root),
+  look: initStyle(storage, root),
 });
 const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "", ungrouped: [], ungroupedNext: null, ungroupedError: "", ungroupedHead: { items: [], next_after: null }, today: null, unassigned: 0, unassignedItems: [] });
 let closeStream = null;
@@ -95,11 +95,12 @@ async function loadUngroupedHead() {
   }
 }
 
-// liveText is the header status for a stream state.
+// liveText is the header status for a stream state: its word, and the dot's tone (green
+// when live, amber while it retries).
 function liveText(state) {
-  if (state === "connected") return "live";
-  if (state === "snapshot_error") return "live: snapshot failed, retrying in 30 s";
-  return "live: disconnected, retrying";
+  if (state === "connected") return ["live", "ok"];
+  if (state === "snapshot_error") return ["live: snapshot failed, retrying in 30 s", "warn"];
+  return ["live: disconnected, retrying", "warn"];
 }
 
 function stopStream() {
@@ -123,7 +124,7 @@ function startStream() {
       }
     },
     (st) => {
-      shell.setLive(liveText(st));
+      shell.setLive(...liveText(st));
     },
   );
 }
@@ -165,6 +166,8 @@ async function showSession(id) {
   let missingNoted = false; // the "no such call" note is up; the next call URL clears it
   const calls = createCallDialog({
     nav,
+    // the session page goes inert under the open call; the header stays usable (027 C7a)
+    behind: () => (page ? page.el : null),
     // a call's details get the view's single retry on 504; the dialog shows "Loading call…"
     // meanwhile (F9)
     loadCall: (callId) => retryOn504(() => getJSON(`sessions/${enc(id)}/calls/${enc(callId)}`), () => {}),
@@ -237,7 +240,7 @@ async function showSession(id) {
       page.applyEvent(data);
       calls.refresh(); // the open call stays; its details are fetched again (AC10)
     },
-    (state) => shell.setLive(liveText(state)),
+    (state) => shell.setLive(...liveText(state)),
     `sessions/${enc(id)}/stream?view=1`,
   );
 }
@@ -376,6 +379,7 @@ function route() {
 
 // Shortcuts act per level (keys.js); the input guard and Esc-to-leave live in handleKey.
 window.addEventListener("keydown", (e) => {
+  if (shell.modalOpen()) return; // the Settings and shortcuts dialogs take no page keys
   const act = handleKey(parseRoute(location.hash), {
     key: e.key,
     ctrlKey: e.ctrlKey,
@@ -386,6 +390,8 @@ window.addEventListener("keydown", (e) => {
   if (!act) return;
   if (act.type === "leaveInput") {
     document.activeElement.blur();
+  } else if (act.type === "help") {
+    shell.openHelp();
   } else if (act.type === "toSessions") {
     location.hash = "#/";
   } else if (act.type === "select" && page) {

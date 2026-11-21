@@ -1,13 +1,15 @@
-import { button, clock, dur, el, num, plural } from "./fmt.js";
+import { button, clock, dur, el, num, plural, skeleton } from "./fmt.js";
 import { LABEL_LONG, totalCost } from "./cost.js";
 import { createDialog } from "./dialog.js";
 import { createSideCard } from "./side-card.js";
-import { betweenNode, reveal, turnNode } from "./story.js";
+import { betweenNode, reveal, setTextMode, textMode, turnNode } from "./story.js";
 
-// The session page (spec 016): the turn list on the left, the story in the middle, the
-// session's files, commands, sites and context on the right, one details dialog. It
-// renders the server's view (GET /api/sessions/{id}/view and the stream's view events)
-// and computes nothing: every count, time, label and place comes from the view.
+// The session page (spec 016, laid out as chapters in spec 027 C4): one page that scrolls,
+// the turns as contents on the left (they stay in view), then the overview and the tabs
+// Story · Files · Commands · Sites · Context, the story being the turns as chapters; one
+// details dialog. It renders the server's view (GET /api/sessions/{id}/view and the
+// stream's view events) and computes nothing: every count, time, label and place comes
+// from the view.
 
 // reconcile makes parent's children exactly `want`, in order, touching only what differs.
 function reconcile(parent, want) {
@@ -39,7 +41,7 @@ export function mergeView(held, ev) {
 // details dialog (spec 017 AC5).
 export function createSessionPage(ctx = {}) {
   const root = el("div", "cols");
-  const toc = el("nav", "toc card");
+  const toc = el("nav", "toc");
   toc.setAttribute("aria-label", "Turns");
   const tocHead = el("div", "colhead");
   const tocSub = el("span", "sub");
@@ -48,13 +50,13 @@ export function createSessionPage(ctx = {}) {
   const tocList = el("ol");
   tocScroll.append(tocList);
   toc.append(tocHead, tocScroll);
-  // the story scrolls inside its own card, as the turn list and the side card do
-  const storyCard = el("section", "storycol card");
+  // the main column: the overview, then the tabs, the story first; the page scrolls
+  const storyCard = el("div", "storycol");
+  const heroSlot = el("div", "hero-slot");
   const story = el("div", "story");
   story.setAttribute("role", "region");
   story.setAttribute("aria-label", "Story");
   story.tabIndex = -1;
-  storyCard.append(story);
   const status = el("div", "page-status");
   root.append(toc, storyCard);
 
@@ -78,6 +80,15 @@ export function createSessionPage(ctx = {}) {
   function place(id, { flash = true } = {}) {
     const target = globalThis.document.getElementById ? globalThis.document.getElementById(id) : null;
     if (!target) return false;
+    // a place in the story is shown on the Story tab
+    if (side && side.selected() !== "story") {
+      for (let n = target; n; n = n.parentNode) {
+        if (n === story) {
+          side.select("story");
+          break;
+        }
+      }
+    }
     const section = typeof target.closest === "function" ? target.closest(".turn, .btwentry") : null;
     if (section) setCurrentById(section.id, true);
     reveal(target);
@@ -99,8 +110,35 @@ export function createSessionPage(ctx = {}) {
     callHref: ctx.callHref,
     place,
   });
-  const side = createSideCard({ open: (key, opener) => dialog.open(key, opener), callHref: ctx.callHref, noteOpener: ctx.noteOpener });
-  root.append(side.el, dialog.el);
+  // the story is the first tab, with no count: the turn list says how many prompts (027 C4)
+  const side = createSideCard({
+    open: (key, opener) => dialog.open(key, opener),
+    callHref: ctx.callHref,
+    noteOpener: ctx.noteOpener,
+    loadDiff: ctx.loadDiff,
+    loadContent: ctx.loadContent,
+    lead: { id: "story", label: "Story", count: () => null, el: story },
+  });
+  // one Preview / Raw switch for every prompt and answer in the story (027 C4)
+  const storyBar = el("div", "story-bar");
+  const modes = el("div", "mode");
+  modes.setAttribute("role", "group");
+  modes.setAttribute("aria-label", "Prompts and answers: preview or raw");
+  const markMode = () => {
+    for (const b of modes.children) b.setAttribute("aria-pressed", String(b.dataset.mode === textMode()));
+  };
+  for (const [m, word] of [["preview", "Preview"], ["raw", "Raw"]]) {
+    const b = button("seg", word, () => {
+      setTextMode(m);
+      markMode();
+    });
+    b.dataset.mode = m;
+    modes.append(b);
+  }
+  markMode();
+  storyBar.append(el("span", "muted-note", "Prompts and answers as"), modes);
+  storyCard.append(heroSlot, side.el);
+  root.append(dialog.el);
 
   // open handles a target from the overview, the story or a list: a tool, file or site
   // opens the dialog; a call opens the call details dialog; a turn, between block or several group
@@ -176,7 +214,6 @@ export function createSessionPage(ctx = {}) {
 
   function drawTurnList() {
     const items = [];
-    const between = new Map((view.between || []).map((b) => [b.after, b]));
     const next = [];
     const entry = (id, cls) => {
       const b = button(cls, undefined, () => select(next.findIndex((x) => x.id === id)));
@@ -186,24 +223,26 @@ export function createSessionPage(ctx = {}) {
       items.push(li);
       return b;
     };
-    const btwEntry = (b) => {
-      const btn = entry(betweenId(b.after), "toc-item btw");
-      const n = el("span", "n", "○");
-      n.setAttribute("aria-hidden", "true");
-      btn.append(n, el("span", "p", `${b.effects.length === 1 ? "you edited" : "edits"} ${b.effects.map((e) => e.path).join(", ")}`));
-    };
-    if (between.has(0)) btwEntry(between.get(0));
-    for (const t of view.turns || []) {
+    // an edit between turns is in the story and in Needs a look, not in the turn list (027 C4);
+    // the newest turn comes first, as in the story (027 C8)
+    for (const t of [...(view.turns || [])].reverse()) {
       const b = entry(turnId(t.n), "toc-item");
       const meta = el("span", "m");
       if (t.background) meta.append(el("span", "", "background task"));
       meta.append(el("span", "", t.hooks_only ? "hooks only" : dur(t.clock_ms ?? 0)));
       const c = t.counts || {};
       if (c.changed) meta.append(el("span", "", `${plural(c.changed, "file")} changed`));
-      if (c.failed) meta.append(el("span", "bad", `✗ ${c.failed} failed`));
-      if (t.end) meta.append(el("span", t.end.word === "ended by error" ? "bad" : "", `${t.end.glyph} ${t.end.word}`));
+      // marks, not words, so a row's prompt keeps the same room as its neighbours'; the words
+      // are the mark's name and tooltip (027 C7a)
+      const mark = (cls, glyph, word) => {
+        const m = el("span", cls, glyph);
+        m.title = word;
+        m.setAttribute("aria-label", word);
+        meta.append(m);
+      };
+      if (c.failed) mark("bad", "✗", `${c.failed} failed`);
+      if (t.end) mark(t.end.word === "ended by error" ? "bad" : "", t.end.glyph, t.end.word);
       b.append(el("span", "n", t.n ? String(t.n) : "·"), el("span", "p clamp", t.prompt || "(no prompt text)"), meta);
-      if (t.n > 0 && between.has(t.n)) btwEntry(between.get(t.n));
     }
     entries = next;
     tocList.replaceChildren(...items);
@@ -218,7 +257,8 @@ export function createSessionPage(ctx = {}) {
     const box = el("section", "card hero");
     box.setAttribute("aria-label", "Session overview");
     const st = o.status || { glyph: "", word: "" };
-    box.append(el("span", `status-pill${st.word === "active" ? " active" : ""}`, `${st.glyph} ${st.word}`));
+    // the badge is for a session still running; an ended one says nothing
+    if (st.word === "active") box.append(el("span", "status-pill active", `${st.glyph} ${st.word}`));
     box.append(el("h1", "", o.title || ""));
     const meta = el("div", "meta");
     if (o.from) meta.append(el("span", "", `${clock(o.from, false)}–${clock(o.to, false)}`));
@@ -227,7 +267,8 @@ export function createSessionPage(ctx = {}) {
       f.title = o.folder_full || o.folder;
       meta.append(f);
     }
-    if ((o.models || []).length) meta.append(el("span", "", o.models.join(", ")));
+    // each turn carries its model chip; the summary names models only when there were several
+    if ((o.models || []).length > 1) meta.append(el("span", "", o.models.join(", ")));
     const cl = el("span", "", o.client || "");
     cl.title = `session ${o.key || ""}`;
     meta.append(cl);
@@ -236,28 +277,12 @@ export function createSessionPage(ctx = {}) {
     const kpis = el("div", "kpis");
     const kpi = (label, value, sub, tab) => {
       const k = tab ? button("kpi", undefined, () => side.select(tab, true)) : el("div", "kpi");
-      const l = el("span", "l", label);
-      if (tab) {
-        const i = el("i", "", "→");
-        i.setAttribute("aria-hidden", "true");
-        l.append(i);
-      }
-      k.append(l, el("span", "v", value), sub);
+      k.append(el("span", "l", label), el("span", "v", value), sub);
       kpis.append(k);
     };
     const time = o.time || {};
     kpi("Time", dur(time.clock_ms ?? 0), el("span", "s", `model ${dur(time.model_ms ?? 0)} · tools ${dur(time.tool_ms ?? 0)} · waiting ${dur(time.wait_ms ?? 0)} · between turns ${dur(time.between_ms ?? 0)}`));
-    const files = o.files || {};
-    const fs = el("span", "s");
-    fs.append(el("span", "a", `+${files.added ?? 0}`), " ", el("span", "d", `−${files.removed ?? 0}`), ` lines · ${files.read ?? 0} read`);
-    kpi("Files changed", num(files.changed ?? 0), fs, "files");
-    const cmds = o.commands || {};
-    // the longest command on one line, cut with an ellipsis; the whole command on hover
-    const longest = el("span", "s one-line", cmds.longest ? `longest ${dur(cmds.longest_ms)} · ${cmds.longest}` : "none ran");
-    if (cmds.longest) longest.title = cmds.longest;
-    kpi("Commands", num(cmds.count ?? 0), longest, "commands");
-    const sites = o.sites || {};
-    kpi("Sites", num(sites.count ?? 0), el("span", "s", plural(sites.connections ?? 0, "connection")), "sites");
+    // Files, Commands and Sites are tabs below with their counts and lines (027 C4)
     kpi("Context", num((o.context || {}).last), el("span", "s", "tokens in the last call"), "context");
     box.append(kpis);
 
@@ -281,13 +306,16 @@ export function createSessionPage(ctx = {}) {
       box.append(attn);
     }
 
+    // the token counts are in the Context tab (027 C4); the cost and side calls stay here
     const foot = el("div", "foot");
     const tk = o.tokens || {};
-    foot.append(el("span", "", `Tokens: ${num(tk.input)} input · ${num(tk.output)} output · ${num(tk.cache_write)} cache write · ${num(tk.cache_read)} cache read${tk.incomplete ? " (some calls did not report)" : ""}`));
     const cost = totalCost(tk.cost);
-    const costLine = el("span", "cost", `${LABEL_LONG} cost: ${cost.text}`);
-    costLine.title = `${cost.title}\nSide calls included.`;
-    foot.append(costLine);
+    // no cost to state ("—") means no line
+    if (cost.text !== "—") {
+      const costLine = el("span", "cost", `${LABEL_LONG} cost: ${cost.text}`);
+      costLine.title = `${cost.title}\nSide calls included.`;
+      foot.append(costLine);
+    }
     const sideCalls = view.side_calls || [];
     if (sideCalls.length) {
       const d = el("details", "side");
@@ -304,7 +332,7 @@ export function createSessionPage(ctx = {}) {
       d.append(ul, el("p", "muted small", "The client's own calls: never a turn, never counted as an error."));
       foot.append(d);
     }
-    box.append(foot);
+    if (foot.children.length) box.append(foot);
     if (o.empty) box.append(el("p", "page-note", o.empty));
     return box;
   }
@@ -318,9 +346,11 @@ export function createSessionPage(ctx = {}) {
     const nextBtw = new Map();
     const between = new Map();
     for (const b of view.between || []) between.set(b.after, b);
-    const want = [status];
+    // the story runs newest first (027 C8): it is built oldest first, as the server sends it,
+    // so each between-turns entry sits between the right two turns, then read backwards
+    const seq = [];
     hero = heroNode();
-    want.push(hero);
+    heroSlot.replaceChildren(hero);
     const btw = (after) => {
       const b = between.get(after);
       if (!b) return;
@@ -328,16 +358,17 @@ export function createSessionPage(ctx = {}) {
       let k = btwEls.get(after);
       if (!k || k.sig !== sig) k = { sig, node: betweenNode(b, storyCtx) };
       nextBtw.set(after, k);
-      want.push(k.node);
+      seq.push(k.node);
     };
     btw(0);
     for (const t of view.turns || []) {
       let k = turnEls.get(t.n);
       if (!k || k.hash !== t.hash) k = { hash: t.hash, node: turnNode(t, storyCtx) };
       next.set(t.n, k);
-      want.push(k.node);
+      seq.push(k.node);
       if (t.n > 0) btw(t.n);
     }
+    const want = [storyBar, status, ...seq.reverse()];
     turnEls.clear();
     for (const [n, k] of next) turnEls.set(n, k);
     btwEls.clear();
@@ -345,22 +376,33 @@ export function createSessionPage(ctx = {}) {
     reconcile(story, want);
   }
 
-  const atBottom = () => typeof story.scrollHeight === "number" && story.scrollHeight - story.scrollTop - story.clientHeight <= 8;
+  // the page scrolls: the newest turn is at the top (027 C8), so a live session follows it
+  // when the window was at the top
+  const pageEl = () => globalThis.document && globalThis.document.scrollingElement;
+  const atTop = () => {
+    const p = pageEl();
+    return Boolean(p) && typeof p.scrollTop === "number" && p.scrollTop <= 8;
+  };
 
   page.setView = (next) => {
-    const follow = view !== null && atBottom();
+    const follow = view !== null && atTop();
     view = next;
+    if (loader) loader.remove();
     drawTurnList();
     drawStory();
     side.update(view);
     dialog.update(view);
-    if (follow) story.scrollTop = story.scrollHeight;
+    if (follow) pageEl().scrollTop = 0;
     onScroll();
   };
   page.applyEvent = (ev) => page.setView(mergeView(view, ev));
+  let loader = null; // the story's loader, until the view arrives
   page.setStatus = (text, kind = "note") => {
     status.replaceChildren();
     if (text) status.append(el("p", `page-note${kind === "error" ? " error" : ""}`, text));
+    // until the view arrives the page keeps its loader, under any note ("building session…")
+    loader = !view && kind !== "error" ? skeleton("Loading the session…", 4, "cards") : null;
+    if (loader) status.append(loader);
     if (!view) reconcile(story, [status]);
   };
   page.moveTurn = (delta) => select(current + delta);
@@ -376,6 +418,9 @@ export function createSessionPage(ctx = {}) {
   page.dialog = dialog;
   page.entries = () => entries;
   page.current = () => current;
-  reconcile(story, [status]);
+  const waiting = el("li");
+  waiting.append(skeleton("Loading turns…", 6, "rows"));
+  tocList.replaceChildren(waiting);
+  page.setStatus("");
   return page;
 }

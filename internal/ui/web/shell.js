@@ -1,25 +1,22 @@
-import { THEMES, pickTheme } from "./theme.js";
+import { STYLES, THEMES, pickStyle, pickTheme } from "./theme.js";
 import { keyBar } from "./keys.js";
 
-// breadcrumb returns the header trail: "Sessions" first (a link back to the list once
-// inside a view), then the session title inside a session. The last part has no href. On
-// the full exchange page, trail = { sessionId, sessionTitle, callN } names the session and
-// call it belongs to; an exchange no session claims sits under Ungrouped (017 AC12).
+// breadcrumb returns the header trail: "Sessions" first (the link back to the list once
+// inside a view). The page's own heading says where you are, so the trail stops at the
+// parent: a session, an ungrouped list or an exchange adds no crumb repeating its heading.
+// On the full exchange page, trail = { sessionId, sessionTitle } names the session it
+// belongs to; an exchange no session claims sits under Ungrouped (017 AC12). The sessions
+// list has no trail at all; every part of a deeper trail is a link. `title` is no longer
+// shown and is kept for callers.
 export function breadcrumb(route, title, trail = null) {
   const root = { text: "Sessions", href: "#/" };
   switch (route.name) {
     case "sessions":
-      return [{ text: "Sessions" }];
-    case "session":
-      return [root, { text: title || route.id }];
-    case "ungrouped":
-      return [root, { text: "Ungrouped" }];
-    case "unassigned":
-      return [root, { text: "Unassigned connections" }];
+      return []; // the list's own heading says Sessions and the logo is the home link
     case "exchange":
-      if (!trail) return [root, { text: "Exchange" }];
-      if (!trail.sessionId) return [root, { text: "Ungrouped", href: "#/ungrouped" }, { text: "Exchange" }];
-      return [root, { text: trail.sessionTitle || "Session", href: `#/sessions/${encodeURIComponent(trail.sessionId)}` }, { text: trail.callN ? `Call #${trail.callN}` : "Exchange" }];
+      if (!trail) return [root];
+      if (!trail.sessionId) return [root, { text: "Ungrouped", href: "#/ungrouped" }];
+      return [root, { text: trail.sessionTitle || "Session", href: `#/sessions/${encodeURIComponent(trail.sessionId)}` }];
     default:
       return [root];
   }
@@ -32,40 +29,156 @@ function el(tag, text, cls) {
   return e;
 }
 
-// mountShell fills the header and the bottom key bar and returns the updaters the page uses.
-export function mountShell({ head, bar, storage, root, theme }) {
+// picker builds one labelled row of the Settings dialog: a button per choice, the current
+// one pressed; pick(choice) applies and stores it and returns what was applied.
+function picker(label, choices, current, pick) {
+  const row = el("div", "", "setting");
+  const id = `setting-${label.toLowerCase()}`;
+  const name = el("span", label, "setting-name");
+  name.id = id;
+  const group = el("div", "", "picker");
+  group.setAttribute("role", "group");
+  group.setAttribute("aria-labelledby", id);
+  const buttons = new Map();
+  const mark = (now) => {
+    for (const [c, b] of buttons) b.setAttribute("aria-pressed", String(c === now));
+  };
+  for (const [value, text] of choices) {
+    const b = el("button", text);
+    b.type = "button";
+    b.addEventListener("click", () => mark(pick(value)));
+    buttons.set(value, b);
+    group.append(b);
+  }
+  mark(current);
+  row.append(name, group);
+  return row;
+}
+
+// settingsDialog is the header's Settings: the theme (dark or light) and the style (Lean or
+// Stark), each applied at once and remembered (spec 027 C2).
+function settingsDialog({ storage, root, theme, look }) {
+  const dlg = el("dialog", "", "settings");
+  dlg.setAttribute("aria-labelledby", "settings-title");
+  // the dialog itself takes focus on open (focusDialog): a ring on the first option read as
+  // a choice
+  dlg.tabIndex = -1;
+  // a click outside closes it, on the scrim button the other dialogs use (027 C7a)
+  const scrim = el("button", "", "call-scrim");
+  scrim.type = "button";
+  scrim.setAttribute("aria-label", "Close");
+  scrim.setAttribute("tabindex", "-1");
+  scrim.addEventListener("click", () => dlg.close());
+  const title = el("h2", "Settings");
+  title.id = "settings-title";
+  const themes = [...THEMES].reverse().map((t) => [t, t === "light" ? "Light" : "Dark"]);
+  const styles = STYLES.map((s) => [s, s === "stark" ? "Stark" : "Lean"]);
+  const close = el("button", "Close");
+  close.type = "button";
+  close.addEventListener("click", () => dlg.close());
+  const foot = el("div", "", "settings-foot");
+  foot.append(close);
+  dlg.append(
+    scrim,
+    title,
+    picker("Theme", themes, theme, (t) => pickTheme(storage, root, t)),
+    picker("Style", styles, look, (s) => pickStyle(storage, root, s)),
+    foot,
+  );
+  // Esc closes it too: a modal <dialog> does that by itself
+  return dlg;
+}
+
+// helpDialog is the header's "?" panel: the current page's shortcuts, the same content the
+// bottom key bar used to show. Esc closes it (a modal <dialog> does that itself) and so does
+// a click outside, on the scrim button the call dialog uses.
+function helpDialog() {
+  const dlg = el("dialog", "", "settings help");
+  dlg.tabIndex = -1;
+  dlg.setAttribute("aria-labelledby", "help-title");
+  const scrim = el("button", "", "call-scrim");
+  scrim.type = "button";
+  scrim.setAttribute("aria-label", "Close");
+  scrim.setAttribute("tabindex", "-1");
+  scrim.addEventListener("click", () => dlg.close());
+  const title = el("h2", "Keyboard shortcuts");
+  title.id = "help-title";
+  const list = el("div", "", "shortcuts");
+  const close = el("button", "Close");
+  close.type = "button";
+  close.addEventListener("click", () => dlg.close());
+  const foot = el("div", "", "settings-foot");
+  foot.append(close);
+  dlg.append(scrim, title, list, foot);
+  return { dlg, list };
+}
+
+// openDialog opens a header dialog as a modal and puts focus on the dialog itself, not on
+// its first option, so nothing looks chosen by a focus ring (027 C7a).
+function openDialog(dlg) {
+  dlg.showModal();
+  if (typeof dlg.focus === "function") dlg.focus();
+}
+
+// mountShell fills the header and returns the updaters the page uses.
+export function mountShell({ head, storage, root, theme, look = "lean" }) {
   const crumbs = el("nav", "", "crumbs");
   crumbs.setAttribute("aria-label", "Breadcrumb");
-  const live = el("span", "", "muted");
+  // the stream's state is a dot; its word is the dot's accessible name and tooltip
+  const live = el("span", "", "live-dot");
   live.setAttribute("role", "status");
-  const picker = el("div", "", "picker");
-  picker.setAttribute("role", "group");
-  picker.setAttribute("aria-label", "Theme");
-  const buttons = new Map();
-  const mark = (current) => {
-    for (const [t, b] of buttons) b.setAttribute("aria-pressed", String(t === current));
+  const liveWord = el("span", "", "sr-only");
+  live.append(liveWord);
+  live.hidden = true;
+  const settings = settingsDialog({ storage, root, theme, look });
+  const open = el("button", "⚙", "settings-open");
+  open.type = "button";
+  open.setAttribute("aria-label", "Settings");
+  open.title = "Settings";
+  open.setAttribute("aria-haspopup", "dialog");
+  open.addEventListener("click", () => openDialog(settings));
+  // the page's shortcuts open with the "?" key (no button in the header, 027 C7a)
+  const help = helpDialog();
+  let bar = { level: "", position: "", shortcuts: [] };
+  const showHelp = () => {
+    if (!bar.level || help.dlg.open) return;
+    const frag = document.createDocumentFragment();
+    const lead = el("p", "", "muted");
+    lead.append(document.createTextNode(bar.position ? `${bar.level} · ${bar.position}` : bar.level));
+    frag.append(lead);
+    for (const s of bar.shortcuts) {
+      const row = el("div", "", "shortcut");
+      row.append(el("kbd", s.key), el("span", s.label));
+      frag.append(row);
+    }
+    help.list.replaceChildren(frag);
+    openDialog(help.dlg);
   };
-  for (const t of [...THEMES].reverse()) {
-    const b = el("button", t === "light" ? "Light" : "Dark");
-    b.type = "button";
-    b.addEventListener("click", () => mark(pickTheme(storage, root, t)));
-    buttons.set(t, b);
-    picker.append(b);
-  }
-  mark(theme);
-  head.replaceChildren(el("h1", "Gateway"), crumbs, live, picker);
-  // The header and the key bar can wrap, so their heights are published for the turn
-  // rail, which sticks below the one and stops above the other (F7).
+  // the brand is a logo-only home link: no visible text, a name for assistive tech
+  const brand = el("a", "", "brand");
+  brand.href = "#/";
+  brand.setAttribute("aria-label", "LLM Gateway — home");
+  brand.title = "Sessions";
+  head.replaceChildren(brand, crumbs, live, open, settings, help.dlg);
+  // The header can wrap, so its height is published for the turn rail, which sticks
+  // below it (F7).
   if (typeof ResizeObserver === "function" && root && root.style && typeof root.style.setProperty === "function") {
-    const publish = (name, e) => new ResizeObserver(() => root.style.setProperty(name, `${e.offsetHeight}px`)).observe(e);
-    publish("--head-h", head);
-    publish("--keybar-h", bar);
+    new ResizeObserver(() => root.style.setProperty("--head-h", `${head.offsetHeight}px`)).observe(head);
   }
 
   return {
+    settingsOpen() {
+      return Boolean(settings.open);
+    },
+    // modalOpen is true while the Settings or the shortcuts dialog is up: the page takes no keys
+    modalOpen() {
+      return Boolean(settings.open || help.dlg.open);
+    },
+    openHelp: showHelp,
     setRoute(route, title, trail = null) {
       const frag = document.createDocumentFragment();
-      breadcrumb(route, title, trail).forEach((p, i) => {
+      const parts = breadcrumb(route, title, trail);
+      parts.forEach((p, i) => {
         if (i > 0) frag.append(el("span", " / ", "muted"));
         if (p.href) {
           const a = el("a", p.text);
@@ -77,26 +190,21 @@ export function mountShell({ head, bar, storage, root, theme }) {
           frag.append(s);
         }
       });
+      // the trail stops at a link back: a trailing slash says the page's heading follows
+      if (parts.length && parts[parts.length - 1].href) frag.append(el("span", " /", "muted"));
       crumbs.replaceChildren(frag);
     },
-    setLive(text) {
-      live.textContent = text;
+    // setLive shows the stream's state as a dot, green while connected ("ok") and red
+    // otherwise ("warn", "bad"), in both styles; no text (a page with no stream) shows nothing.
+    setLive(text, tone = "ok") {
+      live.hidden = !text;
+      liveWord.textContent = text;
+      live.title = text;
+      live.className = `live-dot live-${tone}`;
     },
+    // setKeyBar records the page's shortcuts for the "?" dialog.
     setKeyBar(route, pos) {
-      const kb = keyBar(route, pos);
-      if (!kb.level) {
-        bar.replaceChildren(); // no bar on this level; the footer hides when empty
-        return;
-      }
-      const frag = document.createDocumentFragment();
-      frag.append(el("strong", kb.level, "level"));
-      if (kb.position) frag.append(el("span", kb.position, "position"));
-      for (const s of kb.shortcuts) {
-        const item = el("span", "", "shortcut");
-        item.append(el("kbd", s.key), document.createTextNode(` ${s.label}`));
-        frag.append(item);
-      }
-      bar.replaceChildren(frag);
+      bar = keyBar(route, pos);
     },
   };
 }

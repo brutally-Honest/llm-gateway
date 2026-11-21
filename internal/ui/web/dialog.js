@@ -1,4 +1,4 @@
-import { button, bytes, clock, dur, el, markText, plural } from "./fmt.js";
+import { button, bytes, clock, dur, el, markText, plural, skeleton } from "./fmt.js";
 import { hookInputEntry, omittedNote, prettyJSON } from "./entries.js";
 import { labelBadge } from "./story.js";
 import { copyButton } from "./tool-card.js";
@@ -75,7 +75,7 @@ function rawLink(exchangeId, text = "cut short — open the raw exchange") {
 }
 
 // diffNode renders a unified diff: added and removed lines marked by glyph and colour.
-function diffNode(text, path) {
+export function diffNode(text, path) {
   const box = el("div", "diff");
   box.setAttribute("role", "group");
   box.setAttribute("aria-label", `diff of ${path}`);
@@ -136,7 +136,7 @@ export function createDialog(ctx = {}) {
     });
     return entry;
   }
-  const loading = (entry, what) => (entry.state === "loading" ? el("p", "muted-note", `Loading ${what}…`) : el("p", "muted-note", `${cap(what)} unavailable: ${entry.error}`));
+  const loading = (entry, what) => (entry.state === "loading" ? skeleton(`Loading ${what}…`, 3, "lines") : el("p", "muted-note", `${cap(what)} unavailable: ${entry.error}`));
 
   // related is a link inside the dialog to another file, site or tool: it pushes, Back pops.
   function related(key, text, code = true) {

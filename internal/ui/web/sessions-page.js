@@ -28,6 +28,8 @@ export function tableWithHead(columns) {
     if (cls) th.className = cls;
     if (title) th.title = title;
     th.textContent = label;
+    // a column with no visible header (the status icons) is still named for screen readers
+    if (!label && title) th.setAttribute("aria-label", title);
     head.append(th);
   }
   thead.append(head);
@@ -89,27 +91,21 @@ export function counter(c) {
 
 // statusOf names a session's status with a glyph, so colour is never the only signal; the
 // glyphs are the session page's (016).
+// An ordinary ended session is "ended" and the list shows no glyph for it (027 C7b); only an
+// active, failed or hooks-only one does.
 export function statusOf(s) {
   if (s.active) return { key: "active", glyph: "●", text: "active" };
   if (s.hooks_only) return { key: "hooks-only", glyph: "◇", text: "hooks only" };
-  return { key: "ended", glyph: "■", text: "ended" };
+  if (toolCounts(s.tool_states).failed > 0 || (s.main_errors || 0) > 0) return { key: "failed", glyph: "✗", text: "failed" };
+  return { key: "ended", glyph: "", text: "ended" };
 }
 
-// sourcesOf is how a session was captured, as glyph and word: API calls, hook events.
-export function sourcesOf(s) {
-  const out = [];
-  if (s.has_calls) out.push("⇄ API");
-  if (s.has_hooks || s.hooks_only) out.push("⚑ hooks");
-  return out.join(" + ") || DASH;
-}
-
-// lookText says how many items need a look and of what kinds, in the server's words
-// (spec 017 AC2); "" when nothing does.
+// lookText lists what needs a look and of what kinds, in the server's words (spec 017 AC2),
+// without a count prefix (027 C7b); "" when nothing does.
 export function lookText(l) {
   const n = (l || {}).needs_look || 0;
   if (!n) return "";
-  const kinds = ((l || {}).look_kinds || []).map((k) => k.words).join(", ");
-  return `${n} ${n === 1 ? "needs" : "need"} a look${kinds ? `: ${kinds}` : ""}`;
+  return ((l || {}).look_kinds || []).map((k) => k.words).join(", ");
 }
 
 // toolCounts is a session's tool calls (captured or hook-seen, every state) and the failed
@@ -129,9 +125,17 @@ export function rowCells(s) {
   const tools = toolCounts(s.tool_states);
   const e = s.effects || {};
   const hooksOnly = Boolean(s.hooks_only) || (!s.has_calls && Boolean(s.has_hooks));
-  let calls = plural(l.main_calls ?? s.model_calls ?? 0, "call");
-  if (l.side_calls) calls += ` · ${l.side_calls} side`;
+  // zero-valued parts are left out (027 C7b); a cell with nothing left shows "—"
+  const nonZero = (n, one, many) => (n ? plural(n, one, many) : "");
+  const mainCalls = l.main_calls ?? s.model_calls ?? 0;
+  const calls = [nonZero(mainCalls, "call"), l.side_calls ? `${l.side_calls} side` : ""].filter(Boolean).join(" · ");
+  const prompts = nonZero(l.prompts ?? 0, "prompt");
+  const toolText = nonZero(tools.total, "tool call");
+  const changes = [nonZero(e.changed ?? 0, "file changed", "files changed"), nonZero(l.commands ?? 0, "command"), nonZero(e.sites ?? 0, "site")].filter(Boolean).join(" · ");
+  const work = [prompts, hooksOnly ? "no model calls captured" : calls, toolText].filter(Boolean).join(" · ");
   return {
+    hooksOnly,
+    work: work || (tools.failed ? "" : DASH),
     id: s.id,
     start: s.first_at,
     title: s.title || NO_TITLE,
@@ -139,13 +143,12 @@ export function rowCells(s) {
     folder: l.folder || "",
     folderFull: l.folder_full || l.folder || "",
     model: models.length ? models[0] + (models.length > 1 ? ` +${models.length - 1}` : "") : "",
-    sources: sourcesOf(s),
     status: statusOf(s),
-    prompts: plural(l.prompts ?? 0, "prompt"),
+    prompts,
     calls: hooksOnly ? "no model calls captured" : calls,
-    tools: plural(tools.total, "tool call"),
+    tools: toolText,
     failed: tools.failed,
-    changes: [plural(e.changed ?? 0, "file changed", "files changed"), plural(l.commands ?? 0, "command"), plural(e.sites ?? 0, "site")].join(" · "),
+    changes: changes || DASH,
     time: dur(l.clock_ms ?? null),
     input: hooksOnly ? DASH : counter(u.input),
     output: hooksOnly ? DASH : counter(u.output),
@@ -166,7 +169,7 @@ export function compact(text) {
   return `${(n / 1e9).toFixed(1)}B`;
 }
 
-// startText is a session's start as "Today 8:47 PM", "Yesterday 7:08 PM" or
+// startText is a session's start as "8:47 PM" (today), "Yesterday 7:08 PM" or
 // "Nov 11, 7:12 PM" in the browser's time zone.
 export function startText(iso, now = new Date()) {
   const d = new Date(iso || "");
@@ -174,7 +177,7 @@ export function startText(iso, now = new Date()) {
   const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
   const days = Math.round((day(now) - day(d)) / 86400000);
-  if (days === 0) return `Today ${time}`;
+  if (days === 0) return time;
   if (days === 1) return `Yesterday ${time}`;
   const date = d.toLocaleDateString(undefined, { month: "short", day: "numeric", ...(d.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}) });
   return `${date}, ${time}`;
@@ -208,6 +211,32 @@ export function todayCells(t) {
     output: counter(x.output),
     cost: totalCost(x.cost),
   };
+}
+
+// sparkCounts is the server's per-hour counts and peak for one tile ("sessions" or
+// "calls"), or null when there is nothing to draw: no buckets, or a peak of 0.
+export function sparkCounts(t, name) {
+  const h = (t && t.hourly) || {};
+  const counts = h[name];
+  const peak = h[`peak_${name}`];
+  if (!Array.isArray(counts) || counts.length === 0 || !(peak > 0)) return null;
+  return { counts, peak };
+}
+
+// sparkline is a row of thin bars, one per hour. Heights are set by CSS from --v and
+// --peak, both the server's numbers; nothing is computed here. Null when empty.
+export function sparkline(spec) {
+  if (!spec) return null;
+  const el = document.createElement("span");
+  el.className = "spark";
+  el.setAttribute("aria-hidden", "true");
+  el.style.setProperty("--peak", String(spec.peak));
+  for (const n of spec.counts) {
+    const bar = document.createElement("i");
+    bar.style.setProperty("--v", String(n));
+    el.append(bar);
+  }
+  return el;
 }
 
 // localMidnight is the start of the browser-local day, as an RFC 3339 instant (AC4).
@@ -259,14 +288,24 @@ function rowNode(id) {
   parts.a.href = `#/sessions/${encodeURIComponent(id)}`;
   parts.a.className = "stitle";
   for (const cls of COLUMNS.map((c) => c[1])) parts.cells.push(td(tr, null, cls));
-  parts.cells[1].append(parts.a, parts.place, parts.look);
+  parts.cells[2].append(parts.a, parts.place, parts.look);
   // each count an unbreakable part, " · " between them as text, so the cell wraps only at
   // the dots, as Work and Changes do (setSegments); the cost is a line of its own
   parts.tokens = [span("tok seg"), span("tok seg"), span("tok seg")];
+  parts.seps = [span("", " · "), span("", " · ")];
   parts.cost = span("cost");
-  parts.cells[8].append(parts.tokens[0], " · ", parts.tokens[1], " · ", parts.tokens[2], parts.cost);
-  parts.tools = [span(""), span("bad")];
-  parts.cells[5].append(...parts.tools);
+  // the bar under the figures: input, output and cache read side by side, each as wide as its
+  // own count; the numbers are already in text, so the bar is hidden from screen readers
+  parts.bar = span("tokbar");
+  parts.bar.setAttribute("aria-hidden", "true");
+  parts.barSegs = ["in", "out", "cache"].map((k) => span(`tokseg tokseg-${k}`));
+  parts.bar.append(...parts.barSegs);
+  parts.cells[6].append(parts.tokens[0], parts.seps[0], parts.tokens[1], parts.seps[1], parts.tokens[2], parts.cost, parts.bar);
+  // Work: prompts, calls and tool calls as segments, then the failed tools standing out
+  parts.work = span("");
+  parts.failedSep = span("");
+  parts.failed = span("bad seg");
+  parts.cells[3].append(parts.work, parts.failedSep, parts.failed);
   return parts;
 }
 
@@ -280,7 +319,7 @@ function setText(e, text) {
 function setSegments(e, text) {
   if (e.textContent === text) return;
   const nodes = [];
-  text.split(" · ").forEach((part, i) => {
+  (text ? text.split(" · ") : []).forEach((part, i) => {
     if (i) nodes.push(" · ");
     const sp = document.createElement("span");
     sp.className = "seg";
@@ -301,6 +340,21 @@ function setToken(e, text, label) {
   setTitle(e, text === DASH ? `${label}: not reported` : `${label}: ${text}`);
 }
 
+// setTokenBar hands each of the server's raw counts to its segment's flex-grow, so the
+// browser sizes the segments; a count that is missing or zero gets no segment, and a row
+// with none (a hooks-only session) shows no bar.
+export function setTokenBar(parts, counts) {
+  let any = false;
+  parts.barSegs.forEach((seg, i) => {
+    const n = counts[i];
+    const has = typeof n === "number" && Number.isFinite(n) && n > 0;
+    seg.hidden = !has;
+    seg.style.flexGrow = has ? String(n) : "";
+    any = any || has;
+  });
+  parts.bar.hidden = !any;
+}
+
 function fillRow(parts, s, selected) {
   const c = rowCells(s);
   const { tr, cells, a, place, look, key } = parts;
@@ -311,7 +365,7 @@ function fillRow(parts, s, selected) {
     key.start = c.start;
     const t = timeElement(c.start);
     t.textContent = startText(c.start);
-    cells[0].replaceChildren(t);
+    cells[1].replaceChildren(t);
   }
   setText(a, c.title);
   setTitle(a, c.key ? `session key ${c.key}` : "");
@@ -319,29 +373,46 @@ function fillRow(parts, s, selected) {
   setTitle(place, c.folderFull);
   setText(look, c.look);
   setTitle(look, c.look);
-  setText(cells[2], c.sources);
   if (key.status !== c.status.key) {
     key.status = c.status.key;
-    const pill = span(`spill spill-${c.status.key}`, `${c.status.glyph} ${c.status.text}`);
-    cells[3].replaceChildren(pill);
+    // the glyph alone; the word is its hover and its accessible name (027, research D2)
+    const icon = span(`sicon sicon-${c.status.key}`, c.status.glyph);
+    icon.setAttribute("role", "img");
+    icon.setAttribute("aria-label", c.status.text);
+    icon.title = c.status.text;
+    // an ordinary ended session shows no glyph (027 C7b); the cell and its column stay
+    if (c.status.glyph) cells[0].replaceChildren(icon);
+    else cells[0].replaceChildren();
   }
-  setSegments(cells[4], `${c.prompts} · ${c.calls}`);
-  setText(parts.tools[0], c.tools);
-  setText(parts.tools[1], c.failed ? ` · ${c.failed} failed` : "");
-  setSegments(cells[6], c.changes);
-  setText(cells[7], c.time);
-  setToken(parts.tokens[0], c.input, "in");
-  setToken(parts.tokens[1], c.output, "out");
-  setToken(parts.tokens[2], c.cacheRead, "cache read");
-  setText(parts.cost, `${c.cost.text} ${LABEL}`);
+  setSegments(parts.work, c.work);
+  setText(parts.failedSep, c.failed && c.work ? " · " : "");
+  setText(parts.failed, c.failed ? `${c.failed} failed` : "");
+  setSegments(cells[4], c.changes);
+  setText(cells[5], c.time);
+  if (c.hooksOnly) {
+    // no model calls, so no counts to show: one dash for the whole cell (027 C7b)
+    setText(parts.tokens[0], DASH);
+    setTitle(parts.tokens[0], "");
+  } else {
+    setToken(parts.tokens[0], c.input, "in");
+    setToken(parts.tokens[1], c.output, "out");
+    setToken(parts.tokens[2], c.cacheRead, "cache read");
+  }
+  for (const e of [parts.tokens[1], parts.tokens[2], ...parts.seps]) e.hidden = c.hooksOnly;
+  // an unknown cost says nothing once its label is gone, so it is left out (027 C7b)
+  parts.cost.hidden = c.hooksOnly || c.cost.text === DASH;
+  const u = s.usage || {};
+  setTokenBar(parts, c.hooksOnly ? [] : [u.input, u.output, u.cache_read].map((x) => x && x.value));
+  // the Tokens header already says the figure is API-equivalent, so the row does not repeat it
+  setText(parts.cost, c.cost.text);
   setTitle(parts.cost, c.cost.title);
 }
 
 // COLUMNS are the list's headers and each column's class; every count carries its own label
 // in words (spec 017 AC1).
 const COLUMNS = [
-  ["Start", "time"], ["Session", "title"], ["Sources", "src"], ["Status", "status"], ["Work", "work"],
-  ["Tools", "tools"], ["Changes", "changes"], ["Time", "dur"], ["Tokens", "tokens", `Second line: ${explain("")}`],
+  ["", "status", "Status: ● active, ✗ failed, ◇ hooks only; an ordinary ended session shows none"], ["Start", "time"], ["Session", "title"], ["Work", "work"],
+  ["Changes", "changes"], ["Time", "dur"], ["Tokens", "tokens", `Second line: ${explain("")}`],
 ];
 
 // unassignedShown is how many unassigned connections the list's section lists; the rest are
@@ -357,12 +428,18 @@ function unassignedSection(count, items) {
   const h = document.createElement("h2");
   h.textContent = `Unassigned connections (${count})`;
   const p = note("muted", "Connections through the gateway's proxy that no session could be linked to.");
-  const { table, body } = tableWithHead([["Label", "label"], ["Client", "client"], ["Host", "host"], ["Bytes", "bytes"], ["Time", "time"]]);
-  for (const e of (items || []).slice(0, UNASSIGNED_SHOWN)) {
-    const r = unassignedRow(e);
+  const shown = (items || []).slice(0, UNASSIGNED_SHOWN).map((e) => ({ r: unassignedRow(e) }));
+  // a column that says the same on every row is left out (027 C7b)
+  const showLabel = shown.some(({ r }) => r.label !== "unassigned");
+  const showClient = shown.some(({ r }) => r.client !== DASH && r.client !== "unknown");
+  const { table, body } = tableWithHead([
+    ...(showLabel ? [["Label", "label"]] : []), ...(showClient ? [["Client", "client"]] : []),
+    ["Host", "host"], ["Bytes", "bytes"], ["Time", "time"],
+  ]);
+  for (const { r } of shown) {
     const tr = document.createElement("tr");
-    td(tr, r.label, "label");
-    td(tr, r.client, "client");
+    if (showLabel) td(tr, r.label, "label");
+    if (showClient) td(tr, r.client, "client");
     td(tr, r.host, "host");
     td(tr, r.bytes, "bytes");
     const t = timeElement(r.at);
@@ -416,7 +493,10 @@ export function createSessionsPage(handlers) {
   const head = document.createElement("div");
   head.className = "sp-head";
   const h1 = document.createElement("h1");
-  h1.textContent = "Sessions";
+  // the tiles below are the day's totals; say so once, here, as muted text (027 C7b)
+  const when = span("sp-when", "today");
+  when.title = "since local midnight";
+  h1.append("Sessions", " ", when);
   const today = document.createElement("p");
   today.className = "today";
   head.append(h1, today);
@@ -500,19 +580,20 @@ export function createSessionsPage(handlers) {
     for (const [k, b] of kinds) b.setAttribute("aria-pressed", String(k === kind));
     const t = todayCells(state.today);
     today.replaceChildren();
-    const stat = (value, label, exact) => {
+    const stat = (value, label, exact, spark) => {
       const sp = document.createElement("span");
       sp.className = "stat";
       const b = document.createElement("b");
       b.textContent = value;
       if (exact !== undefined && exact !== value) sp.title = exact === DASH ? "not reported" : exact;
       sp.append(b, ` ${label}`);
+      // The tile stacks bottom-up (column-reverse), so the first child sits lowest.
+      const bars = sparkline(spark);
+      if (bars) sp.prepend(bars);
       today.append(sp);
     };
-    today.append("Today");
-    today.title = "since local midnight";
-    stat(String(t.sessions), t.sessions === 1 ? "session" : "sessions");
-    stat(String(t.calls), t.calls === 1 ? "model call" : "model calls", "side calls included");
+    stat(String(t.sessions), t.sessions === 1 ? "session" : "sessions", undefined, sparkCounts(state.today, "sessions"));
+    stat(String(t.calls), t.calls === 1 ? "model call" : "model calls", "side calls included", sparkCounts(state.today, "calls"));
     stat(String(t.changed), t.changed === 1 ? "file changed" : "files changed");
     stat(String(t.sites), t.sites === 1 ? "site" : "sites");
     stat(compact(t.input), "input", t.input);

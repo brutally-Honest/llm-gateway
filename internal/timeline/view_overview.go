@@ -180,7 +180,8 @@ func (b *builder) title(o *Overview, v *View) {
 	}
 	from, _ := b.sessionRange()
 	when := ""
-	if from > 0 {
+	// a hooks-only title leaves the start out: the list shows it in its own column
+	if from > 0 && src != "hooks_only" {
 		when = " · " + time.Unix(0, from).Local().Format("Jan 2 15:04")
 	}
 	o.Title = kind + " · " + o.Client + when
@@ -295,13 +296,18 @@ func (b *builder) needsLook(v *View) []LookItem {
 	// 017 D31: in a session with no exchanges every turn is hooks only, so none is
 	// singled out; hooks-only turns are listed only beside turns with model calls.
 	hooksSession := len(b.in.Exchanges) == 0
+	hooksItem := map[int]int{} // a hooks-only turn's number -> its item's index in out
 	for _, t := range v.Turns {
 		if t.HooksOnly && !t.Background && !hooksSession { // a lone notice is no lost turn (018)
+			hooksItem[t.N] = len(out)
 			out = append(out, LookItem{Kind: LookHooksOnly, Tone: "info", Glyph: "◇", Title: "Turn " + strconv.Itoa(t.N) + " has no model calls captured",
 				Sub: "only the hooks saw it: its tool calls show, the conversation does not", Go: "Show turn " + strconv.Itoa(t.N),
 				Target: Target{Kind: "turn", Turn: t.N}})
 		}
 	}
+	// 027 C4: in a hooks-only turn no call is captured, so its tools are unmatched by
+	// nature; they are named in that turn's item instead of each being an item of its own.
+	inHooksTurn := map[int][]string{}
 	for _, l := range tools {
 		if l.Chip != ChipUnmatched {
 			continue
@@ -310,8 +316,15 @@ func (b *builder) needsLook(v *View) []LookItem {
 		if l.Summary != "" {
 			title += " " + l.Summary
 		}
+		if _, ok := hooksItem[l.Turn]; ok {
+			inHooksTurn[l.Turn] = append(inHooksTurn[l.Turn], title)
+			continue
+		}
 		out = append(out, LookItem{Kind: LookUnmatched, Tone: "info", Glyph: "?", Title: title + " ran with no captured call asking for it",
 			Sub: where(l.Turn) + " · ? unmatched", Go: "Open", Target: Target{Kind: "tool", ID: l.ID, Turn: l.Turn}})
+	}
+	for n, titles := range inHooksTurn {
+		out[hooksItem[n]].Sub = "only the hooks saw it: " + strings.Join(titles, ", ")
 	}
 	return out
 }

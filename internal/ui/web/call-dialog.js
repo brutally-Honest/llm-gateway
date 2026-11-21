@@ -1,10 +1,11 @@
-import { button, clock, dur, el, num, signed } from "./fmt.js";
+import { button, clock, dur, el, num, signed, skeleton } from "./fmt.js";
 import { textBlock, toolNode } from "./story.js";
 import { LABEL, LABEL_LONG, callCost, costLines } from "./cost.js";
 
-// The call details dialog (spec 017 AC5–AC11, AC21): one model call in the 016 dialog shape —
-// a native <dialog> opened with showModal(), so the page behind is dimmed and inert. Its top
-// (title, facts, the context line and the message counts) stays while the sections scroll.
+// The call details dialog (spec 017 AC5–AC11, AC21): one model call — a native <dialog>
+// opened with showModal(), so the page behind is dimmed and inert, docked full height on the
+// right (spec 027 C3). Its top (title, one line of facts and links to each section) stays
+// while the sections scroll in one scroll; nothing inside scrolls on its own.
 // The server builds every fact (GET /api/sessions/{id}/calls/{eid}); this only lays them out.
 //
 // The URL is the page's: nav is { push(route), replace(route), back() } and the dialog asks
@@ -15,8 +16,8 @@ import { LABEL, LABEL_LONG, callCost, costLines } from "./cost.js";
 
 const plainCount = (n) => (n === null || n === undefined ? "—" : String(n));
 
-function fact(label, value, cls = "") {
-  const f = el("div", "mfact");
+function fact(label, value, cls = "", swatch = "") {
+  const f = el("div", swatch ? `mfact ${swatch}` : "mfact");
   const v = el("span", `v ${cls}`.trim());
   if (value && typeof value === "object") v.append(value);
   else v.textContent = value === undefined || value === null || value === "" ? "—" : String(value);
@@ -77,18 +78,18 @@ export function createCallDialog(ctx = {}) {
   const x = button("x", "×", () => close());
   x.setAttribute("aria-label", "Close call");
   head.append(tx, prev, next, x);
-  // the top (facts, context line, message counts) stays; the sections scroll under it
+  // the top (one line of facts, the section links) stays; the sections scroll under it
   const top = el("div", "call-top");
   const body = el("div", "mb");
-  const foot = el("footer", "mf");
-  foot.append(el("span", "muted-note grow", "↑ ↓ step through calls · Esc closes"), button("btn", "Close", () => close()));
-  // the dimmed page behind is one button that closes the dialog: it covers the window
-  // under the dialog's content, transparent (the ::backdrop dims), and out of the Tab order
+  // the dimmed page behind is one button that closes the dialog: it covers the window below
+  // the header, under the dialog's content, dims it, and is out of the Tab order. The panel
+  // is not a browser modal (027 C7a): the header above stays usable, and the page behind is
+  // made inert instead (ctx.behind)
   const scrim = el("button", "call-scrim");
   scrim.type = "button";
   scrim.setAttribute("aria-label", "Close call");
   scrim.setAttribute("tabindex", "-1");
-  root.append(scrim, head, top, body, foot);
+  root.append(scrim, head, top, body);
 
   let sessionId = "";
   let current = ""; // the open call's exchange id, or ""
@@ -125,23 +126,33 @@ export function createCallDialog(ctx = {}) {
     const a = globalThis.document.activeElement;
     opener = pendingOpener || (a && a !== globalThis.document.body ? a : null);
     shown = true;
-    if (typeof root.showModal === "function" && root.isConnected !== false) {
+    // opened with show(), not showModal(): a modal would make the header inert too
+    if (typeof root.show === "function" && root.isConnected !== false) {
       try {
-        root.showModal();
+        root.show();
       } catch {
         root.open = true;
       }
     } else {
       root.open = true;
     }
+    setBehind(true);
     // focus starts on Close, as in the 016 dialog; Tab reaches Previous and Next
     if (typeof x.focus === "function") x.focus();
+  }
+
+  // setBehind makes the page under the panel inert while it is open: no clicks, no focus, no
+  // screen reader (what showModal did), leaving the header out of it
+  function setBehind(on) {
+    const b = typeof ctx.behind === "function" ? ctx.behind() : null;
+    if (b) b.inert = on;
   }
 
   function hide() {
     if (!shown) return;
     shown = false;
     closing = false;
+    setBehind(false);
     if (typeof root.close === "function" && root.open) root.close();
     else root.open = false;
     const target = opener && opener.isConnected !== false ? opener : ctx.turnHeading ? ctx.turnHeading() : null;
@@ -183,42 +194,79 @@ export function createCallDialog(ctx = {}) {
     );
   }
 
-  function topNodes(d) {
+  // metaLine is the call's facts on one line under its title: each a label and a value. The
+  // context size is not here: the Context section says it once, with what it is made of.
+  function metaLine(d) {
     const f = d.facts;
-    const facts = el("div", "mfacts");
-    facts.append(
+    const line = el("div", "call-meta");
+    line.append(...[
       fact("Model", f.model),
       fact("Duration", f.dur_ms === null || f.dur_ms === undefined ? "—" : dur(f.dur_ms)),
       fact("Started", f.start ? clock(f.start) : "—"),
-      fact("Ended", f.stop.word, f.stop.bad ? "bad" : ""),
-      fact("Thread", f.thread.label),
-      fact("Context", num(f.ctx)),
+      // a call in trouble says its error once, in the Health alert (027 C4)
+      // the stop reason, not a time: said here once, not again over the Response (027 C7a)
+      d.health.ok ? fact("Stop reason", f.stop.word, f.stop.bad ? "bad" : "") : null,
+      // a call in trouble says its status in the Health alert at the top of the body
+      d.health.ok ? fact("Status", d.health.status) : null,
       costFact(d.context.cost),
-    );
-    const c = d.context;
-    const change = changeText(c);
-    const ctxLine = el("p", "call-line", `Context ${num(c.size)}${change === "—" ? "" : ` · ${change}`}`);
-    const sawLine = el("p", "call-line call-saw-counts", sawText(d.saw));
-    return [facts, ctxLine, sawLine];
+    ].filter(Boolean));
+    return line;
   }
 
+  // jumpLinks are buttons to each section of the body, in order; each scrolls its section
+  // to the top of the one scroll.
+  function jumpLinks(parts) {
+    const navEl = el("nav", "call-jump");
+    navEl.setAttribute("aria-label", "Sections");
+    for (const [label, s] of parts) {
+      navEl.append(button("jump", label, () => {
+        if (typeof s.scrollIntoView === "function") s.scrollIntoView({ block: "start" });
+      }));
+    }
+    return navEl;
+  }
+
+  // contextSection is the context once: its size and change in the heading, then a bar of
+  // the three parts it is made of (sized by the server's counts) and the counts themselves.
   function contextSection(c) {
-    const facts = el("div", "mfacts");
-    facts.append(
-      fact("Size", `${c.partial ? "~" : ""}${num(c.size)}`),
-      fact("Change", changeText(c)),
-      fact("Input", num(c.input)),
-      fact("Cache write", num(c.cache_write)),
-      fact("Cache read", num(c.cache_read)),
+    const size = c.size === null || c.size === undefined ? "—" : `${c.partial ? "~" : ""}${num(c.size)}`;
+    const change = changeText(c);
+    const bar = el("div", "ctx-bar");
+    for (const [cls, n] of [["in", c.input], ["cr", c.cache_read], ["cw", c.cache_write]]) {
+      if (!(n > 0)) continue;
+      const part = el("i", cls);
+      if (part.style) part.style.flexGrow = String(n);
+      bar.append(part);
+    }
+    // a call with no usage reported has no counts to show: its note says why
+    const known = [c.input, c.cache_read, c.cache_write, c.output].some((n) => n !== null && n !== undefined);
+    const counts = el("div", "ctx-counts");
+    counts.append(
+      fact("Input", num(c.input), "", "sw-in"),
+      fact("Cache read", num(c.cache_read), "", "sw-cr"),
+      fact("Cache write", num(c.cache_write), "", "sw-cw"),
       fact("Output", num(c.output)),
     );
-    return section("Context", "input + cache write + cache read", facts,
+    return section(`Context ${size}`, change === "—" ? "input + cache write + cache read" : change,
+      bar.children.length ? bar : null, known ? counts : null,
       c.why ? el("p", "why2", c.why) : null, c.note ? el("p", "muted-note", c.note) : null);
+  }
+
+  // healthAlert is the call's trouble said first, in words: nothing when the call was healthy
+  // (its status is in the top line).
+  function healthAlert(h) {
+    if (h.ok) return null;
+    const ul = el("ul", "call-health");
+    for (const i of h.items) ul.append(el("li", `tone-${i.tone}`, i.text));
+    const s = section("Health", "", ul);
+    s.className = "ms call-alert";
+    return s;
   }
 
   // costFact is the call's API-equivalent cost in the dialog's top, with its hover.
   function costFact(c) {
     const cc = callCost(c);
+    if (cc.text === "—") return null; // an unknown cost is left out of the top line
     const f = fact(`${LABEL} cost`, cc.text);
     f.title = cc.title;
     return f;
@@ -230,7 +278,8 @@ export function createCallDialog(ctx = {}) {
     const cc = callCost(c);
     const rows = costLines(c);
     const sub = c && c.source ? `at ${c.source}'s published API prices, not what was charged` : "at published API prices, not what was charged";
-    if (!rows.length) return section(`${LABEL_LONG} cost`, sub, el("p", "muted-note", `${cc.text} · ${cc.title.split("\n").pop()}`));
+    // with no breakdown the top line already says the cost and why (its hover): no section
+    if (!rows.length) return null;
     const table = el("table", "cost-lines");
     const head = el("tr");
     for (const h of ["Tokens", "Count", "Price", "Amount"]) {
@@ -256,17 +305,31 @@ export function createCallDialog(ctx = {}) {
 
   function sawSection(d) {
     const s = d.saw;
-    if (s.unavailable) return section("What the model saw", "", el("p", "muted-note", s.unavailable), fact("Messages", "—"));
-    const ul = el("ul", "call-messages");
+    if (s.unavailable) return section("What the model saw", sawText(s), el("p", "muted-note", s.unavailable));
+    // the messages carried over are folded behind one button, one line each when shown;
+    // the new ones, what this call added, are shown whole
+    const carried = el("ul", "call-messages carried");
+    const fresh = el("ul", "call-messages");
     for (const m of s.messages) {
       const li = el("li", m.new ? "is-new" : "is-carried");
       // a message of tool calls, tool results or thinking alone has no text to show
       const text = m.text ? el("span", "msg", m.text) : el("span", "msg muted-note", "no text: tool calls, tool results or thinking only");
       li.append(el("span", "badge", m.new ? "new" : "carried"), el("span", "role", m.role), text);
       if (m.truncated) li.append(link(d.raw.request || d.raw.page, "cut short — open the raw request", Boolean(d.raw.request)));
-      ul.append(li);
+      (m.new ? fresh : carried).append(li);
     }
-    return section("What the model saw", sawText(s), ul);
+    let fold = null;
+    if (carried.children.length) {
+      carried.hidden = true;
+      const word = `${s.carried} carried over`;
+      fold = button("btn sm call-carried", `Show the ${word}`, () => {
+        carried.hidden = !carried.hidden;
+        fold.textContent = carried.hidden ? `Show the ${word}` : `Hide the ${word}`;
+        fold.setAttribute("aria-expanded", String(!carried.hidden));
+      });
+      fold.setAttribute("aria-expanded", "false");
+    }
+    return section("What the model saw", sawText(s), fold, carried, fresh.children.length ? fresh : null);
   }
 
   // thinkingSection is the thinking flag behind a toggle: the gateway keeps thinking text out
@@ -294,7 +357,7 @@ export function createCallDialog(ctx = {}) {
       : null;
     if (!r.text) {
       const none = el("p", "muted-note", (d.tools || []).length ? "No text in the reply: it asked for the tool calls below." : "No text in the reply.");
-      return section("Response", r.stop_reason ? `stop: ${r.stop_reason}` : "", none, cutNote);
+      return section("Response", "", none, cutNote);
     }
     // the reply is capped like a message box; "Show all" expands it in place, and stays
     // expanded through live redraws of the same call (the turn card stays whole, D11)
@@ -308,7 +371,7 @@ export function createCallDialog(ctx = {}) {
     });
     all.setAttribute("aria-expanded", String(replyAll));
     replyFit = () => fitReply(reply, all);
-    return section("Response", r.stop_reason ? `stop: ${r.stop_reason}` : "", reply, all, cutNote);
+    return section("Response", "", reply, all, cutNote);
   }
 
   // fitReply hides "Show all" while the capped reply fits its box, so a short reply has no
@@ -319,8 +382,10 @@ export function createCallDialog(ctx = {}) {
     all.hidden = Boolean(b && typeof b.scrollHeight === "number" && b.clientHeight > 0 && b.scrollHeight <= b.clientHeight + 1);
   }
 
+  // toolsSection is the tool calls the call asked for; a call that asked for none has no
+  // section (an empty one would only say so).
   function toolsSection(d) {
-    if (!(d.tools || []).length) return section("Tool calls", "", el("p", "muted-note", "No tool calls asked for."));
+    if (!(d.tools || []).length) return null;
     const tctx = {
       open: (target, from) => {
         if (target.kind === "tool" && ctx.openTool) ctx.openTool(target.id, from);
@@ -333,23 +398,13 @@ export function createCallDialog(ctx = {}) {
     return section("Tool calls", `${d.tools.length} asked for`, ol);
   }
 
-  function healthSection(h) {
-    const out = [fact("Status", h.status)];
-    if (h.ok) out.push(el("p", "muted-note", "No disconnect, abort or error."));
-    else {
-      const ul = el("ul", "call-health");
-      for (const i of h.items) ul.append(el("li", `tone-${i.tone}`, i.text));
-      out.push(ul);
-    }
-    return section("Health", "", ...out);
-  }
-
   function rawSection(raw) {
     const box = el("div", "call-raw");
     box.append(raw.request ? link(raw.request, "Raw request body", true) : el("span", "muted-note", raw.request_missing || "Request body: not stored"));
     box.append(raw.response ? link(raw.response, "Raw response stream", true) : el("span", "muted-note", raw.response_missing || "Response body: not stored"));
-    box.append(link(raw.headers, "Headers"), link(raw.page, "Full exchange page"));
-    return section("Raw", "the stored bodies and headers, unparsed", box);
+    // Headers opened the same page as the full exchange page, scrolled down (027 C4)
+    box.append(link(raw.page, "Full exchange page"));
+    return section("Raw", "", box);
   }
 
   // rawFor is the Raw section when the details did not load: the links need only the id.
@@ -378,12 +433,24 @@ export function createCallDialog(ctx = {}) {
       kick.textContent = "Model call";
       title.textContent = "Call";
       subt.textContent = "";
-      top.replaceChildren(el("p", "muted-note", got.state === "loading" ? "Loading call…" : `Call details unavailable: ${got.error}`));
+      top.replaceChildren(got.state === "loading" ? skeleton("Loading call…", 5, "cards") : el("p", "muted-note", `Call details unavailable: ${got.error}`));
       body.replaceChildren(rawFor(got.id));
     } else {
-      top.replaceChildren(...topNodes(d));
       replyFit = () => {};
-      body.replaceChildren(...[contextSection(d.context), costSection(d.context.cost), sawSection(d), thinkingSection(d), responseSection(d), toolsSection(d), healthSection(d.health), rawSection(d.raw)].filter(Boolean));
+      const tools = (d.tools || []).length;
+      const parts = [
+        ["Health", healthAlert(d.health)],
+        ["Context", contextSection(d.context)],
+        ["Cost", costSection(d.context.cost)],
+        ["What it saw", sawSection(d)],
+        ["Thinking", thinkingSection(d)],
+        // a call that failed has no reply: the Health alert already says so
+        ["Response", d.health.ok || !d.response.unavailable ? responseSection(d) : null],
+        [`Tools · ${tools}`, toolsSection(d)],
+        ["Raw", rawSection(d.raw)],
+      ].filter(([, s]) => s);
+      top.replaceChildren(metaLine(d), jumpLinks(parts.filter(([label]) => label !== "Health")));
+      body.replaceChildren(...parts.map(([, s]) => s));
       replyFit();
     }
     if (keep) body.scrollTop = scroll;

@@ -72,6 +72,23 @@ func (b *builder) renderTurn(vt *vturn) {
 	t.Models = turnModels(vt.calls)
 	b.turnTimes(vt, mains)
 	t.Counts = countTurn(t)
+	t.Figure = turnFigure(t)
+}
+
+// turnFigure picks how the turn's work is drawn: boxes while its main model calls and
+// their tool calls fit (a sub-agent is one box), one line per call beyond that.
+func turnFigure(t *Turn) string {
+	if t.HooksOnly || len(t.Steps) == 0 {
+		return ""
+	}
+	boxes := 0
+	for _, s := range t.Steps {
+		boxes += 1 + len(s.Tools)
+	}
+	if len(t.Steps) <= figureMaxCall && boxes <= figureMaxBox {
+		return FigureBoxes
+	}
+	return FigureList
 }
 
 // turnModels is the models a turn's calls used, sub-agents included, in the order they

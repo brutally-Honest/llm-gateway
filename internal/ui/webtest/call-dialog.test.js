@@ -52,8 +52,10 @@ function host({ start = [null], load, missing } = {}) {
     back: () => { hist.moves.push(["back"]); hist.stack.pop(); sync(); },
   };
   const asked = [];
+  const behind = doc.createElement("div"); // the session page under the panel
   dialog = createCallDialog({
     nav,
+    behind: () => behind,
     loadCall: async (id) => {
       asked.push(id);
       return load ? load(id) : detail(id);
@@ -68,7 +70,7 @@ function host({ start = [null], load, missing } = {}) {
   sync();
   const root = dialog.el;
   const btn = (label) => byTag(root, "button").find((b) => b.textContent.includes(label));
-  return { dialog, root, hist, top, links, heading, asked, clickTo, btn, text: () => textOf(root).replace(/\s+/g, " ") };
+  return { dialog, root, hist, top, links, heading, asked, clickTo, btn, behind, text: () => textOf(root).replace(/\s+/g, " ") };
 }
 
 // AC5 (carries opensFromLinkBarAndEnter, backClosesDrawer): a link opens the call in the
@@ -110,17 +112,21 @@ test("missingCallShowsNote", async () => {
   assert.equal(noted, 1, "the page is told, so it shows the note");
 });
 
-// AC21 (carries drawerIsModalWithAFixedTop): the dialog is modal — opened with showModal(),
-// so the page behind is dimmed and inert; a click on the dimmed page closes it, as Esc does;
-// its top (title, facts, context line, message counts) stays while the rest scrolls.
-test("callDialogIsModalWithAFixedTop", async () => {
+// AC21 (carries drawerIsModalWithAFixedTop), changed by 027 C7a with Karthik's OK: the page
+// behind is dimmed and inert while the panel is open, but the header above stays usable, so
+// the panel opens with show() and makes the page inert itself (showModal would take the
+// header too); a click on the dimmed page closes it, as Esc does; its top (title, facts,
+// context line, message counts) stays while the rest scrolls.
+test("callPanelHoldsThePageButNotTheHeaderWithAFixedTop", async () => {
   const doc = globalThis.document;
   let modal = 0;
+  let shown = 0;
   const realCreate = doc.createElement;
   doc.createElement = (tag) => {
     const e = realCreate(tag);
     if (tag === "dialog") {
       e.showModal = () => { modal++; e.open = true; };
+      e.show = () => { shown++; e.open = true; };
       e.close = () => { e.open = false; };
     }
     return e;
@@ -128,17 +134,31 @@ test("callDialogIsModalWithAFixedTop", async () => {
   try {
     const h = host({ start: [null, "b"] });
     await tick();
-    assert.equal(modal, 1, "opened with showModal, which makes the page behind inert");
+    assert.equal(modal, 0, "not a browser modal: that would make the header inert too");
+    assert.equal(shown, 1, "opened with show()");
+    assert.equal(h.behind.inert, true, "the page under the panel is inert while it is open");
     assert.equal(globalThis.document.activeElement.attrs["aria-label"], "Close call", "focus starts on Close");
     const top = withClass(h.root, "call-top")[0];
     const body = withClass(h.root, "mb")[0];
     const topText = textOf(top).replace(/\s+/g, " ");
     assert.match(topText, /Model m1/);
-    assert.match(topText, /Context 160 · \+60 since #1/);
-    assert.match(topText, /2 carried over · 1 new/);
+    assert.match(topText, /Status 200 OK/);
+    // spec 027 C3: the context and the message counts are said once, in their sections
+    assert.doesNotMatch(topText, /Context 160|carried over/, "the top does not repeat the sections");
+    assert.match(textOf(body), /Context 160/);
+    assert.match(textOf(body), /2 carried over · 1 new/);
     assert.equal(withClass(top, "call-messages").length, 0, "the messages are not in the top");
-    assert.equal(withClass(body, "call-messages").length, 1, "the messages scroll");
+    assert.ok(withClass(body, "call-messages").length >= 1, "the messages scroll");
     assert.match(textOf(body), /all done/, "later sections scroll too");
+    // the top links each section of the body, in order, and a link scrolls to its section
+    const jumps = byTag(withClass(top, "call-jump")[0], "button");
+    // no Cost link: with no breakdown the top line says the cost (027 C4)
+    assert.deepEqual(jumps.map((b) => b.textContent), ["Context", "What it saw", "Response", "Raw"]);
+    const sections = byTag(body, "section");
+    let scrolled = null;
+    sections[2].scrollIntoView = (o) => { scrolled = o; };
+    jumps[2].fire("click");
+    assert.deepEqual(scrolled, { block: "start" }, "Response scrolls to the top of the one scroll");
 
     const scrim = withClass(h.root, "call-scrim")[0];
     assert.equal(scrim.tagName, "button", "the dimmed page is a real button");
@@ -146,6 +166,7 @@ test("callDialogIsModalWithAFixedTop", async () => {
     scrim.fire("click");
     assert.deepEqual(h.hist.moves.at(-1), ["replace", { name: "session", id: "s1", call: null }], "a click on the dimmed page closes the dialog");
     assert.equal(h.root.open, false, "the page works again once the dialog closes");
+    assert.equal(h.behind.inert, false, "and is no longer inert");
 
     const e = host({ start: [null, "b"] });
     await tick();
@@ -250,13 +271,18 @@ const flat = (h) => h.text().replace(/:\s+/g, ": ");
 test("callDialogShowsFactsAndContext", async () => {
   const h = await openOne(detail("b"));
   const t = h.text();
-  for (const re of [/Model m1/, /Duration 1\.0s/, /Ended end turn/, /Thread main/, /Context 160/]) assert.match(t, re);
+  for (const re of [/Model m1/, /Duration 1\.0s/, /Stop reason end turn/, /Context 160/]) assert.match(t, re);
+  // the thread is said once, under the title (027 C4)
+  assert.doesNotMatch(textOf(withClass(h.root, "call-top")[0]), /Thread/);
   assert.match(t, /Model call · turn 1/);
   assert.match(t, /Call #2/);
   assert.match(t, /2 of 3 · main/);
   const ctx = byTag(h.root, "section").find((s) => /^Context/.test(textOf(s).trim()));
   const c = textOf(ctx).replace(/\s+/g, " ");
-  for (const re of [/Size 160/, /Change \+60 since #1/, /Input 120/, /Cache write 30/, /Cache read 10/, /Output 5/, /added #1's reply/]) assert.match(c, re);
+  // spec 027 C3: size and change are the section's heading; the bar is sized by the counts
+  for (const re of [/^ ?Context 160 ?\+60 since #1/, /Input 120/, /Cache write 30/, /Cache read 10/, /Output 5/, /added #1's reply/]) assert.match(c, re);
+  const bar = withClass(ctx, "ctx-bar")[0];
+  assert.deepEqual(bar.children.map((i) => [i.className, i.style.flexGrow]), [["in", "120"], ["cr", "10"], ["cw", "30"]], "each part grows by its count");
   assert.doesNotMatch(t, /first call of its thread/i, "a later call does not start its thread");
   const first = await openOne(detail("a"));
   assert.match(first.text(), /first call of its thread/);
@@ -275,7 +301,8 @@ test("callDialogShowsSawThinkingResponse", async () => {
   assert.equal(withClass(h.root, "is-carried").length, 2);
   assert.equal(withClass(h.root, "is-new").length, 1);
   assert.match(h.text(), /all done/);
-  assert.match(h.text(), /stop: end turn/);
+  assert.doesNotMatch(h.text(), /stop: end turn/, "the stop reason is said once, in the top line (027 C7a)");
+  assert.match(h.text(), /Stop reason end turn/);
   // a reply of tool calls alone, and messages with no text, say so instead of showing blank
   const toolsOnly = await openOne(detail("b", { tools: [t1], response: { text: "", stop_reason: "tool use" },
     saw: { first: false, carried: 1, new: 1, messages: [{ role: "assistant", text: "", new: false }, { role: "user", text: "", new: true }] } }));
@@ -441,14 +468,40 @@ test("callDialogHealthAndRaw", async () => {
     { tone: "bad", text: "Gateway error: upstream_timeout." },
   ] } });
   const h = await openOne(sick);
-  for (const re of [/client disconnected/, /reply stopped/, /Gateway error: upstream_timeout/, /Status 200 OK/]) assert.match(h.text(), re);
+  for (const re of [/client disconnected/, /reply stopped/, /Gateway error: upstream_timeout/]) assert.match(h.text(), re);
+  // spec 027 C3: a call in trouble says its status once, in the Health alert
+  assert.match(textOf(withClass(h.root, "call-alert")[0]), /^\s*Health\s+The client disconnected/, "the alert lists what went wrong, nothing before it");
+  assert.doesNotMatch(textOf(withClass(h.root, "call-top")[0]), /Status/);
   assert.equal(withClass(h.root, "tone-bad").length, 2);
   const hrefs = byTag(h.root, "a").map((a) => a.href);
   for (const want of ["/api/exchanges/b/body?part=request", "/api/exchanges/b/body?part=response", "#/exchanges/b"]) assert.ok(hrefs.includes(want), want);
-  assert.match(h.text(), /Headers/);
+  assert.doesNotMatch(h.text(), /Headers/, "no Headers link: it opened the full exchange page too (027 C4)");
   assert.match(h.text(), /Full exchange page/);
+  // spec 027 C3: trouble is said first, above Context; a healthy call has no Health section,
+  // only its status in the top line
+  assert.match(textOf(byTag(withClass(h.root, "mb")[0], "section")[0]), /^ ?Health/);
+  assert.equal(withClass(h.root, "call-alert").length, 1);
   const well = await openOne(detail("a"));
-  assert.match(well.text(), /No disconnect, abort or error/);
+  assert.match(textOf(withClass(well.root, "call-top")[0]), /Status 200 OK/);
+  assert.equal(byTag(well.root, "section").filter((s) => /^ ?Health/.test(textOf(s))).length, 0);
+});
+
+// spec 027 C3: the messages carried over are folded behind one button and the new ones are
+// shown; a first call has nothing to fold; a call that asked for no tools has no Tools section.
+test("carriedMessagesFoldAndEmptySectionsGo", async () => {
+  const h = await openOne(detail("b"));
+  const carried = withClass(h.root, "carried")[0];
+  assert.equal(carried.hidden, true, "carried over starts folded");
+  assert.equal(withClass(carried, "is-carried").length, 2);
+  const fold = byTag(h.root, "button").find((b) => b.textContent === "Show the 2 carried over");
+  assert.equal(fold.attrs["aria-expanded"], "false");
+  fold.fire("click");
+  assert.equal(carried.hidden, false);
+  assert.equal(fold.textContent, "Hide the 2 carried over");
+  assert.ok(!withClass(h.root, "is-new").some((li) => withClass(carried, "is-new").includes(li)), "new messages are not folded");
+  assert.equal(byTag(h.root, "section").filter((s) => /^ ?Tool calls/.test(textOf(s))).length, 0, "no Tools section");
+  const first = await openOne(detail("a", { saw: { first: true, carried: 0, new: 1, messages: [{ role: "user", text: "hi", new: true }] } }));
+  assert.equal(byTag(first.root, "button").filter((b) => /carried over/.test(b.textContent)).length, 0, "nothing to fold");
 });
 
 // AC11 (carries missingSectionStatesReason, noUsageCallShowsDashesAndNoDelta): a section
@@ -464,7 +517,10 @@ test("callDialogMissingDataSaysWhy", async () => {
   });
   const h = await openOne(d);
   const t = flat(h);
-  for (const re of [/Context —/, /Size —/, /Input —/, /Output —/, /Change —/, /No usage reported/, /request body was not stored/, /Messages: —/, /cut at the capture limit/]) assert.match(t, re);
+  for (const re of [/Context —/, /No usage reported/, /request body was not stored/, /Messages: —/, /cut at the capture limit/]) assert.match(t, re);
+  // spec 027 C3: with no usage there is no bar and no row of dashes; the note says why
+  assert.equal(withClass(h.root, "ctx-bar").length, 0, "no bar without counts");
+  assert.equal(withClass(h.root, "ctx-counts").length, 0, "no counts without usage");
   assert.doesNotMatch(textOf(withClass(h.root, "call-top")[0]), /— · —/, "the top line leaves out a change it does not know");
   assert.doesNotMatch(t, /Size 0|Input 0/);
   assert.doesNotMatch(t, /[+−-]\d+ since/);
@@ -486,7 +542,7 @@ test("sideCallIsNotRed", async () => {
   const d = detail("a", { turn: 0, facts: { model: "m1", dur_ms: 100, start: "", stop: { word: "429 Too Many Requests" }, thread: { kind: "side", label: "quota probe" }, ctx: 10 } });
   const h = await openOne(d);
   assert.match(h.text(), /Side call/);
-  assert.match(h.text(), /Thread quota probe/);
+  assert.match(h.text(), /1 of 3 · quota probe/);
   assert.match(h.text(), /429 Too Many Requests/);
   assert.equal(withClass(h.root, "bad").length, 0, "not marked bad");
 });

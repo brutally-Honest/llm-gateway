@@ -25,8 +25,8 @@ test("rowShowsLabelledCounts", () => {
   assert.equal(c.folder, "~/work/proj");
   assert.equal(c.folderFull, "/home/u/work/proj");
   assert.equal(c.model, "m1 +1");
-  assert.equal(c.sources, "⇄ API + ⚑ hooks");
-  assert.deepEqual([c.status.glyph, c.status.text], ["■", "ended"]);
+  assert.equal(c.sources, undefined, "no Sources column (027)");
+  assert.deepEqual([c.status.glyph, c.status.text], ["✗", "failed"], "a session with a failed tool call");
   assert.equal(c.prompts, "2 prompts");
   assert.equal(c.calls, "3 calls · 1 side");
   assert.equal(c.tools, "8 tool calls");
@@ -41,7 +41,55 @@ test("rowShowsLabelledCounts", () => {
   const one = rowCells(session({ list: { prompts: 1, main_calls: 1, side_calls: 0, commands: 1, clock_ms: 900 }, effects: { changed: 1, read: 0, sites: 0 } }));
   assert.equal(one.prompts, "1 prompt");
   assert.equal(one.calls, "1 call", "no side calls, no side count");
-  assert.equal(one.changes, "1 file changed · 1 command · 0 sites");
+  assert.equal(one.changes, "1 file changed · 1 command", "027 C7b: the zero site is left out");
+});
+
+// spec 027 C7b item 9: a glyph only for active, failed or hooks-only rows; an ordinary ended
+// session has none, but its cell and column stay.
+test("statusGlyphOnlyForActiveFailedOrHooksOnly", () => {
+  const clean = { tool_states: { ok: 3 }, main_errors: 0 };
+  assert.deepEqual([rowCells(session(clean)).status.key, rowCells(session(clean)).status.glyph], ["ended", ""]);
+  assert.equal(rowCells(session({ ...clean, main_errors: 1 })).status.key, "failed", "an errored model call is a failure");
+  assert.equal(rowCells(session({ ...clean, active: true })).status.key, "active");
+  assert.equal(rowCells(session({ ...clean, hooks_only: true })).status.key, "hooks-only");
+  const p = livePage([session({ id: "a", ...clean }), session({ id: "b", active: true, ...clean }), session({ id: "c" })]);
+  const first = (id) => byTag(p.row(id), "td")[0];
+  assert.equal(withClass(first("a"), "sicon").length, 0, "no glyph for an ordinary ended session");
+  assert.equal(byTag(p.row("a"), "td").length, 7, "the cell stays");
+  assert.equal(withClass(first("b"), "sicon")[0].attrs["aria-label"], "active");
+  const bad = withClass(first("c"), "sicon")[0];
+  assert.deepEqual([bad.textContent, bad.title, bad.attrs["aria-label"]], ["✗", "failed", "failed"]);
+  // a live update that ends the session takes the glyph away again
+  p.page.update({ items: [session({ id: "b", ...clean })] });
+  assert.equal(withClass(first("b"), "sicon").length, 0);
+});
+
+// spec 027 C7b item 10: zero-valued parts of Work and Changes are left out; all zero is "—".
+test("zeroPartsOfWorkAndChangesAreLeftOut", () => {
+  const empty = session({ tool_states: {}, list: { prompts: 0, main_calls: 0, side_calls: 0, commands: 0, clock_ms: 0 }, effects: { changed: 0, read: 0, sites: 0 }, main_errors: 0 });
+  const e = rowCells(empty);
+  assert.equal(e.work, "—");
+  assert.equal(e.changes, "—");
+  const some = rowCells(session({ tool_states: {}, list: { prompts: 1, main_calls: 0, side_calls: 2, commands: 0, clock_ms: 0 }, effects: { changed: 0, read: 0, sites: 3 } }));
+  assert.equal(some.work, "1 prompt · 2 side");
+  assert.equal(some.changes, "3 sites");
+  const p = livePage([empty]);
+  assert.equal(p.cell("s1", 3), "—");
+  assert.equal(p.cell("s1", 4), "—");
+  // failures alone still show, without a leading dot
+  const f = livePage([session({ tool_states: { failed: 1 }, list: { prompts: 0, main_calls: 0, side_calls: 0, commands: 0, clock_ms: 0 }, effects: {} })]);
+  assert.equal(f.cell("s1", 3), "1 tool call · 1 failed");
+});
+
+// spec 027 C7b item 11: a hooks-only row's Tokens cell is a single dash, no cost, no bar.
+test("hooksOnlyTokensCellIsASingleDash", () => {
+  const p = livePage([session({ hooks_only: true, has_calls: false, usage: {}, models: [] })]);
+  const cell = byTag(p.row("s1"), "td")[6];
+  const visible = all(cell).filter((e) => e !== cell && e.textContent !== "" && !e.hidden && !all(cell).some((a) => a.hidden && all(a).includes(e)));
+  assert.deepEqual(visible.map((e) => e.textContent), ["—"]);
+  // a live update to a row with calls shows the counts again
+  p.page.update({ items: [session()] });
+  assert.equal(p.cell("s1", 6).startsWith("10 in · — out · 7 cache read"), true);
 });
 
 // spec 017 E5: a hooks-only row says it has no model calls, and shows no token counts.
@@ -49,27 +97,28 @@ test("hooksOnlyRowSaysNoModelCalls", () => {
   const h = rowCells(session({ hooks_only: true, has_calls: false, active: false, usage: {}, models: [] }));
   assert.equal(h.calls, "no model calls captured");
   assert.deepEqual([h.status.glyph, h.status.text], ["◇", "hooks only"], "a finished hooks-only session");
-  assert.equal(h.sources, "⚑ hooks");
-  // D33: Status says whether it is still going; Sources already says hooks only
+  // D33: Status says whether it is still going; with no Sources column (027) the Work cell
+  // says a hooks-only session has no model calls
   const live = rowCells(session({ hooks_only: true, has_calls: false, active: true, usage: {}, models: [] }));
   assert.deepEqual([live.status.glyph, live.status.text], ["●", "active"], "an active hooks-only session");
-  assert.equal(live.sources, "⚑ hooks");
+  assert.equal(live.calls, "no model calls captured");
   assert.deepEqual([h.input, h.output, h.cacheRead], ["—", "—", "—"]);
   assert.equal(h.model, "");
 });
 
-// spec 017 AC2: a row says how many items need a look and of what kinds, in the server's words.
+// spec 017 AC2, 027 C7b item 13: a row lists what needs a look, in the server's words, with
+// no "N need(s) a look:" prefix.
 test("rowSaysWhatNeedsALook", () => {
   assert.equal(lookText({ needs_look: 0, look_kinds: [] }), "");
   assert.equal(lookText(undefined), "");
   const kinds = [{ kind: "failed_tool", count: 2, words: "2 failed tool calls" }, { kind: "failed_call", count: 1, words: "1 failed model call" }];
-  assert.equal(lookText({ needs_look: 3, look_kinds: kinds }), "3 need a look: 2 failed tool calls, 1 failed model call");
-  assert.equal(lookText({ needs_look: 1, look_kinds: [kinds[1]] }), "1 needs a look: 1 failed model call");
+  assert.equal(lookText({ needs_look: 3, look_kinds: kinds }), "2 failed tool calls, 1 failed model call");
+  assert.equal(lookText({ needs_look: 1, look_kinds: [kinds[1]] }), "1 failed model call");
   const p = livePage([session({ list: { ...session().list, needs_look: 3, look_kinds: kinds } })]);
   const line = withClass(p.row("s1"), "slook")[0];
-  assert.equal(line.textContent, "3 need a look: 2 failed tool calls, 1 failed model call");
+  assert.equal(line.textContent, "2 failed tool calls, 1 failed model call");
   // the line is cut with an ellipsis when long, so hovering it shows it whole
-  assert.equal(line.title, "3 need a look: 2 failed tool calls, 1 failed model call");
+  assert.equal(line.title, "2 failed tool calls, 1 failed model call");
 });
 
 test("titleUpdatesWhenSessionEventArrives", () => {
@@ -105,7 +154,7 @@ test("todayLineShowsServerTotals", () => {
   const p = livePage([session()]);
   p.page.update({ today: { sessions: 2, calls: 5, changed: 7, sites: 1, input: counter(3707), output: counter(null) } });
   const today = withClass(p.page.el, "today")[0];
-  assert.equal(textOf(today).replace(/\s+/g, " ").trim(), "Today 2 sessions 5 model calls 7 files changed 1 site 3.7k input — output — API-eq. cost");
+  assert.equal(textOf(today).replace(/\s+/g, " ").trim(), "2 sessions 5 model calls 7 files changed 1 site 3.7k input — output — API-eq. cost");
   // spec 020 AC6, AC8: the day's API-equivalent cost, partial when calls were left out
   p.page.update({ today: { sessions: 2, calls: 5, changed: 7, sites: 1, input: counter(3707), output: counter(null),
     cost: { usd: "1.5", source: "Test", priced: 4, no_price: 1, no_price_models: ["m9"], no_usage: 0, errored: 0, estimated: 0, at_least: 0, partial: true } } });
@@ -200,7 +249,7 @@ test("focusedRowSurvivesALiveUpdate", () => {
   assert.equal(p.row("s1"), tr, "the same row element is kept");
   assert.equal(document.activeElement, a, "focus stays on the link");
   assert.equal(a.textContent, "Fix it again", "the title updates in place");
-  assert.equal(p.cell("s1", 4), "2 prompts · 2001 calls", "the Work cell updates in place");
+  assert.equal(p.cell("s1", 3), "2 prompts · 2001 calls · 8 tool calls · 1 failed", "the Work cell updates in place");
 });
 
 test("focusedRowKeepsFocusWhenTheOrderChanges", () => {
@@ -254,25 +303,37 @@ test("chromeSearchEventRestoresTheSessionList", () => {
 test("listFormatsForReading", () => {
   assert.deepEqual(["—", "0", "999", "3707", "94487", "15074885", "2100000000"].map(compact), ["—", "0", "999", "3.7k", "94k", "15.1M", "2.1B"]);
   const now = new Date(2026, 10, 13, 22, 0);
-  assert.match(startText(new Date(2026, 10, 13, 20, 47).toISOString(), now), /^Today \d/);
+  assert.match(startText(new Date(2026, 10, 13, 20, 47).toISOString(), now), /^\d{1,2}:\d\d/, "today: the time only (027 C7b)");
+  assert.doesNotMatch(startText(new Date(2026, 10, 13, 20, 47).toISOString(), now), /Today/);
   assert.match(startText(new Date(2026, 10, 12, 19, 8).toISOString(), now), /^Yesterday \d/);
   assert.match(startText(new Date(2026, 10, 10, 6, 9).toISOString(), now), /^Nov 10, \d/);
   assert.match(startText(new Date(2025, 10, 10, 6, 9).toISOString(), now), /2025/);
 
   const p = livePage([session({ usage: { input: counter(3707), output: counter(null), cache_write: counter(0), cache_read: counter(15074885) } })]);
   const tds = byTag(p.row("s1"), "td");
-  const toks = withClass(tds[8], "tok");
+  const toks = withClass(tds[6], "tok");
   assert.deepEqual(toks.map((t) => t.textContent), ["3.7k in", "— out", "15.1M cache read"]);
   assert.equal(toks[0].title, "in: 3707", "the exact value is kept");
   assert.equal(toks[1].title, "out: not reported");
   assert.equal(p.link("s1").title, "session key k-123", "the key shows on hover only");
-  assert.equal(withClass(tds[1], "splace")[0].textContent, "~/work/proj · m1 +1");
-  assert.equal(withClass(tds[1], "splace")[0].title, "/home/u/work/proj");
-  assert.equal(byTag(tds[5], "span").map((x) => x.textContent).join(""), "8 tool calls · 1 failed");
-  assert.equal(withClass(tds[5], "bad")[0].textContent, " · 1 failed", "failures stand out");
-  assert.equal(p.cell("s1", 6), "2 files changed · 4 commands · 1 site");
-  assert.deepEqual(withClass(tds[6], "seg").map((x) => x.textContent), ["2 files changed", "4 commands", "1 site"], "it wraps only at the dots (D49)");
-  assert.equal(p.cell("s1", 7), "2m 05s");
+  assert.equal(withClass(tds[2], "splace")[0].textContent, "~/work/proj · m1 +1");
+  assert.equal(withClass(tds[2], "splace")[0].title, "/home/u/work/proj");
+  // 027: Work and Tools are one cell, every part a segment, failures standing out
+  assert.equal(p.cell("s1", 3), "2 prompts · 3 calls · 1 side · 8 tool calls · 1 failed");
+  assert.deepEqual(withClass(tds[3], "seg").map((x) => x.textContent), ["2 prompts", "3 calls", "1 side", "8 tool calls", "1 failed"], "it wraps only at the dots (D49)");
+  assert.equal(withClass(tds[3], "bad")[0].textContent, "1 failed", "failures stand out");
+  assert.equal(p.cell("s1", 4), "2 files changed · 4 commands · 1 site");
+  assert.deepEqual(withClass(tds[4], "seg").map((x) => x.textContent), ["2 files changed", "4 commands", "1 site"], "it wraps only at the dots (D49)");
+  assert.equal(p.cell("s1", 5), "2m 05s");
+  // 027: the status is a glyph alone, named by its word for hover and screen readers
+  const icon = withClass(tds[0], "sicon")[0];
+  assert.equal(icon.textContent, "✗", "this session has a failed tool call");
+  assert.equal(icon.title, "failed");
+  assert.equal(icon.attrs["aria-label"], "failed");
+  assert.equal(icon.attrs.role, "img");
+  const ths = byTag(p.page.el, "th").map((x) => x.textContent);
+  assert.deepEqual(ths.slice(0, 7), ["", "Start", "Session", "Work", "Changes", "Time", "Tokens"], "no Sources, Status or Tools header");
+  assert.equal(byTag(p.page.el, "th")[0].attrs["aria-label"], byTag(p.page.el, "th")[0].title, "the icon column is named");
 });
 
 test("listShowsALoaderUntilItsFirstPage", () => {
@@ -315,9 +376,26 @@ test("unassignedSectionListsConnections", () => {
   assert.match(textOf(sec), /Unassigned connections \(2\)/);
   const rows = byTag(byTag(sec, "tbody")[0], "tr").map((tr) => byTag(tr, "td").slice(0, 4).map((td) => td.textContent));
   assert.deepEqual(rows, [["unassigned", "unknown", "example.com:8443", "↑ 120 B · ↓ 4.0 KB"], ["harness", "client-a", "harness.example", "↑ 120 B · ↓ 4.0 KB"]]);
+  assert.deepEqual(byTag(sec, "th").map((x) => x.textContent), ["Label", "Client", "Host", "Bytes", "Time"], "both vary, so both columns show");
   assert.ok(!byTag(sec, "a").some((a) => a.href === "#/effects/unassigned"), "no link when every one is listed");
   p.page.update({ unassigned: 40 });
   assert.ok(byTag(withClass(p.page.el, "sp-unassigned")[0], "a").some((a) => a.href === "#/effects/unassigned" && /All 40/.test(a.textContent)));
+});
+
+// spec 027 C7b item 15: Label shows only when some label is not "unassigned", Client only
+// when some client is neither unknown nor "—".
+test("unassignedColumnsHiddenWhenConstant", () => {
+  const plain = { id: 7, kind: "net_conn", client: "unknown", host: "example.com", port: 443, bytes_up: 1, bytes_down: 2, at: "2026-01-01T00:00:07Z" };
+  const heads = (items) => {
+    const p = livePage([session()]);
+    p.page.update({ unassigned: items.length, unassignedItems: items });
+    const sec = withClass(p.page.el, "sp-unassigned")[0];
+    const tr = byTag(byTag(sec, "tbody")[0], "tr")[0];
+    return [byTag(sec, "th").map((x) => x.textContent), byTag(tr, "td").length];
+  };
+  assert.deepEqual(heads([plain, { ...plain, id: 8, client: undefined }]), [["Host", "Bytes", "Time"], 3]);
+  assert.deepEqual(heads([plain, { ...plain, id: 8, attribution: { label: "harness", client: "" } }]), [["Label", "Host", "Bytes", "Time"], 4]);
+  assert.deepEqual(heads([plain, { ...plain, id: 8, client: "client-a" }]), [["Client", "Host", "Bytes", "Time"], 4]);
 });
 
 test("noUnassignedSectionWhenNone", () => {
@@ -339,11 +417,96 @@ test("rowShowsApiEquivalentCost", () => {
   const th = byTag(p.page.el, "th").find((x) => x.textContent === "Tokens");
   assert.match(th.title, /API-equivalent: .* not what was charged/, "the Tokens header explains the cost line");
   const line = withClass(p.page.el, "cost")[0];
-  assert.equal(textOf(line).trim(), "$12.35 API-eq.", "the cost is the Tokens cell's second line, labelled");
+  assert.equal(textOf(line).trim(), "$12.35", "the cost is the Tokens cell's second line; the header says API-equivalent (027 C7b)");
   // 020 D17: the counts are unbreakable parts with " · " as text between them, so the cell
-  // wraps only at the dots, as Work and Changes do; the cost comes last, a line of its own
+  // wraps only at the dots, as Work and Changes do; the cost follows, a line of its own, and
+  // under it the token bar (027 C6a), which holds no text
   const cell = byTag(p.page.el, "td").find((x) => x.className === "tokens");
   assert.deepEqual(cell.children.map((c) => [c.className || "", c.textContent]),
-    [["tok seg", "10 in"], ["", " · "], ["tok seg", "— out"], ["", " · "], ["tok seg", "7 cache read"], ["cost", "$12.35 API-eq."]]);
+    [["tok seg", "10 in"], ["", " · "], ["tok seg", "— out"], ["", " · "], ["tok seg", "7 cache read"], ["cost", "$12.35"], ["tokbar", ""]]);
   assert.match(line.title, /not what was charged/);
+});
+
+// spec 027 C6a: the day's totals are stat tiles, each a number with its label, in the same
+// order as the line they replace; "today" is said once in the heading (C7b), not above them.
+test("todayTotalsAreStatTiles", () => {
+  const p = livePage([session()]);
+  p.page.update({ today: { sessions: 2, calls: 5, changed: 7, sites: 1, input: counter(3707), output: counter(null) } });
+  const today = withClass(p.page.el, "today")[0];
+  const tiles = withClass(today, "stat");
+  assert.deepEqual(tiles.map((t) => textOf(t).replace(/\s+/g, " ").trim()), ["2 sessions", "5 model calls", "7 files changed", "1 site", "3.7k input", "— output", "— API-eq. cost"]);
+  for (const t of tiles) assert.equal(byTag(t, "b").length, 1, "each tile has one big number");
+  assert.equal(withClass(today, "today-label").length, 0, "no separate Today row above the tiles");
+  assert.ok(!/today/i.test(textOf(today)), "the tiles' own text does not say it");
+});
+
+// spec 027 C7b item 7: the heading says "today" once, muted, with the since-midnight hover.
+test("headingSaysTodayOnceWithItsHover", () => {
+  const p = livePage([session()]);
+  const h1 = byTag(p.page.el, "h1")[0];
+  assert.equal(textOf(h1).replace(/\s+/g, " ").trim(), "Sessions today");
+  const when = withClass(h1, "sp-when")[0];
+  assert.equal(when.textContent, "today");
+  assert.equal(when.title, "since local midnight");
+});
+
+// spec 027 C6a: under a row's token figures a thin bar, one segment per count, each sized by
+// handing the count to flex-grow; a missing or zero count gets no segment.
+test("tokenBarSegmentsGrowByTheirCounts", () => {
+  const p = livePage([session({ usage: { input: counter(3000), output: counter(0), cache_write: counter(0), cache_read: counter(7000) } })]);
+  const bar = withClass(byTag(p.row("s1"), "td")[6], "tokbar")[0];
+  assert.equal(bar.attrs["aria-hidden"], "true", "the numbers are in text already");
+  const segs = withClass(bar, "tokseg");
+  assert.equal(segs.length, 3);
+  assert.deepEqual(segs.map((s) => s.style.flexGrow), ["3000", "", "7000"]);
+  assert.deepEqual(segs.map((s) => Boolean(s.hidden)), [false, true, false], "a zero count has no segment");
+  assert.ok(!bar.hidden);
+  // a live update with other counts re-sizes the same segments
+  p.page.update({ items: [session({ usage: { input: counter(5), output: counter(10), cache_write: counter(0), cache_read: counter(null) } })] });
+  const again = withClass(byTag(p.row("s1"), "td")[6], "tokseg");
+  assert.deepEqual(again.map((s) => s.style.flexGrow), ["5", "10", ""]);
+  // nothing reported: no bar at all
+  p.page.update({ items: [session({ usage: {} })] });
+  assert.ok(withClass(byTag(p.row("s1"), "td")[6], "tokbar")[0].hidden);
+});
+
+// spec 027 C6b: the sessions and model-calls tiles carry a sparkline of the server's hourly
+// counts: one bar per bucket with --v from the count, --peak on the container, hidden from
+// assistive tech (the numbers are in text). No other tile gets one.
+const hourlyToday = (h) => ({ sessions: 2, calls: 5, changed: 7, sites: 1, input: counter(3), output: counter(1), hourly: h });
+const tileFor = (today, word) => withClass(today, "stat").find((t) => textOf(t).includes(word));
+
+test("sparklinesShowOneBarPerBucketFromServerNumbers", () => {
+  const p = livePage([session()]);
+  p.page.update({ today: hourlyToday({ start: "2026-01-01T00:00:00Z", calls: [3, 0, 12], sessions: [1, 0, 2], peak_calls: 12, peak_sessions: 2 }) });
+  const today = withClass(p.page.el, "today")[0];
+  const calls = withClass(tileFor(today, "model calls"), "spark")[0];
+  assert.equal(calls.attrs["aria-hidden"], "true");
+  assert.equal(calls.styleProps["--peak"], "12");
+  assert.deepEqual(byTag(calls, "i").map((b) => b.styleProps["--v"]), ["3", "0", "12"]);
+  const sess = withClass(tileFor(today, "sessions"), "spark")[0];
+  assert.equal(sess.styleProps["--peak"], "2");
+  assert.deepEqual(byTag(sess, "i").map((b) => b.styleProps["--v"]), ["1", "0", "2"]);
+  assert.equal(withClass(today, "spark").length, 2, "only the sessions and model-calls tiles");
+  assert.equal(textOf(today).replace(/\s+/g, " ").trim(), "2 sessions 5 model calls 7 files changed 1 site 3 input 1 output — API-eq. cost");
+});
+
+test("sparklineIsAbsentWhenPeakIsZeroOrHourlyMissing", () => {
+  for (const h of [undefined, { calls: [0, 0], sessions: [0, 0], peak_calls: 0, peak_sessions: 0 }, { calls: [], sessions: [], peak_calls: 0, peak_sessions: 0 }]) {
+    const p = livePage([session()]);
+    p.page.update({ today: hourlyToday(h) });
+    assert.equal(withClass(withClass(p.page.el, "today")[0], "spark").length, 0);
+  }
+  const p = livePage([session()]);
+  p.page.update({ today: hourlyToday({ calls: [0, 4], sessions: [0, 0], peak_calls: 4, peak_sessions: 0 }) });
+  const today = withClass(p.page.el, "today")[0];
+  assert.equal(withClass(tileFor(today, "model calls"), "spark").length, 1);
+  assert.equal(withClass(tileFor(today, "sessions"), "spark").length, 0, "peak 0 hides just that one");
+});
+
+// spec 027 C7b: a row whose cost is unknown shows no cost line (a bare "—" said nothing)
+test("unknownCostLineIsLeftOut", () => {
+  const p = livePage([session({ usage: { ...session().usage, cost: null } })]);
+  const cost = withClass(byTag(p.row("s1"), "td")[6], "cost")[0];
+  assert.equal(cost.hidden, true);
 });

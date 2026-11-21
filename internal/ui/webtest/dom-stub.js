@@ -10,7 +10,8 @@ export class StubElement {
     this.attrs = {};
     this.listeners = {};
     this.open = false;
-    this.style = {};
+    this.styleProps = {};
+    this.style = { setProperty: (k, v) => { this.styleProps[k] = v; } };
     this.dataset = {};
     this.value = "";
     this.classes = new Set();

@@ -502,6 +502,16 @@ func TestView_Lists(t *testing.T) {
 	eq(t, "src/a.js lines", fmt.Sprint(v.Files.Changed[0].Lines, v.Files.Changed[0].Added, v.Files.Changed[0].Removed), "true 2 1")
 	eq(t, "dist/out.js lines known", v.Files.Changed[1].Lines, false)
 	eq(t, "reads", len(v.Files.Read), 0)
+	// 027 C5: the same changes split by where they happened, oldest first
+	var groups []string
+	for _, g := range v.Files.ByTurn {
+		var ps []string
+		for _, f := range g.Files {
+			ps = append(ps, fmt.Sprintf("%s(%d)", f.Path, len(f.Changes)))
+		}
+		groups = append(groups, fmt.Sprintf("%s#%d: %s", g.Label, g.Turn, strings.Join(ps, ",")))
+	}
+	eq(t, "files by turn", strings.Join(groups, " | "), "Turn 1#1: src/a.js(1),dist/out.js(1) | Between turns 1 and 2#0: notes.md(1)")
 	if len(v.Files.Searches) != 1 || v.Files.Searches[0].ToolID != "t5" || v.Files.Searches[0].Agent != "Explore" {
 		t.Errorf("searches = %+v", v.Files.Searches)
 	}
@@ -556,6 +566,12 @@ func TestView_Titles(t *testing.T) {
 	hooks.f.vhook(core.PhasePreTool, "h1", "Bash", 1)
 	v = hooks.view(t, true)
 	eq(t, "hooks only", v.Overview.Title+" ("+v.Overview.TitleSource+")", "Hooks only · /w (hooks_only)")
+
+	// 027 C7b: with no folder the title is the client alone; the start is the list's own column
+	bare := &fixture{f: newFake()}
+	bare.f.vhook(core.PhasePreTool, "h1", "Bash", 1, func(h *store.HookRow) { h.WorkDir = "" })
+	v = bare.view(t, true)
+	eq(t, "hooks only, no folder", v.Overview.Title, "Hooks only · c")
 
 	none := &fixture{f: newFake()}
 	none.f.call(vcallSpec{id: "r", from: 1, to: 2, msgs: []string{"a:hello"}})
@@ -688,13 +704,19 @@ func TestView_LookKinds(t *testing.T) {
 	for _, l := range v.Overview.NeedsLook {
 		kinds = append(kinds, l.Kind)
 	}
-	eq(t, "item kinds", strings.Join(kinds, ","), "failed_tool,outside_change,unpinned,hooks_only_turn,unmatched")
+	// spec 027 C4: the fixture's unmatched tool ran in its hooks-only turn, so that turn's item
+	// names it instead of the tool being an item of its own
+	eq(t, "item kinds", strings.Join(kinds, ","), "failed_tool,outside_change,unpinned,hooks_only_turn")
 	var words []string
 	for _, k := range v.Overview.LookKinds {
 		words = append(words, fmt.Sprintf("%s=%d %s", k.Kind, k.Count, k.Words))
 	}
 	eq(t, "look kinds", strings.Join(words, "; "), "failed_tool=1 1 failed tool call; outside_change=1 1 change with no tool running; "+
-		"unpinned=1 1 group of effects not pinned to one tool call; hooks_only_turn=1 1 hooks-only turn; unmatched=1 1 unmatched tool call")
+		"unpinned=1 1 group of effects not pinned to one tool call; hooks_only_turn=1 1 hooks-only turn")
+	hooks := v.Overview.NeedsLook[3]
+	if !strings.HasPrefix(hooks.Sub, "only the hooks saw it: ") || strings.Contains(hooks.Sub, "the conversation does not") {
+		t.Errorf("hooks-only turn's item sub = %q, want the unmatched tool named", hooks.Sub)
+	}
 }
 
 // 017 AC2 narrowed (D31): a session that is hooks only has no hooks-only-turn item to look
@@ -991,5 +1013,57 @@ func TestView_CallReplyCutOrFailed(t *testing.T) {
 	b := x.details(t, v, "bad")
 	if !strings.Contains(b.Response.Unavailable, "failed") || !strings.Contains(b.Response.Unavailable, "500 Internal Server Error") {
 		t.Errorf("failed call's reply = %q, want why there is none", b.Response.Unavailable)
+	}
+}
+
+// 027 C5: a file changed in two turns is in both turn groups, each with only that turn's
+// change and lines, while the by-file list keeps one row with both changes.
+func TestView_FilesByTurnSplitsAFileAcrossTurns(t *testing.T) {
+	x := seedFixture(true)
+	x.effect(store.EffectRow{Kind: "file_change", At: vat(10.7), Path: "/w/src/a.js", Change: "modified", Size: 130, BeforeHash: "a1", AfterHash: "a3"},
+		timeline.EffectLabel{Label: "named", Tool: tool("t5", "Grep")})
+	v := x.view(t, true)
+	eq(t, "by file a.js changes", len(v.Files.Changed[0].Changes), 2)
+	var got []string
+	for _, g := range v.Files.ByTurn {
+		for _, f := range g.Files {
+			if f.Path == "src/a.js" {
+				got = append(got, fmt.Sprintf("%s:%d", g.Label, len(f.Changes)))
+			}
+		}
+	}
+	eq(t, "a.js groups", strings.Join(got, ","), "Turn 1:1,Turn 2:1")
+}
+
+// 027 C4b: a turn is drawn as boxes while its main calls and their tool calls fit, as one
+// line per call beyond that; a hooks-only turn or one with no call draws nothing.
+func TestView_TurnFigure(t *testing.T) {
+	v := seedFixture(true).view(t, true)
+	eq(t, "fixture turn 1", v.Turns[1].Figure, timeline.FigureBoxes)
+	steps := func(calls, tools int) []timeline.Step {
+		out := make([]timeline.Step, calls)
+		for i := 0; i < tools; i++ {
+			out[i%calls].Tools = append(out[i%calls].Tools, timeline.ToolLine{})
+		}
+		return out
+	}
+	for _, c := range []struct {
+		name        string
+		calls, tool int
+		hooks       bool
+		want        string
+	}{
+		{"no calls", 0, 0, false, ""},
+		{"hooks only", 1, 0, true, ""},
+		{"one call", 1, 0, false, timeline.FigureBoxes},
+		{"five calls, twelve boxes", 5, 7, false, timeline.FigureBoxes},
+		{"six calls", 6, 0, false, timeline.FigureList},
+		{"thirteen boxes", 5, 8, false, timeline.FigureList},
+	} {
+		turn := &timeline.Turn{Steps: steps(max(c.calls, 1), c.tool), HooksOnly: c.hooks}
+		if c.calls == 0 {
+			turn.Steps = nil
+		}
+		eq(t, c.name, timeline.TurnFigureOf(turn), c.want)
 	}
 }

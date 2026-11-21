@@ -1,16 +1,24 @@
-// copyButton copies getText() to the clipboard.
+// copyButton is an icon button that copies getText() to the clipboard (027 C4). The icon is
+// drawn by the stylesheet from data-state; its label and tooltip say "Copy", then "Copied"
+// or "Copy failed" for a moment.
 export function copyButton(getText) {
   const b = document.createElement("button");
+  b.type = "button";
   b.className = "copy";
-  b.textContent = "Copy";
+  const say = (state, word) => {
+    b.dataset.state = state;
+    b.title = word;
+    b.setAttribute("aria-label", word);
+  };
+  say("idle", "Copy");
   b.addEventListener("click", async () => {
     try {
-      await navigator.clipboard.writeText(getText());
-      b.textContent = "Copied";
+      await globalThis.navigator.clipboard.writeText(getText());
+      say("copied", "Copied");
     } catch {
-      b.textContent = "Copy failed";
+      say("failed", "Copy failed");
     }
-    setTimeout(() => (b.textContent = "Copy"), 1500);
+    setTimeout(() => say("idle", "Copy"), 1500);
   });
   return b;
 }
