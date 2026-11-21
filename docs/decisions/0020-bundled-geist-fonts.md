@@ -28,6 +28,10 @@ files.
 | Geist-Variable.woff2 | `3626eba547294501c8a4d662c7d9ea3b49734409a4c5a1ccf12fa86429b1687e` |
 | GeistMono-Variable.woff2 | `5d93ee62680bbec1abc5405c2658311f9396f6f9a821ef8551ec463887e600d4` |
 
+**Amended 2026-11-21 (spec 027 C6a):** Lean now uses Geist and Geist Mono as well, so
+both styles draw from the bundled files. The sentence above that Lean keeps its own font
+stack no longer holds. Nothing else changes: same files, same licence, same checksums.
+
 ## Alternatives
 - **Load from Google Fonts.** This needs no files in the repo. But it means a call to a
   third party on every page load, a looser security policy, and no fonts offline.
