@@ -258,6 +258,10 @@ func TestCheckAndDryRunWriteAndRunNothing(t *testing.T) {
 			t.Fatalf("%+v: ran %v", o, a)
 		}
 		lacks(t, f.out.String(), "Run it now?")
+		if o.Check {
+			// B10 (spec 024 AC7): install.sh adds where the archive went.
+			contains(t, f.out.String(), "Ready to install. Nothing was installed.\n")
+		}
 		if o.DryRun {
 			out := f.out.String()
 			contains(t, out, "Dry run: nothing is written or run.")
@@ -581,4 +585,25 @@ func TestIdenticalUnmanagedSettingsRestoredOnUninstall(t *testing.T) {
 	if after := f.snapshot(); !maps.Equal(before, after) {
 		t.Fatalf("before %v\nafter %v", keys(before), keys(after))
 	}
+}
+
+// B5: with network effects on, the summary says which Node versions get them (spec 024
+// AC3); with them off it says nothing about Node.
+func TestSummaryNamesNodeVersions(t *testing.T) {
+	f := newFake(t, "linux")
+	c := testClient()
+	c.NetworkNote = "Node programs are seen from Node 22.21 or 24.0"
+	f.out.Reset()
+	if code := Install(f.env, c, InstallOptions{Yes: true}); code != ExitOK {
+		t.Fatalf("exit %d\n%s", code, f.out)
+	}
+	contains(t, f.out.String(), "    note     Node programs are seen from Node 22.21 or 24.0")
+
+	off := newFake(t, "linux")
+	off.write(".config/llm-gateway/config.yaml", "effects:\n  network:\n    enabled: false\n")
+	off.out.Reset()
+	if code := Install(off.env, c, InstallOptions{Yes: true}); code != ExitOK {
+		t.Fatalf("network off: exit %d\n%s", code, off.out)
+	}
+	lacks(t, off.out.String(), "Node programs")
 }

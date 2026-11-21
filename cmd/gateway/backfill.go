@@ -25,13 +25,13 @@ type backfillCounts struct{ filled, noKey, skipped int }
 // runBackfill is `gateway backfill-sessions`: it gives each stored exchange that has
 // no session key the key its client's profile reads from the stored request headers.
 func runBackfill(d deps) int {
-	boot := logging.Bootstrap(d.stdout)
+	boot := logging.Plain(d.stdout, "gateway backfill-sessions", "info")
 	flags := flag.NewFlagSet("backfill-sessions", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	configPath := flags.String("config", "", "path to the config file (default ./config.yaml if present)")
 	switch err := flags.Parse(d.args[1:]); {
 	case errors.Is(err, flag.ErrHelp):
-		boot.Info("usage", zap.Strings("forms", []string{"backfill-sessions [-config <path>]"}))
+		printUsage(d.stdout, "backfill-sessions [-config <path>]")
 		return exitOK
 	case err != nil:
 		boot.Error("invalid flags")
@@ -46,7 +46,7 @@ func runBackfill(d deps) int {
 	if !ok {
 		return exitConfig
 	}
-	log := logging.New(d.stdout, cfg.LogLevel)
+	log := logging.Plain(d.stdout, "gateway backfill-sessions", cfg.LogLevel)
 	dir, ok := captureDir(cfg.Capture, d.lookupEnv, log)
 	if !ok {
 		return exitConfig

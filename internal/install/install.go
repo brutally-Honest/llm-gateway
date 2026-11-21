@@ -2,6 +2,7 @@ package install
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -51,6 +52,9 @@ type plan struct {
 	shell    string   // the startup file edited, "" if none
 	manual   string   // lines to add by hand for an unsupported shell
 	service  bool
+	// serviceChanged says the service file is new or changed, so the job is reloaded, not
+	// only restarted (spec 024 AC1).
+	serviceChanged bool
 }
 
 // Install runs `gateway install` and returns its exit code.
@@ -108,8 +112,12 @@ func Install(e *Env, c Client, o InstallOptions) int {
 		e.printf("Stopped. Nothing was written.\n")
 		return ExitStopped
 	}
-	if err := apply(e, pl); err != nil {
+	if err := apply(e, p, pl); err != nil {
 		e.printf("Install failed: %v\n", err)
+		var down *startError
+		if errors.As(err, &down) {
+			e.printf("The gateway is not running. Start it with:\n    %s\nthen run `gateway doctor`.\n", down.Fix)
+		}
 		return ExitStopped
 	}
 	healthy := true
@@ -134,7 +142,7 @@ func checkVerdict(e *Env, pre *Preflight) int {
 		e.printf("Not ready: a required dependency is missing. `gateway install` offers to install what it can.\n")
 		return ExitStopped
 	}
-	e.printf("Ready to install. Nothing was written or run.\n")
+	e.printf("Ready to install. Nothing was installed.\n")
 	return ExitOK
 }
 
@@ -233,7 +241,8 @@ func buildPlan(e *Env, c Client, pre *Preflight, prev *State, o InstallOptions) 
 		}
 		if !o.NoService {
 			pl.changes = append(pl.changes, ch)
-			pl.commands = append(pl.commands, svc.StartCommands(p)...)
+			pl.commands = append(pl.commands, svc.StartCommands(p, ch.changed())...)
+			pl.serviceChanged = ch.changed()
 			pl.state.Files = append(pl.state.Files, file)
 			pl.state.Service = &ServiceState{Kind: svc.Kind(), File: file, Prior: prior}
 			pl.service = true
@@ -505,7 +514,7 @@ func indent(s, pre string) string {
 	return b.String()
 }
 
-func apply(e *Env, pl plan) error {
+func apply(e *Env, p Paths, pl plan) error {
 	for _, ch := range pl.changes {
 		if !ch.changed() && !ch.backup {
 			continue
@@ -532,18 +541,8 @@ func apply(e *Env, pl plan) error {
 			return fmt.Errorf("writing %s: %w", ch.path, err)
 		}
 	}
-	for _, cmd := range pl.commands {
-		if cmd[0] == "mkdir" {
-			if err := os.MkdirAll(cmd[len(cmd)-1], 0o755); err != nil {
-				return err
-			}
-			continue
-		}
-		out, err := e.Run.Output(cmd[0], cmd[1:]...)
-		// bootout of an agent that is not loaded fails, and that is fine.
-		if err != nil && (len(cmd) < 2 || cmd[1] != "bootout") {
-			return fmt.Errorf("%s: %w %s", strings.Join(cmd, " "), err, strings.TrimSpace(out))
-		}
+	if pl.service {
+		return e.service().Start(p, pl.serviceChanged)
 	}
 	return nil
 }
@@ -607,6 +606,9 @@ func summary(e *Env, c Client, p Paths, pl plan, prev *State, cfg config.Config,
 		for _, n := range svc.Notes() {
 			e.printf("    note     %s\n", n)
 		}
+	}
+	if c.NetworkNote != "" && cfg.Effects.Enabled && cfg.Effects.Network.Enabled {
+		e.printf("    note     %s\n", c.NetworkNote)
 	}
 	if len(pl.off) > 0 {
 		e.printf("  Off\n")

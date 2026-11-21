@@ -6,6 +6,9 @@ package netproxy
 
 import (
 	"context"
+	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -46,6 +49,7 @@ type Recorder struct {
 	link    Linker
 	onSaved Saved
 	log     *zap.Logger
+	own     []ownAddr // set before serving, read only after
 
 	mu     sync.RWMutex
 	closed bool
@@ -64,6 +68,9 @@ func NewRecorder(st Store, link Linker, onSaved Saved, log *zap.Logger) *Recorde
 
 // Record links e to the active session, or none, and queues it.
 func (r *Recorder) Record(e core.Effect) {
+	if r.isOwn(e.Host, e.Port) {
+		return
+	}
 	id := unassigned
 	if r.link != nil {
 		if s, ok := r.link(); ok {
@@ -127,4 +134,48 @@ type Counts struct {
 // Counts is a snapshot of the recorder's counters.
 func (r *Recorder) Counts() Counts {
 	return Counts{Stored: r.stored.Load(), Dropped: r.dropped.Load(), Failed: r.failed.Load()}
+}
+
+// SkipTargets names the gateway's own listener addresses (host:port). A connection to one
+// of them is still forwarded but is not recorded: when a client's sandbox sends all its
+// traffic through the proxy, its own hook calls to the gateway would show as the
+// session's network effects (spec 024 AC4). Other loopback targets, a user's own local services, are still
+// recorded. "localhost" matches an own loopback address on the same port. Call it before
+// the proxy serves.
+func (r *Recorder) SkipTargets(addrs ...string) {
+	for _, a := range addrs {
+		host, port, err := net.SplitHostPort(a)
+		if err != nil {
+			continue
+		}
+		p, err := strconv.Atoi(port)
+		if err != nil || p == 0 {
+			continue
+		}
+		r.own = append(r.own, ownAddr{host: strings.ToLower(host), port: p})
+	}
+}
+
+type ownAddr struct {
+	host string
+	port int
+}
+
+// isOwn says whether host:port is one of the gateway's own listeners.
+func (r *Recorder) isOwn(host string, port int) bool {
+	host = strings.ToLower(strings.Trim(host, "[]"))
+	for _, o := range r.own {
+		if o.port != port {
+			continue
+		}
+		if host == o.host || (host == "localhost" && isLoopbackIP(o.host)) || (o.host == "localhost" && isLoopbackIP(host)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isLoopbackIP(h string) bool {
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
 }

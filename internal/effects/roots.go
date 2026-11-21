@@ -22,6 +22,12 @@ func defaultTemps() []string {
 	if runtime.GOOS == "darwin" {
 		temps = append(temps, "/private/tmp", "/private/var/folders", "/var/folders")
 	}
+	// Their resolved spellings too, since roots are compared resolved.
+	for _, t := range slices.Clone(temps) {
+		if r := resolve(t); !slices.Contains(temps, r) {
+			temps = append(temps, r)
+		}
+	}
 	return temps
 }
 
@@ -42,7 +48,7 @@ func rejectedRoot(dir, home string, temps []string) bool {
 	return false
 }
 
-// rootSet is a session's watched folders: clean, absolute, none inside another.
+// rootSet is a session's watched folders: resolved, absolute, none inside another.
 type rootSet struct {
 	home  string
 	temps []string
@@ -51,13 +57,14 @@ type rootSet struct {
 
 func newRootSet(home string, temps []string) *rootSet {
 	if home != "" {
-		home = filepath.Clean(home)
+		home = resolve(home)
 	}
 	return &rootSet{home: home, temps: temps}
 }
 
-// covers reports whether path is inside a watched folder.
+// covers reports whether path, resolved, is inside a watched folder.
 func (r *rootSet) covers(path string) bool {
+	path = resolve(path)
 	for _, root := range r.roots {
 		if within(path, root) {
 			return true
@@ -72,7 +79,7 @@ func (r *rootSet) add(dir string) (added bool, folded []string) {
 	if dir == "" {
 		return false, nil
 	}
-	dir = filepath.Clean(dir)
+	dir = resolve(dir)
 	if rejectedRoot(dir, r.home, r.temps) || r.covers(dir) {
 		return false, nil
 	}
@@ -91,3 +98,24 @@ func (r *rootSet) add(dir string) (added bool, folded []string) {
 
 // list is the watched folders, sorted.
 func (r *rootSet) list() []string { return slices.Clone(r.roots) }
+
+// resolve is path with its symlinks resolved, so one folder has one spelling: git reports
+// resolved paths, and a client may send either (spec 024 AC5, macos-v1.md B1). A path that
+// does not exist yet keeps its missing tail on its resolved existing parent. A relative
+// path, or one with no part that resolves, comes back clean.
+func resolve(path string) string {
+	path = filepath.Clean(path)
+	if !filepath.IsAbs(path) {
+		return path
+	}
+	tail := ""
+	for p := path; ; p = filepath.Dir(p) {
+		if r, err := filepath.EvalSymlinks(p); err == nil {
+			return filepath.Join(r, tail)
+		}
+		if p == filepath.Dir(p) {
+			return path
+		}
+		tail = filepath.Join(filepath.Base(p), tail)
+	}
+}

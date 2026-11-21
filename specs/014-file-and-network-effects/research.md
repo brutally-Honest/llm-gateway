@@ -8,7 +8,7 @@ feature: 014-file-and-network-effects
      Answer by changing "(open)" to "(answered)" and writing the answer underneath:
 - **Q1** (open) T003 — <question> — options: A) … B) …
 -->
-- **Q2** (open) T012 — On the Mac with the sandbox on (step 11, 2026-11-20), Node's built-in
+- **Q2** (answered) T012 — On the Mac with the sandbox on (step 11, 2026-11-20), Node's built-in
   `fetch` fails with `ENOTFOUND` instead of showing `example.com:443`: the sandbox blocks the
   direct DNS lookup and Node ignores `HTTPS_PROXY` unless `NODE_USE_ENV_PROXY=1` is set (with
   it, the same script returned 200 and `example.com:443` was captured). Should the gateway's
@@ -16,6 +16,12 @@ feature: 014-file-and-network-effects
   `env` block (internal/clients/claudecode/snippet.go), so Node through the sandbox is seen
   B) keep it out and document that, with the sandbox on, Node's `fetch` fails rather than
   bypassing the proxy (KI8 extended)
+  - **Answer** (Karthik, 2026-11-21, in the request for spec 024): A. The settings `env`
+    block sets `NODE_USE_ENV_PROXY=1` on both OSes, so Node's calls reach the proxy with
+    the sandbox on or off. It is honoured from Node 22.21 (22 line) and 24.0 for `fetch`,
+    and 22.21 or 24.5 for `http`/`https`; older Node ignores it, so KI8 still holds for
+    it (not seen with the sandbox off, `ENOTFOUND` with it on). Sources and details:
+    `specs/024-macos-fixes/research.md`, "Node and `NODE_USE_ENV_PROXY`".
 
 ## Decisions
 - D1 (2026-11-08) — Built outside the agent-loop kit: one branch, Option B order (foundation,

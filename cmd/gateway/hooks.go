@@ -17,7 +17,7 @@ import (
 // listen_addr to stdout: the hooks, and with network effects on the env and sandbox
 // blocks (spec 014 AC12). It writes no file and binds nothing.
 func runHooks(d deps) int {
-	boot := logging.Bootstrap(d.stdout)
+	boot := logging.Plain(d.stdout, "gateway hooks", "info")
 	if len(d.args) < 2 || d.args[1] != "print" {
 		boot.Error("invalid flags", zap.String("reason", "usage: hooks print [-config <path>]"))
 		return exitConfig
@@ -27,7 +27,7 @@ func runHooks(d deps) int {
 	configPath := flags.String("config", "", "path to the config file (default ./config.yaml if present)")
 	switch err := flags.Parse(d.args[2:]); {
 	case errors.Is(err, flag.ErrHelp):
-		boot.Info("usage", zap.Strings("forms", []string{"hooks print [-config <path>]"}))
+		printUsage(d.stdout, "hooks print [-config <path>]")
 		return exitOK
 	case err != nil:
 		boot.Error("invalid flags")

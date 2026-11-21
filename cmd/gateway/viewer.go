@@ -36,13 +36,13 @@ type viewer struct {
 // openViewer loads config and opens the store read-only. On failure it logs one line
 // and returns the exit code.
 func openViewer(d deps, name, configPath string) (*viewer, int) {
-	boot := logging.Bootstrap(d.stdout)
+	boot := logging.Plain(d.stdout, "gateway "+name, "info")
 	adapters, _ := registered()
 	cfg, _, ok := loadConfig(boot, configPath, d.lookupEnv, adapters)
 	if !ok {
 		return nil, exitConfig
 	}
-	log := logging.New(d.stdout, cfg.LogLevel)
+	log := logging.Plain(d.stdout, "gateway "+name, cfg.LogLevel)
 	dir, ok := captureDir(cfg.Capture, d.lookupEnv, log)
 	if !ok {
 		return nil, exitConfig
@@ -88,7 +88,7 @@ func loc(asJSON bool) *time.Location {
 
 // runSessions is `gateway sessions`.
 func runSessions(d deps) int {
-	boot := logging.Bootstrap(d.stdout)
+	boot := logging.Plain(d.stdout, "gateway sessions", "info")
 	flags := flag.NewFlagSet("sessions", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	configPath := flags.String("config", "", "path to the config file (default ./config.yaml if present)")
@@ -97,7 +97,7 @@ func runSessions(d deps) int {
 	asJSON := flags.Bool("json", false, "print JSON lines with times in UTC")
 	switch err := flags.Parse(d.args[1:]); {
 	case errors.Is(err, flag.ErrHelp):
-		boot.Info("usage", zap.Strings("forms", []string{"sessions [-config <path>] [-n <count>] [-ungrouped] [-json]"}))
+		printUsage(d.stdout, "sessions [-config <path>] [-n <count>] [-ungrouped] [-json]")
 		return exitOK
 	case err != nil:
 		boot.Error("invalid flags")
@@ -170,7 +170,7 @@ func runSessions(d deps) int {
 
 // runTimeline is `gateway timeline`.
 func runTimeline(d deps) int {
-	boot := logging.Bootstrap(d.stdout)
+	boot := logging.Plain(d.stdout, "gateway timeline", "info")
 	flags := flag.NewFlagSet("timeline", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	configPath := flags.String("config", "", "path to the config file (default ./config.yaml if present)")
@@ -180,10 +180,10 @@ func runTimeline(d deps) int {
 	entries := flags.Bool("entries", false, "print the flat entry list instead of the session view")
 	switch err := flags.Parse(d.args[1:]); {
 	case errors.Is(err, flag.ErrHelp):
-		boot.Info("usage", zap.Strings("forms", []string{
+		printUsage(d.stdout,
 			"timeline [-config <path>] [-full] [-json] [-entries] <session-key>",
 			"timeline [-config <path>] [-full] [-json] [-entries] -last",
-		}))
+		)
 		return exitOK
 	case err != nil:
 		boot.Error("invalid flags")

@@ -688,7 +688,8 @@ func (u *rawUpstream) connections() int {
 func hang(conn net.Conn) { _, _ = io.Copy(io.Discard, conn) }
 
 // refusedURL is an http URL on loopback where nothing listens. Port 0 is never
-// bound by a listener, so the dial is refused and no parallel test can rebind it.
+// bound by a listener, so the dial fails (refused on Linux, address not available on
+// macOS) and no parallel test can rebind it.
 func refusedURL(t *testing.T) *url.URL {
 	t.Helper()
 	return &url.URL{Scheme: "http", Host: "127.0.0.1:0"}
@@ -704,8 +705,10 @@ func TestRefusedURLIsAlwaysRefused(t *testing.T) {
 			_ = conn.Close()
 			t.Fatalf("dial %s succeeded; refusedURL must point at nothing listening", u.Host)
 		}
-		if !errors.Is(err, syscall.ECONNREFUSED) {
-			t.Fatalf("dial %s: got %v, want ECONNREFUSED", u.Host, err)
+		// Linux refuses a dial to port 0 with ECONNREFUSED, macOS with EADDRNOTAVAIL; both
+		// mean nothing can answer there (spec 024 AC6).
+		if !errors.Is(err, syscall.ECONNREFUSED) && !errors.Is(err, syscall.EADDRNOTAVAIL) {
+			t.Fatalf("dial %s: got %v, want ECONNREFUSED or EADDRNOTAVAIL", u.Host, err)
 		}
 	}
 }

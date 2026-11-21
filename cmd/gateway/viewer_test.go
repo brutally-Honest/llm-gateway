@@ -241,8 +241,8 @@ func notFound(t *testing.T, code int, out string) {
 	if len(got) != 1 {
 		t.Fatalf("stdout must hold only the failure line:\n%s", out)
 	}
-	var m map[string]any
-	if err := json.Unmarshal([]byte(got[0]), &m); err != nil || m["reason"] != "session not found" {
+	// Plain text, not a log line (spec 024 AC10).
+	if !strings.HasPrefix(got[0], "gateway timeline: timeline failed (") || !strings.Contains(got[0], "reason: session not found") {
 		t.Errorf("line = %q", got[0])
 	}
 }

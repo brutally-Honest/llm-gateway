@@ -112,7 +112,7 @@ func TestDoctorEachCheckFails(t *testing.T) {
 func TestDoctorServiceStates(t *testing.T) {
 	f := installed(t)
 	f.svc.running = false
-	if r := results(f)["service"]; r.Level != Fail || r.Detail != "installed, not running" {
+	if r := results(f)["service"]; r.Level != Fail || r.Detail != "loaded, not running" {
 		t.Fatalf("%+v", r)
 	}
 	_ = os.Remove(f.svc.File(f.paths()))

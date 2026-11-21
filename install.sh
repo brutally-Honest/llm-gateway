@@ -4,7 +4,8 @@
 # `gateway install`, which shows its plan and asks before it changes anything.
 #
 #   curl -fsSL https://raw.githubusercontent.com/brutally-Honest/llm-gateway/main/install.sh | sh
-#   … | sh -s -- --check            preflight only; writes nothing
+#   … | sh -s -- --check            preflight only; installs nothing (the archive is fetched
+#                                    to a temporary folder for the check and removed)
 #   … | sh -s -- --dry-run          show every file it would write; writes nothing
 #   … | sh -s -- --install-deps     also install missing dependencies without asking
 #   … | sh -s -- 0.3.0 --yes        a given release, no questions
@@ -172,4 +173,11 @@ elif (: </dev/tty) 2>/dev/null; then
 else
 	"$tmp/x/gateway" install "$@" </dev/null || status=$?
 fi
+# The archive went to $tmp, which the EXIT trap removes (spec 024 AC7).
+for arg in "$@"; do
+	if [ "$arg" = "--check" ]; then
+		echo "The archive was downloaded to a temporary folder for the check and removed."
+		break
+	fi
+done
 exit "$status"

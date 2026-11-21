@@ -165,8 +165,10 @@ func Diagnose(e *Env, c Client) []Result {
 		switch {
 		case !s.Installed:
 			add("service", "Login service", Fail, p.tilde(svc.File(p))+" not found", "run gateway install")
+		case !s.Loaded:
+			add("service", "Login service", Fail, "installed, not loaded", "run: "+svc.LoadHint(p))
 		case !s.Running:
-			add("service", "Login service", Fail, "installed, not running", "see the log: "+svc.LogHint(p)+"; then gateway install restarts it")
+			add("service", "Login service", Fail, "loaded, not running", "see the log: "+svc.LogHint(p)+"; then run: "+svc.StartHint(p))
 		case !s.AtLogin:
 			add("service", "Login service", Warn, "running, but not started at login", "run gateway install (it enables the service)")
 		default:

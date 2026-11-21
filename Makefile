@@ -106,7 +106,9 @@ kit-test:
 # node expands it: the directory form exits 1 on node v25.
 web-test:
 	@command -v node >/dev/null 2>&1 || { echo 'node not found: install node 22.12 or later (ADR 0013)' >&2; exit 1; }
-	node --test "internal/ui/webtest/*.test.js"
+	# Locale and time zone pinned, so date and time text is the same on every machine (Node
+	# takes its default locale from LC_ALL/LANG; spec 024 AC6, macos-v1.md B6).
+	LC_ALL=en_US.UTF-8 TZ=UTC node --test "internal/ui/webtest/*.test.js"
 
 lint:
 	@test -x $(GOLANGCI_LINT) || { echo 'golangci-lint not found: run make setup' >&2; exit 1; }

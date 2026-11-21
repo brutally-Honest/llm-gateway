@@ -73,7 +73,7 @@ curl -fsSL https://raw.githubusercontent.com/brutally-Honest/llm-gateway/main/in
 
 | Flag | What it does |
 |---|---|
-| `--check` | the preflight table only: no offers, nothing written or run |
+| `--check` | the preflight table only: no offers, nothing installed. Through install.sh the archive is downloaded to a temporary folder for the check and removed |
 | `--dry-run` | the preflight table, then every file it would write (full contents for a new file, the exact diff for an existing one) and every command it would run; nothing written or run |
 | `--install-deps` | answers yes to every offer to install a missing dependency |
 | `--yes` | does not ask `Proceed?`, nor before replacing a hand-written setup; does **not** install dependencies |
@@ -115,6 +115,12 @@ manual setup, step by step, is in [clients/claude-code.md §6](clients/claude-co
 Run the same curl line again. Install keeps the config and the captured data, rewrites the
 managed files, restarts the service and lists each file as new, updated or unchanged, with
 the version before and after. Running it twice with nothing new changes no file.
+
+An upgrade (or any install run) restarts the gateway. For a sub-second gap (about 50–80 ms
+when measured on Linux) the gateway's ports refuse connections; Claude Code retries a
+refused request on its own, so a running session carries on. Nothing in flight is lost
+silently: a model call still streaming when the restart begins gets the shutdown grace
+period, then is cut and stored as cut by the gateway.
 
 ## Uninstall
 
@@ -220,9 +226,15 @@ has no auth, so a non-loopback address fails, with the message the gateway itsel
 with ([Troubleshooting](#troubleshooting)).
 
 ### Check: service
-The login service is installed, running and starts at login. **Fix:** read its log
-(`journalctl --user -u llm-gateway.service -f`, or
-`tail -f ~/Library/Logs/llm-gateway/gateway.log`), then `gateway install` restarts it.
+The login service is installed, loaded, running and starts at login. Each state has its
+own fix:
+
+| doctor says | Linux (systemd) | macOS (launchd) |
+|---|---|---|
+| `… not found` | `gateway install` | `gateway install` |
+| `installed, not loaded` | `systemctl --user daemon-reload && systemctl --user enable --now llm-gateway.service` | `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.llm-gateway.plist` |
+| `loaded, not running` | read `journalctl --user -u llm-gateway.service -f`, then `systemctl --user restart llm-gateway.service` | read `tail -f ~/Library/Logs/llm-gateway/gateway.log`, then `launchctl kickstart -k gui/$(id -u)/dev.llm-gateway` |
+| `running, but not started at login` | `gateway install` | `gateway install` |
 
 ### Check: listeners
 Each listener answers on loopback: the API (`/healthz`), the UI (`/api/health`), the HTTP
@@ -276,6 +288,17 @@ rewrite it.
 
 ## Known limits
 
+- **Several sessions at once: network effects may show as unassigned.** A connection
+  through the proxy is linked to a session only when exactly one routed session is
+  active; with two or more open, it is listed under "unassigned connections" instead.
+
+- **Node needs 22.21 or later, or 24 or later, for network effects.** The settings file
+  sets `NODE_USE_ENV_PROXY=1`, so Node sends its calls through the gateway's proxy:
+  `fetch` from Node 22.21 (22 line) or 24.0, and the `http`/`https` modules from 22.21 or
+  24.5. Older Node (22.20 and before, 23, 20 and before) ignores it: with the sandbox off
+  its calls go direct and are not seen; with it on they fail with `ENOTFOUND`. Check with
+  `node --version`. Install's summary says the same.
+
 - **Loopback only in v1.** Every listener (the API on 7197, with the hooks and `/metrics`,
   the UI on 7199 and the proxies on 7198 and 7195) binds 127.0.0.0/8, `::1` or
   `localhost`. Any other address stops the gateway at start, and there is no override:
@@ -300,6 +323,7 @@ rewrite it.
 | `install.sh: this release has no build for …` | an unsupported OS or CPU | build from source |
 | The installer asked nothing and stopped at "Proceed?" | no terminal to ask on (CI, a pipe with no tty) | run with `--yes` (and `--install-deps` to install dependencies) |
 | Preflight: a port held by another process | something else uses 7195–7199 | stop it, or change the ports in the config, then install again |
+| Preflight: a port held by an unknown process | neither `lsof` nor `ss` is on PATH, so the owner (which may be the running gateway) cannot be named | put `/usr/sbin` (macOS) or `/usr/bin` back on PATH, or stop the gateway first, then install again |
 | Preflight: no systemd user session | a container, WSL or a minimal distro | `--no-service`, then start the gateway by hand |
 | The gateway stops when you log out (Linux) | lingering is off | `loginctl enable-linger $USER` |
 | Bash commands fail with `apply-seccomp: … nested userns is capability-restricted` | Claude Code's sandbox on Ubuntu 24.04+ | see [Check: apparmor](#check-apparmor); or set `effects.network.sandbox: false` and run `gateway install` |

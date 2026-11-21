@@ -85,9 +85,9 @@ func TestRun_ShutdownCutsTunnelsAndUIStreamsAtOnce(t *testing.T) {
 	dir := t.TempDir()
 	up := jsonUpstream(t)
 	g, _ := startCapturing(t, captureEnv(dir, up, map[string]string{
-		"GATEWAY_UI_LISTEN_ADDR":                   "127.0.0.2:0",
-		"GATEWAY_EFFECTS_NETWORK_HTTP_PROXY_ADDR":  "127.0.0.3:0",
-		"GATEWAY_EFFECTS_NETWORK_SOCKS_PROXY_ADDR": "127.0.0.4:0",
+		"GATEWAY_UI_LISTEN_ADDR":                   freeAddr(t),
+		"GATEWAY_EFFECTS_NETWORK_HTTP_PROXY_ADDR":  freeAddr(t),
+		"GATEWAY_EFFECTS_NETWORK_SOCKS_PROXY_ADDR": freeAddr(t),
 	}), nil)
 	target := holdingTarget(t)
 

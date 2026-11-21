@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"io/fs"
 	"net"
@@ -163,6 +164,10 @@ func run(ctx context.Context, d deps) int {
 	if isHelp(d.args) {
 		return runHelp(d)
 	}
+	if isVersion(d.args) {
+		_, _ = fmt.Fprintf(d.stdout, "gateway %s\n", version)
+		return exitOK
+	}
 	if len(d.args) > 0 {
 		switch d.args[0] {
 		case "install":
@@ -179,17 +184,16 @@ func run(ctx context.Context, d deps) int {
 	configPath := fs.String("config", "", "path to the config file (default ./config.yaml if present)")
 	switch err := fs.Parse(d.args); {
 	case errors.Is(err, flag.ErrHelp):
-		// -h or -help: usage as one JSON line; nothing is loaded or bound.
-		boot.Info("usage", zap.Strings("flags", []string{"-config <path>"}))
-		return exitOK
+		return runHelp(d) // -h with other flags; nothing is loaded or bound
 	case err != nil:
-		// The flag package's message can quote the value, so only the fact is logged.
-		boot.Error("invalid flags")
+		// A person typed this, so it is plain text, not a log line (spec 024 AC10). It goes
+		// to the terminal only, never to the store.
+		_, _ = fmt.Fprintf(d.stdout, "gateway: %v\n\n%s", err, helpText)
 		return exitConfig
 	case fs.NArg() > 0:
-		// The gateway takes no arguments; -config is the only way to name a file. A
-		// positional one can be anything, a path included, so only the count is logged.
-		boot.Error("invalid flags", zap.String("reason", "unexpected argument"), zap.Int("count", fs.NArg()))
+		// The gateway takes no arguments; -config is the only way to name a file. The
+		// argument itself can be anything, a path or a secret, so it is not echoed.
+		_, _ = fmt.Fprintf(d.stdout, "gateway: unexpected argument (the gateway takes none; -config names the config file)\n\n%s", helpText)
 		return exitConfig
 	}
 
@@ -280,7 +284,12 @@ func run(ctx context.Context, d deps) int {
 	}
 	// The proxy listeners bind before anything serves too, so a taken port stops the
 	// gateway with one line (spec 014, E14).
-	if code := capt.startProxy(cfg.Effects, d.listen, log); code != exitOK {
+	// The gateway's own listeners, so traffic to them is not stored as effects (spec 024).
+	own := []string{cfg.ListenAddr, ln.Addr().String()}
+	if uiLn != nil {
+		own = append(own, cfg.UI.ListenAddr, uiLn.Addr().String())
+	}
+	if code := capt.startProxy(cfg.Effects, d.listen, own, log); code != exitOK {
 		_, _ = capt.close(context.Background())
 		_ = ln.Close()
 		if uiLn != nil {
@@ -681,8 +690,9 @@ func (e *effectsRun) callbacks() []func(hooks.HookStored) {
 // startProxy binds the HTTP proxy listener and, when set, the SOCKS5 one, then serves
 // them; it links each connection to the runner's one active session (AC10). With effects
 // or the network sensor off it does nothing. A bind failure logs one line and closes
-// what was bound.
-func (c *captureRun) startProxy(e config.Effects, listen func(network, addr string) (net.Listener, error), log *zap.Logger) int {
+// what was bound. Connections to own (the API and UI listeners) or to the proxies
+// themselves are forwarded but not recorded (spec 024 AC4).
+func (c *captureRun) startProxy(e config.Effects, listen func(network, addr string) (net.Listener, error), own []string, log *zap.Logger) int {
 	if c == nil || c.effects == nil || !e.Network.Enabled {
 		return exitOK
 	}
@@ -714,6 +724,11 @@ func (c *captureRun) startProxy(e config.Effects, listen func(network, addr stri
 	}
 	run := c.effects
 	run.rec = netproxy.NewRecorder(run.store, run.runner.ActiveSession, netproxy.Saved(run.saved), log)
+	for _, b := range lns {
+		own = append(own, b.ln.Addr().String())
+	}
+	own = append(own, e.Network.HTTPProxyAddr, e.Network.SocksProxyAddr)
+	run.rec.SkipTargets(own...)
 	run.proxy = netproxy.New(run.rec, log)
 	for _, b := range lns {
 		if b.key == "effects.network.http_proxy_addr" {

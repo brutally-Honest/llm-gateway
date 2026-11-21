@@ -166,7 +166,8 @@ To pick up new gateway changes later, see [Updating the service](#updating-the-s
 ### Save the printed settings file
 
 `gateway hooks print` prints one Claude Code settings document: the hooks, an `env` block
-(`ANTHROPIC_BASE_URL`, `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`) and, with
+(`ANTHROPIC_BASE_URL`, `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`, and `NODE_USE_ENV_PROXY=1` so
+Node 22.21+ or 24+ uses the proxy too: see [Known limits](../install.md#known-limits)) and, with
 `effects.network.sandbox: true`, a `sandbox` block (see [The sandbox](#the-sandbox-optional)).
 It writes no file; save it as a file of its own, not in `~/.claude/settings.json`:
 
@@ -182,9 +183,10 @@ With `effects.network.enabled: false` the output is the hooks alone, as in 010.
 
 `effects.network.sandbox` is `false` by default. Set it to `true` and reprint the settings
 file to add a `sandbox` block that turns on Claude Code's Bash sandbox and points it at the
-proxy ports, so every Bash command's traffic goes through the gateway, including programs
-that ignore `HTTPS_PROXY` (Node's built-in `fetch`, ssh, database clients). Without it,
-only programs that honour `HTTPS_PROXY` / `HTTP_PROXY` are seen.
+proxy ports, so every Bash command's traffic goes through the gateway or not at all: the
+sandbox also points git's ssh at the SOCKS port, and a program that ignores the proxy
+variables (Node older than 22.21 or 24, many database clients) fails instead of going
+direct. Without it, only programs that honour `HTTPS_PROXY` / `HTTP_PROXY` are seen.
 
 - **Linux needs both `bubblewrap` and `socat`.** If either is missing, Claude Code quietly
   runs commands without the sandbox: nothing fails, and traffic from programs that ignore

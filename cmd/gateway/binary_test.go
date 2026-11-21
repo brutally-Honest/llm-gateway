@@ -31,11 +31,11 @@ func TestBinary_SignalShutdown(t *testing.T) {
 			cmd := exec.Command(bin)
 			cmd.Dir = t.TempDir() // no config.yaml
 			// The store goes in a temp dir, never the default data dir (spec 002, Do). The UI
-			// and the effects proxy listeners (spec 014) get free ports on other loopback
-			// addresses, so a gateway already running on the default ports cannot stop this
-			// one from starting.
-			cmd.Env = append(gatewayFreeEnv(), "GATEWAY_LISTEN_ADDR=127.0.0.1:0", "GATEWAY_UI_LISTEN_ADDR=127.0.0.2:0",
-				"GATEWAY_EFFECTS_NETWORK_HTTP_PROXY_ADDR=127.0.0.3:0", "GATEWAY_EFFECTS_NETWORK_SOCKS_PROXY_ADDR=127.0.0.4:0",
+			// and the effects proxy listeners (spec 014) get free ports on 127.0.0.1, so a
+			// gateway already running on the default ports cannot stop this one from
+			// starting; macOS has no other loopback address (spec 024 AC6).
+			cmd.Env = append(gatewayFreeEnv(), "GATEWAY_LISTEN_ADDR=127.0.0.1:0", "GATEWAY_UI_LISTEN_ADDR="+freeAddr(t),
+				"GATEWAY_EFFECTS_NETWORK_HTTP_PROXY_ADDR="+freeAddr(t), "GATEWAY_EFFECTS_NETWORK_SOCKS_PROXY_ADDR="+freeAddr(t),
 				"GATEWAY_CAPTURE_DIR="+t.TempDir())
 			stdout, err := cmd.StdoutPipe()
 			if err != nil {
@@ -73,7 +73,15 @@ func TestBinary_SignalShutdown(t *testing.T) {
 			select {
 			case addr = <-started:
 			case <-time.After(10 * time.Second):
-				t.Fatalf("no startup line\nstderr: %s", stderr.String())
+				// exec copies the process's stderr into the buffer on its own goroutine until
+				// Wait returns, so the buffer is read only after that (spec 024 AC6, B7).
+				_ = cmd.Process.Kill()
+				<-readDone
+				_ = cmd.Wait()
+				mu.Lock()
+				defer mu.Unlock()
+				// Startup errors (a port taken, a bad config) are log lines on stdout.
+				t.Fatalf("no startup line\nstdout: %s\nstderr: %s", strings.Join(lines, "\n"), stderr.String())
 			}
 			resp, err := http.Get("http://" + addr + "/healthz")
 			if err != nil {

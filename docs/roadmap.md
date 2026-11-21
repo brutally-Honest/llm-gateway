@@ -18,6 +18,15 @@ below and AC44, the API-key smoke test of Phase 1.
    run, so the benchmark was left as it is (`internal/ui/timeline_bench_test.go`).
 
 ## Done
+- **024 macOS fixes** (`specs/024-macos-fixes/`, fix): the v1 blockers of the macOS check
+  (`docs/manual-checks/macos-v1.md`). A launchd reinstall waits for bootout and retries
+  bootstrap, or only kickstarts an unchanged job, and says plainly if the gateway is left
+  down; doctor tells not loaded, loaded and running apart; the Claude Code settings set
+  `NODE_USE_ENV_PROXY=1`; the proxy no longer records the gateway's own listeners;
+  effects compare symlink-resolved paths; every subcommand prints plain text, with
+  `--version`; the `--check`, uninstall keep-list and unknown port owner wording; the
+  tests pass on macOS. Checked on Linux; the launchd fix and Node under Seatbelt wait for
+  the Mac re-test.
 - **022 loopback only** (`specs/022-loopback-only/`): every listener (API, UI, HTTP and
   SOCKS proxies) refuses any address outside 127.0.0.0/8, `::1` and `localhost`, with no
   override. Config loading, `gateway install` and `gateway doctor` share one check and
@@ -84,9 +93,17 @@ below and AC44, the API-key smoke test of Phase 1.
   - [x] Step 11 with the sandbox off, step 10 on launchd, the sandbox part of V1, V3 (HTTP)
     and V4 — 2026-11-20, macOS 26.5.2, Apple M4 Pro (`docs/manual-checks/macos-v1.md`).
   - [ ] Node's `fetch` with the sandbox on fails with `ENOTFOUND` (014 Q2); SOCKS (7195)
-    not exercised.
+    not exercised. 024 sets `NODE_USE_ENV_PROXY=1` (Q2 answered A); the Mac re-test
+    checks Node under Seatbelt.
 - On Ubuntu, test `sandbox.network.allowAllUnixSockets: true` as the workaround for the
   sandbox bug (014 D17).
+- Per-session network attribution when several Claude Code sessions run at once (today
+  connections go to unassigned unless exactly one routed session is active; 014 AC10's
+  rule). Idea: tag each claude launch with its own id in the proxy URL.
+- The agent-loop kit on macOS's bash 3.2: `loop.sh:91` (a `case` inside `$( )`) fails to
+  parse, so 14 kit scripts fail (`docs/manual-checks/macos-v1.md` B8).
+- A `claude` run that fails at argument parsing still sends one SessionEnd hook, which
+  shows as an active "Hooks only" session for minutes (`docs/manual-checks/macos-v1.md` B12).
 - The speed follow-ups, re-measured after 016.
   - Cold view build for large sessions (2.3 s server build at 2,000 calls; 016 research
     2026-11-13).

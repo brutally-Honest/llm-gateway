@@ -174,3 +174,21 @@ func TestUninstallWarnsBeforeCuttingOffItsSession(t *testing.T) {
 	}
 	lacks(t, n.out.String(), "Warning:")
 }
+
+// B11 (spec 024 AC8): the keep list names only this OS's dependencies.
+func TestUninstallKeepListPerOS(t *testing.T) {
+	for goos, want := range map[string]string{
+		"linux":  "every dependency (Claude Code, curl, git, bubblewrap, socat, Docker)",
+		"darwin": "every dependency (Claude Code, curl, git, Docker)",
+	} {
+		f := newFake(t, goos)
+		if code := f.install(InstallOptions{Yes: true}); code != ExitOK {
+			t.Fatalf("%s: install exit %d\n%s", goos, code, f.out)
+		}
+		f.uninstall(UninstallOptions{Yes: true})
+		contains(t, f.out.String(), want)
+		if goos == "darwin" {
+			lacks(t, f.out.String(), "bubblewrap")
+		}
+	}
+}

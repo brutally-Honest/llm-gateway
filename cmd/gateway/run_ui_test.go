@@ -18,7 +18,7 @@ import (
 func uiEnv(t *testing.T, extra map[string]string) map[string]string {
 	t.Helper()
 	up := jsonUpstream(t)
-	all := map[string]string{"GATEWAY_UI_LISTEN_ADDR": "127.0.0.1:0", "GATEWAY_LISTEN_ADDR": "127.0.0.2:0"}
+	all := map[string]string{"GATEWAY_UI_LISTEN_ADDR": "127.0.0.1:0", "GATEWAY_LISTEN_ADDR": freeAddr(t)}
 	for k, v := range extra {
 		all[k] = v
 	}

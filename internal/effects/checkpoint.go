@@ -130,12 +130,16 @@ func (r *Runner) checkRoot(ctx context.Context, s *session, root string, saved m
 		if err != nil {
 			return nil, err
 		}
+		// Both sides resolved, so a root reached through a symlink still matches git's
+		// resolved top level (spec 024 AC5). Roots are resolved when added; this keeps the
+		// comparison right for any other caller.
+		top, rroot := resolve(top), resolve(root)
 		for _, e := range entries {
 			abs := filepath.Join(top, filepath.FromSlash(e.path))
-			if !within(abs, root) {
+			if !within(abs, rroot) {
 				continue
 			}
-			rel, err := filepath.Rel(root, abs)
+			rel, err := filepath.Rel(rroot, abs)
 			if err != nil {
 				continue
 			}

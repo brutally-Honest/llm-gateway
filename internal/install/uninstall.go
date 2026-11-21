@@ -96,7 +96,7 @@ func Uninstall(e *Env, c Client, o UninstallOptions) int {
 	if !o.Purge {
 		keep = append(keep, p.tilde(p.Config)+" (your config)", p.tilde(p.DataDir)+" (captured data, "+humanBytes(dirSize(p.DataDir))+")")
 	}
-	keep = append(keep, "every dependency (Claude Code, git, bubblewrap, socat, …)")
+	keep = append(keep, "every dependency ("+strings.Join(installedDeps(e, c), ", ")+")")
 
 	if len(steps) == 0 && !o.Purge {
 		e.printf("Nothing to uninstall: no service, shell block or settings file made by install was found.\n")

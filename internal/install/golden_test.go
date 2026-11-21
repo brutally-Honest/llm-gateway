@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -68,16 +69,21 @@ func TestGoldenServiceFiles(t *testing.T) {
 func TestSystemdCommands(t *testing.T) {
 	e, p := goldenEnv("linux")
 	s := &systemd{env: e}
-	if got := s.StartCommands(p); len(got) != 3 || got[2][2] != "restart" {
+	if got := s.StartCommands(p, true); len(got) != 3 || got[2][2] != "restart" {
 		t.Fatalf("start %v", got)
 	}
 	if got := s.StopCommands(p); got[0][3] != "--now" {
 		t.Fatalf("stop %v", got)
 	}
+	e.Run = &fakeRunner{} // launchctl print succeeds: the job is loaded
 	l := &launchd{env: e}
-	got := l.StartCommands(p)
-	if got[2][1] != "bootstrap" || got[2][2] != "gui/501" || got[4][2] != "-k" {
-		t.Fatalf("launchd start %v", got)
+	got := l.StartCommands(p, true)
+	if len(got) != 5 || got[1][1] != "bootout" || got[2][1] != "enable" || got[3][1] != "bootstrap" ||
+		got[3][2] != "gui/501" || strings.Join(got[4], " ") != "launchctl kickstart gui/501/dev.llm-gateway" {
+		t.Fatalf("launchd start, plist changed: %v", got)
+	}
+	if got := l.StartCommands(p, false); len(got) != 3 || strings.Join(got[2], " ") != "launchctl kickstart -k gui/501/dev.llm-gateway" {
+		t.Fatalf("launchd start, plist unchanged: %v", got)
 	}
 }
 
