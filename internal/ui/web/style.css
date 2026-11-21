@@ -472,11 +472,19 @@ details.side ul { list-style: none; margin: 6px 0 2px; padding: 0; display: flex
 
 /* turns */
 .turn { scroll-margin-top: calc(var(--head-h) + 3rem); }
-/* a turn is a chapter: a dashed rule above it, its header, then its cards (027 C4) */
-.turn.chapter { padding: 28px 0 12px; border-top: 1px dashed var(--line); }
-.turn.chapter .th { padding: 0 0 12px; border-bottom: 0; }
+/* a turn is one card (027 C9): its header band on top, then its prompt, how it got there
+   and its final answer, each a part of the same card, so they read as one turn */
+.turn.chapter { margin: 0 0 20px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--card); box-shadow: var(--shadow); overflow: hidden; }
+.turn.chapter .th { padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .turn.chapter .th .k h2 { font-size: 13px; }
-.turn.chapter .tb { padding: 0; gap: 14px; }
+.turn.chapter .tb { padding: 0; gap: 0; }
+/* the work between prompt and answer: a quiet strip across the card */
+.turn.chapter .turn-chips { padding: 8px 16px; background: var(--panel); border-top: 1px dashed var(--line); border-bottom: 1px dashed var(--line); }
+.turn.chapter .turn-chips:last-child { border-bottom: 0; }
+/* no gap kept under the chips for panels that are closed; an open panel brings its own */
+.turn.chapter .turn-chips { gap: 0; }
+.turn.chapter .chip-panel { margin-top: 10px; }
+.turn-chips .sum > .l { align-self: center; margin-right: 4px; font-size: 12px; color: var(--muted); }
 .mdls { grid-column: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 12px; color: var(--muted); }
 .mdls .mdl { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 12px; color: var(--hi); background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-pill); padding: 0 10px; }
 .mdls .mdl::before { content: ""; width: 7px; height: 7px; border-radius: var(--radius-round); background: var(--model); }
@@ -571,9 +579,9 @@ ul.effs .linkish code { color: var(--accent); }
 .tx.answer { background: var(--panel); border-color: transparent; }
 /* in a chapter, the prompt and the answer are message cards: a header bar (who, Preview /
    Raw, Copy) over the text (027 C4) */
-.chapter .tx { padding: 0; gap: 0; overflow: hidden; background: var(--card); border-color: var(--border); box-shadow: var(--shadow); }
-.chapter .tx > .tx-h { padding: 6px 8px 6px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
-.chapter .tx > .tx-b { padding: 12px 16px; }
+.chapter .tx { padding: 0; gap: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+.chapter .tx > .tx-h { padding: 8px 8px 0 16px; }
+.chapter .tx > .tx-b { padding: 6px 16px 14px; }
 .chapter .tx > .reminders, .chapter .tx > p { padding: 8px 16px 0; }
 .chapter .tx.answer > .tx-h .who { color: var(--model); }
 .tx-h .mode { margin-left: auto; }

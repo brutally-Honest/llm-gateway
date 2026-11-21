@@ -451,6 +451,8 @@ function chipsNode(t, ctx) {
   const bar = el("div", "sum");
   bar.setAttribute("role", "group");
   bar.setAttribute("aria-label", `Turn ${t.n}: what it did`);
+  // a turn's card says what this strip is: the work between its prompt and its answer (027 C9)
+  bar.append(el("span", "l", "How it got there"));
   const holder = el("div", "chip-panels");
   const panels = {};
   const chips = [];

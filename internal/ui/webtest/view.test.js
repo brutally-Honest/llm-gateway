@@ -589,3 +589,18 @@ test("turnListMarksFailuresWithAGlyphNamedByItsWords", () => {
   assert.equal(bad.attrs["aria-label"], "1 failed");
   assert.doesNotMatch(textOf(row), /failed|ended by/, "no words in the row");
 });
+
+// spec 027 C9: a turn is one card: its header, its prompt, the work between ("How it got
+// there") and its final answer are parts of the same card, in that order
+test("aTurnIsOneCardFromPromptToAnswer", () => {
+  const { page } = mount();
+  const turn = byId(page.el, "turn-1");
+  const body = withClass(turn, "tb")[0];
+  const parts = body.children.map((c) => c.className.split(" ").find((x) => ["prompt", "answer", "turn-chips"].includes(x)) || c.className);
+  assert.deepEqual(parts, ["prompt", "turn-chips", "answer"]);
+  assert.match(textOf(withClass(turn, "turn-chips")[0]), /^\s*How it got there/);
+  const css = readFileSync(new URL("../web/style.css", import.meta.url), "utf8");
+  const card = css.match(/\.turn\.chapter \{([^}]*)\}/)[1];
+  for (const d of ["border: 1px solid var(--border)", "background: var(--card)", "overflow: hidden"]) assert.ok(card.includes(d), d);
+  assert.match(css, /\.chapter \.tx \{[^}]*border: 0;[^}]*box-shadow: none;/, "the prompt and answer are parts, not cards of their own");
+});
