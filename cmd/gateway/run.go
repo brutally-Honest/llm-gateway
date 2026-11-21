@@ -50,6 +50,13 @@ type deps struct {
 	// machine in their tests (spec 023). Both nil for the gateway itself.
 	stdin      io.Reader
 	installEnv *install.Env
+	// started is set by runGateway and called by serve once the gateway serves.
+	started func()
+	// getpid, now and sleep are the crash-loop backoff's clock and pid (spec 025 AC5);
+	// nil means os.Getpid, time.Now and a timer that ctx cancels.
+	getpid func() int
+	now    func() time.Time
+	sleep  func(ctx context.Context, d time.Duration)
 }
 
 // registered is every protocol adapter and client profile the gateway runs with, in
@@ -143,7 +150,6 @@ func captureDir(c config.Capture, lookupEnv func(string) (string, bool), log *za
 
 // run starts the gateway and serves until ctx is cancelled. It returns the exit code.
 func run(ctx context.Context, d deps) int {
-	boot := logging.Bootstrap(d.stdout)
 	registerCostBooks()
 
 	if len(d.args) > 0 && d.args[0] == "dump" {
@@ -178,7 +184,13 @@ func run(ctx context.Context, d deps) int {
 			return runDoctor(d)
 		}
 	}
+	return runGateway(ctx, d)
+}
 
+// serve starts the gateway and serves until ctx is cancelled. It calls d.started, if
+// set, once every listener serves; a return before that is a failed start.
+func serve(ctx context.Context, d deps) int {
+	boot := logging.Bootstrap(d.stdout)
 	fs := flag.NewFlagSet("gateway", flag.ContinueOnError)
 	fs.SetOutput(io.Discard) // the flag package never prints usage text
 	configPath := fs.String("config", "", "path to the config file (default ./config.yaml if present)")
@@ -374,6 +386,9 @@ func run(ctx context.Context, d deps) int {
 		zap.String("config_source", configSource),
 		zap.Strings("env_overrides", src.EnvOverrides),
 	)
+	if d.started != nil {
+		d.started()
+	}
 
 wait:
 	for {
