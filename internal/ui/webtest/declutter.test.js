@@ -295,3 +295,16 @@ test("ungroupedClientColumnIsDroppedWhenEveryClientIsUnknown", () => {
   assert.ok(some.heads.includes("Client"));
   assert.deepEqual(some.cells, [6, 6]);
 });
+
+// the browser tab keeps its name, Gateway, and carries the funnel logo
+test("browserTabIsNamedAndCarriesTheLogo", () => {
+  assert.match(html, /<title>Gateway<\/title>/);
+  assert.match(html, /<link rel="icon" href="favicon\.svg" type="image\/svg\+xml">/);
+  const icon = readFileSync(new URL("../web/favicon.svg", import.meta.url), "utf8");
+  const mark = readFileSync(new URL("../web/logo.svg", import.meta.url), "utf8");
+  // the same funnel as the header mark: its three lanes, gate and exit
+  for (const part of ["M3 5l7 5.5M3 12h7M3 19l7-5.5", 'x="10.5" y="8" width="3" height="8"', "M14.5 12h6.5"]) {
+    assert.ok(icon.includes(part) && mark.includes(part), `both carry ${part}`);
+  }
+});
+
