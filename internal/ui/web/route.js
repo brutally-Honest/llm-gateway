@@ -1,11 +1,40 @@
 // Hash routes. A call's URL is #/sessions/{id}/call/{exchangeId} (spec 017 AC5).
+import { normalizeKind } from "./filters.js";
+
 const enc = encodeURIComponent;
+
+// Q_MAX_BYTES is the longest search text the server accepts (UTF-8 bytes).
+export const Q_MAX_BYTES = 200;
+
+// capQuery cuts search text to Q_MAX_BYTES of UTF-8, on a code point boundary so no
+// character is split. It is the one place text becomes q, whether typed or read from the URL.
+export function capQuery(text) {
+  const utf8 = new TextEncoder();
+  let bytes = 0;
+  let out = "";
+  for (const ch of String(text || "")) {
+    bytes += utf8.encode(ch).length;
+    if (bytes > Q_MAX_BYTES) break;
+    out += ch;
+  }
+  return out;
+}
+
+// readPage reads the list's page number from the URL: a positive integer, else page 1.
+function readPage(text) {
+  return /^[0-9]+$/.test(text || "") && Number(text) >= 1 && Number.isSafeInteger(Number(text)) ? Number(text) : 1;
+}
 
 // parseRoute turns a location hash into { name, id?, call? }; anything else is "unknown".
 export function parseRoute(hash) {
   const h = hash || "#/";
   try {
-    if (h === "#/" || h === "#") return { name: "sessions" };
+    if (h === "#/" || h === "#") return { name: "sessions", kind: "all", q: "", page: 1 };
+    // the list's state is in the hash query: #/?kind=active&q=some%20text&page=3 (spec 029)
+    if (h.startsWith("#/?")) {
+      const p = new URLSearchParams(h.slice(3));
+      return { name: "sessions", kind: normalizeKind(p.get("kind")), q: capQuery(p.get("q")), page: readPage(p.get("page")) };
+    }
     if (h === "#/ungrouped") return { name: "ungrouped" };
     if (h === "#/effects/unassigned") return { name: "unassigned" };
     if (h.startsWith("#/exchanges/")) {
@@ -29,8 +58,15 @@ export function parseRoute(hash) {
 // buildRoute is the inverse of parseRoute.
 export function buildRoute(r) {
   switch (r.name) {
-    case "sessions":
-      return "#/";
+    case "sessions": {
+      // kind is left out when all, q when empty, page when 1
+      const parts = [];
+      const kind = normalizeKind(r.kind);
+      if (kind !== "all") parts.push(`kind=${enc(kind)}`);
+      if (r.q) parts.push(`q=${enc(r.q)}`);
+      if (readPage(String(r.page)) > 1) parts.push(`page=${readPage(String(r.page))}`);
+      return parts.length ? `#/?${parts.join("&")}` : "#/";
+    }
     case "ungrouped":
       return "#/ungrouped";
     case "unassigned":

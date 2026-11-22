@@ -275,9 +275,18 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .seg-group .seg[aria-pressed="true"] { color: var(--hi); background: var(--panel2); font-weight: 600; }
 .seg-group .seg:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: -2px; }
 .sp-list { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow-x: auto; }
+/* the sessions list is a box of fixed height that scrolls inside (029 fix 7): the window
+   height less what sits above and below it, so the pager is in view without scrolling the
+   page; short windows keep 360px. The 320px is measured (029 UI check) at 1,440x900 and
+   2,560x1,265: box top 263px + 14px gap + 27px pager + 16px below the pager. The height does
+   not depend on the rows, a loading skeleton, an empty state or the page, so the pager never moves. */
+.sessions-page > .sp-list { height: calc(100vh - 320px); min-height: 360px; overflow: auto; }
+.sp-pager { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; }
+.sp-pager .btn:disabled { opacity: .45; }
+/* the label is as wide as "Page 999 of 999" (15 characters, 17ch with room for letters wider
+   than a digit) in every state, so Previous and Next never move between pages or modes */
+.sp-pager .pg-label { display: inline-block; min-width: 17ch; text-align: center; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; }
 .sp-list > .empty, .sp-list > .error { margin: 0; padding: 1.5rem 1.25rem; }
-.sp-filter-note { margin: -6px 0 -4px; font-size: 12.5px; }
-.sp-filter-note:empty { display: none; }
 .sp-list table { min-width: 72rem; }
 .sp-list th { position: sticky; top: 0; background: var(--card); text-transform: uppercase; letter-spacing: .04em; font-size: 11px; padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .sp-list td { padding: 10px 12px; vertical-align: middle; font-size: 13px; }
@@ -357,6 +366,7 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .loading.cards .skel:nth-of-type(2) { height: 3rem; }
 .loading.rows .skel { height: 22px; }
 .toc .loading { padding: 8px 12px; }
+.sp-list > .loading { padding: 10px 16px; }
 .skel { height: 18px; border-radius: var(--radius-sm); background: linear-gradient(90deg, var(--panel) 0, var(--panel2) 40%, var(--panel) 80%); background-size: 200% 100%; animation: skel 1.2s ease-in-out infinite; }
 @keyframes skel { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
@@ -602,18 +612,22 @@ ul.effs .linkish code { color: var(--accent); }
    Raw, Copy) over the text (027 C4) */
 .chapter .tx { padding: 0; gap: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
 .chapter .tx > .tx-h { padding: 8px 8px 0 16px; }
-.chapter .tx > .tx-b { padding: 6px 16px 14px; }
+/* 029 AC10: a long prompt or answer scrolls inside the body, in Preview and Raw alike (Raw
+   adds no scroll of its own); the header with Copy stays outside; the gutter is kept so the
+   scrollbar never changes the text's width */
+.chapter .tx > .tx-b { padding: 6px 16px 14px; max-height: 24rem; overflow-y: auto; scrollbar-gutter: stable; }
 .chapter .tx > .reminders, .chapter .tx > p { padding: 8px 16px 0; }
 .chapter .tx.answer > .tx-h .who { color: var(--model); }
 .tx-h .mode { margin-left: auto; }
 .tx-h .mode + .copy { margin-left: 0; }
+.chapter .tx-b .md pre { max-height: none; overflow-x: auto; overflow-y: visible; }
 .chapter .tx-b pre.raw { padding: 0; border: 0; background: none; max-height: none; overflow: visible; color: var(--text); }
 .tx-h { display: flex; align-items: center; gap: 10px; }
 .tx-h .who { font-size: 12px; font-weight: 700; color: var(--hi); text-transform: uppercase; letter-spacing: .04em; }
 .tx.prompt .tx-h .who { color: var(--accent); }
 .mode { margin-left: auto; display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .mode .seg { all: unset;
-  cursor: pointer; font-size: 11.5px; font-weight: 600; color: var(--muted); padding: 2px 9px; }
+  cursor: pointer; font-size: 11.5px; font-weight: 600; color: var(--muted); padding: 3px 9px; }
 .mode .seg:hover { color: var(--text); background: var(--panel2); }
 .mode .seg[aria-pressed="true"] { color: var(--hi); background: var(--panel2); }
 .mode .seg:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: -2px; }
@@ -815,7 +829,7 @@ dialog:modal .call-scrim, dialog:modal .call-scrim:hover { top: 0; background: t
 }
 
 /* 027 C4: one Preview / Raw switch above the story; a tab's summary line; files expand in place */
-.story-bar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 14px 0 0; }
+.story-bar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 14px 0 0; margin-bottom: 16px; }
 .story-bar .mode { margin-left: 0; }
 .tabp .sum { margin: 0 10px 8px; font-size: 13px; color: var(--text); }
 .tabp .sum .one-line { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

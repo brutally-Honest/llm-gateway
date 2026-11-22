@@ -1,5 +1,5 @@
 import { timeElement } from "./entries.js";
-import { filterSessions, FILTERS } from "./filters.js";
+import { FILTERS } from "./filters.js";
 import { bytes, dur, plural } from "./fmt.js";
 import { LABEL, explain, totalCost } from "./cost.js";
 
@@ -12,6 +12,7 @@ export function loadMore(data, onMore) {
   if (!data.next_after) return null;
   const b = document.createElement("button");
   b.textContent = "Load more";
+  b.disabled = Boolean(data.loadingMore);
   b.addEventListener("click", () => onMore());
   return b;
 }
@@ -264,6 +265,14 @@ export function moveSelection(index, delta, total) {
 
 const FILTER_LABELS = { all: "All", look: "Needs a look", active: "Active", hooks: "Hooks only" };
 
+// PAGE_SIZE is the rows of one page; the server's default and maximum limit.
+export const PAGE_SIZE = 50;
+
+// pageCount is the pages an unfiltered list of total sessions has; an empty list has one.
+export function pageCount(total) {
+  return Math.max(1, Math.ceil((total || 0) / PAGE_SIZE));
+}
+
 function td(tr, text, cls) {
   const c = document.createElement("td");
   if (cls) c.className = cls;
@@ -484,9 +493,11 @@ function loader() {
 
 // createSessionsPage builds the landing page once; update(state) redraws the table, the
 // totals and the notes without touching the filter input, so typing keeps its focus.
-// state = { items, next_after, error, loaded, today, ungrouped: { items, next_after },
-// unassigned, unassignedItems }; until the first page has loaded the list shows a loader.
-// handlers = { onMore }.
+// state = { items, next_after, error, loaded, kind, q, total, scanned, page, today,
+// ungrouped: { items, next_after }, unassigned, unassignedItems }; page is the page shown (or
+// being loaded). Until the
+// page has loaded the box shows a loader. The rows are shown as given: the server filtered them.
+// handlers = { onPage(n), onKind(kind), onQuery(text, now) }.
 export function createSessionsPage(handlers) {
   const el = document.createElement("section");
   el.className = "sessions-page";
@@ -516,35 +527,79 @@ export function createSessionsPage(handlers) {
     b.type = "button";
     b.className = "seg";
     b.textContent = FILTER_LABELS[k];
-    b.addEventListener("click", () => {
-      kind = k;
-      redraw();
-    });
+    // the URL owns the kind: the app sets the hash, and the new kind comes back in update()
+    b.addEventListener("click", () => handlers.onKind && handlers.onKind(k));
     kinds.set(k, b);
     picker.append(b);
   }
   bar.append(input, picker);
-  const filterNote = document.createElement("p");
-  filterNote.className = "muted sp-filter-note";
   const list = document.createElement("div");
   list.className = "sp-list";
+  // the pager sits right under the fixed-height box, so a page change never moves it
+  const pager = document.createElement("nav");
+  pager.className = "sp-pager";
+  pager.setAttribute("aria-label", "Pages");
+  pager.hidden = true;
+  // built once and only updated, so the pager never changes shape and a button keeps its focus
+  const pagerBtn = (label, step) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn sm";
+    b.textContent = label;
+    b.addEventListener("click", () => handlers.onPage && handlers.onPage((state.page || 1) + step));
+    return b;
+  };
+  const prevBtn = pagerBtn("‹ Previous", -1);
+  const nextBtn = pagerBtn("Next ›", 1);
+  const pageLabel = span("pg-label", "");
+  pageLabel.setAttribute("aria-live", "polite");
+  pager.append(prevBtn, pageLabel, nextBtn);
   const foot = document.createElement("div");
   foot.className = "sp-foot";
   const unassigned = document.createElement("div");
-  el.append(head, bar, filterNote, list, foot, unassigned);
+  el.append(head, bar, list, pager, foot, unassigned);
 
   let kind = "all";
-  let state = { items: [], next_after: null, error: "", loaded: true, today: null, ungrouped: { items: [], next_after: null }, unassigned: 0, unassignedItems: [] };
+  let lastPage = 1;
+  let state = { items: [], next_after: null, error: "", loaded: true, page: 1, today: null, ungrouped: { items: [], next_after: null }, unassigned: 0, unassignedItems: [] };
+
+  // drawPager updates the pager: Previous, a "Page N of M" label ("Page N" when filtered: only
+  // each page's next_after says more follow) and Next. The same three nodes are kept, so the
+  // pager never changes shape and a button keeps its focus. A list of one page shows no pager.
+  // A button that has just become disabled cannot keep focus: the other arrow takes it, else
+  // the list box (a pager with no enabled button leaves nowhere else to go).
+  list.tabIndex = -1;
+  function drawPager() {
+    const filtering = kind !== "all" || (state.q || "") !== "";
+    const page = state.page || 1;
+    const last = filtering ? null : pageCount(state.total);
+    const more = filtering ? Boolean(state.next_after) : page < last;
+    const single = page <= 1 && !more;
+    const show = !state.error && !single;
+    pager.hidden = !show;
+    if (!show) return;
+    const was = document.activeElement;
+    const text = filtering ? `Page ${page}` : `Page ${page} of ${last}`;
+    if (pageLabel.textContent !== text) pageLabel.textContent = text;
+    prevBtn.disabled = page <= 1;
+    nextBtn.disabled = !more;
+    if (was !== prevBtn && was !== nextBtn) return;
+    if (!was.disabled) return;
+    const other = was === prevBtn ? nextBtn : prevBtn;
+    (other.disabled ? list : other).focus({ preventScroll: true });
+  }
   let selected = "";
   let shown = [];
-  input.addEventListener("input", () => redraw());
-  // Esc clears the filter and shows the whole list in every browser; Chrome clears a search
-  // box on Esc by itself and fires `search`, not `input`, so that is handled too (F4).
-  input.addEventListener("search", () => redraw());
+  // The server searches: the page only reports the text (the app waits for typing to settle).
+  // Esc clears the box and reports at once, in every browser; Chrome clears a search box on
+  // Esc by itself and fires `search`, not `input`, so that is handled too (F4).
+  const report = (now) => handlers.onQuery && handlers.onQuery(input.value, now);
+  input.addEventListener("input", () => report(false));
+  input.addEventListener("search", () => report(true));
   input.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || input.value === "") return;
     input.value = "";
-    redraw();
+    report(true);
   });
   // The table and one row per session id are kept across redraws (F1): a live update
   // refills the rows in place and moves only rows whose place changed. When a move takes
@@ -600,28 +655,36 @@ export function createSessionsPage(handlers) {
     stat(compact(t.output), "output", t.output);
     stat(t.cost.text, `${LABEL} cost`, t.cost.title);
     foot.replaceChildren();
-    filterNote.textContent = "";
+    // a page change starts at the top of the box
+    if ((state.page || 1) !== lastPage) {
+      lastPage = state.page || 1;
+      list.scrollTop = 0;
+    }
+    drawPager();
     if (state.error) {
+      shown = [];
+      selected = "";
       list.replaceChildren(note("error", state.error));
       return;
     }
     if (!state.loaded) {
+      shown = [];
+      selected = "";
       list.replaceChildren(loader());
       return;
     }
-    const f = filterSessions(state.items, { kind, text: input.value, hasMore: Boolean(state.next_after) });
-    shown = f.rows;
-    filterNote.textContent = f.note;
+    // the server has filtered and searched: every row held is a row shown
+    shown = state.items;
     if (!shown.some((s) => s.id === selected)) selected = "";
-    if (state.items.length === 0) {
-      list.replaceChildren(note("empty", "No sessions captured yet."));
-    } else if (shown.length === 0) {
-      list.replaceChildren(note("empty", "no sessions match"));
+    const filtering = kind !== "all" || (state.q || "") !== "";
+    if (shown.length === 0) {
+      selected = "";
+      if (!(state.total > 0)) list.replaceChildren(note("empty", "No sessions captured yet."));
+      else if (state.next_after) list.replaceChildren(note("muted", `No matches in the newest ${plural(state.scanned || 0, "session")} yet`));
+      else list.replaceChildren(note("empty", filtering ? "no sessions match" : "No sessions captured yet."));
     } else {
       drawRows();
     }
-    const more = loadMore(state, handlers.onMore);
-    if (more) foot.append(more);
     const ug = ungroupedText(state.ungrouped.items, state.ungrouped.next_after);
     if (ug) {
       const a = document.createElement("a");
@@ -642,8 +705,15 @@ export function createSessionsPage(handlers) {
     el,
     update(next) {
       state = { ...state, ...next };
+      if (next.kind !== undefined) kind = next.kind;
       redraw();
     },
+    // setQuery puts text in the search box (the URL changed: Back, a link); typing is never
+    // overwritten, since update() leaves the box alone.
+    setQuery(q) {
+      if (input.value.trim() !== q) input.value = q;
+    },
+    query: () => input.value.trim(),
     // position is the key bar's session n/total, or null when nothing is selected.
     position() {
       const i = shown.findIndex((s) => s.id === selected);

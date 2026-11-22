@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"fmt"
+
+	"github.com/brutally-honest/llm-gateway/internal/core"
 )
 
 // SessionRow is one session: the exchanges that share a principal, client and
@@ -17,6 +19,9 @@ type SessionRow struct {
 	// HooksOnly marks a session known only from hook events: no exchange carries
 	// its key. First and Last are then hook receive times and Count is 0.
 	HooksOnly bool `json:"hooks_only,omitempty"`
+	// EndOnly marks a hooks-only session whose every hook event is a session end: a
+	// run that failed before doing anything (B12). It is never an exchange session.
+	EndOnly bool `json:"end_only,omitempty"`
 }
 
 // UngroupedRow summarises the exchanges that carry no session key. Count 0 means
@@ -29,12 +34,13 @@ type UngroupedRow struct {
 
 // sessionSelect lists exchange sessions and, after them, sessions seen only in hook
 // events. Callers append AND conditions and sessionOrder.
-const sessionSelect = `SELECT principal_id, client, session_key, first, last, count, hooks_only FROM (
+const sessionSelect = `SELECT principal_id, client, session_key, first, last, count, hooks_only, end_only FROM (
 	SELECT principal_id, client, session_key, MIN(started_at) AS first, MAX(started_at) AS last,
-		COUNT(*) AS count, 0 AS hooks_only
+		COUNT(*) AS count, 0 AS hooks_only, 0 AS end_only
 	FROM exchanges WHERE session_key IS NOT NULL GROUP BY principal_id, client, session_key
 	UNION ALL
-	SELECT principal_id, client, session_key, MIN(received_at), MAX(received_at), 0, 1
+	SELECT principal_id, client, session_key, MIN(received_at), MAX(received_at), 0, 1,
+		MIN(phase = '` + string(core.PhaseSessionEnd) + `')
 	FROM hook_events h WHERE session_key IS NOT NULL AND NOT EXISTS (
 		SELECT 1 FROM exchanges e WHERE e.principal_id = h.principal_id
 			AND e.client = h.client AND e.session_key = h.session_key)
@@ -68,7 +74,7 @@ func (r *Reader) sessions(ctx context.Context, q string, args ...any) ([]Session
 	var out []SessionRow
 	for rows.Next() {
 		var s SessionRow
-		if err := rows.Scan(&s.PrincipalID, &s.Client, &s.SessionKey, &s.First, &s.Last, &s.Count, &s.HooksOnly); err != nil {
+		if err := rows.Scan(&s.PrincipalID, &s.Client, &s.SessionKey, &s.First, &s.Last, &s.Count, &s.HooksOnly, &s.EndOnly); err != nil {
 			return nil, fmt.Errorf("store %s: sessions: %w", r.path, err)
 		}
 		out = append(out, s)

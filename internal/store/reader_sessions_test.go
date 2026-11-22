@@ -291,6 +291,57 @@ func TestSessionRows_HooksOnlySessionListed(t *testing.T) {
 	}
 }
 
+func TestSessionRows_EndOnlyFact(t *testing.T) {
+	dir := t.TempDir()
+	end := func(session, payload string, at int64) *store.HookRecord {
+		h := hookFor("local", "cc", session, payload, time.Unix(at, 0))
+		h.Event.Phase = core.PhaseSessionEnd
+		return h
+	}
+	start := func(session, payload string, at int64) *store.HookRecord {
+		h := hookFor("local", "cc", session, payload, time.Unix(at, 0))
+		h.Event.Phase = core.PhaseSessionStart
+		return h
+	}
+	saveHooks(t, dir,
+		end("only", `{"n":1}`, 100),
+		end("twice", `{"n":2}`, 100), end("twice", `{"n":3}`, 101),
+		start("mixed", `{"n":4}`, 100), end("mixed", `{"n":5}`, 101),
+		end("withex", `{"n":6}`, 100))
+	s, _ := open(t, dir)
+	ex := exchange("a", []byte("q"), []byte("r"))
+	ex.PrincipalID, ex.Client, ex.SessionKey = "local", "cc", "withex"
+	if err := s.SaveExchange(t.Context(), ex); err != nil {
+		t.Fatal(err)
+	}
+	r := openReader(t, dir)
+	rows, err := r.SessionRows(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, row := range rows {
+		got[row.SessionKey] = row.EndOnly
+	}
+	want := map[string]bool{"only": true, "twice": true, "mixed": false, "withex": false}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("end-only = %v, want %v", got, want)
+	}
+	one, err := r.WithContext(t.Context()).SessionByKey("local", "cc", "only")
+	if err != nil || !one.EndOnly {
+		t.Fatalf("by key = %+v, err %v", one, err)
+	}
+	page, err := r.WithContext(t.Context()).SessionPage(nil, 10)
+	if err != nil || len(page) != 4 {
+		t.Fatalf("page = %+v, err %v", page, err)
+	}
+	for _, row := range page {
+		if row.EndOnly != want[row.SessionKey] {
+			t.Errorf("page %s end-only = %v", row.SessionKey, row.EndOnly)
+		}
+	}
+}
+
 func TestSessionRows_ExchangeSessionNotHooksOnly(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := open(t, dir)
@@ -324,5 +375,56 @@ func TestUngroupedHookCount(t *testing.T) {
 	rows, _ := r.SessionRows(0)
 	if len(rows) != 1 || rows[0].SessionKey != "s" {
 		t.Fatalf("sessions = %+v", rows)
+	}
+}
+
+func TestReader_SessionCount(t *testing.T) {
+	empty := seedSessions(t)
+	if n, err := empty.WithContext(t.Context()).SessionCount(); err != nil || n != 0 {
+		t.Fatalf("empty count = %d, err %v", n, err)
+	}
+	r := seedSessions(t,
+		sx{"a", "local", "cc", "k1", 1},
+		sx{"b", "local", "cc", "k1", 2}, // same session as a
+		sx{"c", "local", "cc", "k2", 3},
+		sx{"d", "local", "other", "k2", 4}, // another client, another session
+	)
+	if n, err := r.WithContext(t.Context()).SessionCount(); err != nil || n != 3 {
+		t.Fatalf("count = %d, err %v, want 3", n, err)
+	}
+}
+
+func TestReader_SessionPageAt(t *testing.T) {
+	r := seedSessions(t,
+		sx{"a", "local", "cc", "k1", 1},
+		sx{"b", "local", "cc", "k2", 5},
+		sx{"c", "local", "cc", "k3", 5}, // ties with k2 on last
+		sx{"d", "local", "cc", "k4", 3},
+		sx{"e", "local", "cc", "k5", 9},
+	)
+	c := r.WithContext(t.Context())
+	all, err := r.SessionRows(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ offset, limit, from, to int }{
+		{0, 5, 0, 5}, {0, 2, 0, 2}, {2, 2, 2, 4}, {3, 10, 3, 5}, {4, 1, 4, 5}, {5, 3, 5, 5}, {50, 3, 5, 5},
+	} {
+		rows, err := c.SessionPageAt(tc.offset, tc.limit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := sessionNames(all[tc.from:tc.to]); !reflect.DeepEqual(sessionNames(rows), want) && (len(rows) != 0 || len(want) != 0) {
+			t.Fatalf("SessionPageAt(%d, %d) = %v, want %v", tc.offset, tc.limit, sessionNames(rows), want)
+		}
+	}
+	// the same rows the after-key walk reads, ties included
+	page, err := c.SessionPage(&store.SessionAfter{Last: all[1].Last, PrincipalID: all[1].PrincipalID, Client: all[1].Client, SessionKey: all[1].SessionKey}, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at, err := c.SessionPageAt(2, 2)
+	if err != nil || !reflect.DeepEqual(sessionNames(at), sessionNames(page)) {
+		t.Fatalf("offset page %v (err %v) differs from after page %v", sessionNames(at), err, sessionNames(page))
 	}
 }

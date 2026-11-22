@@ -4,9 +4,9 @@ import { lastID } from "./effects.js";
 import { addUnique, upsertSession } from "./entries.js";
 import { createStore } from "./store.js";
 import { createSessionPage } from "./session-page.js";
-import { createSessionsPage, localMidnight, note, UNASSIGNED_SHOWN } from "./sessions-page.js";
+import { createSessionsPage, localMidnight, note, pageCount, PAGE_SIZE, UNASSIGNED_SHOWN } from "./sessions-page.js";
 import { initStyle, initTheme } from "./theme.js";
-import { buildRoute, parseRoute } from "./route.js";
+import { buildRoute, capQuery, parseRoute } from "./route.js";
 import { handleKey, isTextInput } from "./keys.js";
 import { createCallDialog } from "./call-dialog.js";
 import { mountShell } from "./shell.js";
@@ -28,30 +28,232 @@ const shell = mountShell({
   theme: initTheme(storage, root),
   look: initStyle(storage, root),
 });
-const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "", ungrouped: [], ungroupedNext: null, ungroupedError: "", ungroupedHead: { items: [], next_after: null }, today: null, unassigned: 0, unassignedItems: [] });
+const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "", sessionsKind: "all", sessionsQ: "", sessionsTotal: 0, sessionsScanned: 0, sessionsPage: 1, ungrouped: [], ungroupedNext: null, ungroupedError: "", ungroupedHead: { items: [], next_after: null }, today: null, unassigned: 0, unassignedItems: [] });
 let closeStream = null;
 let view = null;
 let page = null; // the Sessions page while it is shown
 let tpage = null; // the session page and its call dialog while a session is shown
 let todayTimer = null;
 let sessionSync = null; // the shown session, so a call URL change does not reload it
+let listSync = null; // the shown sessions list, so a filter or search URL change does not rebuild it
+let list = { kind: "all", q: "" }; // the query the shown list is for
+let listGen = 0; // bumps on every query change and page request; an older response is dropped (E7)
+let curPage = 1; // the page the list shows or is loading
+let starts = [undefined]; // filtered lists: starts[k-1] is the position (after) page k starts at
+let scannedAt = []; // filtered lists: the rows the server tested for page k, at index k-1
+let unassignedSeen = null; // the unassigned count the list's section was last read for
+let queryTimer = null; // typing in the search box settles after this
+let headTimer = null; // a live session the filtered list does not hold refetches page 1 after this
+let headCool = null; // after a refetch, the next one waits for this (HEAD_EVERY_MS)
+let headDirty = false; // an event arrived that no refetch has covered yet
+let headFloor = null; // last_at (ms) of the oldest row of page 1, null when unknown or page 1 is not full
+const TYPING_MS = 300;
+const HEAD_MS = 500;
+const HEAD_EVERY_MS = 5000;
 
+// load reads the ungrouped list; the sessions list has its own loaders below.
 async function load(kind, after) {
-  const path = kind === "sessions" ? "sessions" : "ungrouped";
   try {
-    const page = await getJSON(path, { after });
+    const page = await getJSON("ungrouped", { after });
     const s = store.get();
     store.set({
       [kind]: after ? addUnique(s[kind], page.items) : page.items,
       [`${kind}Next`]: page.next_after,
       [`${kind}Error`]: "",
       [`${kind}Loaded`]: true,
-      ...(kind === "sessions" && !after ? { unassigned: page.unassigned_connections || 0 } : {}),
     });
-    if (kind === "sessions" && !after) loadUnassigned(page.unassigned_connections || 0);
   } catch (e) {
     store.set({ [`${kind}Error`]: e.message });
   }
+}
+
+const filtering = () => list.kind !== "all" || list.q !== "";
+
+// sessionParams is the server's query for page n of the list: kind and q are left out when
+// not set. An unfiltered page is asked for by offset (page 1 sends none); a filtered one by
+// the position (after) its previous page ended at.
+function sessionParams(n, after) {
+  const p = {};
+  if (list.kind !== "all") p.kind = list.kind;
+  if (list.q) p.q = list.q;
+  if (filtering()) {
+    if (after) p.after = after;
+  } else if (n > 1) {
+    p.offset = (n - 1) * PAGE_SIZE;
+  }
+  return p;
+}
+
+// fixURL says in the address bar which page is really shown (a page past the end, a filtered
+// walk that ran out), without a history entry.
+function fixURL(n) {
+  history.replaceState(history.state, "", buildRoute({ name: "sessions", kind: list.kind, q: list.q, page: n }));
+}
+
+// loadPage shows page n of the list for the current kind and q: the rows are dropped (a
+// skeleton shows in the box) unless keep is set, and the page is read. Every call bumps
+// listGen, so an answer to an older request (another page, another query) is dropped.
+//   Unfiltered: one request with offset (n-1)*50; a page past the last (from total) is
+//   corrected to the last page.
+//   Filtered: pages are reached only through each page's next_after, so a page whose start
+//   is not known is reached by walking from the furthest known start; if the pages run out
+//   first, the last page reached is shown.
+async function loadPage(n, keep = false) {
+  const gen = ++listGen;
+  curPage = n;
+  clearHead();
+  store.set(keep ? { sessionsPage: n } : { sessions: [], sessionsLoaded: false, sessionsError: "", sessionsPage: n });
+  const stale = () => gen !== listGen;
+  try {
+    let p;
+    let k = n;
+    if (!filtering()) {
+      p = await getJSON("sessions", sessionParams(k));
+      if (stale()) return;
+      const pages = pageCount(p.total);
+      if (k > pages) {
+        k = pages;
+        curPage = k;
+        fixURL(k);
+        store.set({ sessionsPage: k });
+        p = await getJSON("sessions", sessionParams(k));
+        if (stale()) return;
+      }
+    } else {
+      k = Math.min(n, starts.length);
+      for (;;) {
+        p = await getJSON("sessions", sessionParams(k, starts[k - 1]));
+        if (stale()) return;
+        scannedAt[k - 1] = p.scanned || 0;
+        noteNext(k, p.next_after);
+        if (k >= n || !p.next_after) break;
+        k++;
+      }
+      if (k !== n) {
+        curPage = k;
+        fixURL(k);
+      }
+      if (k === 1) noteHeadFloor(p);
+    }
+    store.set({
+      sessions: p.items,
+      sessionsNext: p.next_after,
+      sessionsTotal: p.total || 0,
+      sessionsScanned: filtering() ? scannedAt.slice(0, k).reduce((a, b) => a + b, 0) : p.scanned || 0,
+      sessionsPage: k,
+      sessionsError: "",
+      sessionsLoaded: true,
+      unassigned: p.unassigned_connections || 0,
+    });
+    // the section is read for page 1, or when the count moved; a page change alone keeps it
+    const un = p.unassigned_connections || 0;
+    if (k === 1 || un !== unassignedSeen) loadUnassigned(un);
+    unassignedSeen = un;
+  } catch (e) {
+    if (stale()) return;
+    store.set({ sessionsError: e.message });
+  }
+}
+
+// noteNext records where page k+1 of a filtered list starts (next, null when page k is the
+// last). When that differs from what was held, the starts after it were measured against
+// the old position (a row came in, one left) and are dropped; a later jump to such a page
+// walks from the last known start.
+function noteNext(k, next) {
+  if (!next) starts.length = k;
+  else if (starts[k] !== next) {
+    starts[k] = next;
+    starts.length = k + 1;
+  }
+}
+
+// noteHeadFloor remembers the last_at of the oldest row of a filtered page 1 answer; an event
+// older than that could not land on page 1. A page 1 that is not full holds every match, so
+// no floor.
+function noteHeadFloor(p) {
+  const times = p.next_after ? p.items.map((x) => Date.parse(x.last_at)).filter((n) => !Number.isNaN(n)) : [];
+  headFloor = times.length ? Math.min(...times) : null;
+}
+
+// refetchHead reads the page on screen again after live events. A filtered page 1 takes the
+// answer's rows (which also renews where page 2 starts); an unfiltered list only takes the
+// new total, since its rows were already updated in place or inserted.
+async function refetchHead() {
+  const gen = listGen;
+  const n = curPage;
+  try {
+    if (!filtering()) {
+      // only the total is wanted: one row is enough to get it
+      const t = await getJSON("sessions", { ...sessionParams(n), limit: 1 });
+      if (gen !== listGen) return;
+      store.set({ sessionsTotal: t.total || 0, sessionsError: "" });
+      return;
+    }
+    const p = await getJSON("sessions", sessionParams(n, starts[n - 1]));
+    if (gen !== listGen) return;
+    noteHeadFloor(p);
+    noteNext(1, p.next_after);
+    scannedAt[0] = p.scanned || 0;
+    store.set({ sessions: p.items, sessionsNext: p.next_after, sessionsTotal: p.total || 0, sessionsError: "" });
+  } catch {
+    // the rows shown stay; the next event tries again
+  }
+}
+
+// applyList makes kind and q the list's query and shows page n of it (1 unless the URL
+// names another): the rows are dropped (a skeleton shows) and the page positions forgotten.
+function applyList(kind, q, n = 1) {
+  list = { kind, q };
+  starts = [undefined];
+  scannedAt = [];
+  store.set({ sessionsNext: null, sessionsScanned: 0, sessionsTotal: 0,sessionsKind: kind, sessionsQ: q });
+  loadPage(n);
+}
+
+// onSession folds a live session event into the list (E10). A session the page holds is
+// updated in place. An unfiltered page 1 also inserts a new session at the top and keeps its
+// 50 rows; a later unfiltered page inserts nothing, and neither does a filtered page after
+// the first. A session a filtered page 1 does not hold may now match, which only the server
+// can say, so the page is read again once events settle; an unfiltered list the same way,
+// but only for its total (and so its page count).
+function onSession(row) {
+  const s = store.get();
+  if (s.sessions.some((x) => x.id === row.id)) {
+    // only an unfiltered page 1 re-sorts; elsewhere the row keeps its place under the reader
+    if (!filtering() && curPage === 1) store.set({ sessions: upsertSession(s.sessions, row) });
+    else store.set({ sessions: s.sessions.map((x) => (x.id === row.id ? row : x)) });
+    return;
+  }
+  if (filtering()) {
+    if (curPage !== 1) return;
+    // older than page 1's oldest row: it could not land there
+    if (headFloor !== null && Date.parse(row.last_at) < headFloor) return;
+  } else if (curPage === 1 && s.sessionsLoaded) {
+    store.set({ sessions: upsertSession(s.sessions, row).slice(0, PAGE_SIZE) });
+  }
+  headDirty = true;
+  if (!headTimer && !headCool) headTimer = setTimeout(fireHead, HEAD_MS);
+}
+
+// fireHead refetches page 1 and starts the cooldown; events during it set headDirty, and the
+// trailing refetch when it ends keeps the last of them from being lost.
+function fireHead() {
+  headTimer = null;
+  headDirty = false;
+  refetchHead();
+  headCool = setTimeout(() => {
+    headCool = null;
+    if (headDirty) fireHead();
+  }, HEAD_EVERY_MS);
+}
+
+function clearHead() {
+  if (headTimer) clearTimeout(headTimer);
+  if (headCool) clearTimeout(headCool);
+  headTimer = null;
+  headCool = null;
+  headDirty = false;
+  headFloor = null;
 }
 
 // loadUnassigned reads the first unassigned connections for the list's own section
@@ -114,7 +316,7 @@ function startStream() {
   closeStream = openStream(
     (name, data) => {
       if (name === "session") {
-        store.set({ sessions: upsertSession(store.get().sessions, data) });
+        onSession(data);
         scheduleToday();
       } else if (name === "effects") {
         // effect counts move without a summary rebuild (spec 014)
@@ -315,16 +517,65 @@ function show(kind, pg) {
   load(kind);
 }
 
+function cancelTyping() {
+  if (queryTimer) clearTimeout(queryTimer);
+  queryTimer = null;
+}
+
 function showSessions() {
-  page = createSessionsPage({ onMore: () => load("sessions", store.get().sessionsNext) });
-  app.replaceChildren(page.el);
   const r = parseRoute(location.hash);
+  const pg = createSessionsPage({
+    // a page click is a history entry; the hashchange loads it (see listSync)
+    onPage: (n) => {
+      cancelTyping();
+      location.hash = buildRoute({ name: "sessions", kind: list.kind, q: list.q, page: n });
+    },
+    // a filter click is a history entry; the hashchange loads it (see listSync). It goes
+    // back to page 1
+    onKind: (kind) => {
+      cancelTyping();
+      location.hash = buildRoute({ name: "sessions", kind, q: capQuery(pg.query()).trimEnd() });
+    },
+    // typing settles, then the current history entry is replaced (Back steps through filter
+    // changes, not keystrokes); Esc and a cleared box do not wait
+    onQuery: (text, now) => {
+      cancelTyping();
+      const go = () => {
+        queryTimer = null;
+        const q = capQuery(text.trim()).trimEnd();
+        pg.setQuery(q); // the box shows what is sent
+        if (q === list.q) return;
+        history.replaceState(history.state, "", buildRoute({ name: "sessions", kind: list.kind, q }));
+        applyList(list.kind, q);
+      };
+      if (now) go();
+      else queryTimer = setTimeout(go, TYPING_MS);
+    },
+  });
+  page = pg;
+  app.replaceChildren(pg.el);
+  pg.setQuery(r.q);
+  // Back, Forward or a link to another filter: the page stays, the box and picker follow the
+  // URL and page 1 is read again; the stream is not restarted and the box keeps its focus
+  listSync = {
+    apply: (next) => {
+      cancelTyping();
+      pg.setQuery(next.q);
+      if (next.kind !== list.kind || next.q !== list.q) applyList(next.kind, next.q, next.page);
+      else if (next.page !== curPage) loadPage(next.page);
+    },
+  };
   const draw = (s) => {
     page.update({
       items: s.sessions,
       next_after: s.sessionsNext,
       error: s.sessionsError,
       loaded: Boolean(s.sessionsLoaded),
+      kind: s.sessionsKind,
+      q: s.sessionsQ,
+      total: s.sessionsTotal,
+      scanned: s.sessionsScanned,
+      page: s.sessionsPage,
       today: s.today,
       ungrouped: s.ungroupedHead,
       unassigned: s.unassigned,
@@ -333,8 +584,17 @@ function showSessions() {
     shell.setKeyBar(r, page.position());
   };
   view = store.subscribe(draw);
-  draw(store.get());
-  load("sessions");
+  // rows held for another query or page are dropped; the same ones are kept while the page
+  // is read again
+  const held = store.get();
+  list = { kind: r.kind, q: r.q };
+  if (held.sessionsKind !== r.kind || held.sessionsQ !== r.q) {
+    applyList(r.kind, r.q, r.page);
+  } else if (held.sessionsPage !== r.page) {
+    loadPage(r.page);
+  } else {
+    loadPage(r.page, true);
+  }
   loadUngroupedHead();
   loadToday();
 }
@@ -345,7 +605,15 @@ function route() {
     sessionSync.apply(next.call);
     return;
   }
+  if (listSync && next.name === "sessions") {
+    listSync.apply(next);
+    return;
+  }
   sessionSync = null;
+  listSync = null;
+  cancelTyping();
+  clearHead();
+  listGen++;
   if (view) view();
   view = null;
   page = null;

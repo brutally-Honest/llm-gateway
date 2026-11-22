@@ -1,9 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compact, createSessionsPage, localMidnight, lookText, moveSelection, rowCells, startText, todayCells, ungroupedText, unassignedRow } from "../web/sessions-page.js";
+import { compact, createSessionsPage, localMidnight, lookText, moveSelection, pageCount, rowCells, startText, todayCells, ungroupedText, unassignedRow } from "../web/sessions-page.js";
 import { StubElement, all, byTag, installDom, textOf, withClass } from "./dom-stub.js";
 import { upsertSession } from "../web/entries.js";
-import { filterSessions } from "../web/filters.js";
 import { handleKey, keyBar } from "../web/keys.js";
 
 const counter = (v) => ({ value: v, unreported: 0 });
@@ -163,48 +162,172 @@ test("todayLineShowsServerTotals", () => {
   assert.match(stat.title, /1 call left out: no price for m9/);
 });
 
-// spec 017 AC4: the filter shows the matching loaded rows; the kinds are buttons marked pressed.
-test("filterShowsMatchingLoadedRows", () => {
-  const rows = [session({ id: "a", title: "alpha", list: { ...session().list, needs_look: 1 } }), session({ id: "b", title: "beta", active: true })];
-  const p = livePage(rows);
+// spec 029: the server filters, so the page shows every row it is given. A kind button asks
+// the app (onKind) and is marked pressed once the app hands the kind back; typing is reported
+// as text, never applied to the rows here. (Replaces the 017 AC4 browser-side filter tests.)
+test("kindButtonsAskTheAppAndShowEveryRowGiven", () => {
+  const rows = [session({ id: "a", title: "alpha" }), session({ id: "b", title: "beta" })];
+  const p = livePage(rows, { onKind: (k) => asked.push(k) });
+  const asked = [];
   const shown = () => byTag(p.page.el, "tr").filter((r) => r.dataset && r.dataset.id).map((r) => r.dataset.id);
   const kind = (label) => byTag(p.page.el, "button").find((b) => b.textContent === label);
   assert.deepEqual(byTag(withClass(p.page.el, "seg-group")[0], "button").map((b) => b.textContent), ["All", "Needs a look", "Active", "Hooks only"]);
+  assert.equal(kind("All").attrs["aria-pressed"], "true");
   kind("Needs a look").fire("click");
-  assert.deepEqual(shown(), ["a"]);
+  kind("Hooks only").fire("click");
+  assert.deepEqual(asked, ["look", "hooks"]);
+  assert.deepEqual(shown(), ["a", "b"], "a click filters nothing by itself");
+  assert.equal(kind("All").attrs["aria-pressed"], "true", "the kind is the URL's, not the click's");
+  p.page.update({ kind: "look", items: [rows[0]] });
   assert.equal(kind("Needs a look").attrs["aria-pressed"], "true");
   assert.equal(kind("All").attrs["aria-pressed"], "false");
-  kind("Active").fire("click");
-  assert.deepEqual(shown(), ["b"]);
-  kind("All").fire("click");
-  assert.deepEqual(shown(), ["a", "b"]);
-});
-
-test("filterSaysFilteringNLoaded", () => {
-  const rows = [session({ id: "a", title: "alpha" }), session({ id: "b", title: "beta" })];
-  assert.equal(filterSessions(rows, { text: "alp", hasMore: true }).note, "filtering 2 loaded");
-  const p = livePage(rows);
-  p.page.update({ next_after: "tok" });
-  const input = byTag(p.page.el, "input")[0];
-  input.value = "alp";
-  input.fire("input");
-  assert.match(textOf(p.page.el), /filtering 2 loaded/);
-});
-
-// spec 017 E6: nothing matches → "no sessions match" once, in the list (D34), and Load
-// more stays while more exist.
-test("filterMatchingNothingKeepsLoadMore", () => {
-  const none = filterSessions([session()], { text: "zzz", hasMore: true });
-  assert.equal(none.note, "filtering 1 loaded");
-  assert.equal(none.loadMore, true);
-  const p = livePage([session()]);
-  p.page.update({ next_after: "tok" });
+  assert.deepEqual(shown(), ["a"]);
   const input = byTag(p.page.el, "input")[0];
   input.value = "zzz";
   input.fire("input");
-  assert.equal(textOf(p.page.el).split("no sessions match").length - 1, 1, "said once, not in the note too");
-  assert.match(textOf(p.page.el), /filtering 1 loaded/);
-  assert.ok(byTag(p.page.el, "button").some((b) => b.textContent === "Load more"), "Load more is kept");
+  assert.deepEqual(shown(), ["a"], "typing does not narrow the rows");
+});
+
+// spec 029 C: an empty store, no match and a short page with more behind it say different things.
+test("emptyStatesSayWhatIsTrue", () => {
+  const text = (p) => textOf(p.page.el);
+  const p = livePage([]);
+  p.page.update({ loaded: true, items: [], total: 0, next_after: null });
+  assert.match(text(p), /No sessions captured yet\./);
+  // a filter or search on, nothing left to test: no match
+  p.page.update({ kind: "active", q: "", total: 7, scanned: 7, next_after: null });
+  assert.equal(text(p).split("no sessions match").length - 1, 1, "said once");
+  assert.doesNotMatch(text(p), /No sessions captured yet/);
+  p.page.update({ kind: "all", q: "zzz" });
+  assert.match(text(p), /no sessions match/);
+  assert.doesNotMatch(text(p), /filtering .* loaded/, "the old note is gone");
+  // nothing yet but more rows to test: a muted line with the count scanned, › to go on
+  p.page.update({ next_after: "tok", scanned: 500, total: 900 });
+  assert.match(text(p), /No matches in the newest 500 sessions yet/);
+  assert.doesNotMatch(text(p), /no sessions match/);
+  assert.equal(withClass(p.page.el, "muted").some((e) => /No matches in the newest/.test(e.textContent)), true, "muted");
+  const next = byTag(p.page.el, "button").find((b) => b.textContent === "Next ›");
+  assert.ok(next, "Next continues the walk");
+  assert.equal(next.disabled, false);
+  assert.equal(byTag(p.page.el, "button").some((b) => b.textContent === "Load more"), false, "no Load more");
+});
+
+// the pager (spec 029 amendment): Previous, a "Page N of M" label ("Page N" filtered), Next.
+test("pageCountIsAtLeastOne", () => {
+  assert.equal(pageCount(0), 1);
+  assert.equal(pageCount(50), 1);
+  assert.equal(pageCount(51), 2);
+  assert.equal(pageCount(560), 12);
+});
+
+const pagerOf = (p) => withClass(p.page.el, "sp-pager")[0];
+const pagerButtons = (p) => byTag(pagerOf(p), "button");
+const pagerLabel = (p) => withClass(pagerOf(p), "pg-label")[0];
+const pagerBtnOf = (p, label) => pagerButtons(p).find((b) => b.textContent === label);
+
+test("unfilteredPagerIsPreviousLabelNextAndEndsDisabled", () => {
+  const picked = [];
+  const p = livePage([session()], { onPage: (n) => picked.push(n) });
+  const nav = pagerOf(p);
+  assert.equal(nav.tagName, "nav");
+  assert.equal(nav.attrs["aria-label"], "Pages");
+  p.page.update({ loaded: true, kind: "all", q: "", total: 440, page: 5 });
+  assert.equal(nav.hidden, false);
+  assert.equal(pagerLabel(p).textContent, "Page 5 of 9");
+  assert.equal(pagerLabel(p).attrs["aria-live"], "polite");
+  assert.equal(pagerLabel(p).tagName, "span", "the label is not a button");
+  assert.deepEqual(pagerButtons(p).map((b) => b.textContent), ["‹ Previous", "Next ›"], "two buttons, no numbers");
+  assert.deepEqual(nav.children.map((c) => c.tagName), ["button", "span", "button"]);
+  pagerBtnOf(p, "‹ Previous").fire("click");
+  pagerBtnOf(p, "Next ›").fire("click");
+  assert.deepEqual(picked, [4, 6]);
+  // the ends: Previous disabled on 1, Next on the last
+  p.page.update({ page: 1 });
+  assert.equal(pagerBtnOf(p, "‹ Previous").disabled, true);
+  assert.equal(pagerBtnOf(p, "Next ›").disabled, false);
+  p.page.update({ page: 9 });
+  assert.equal(pagerLabel(p).textContent, "Page 9 of 9");
+  assert.equal(pagerBtnOf(p, "‹ Previous").disabled, false);
+  assert.equal(pagerBtnOf(p, "Next ›").disabled, true);
+  // one page, or none: no pager
+  p.page.update({ total: 50, page: 1 });
+  assert.equal(nav.hidden, true);
+  p.page.update({ total: 0, items: [] });
+  assert.equal(nav.hidden, true);
+  assert.match(textOf(p.page.el), /No sessions captured yet\./);
+});
+
+test("filteredPagerSaysPageNAndNextFollowsNextAfter", () => {
+  const p = livePage([session()]);
+  p.page.update({ loaded: true, kind: "active", q: "", total: 900, page: 1, next_after: "t1" });
+  assert.equal(pagerLabel(p).textContent, "Page 1");
+  assert.equal(pagerBtnOf(p, "‹ Previous").disabled, true);
+  assert.equal(pagerBtnOf(p, "Next ›").disabled, false);
+  p.page.update({ page: 3, next_after: "t3" });
+  assert.equal(pagerLabel(p).textContent, "Page 3");
+  assert.equal(pagerBtnOf(p, "‹ Previous").disabled, false);
+  p.page.update({ next_after: null });
+  assert.equal(pagerBtnOf(p, "Next ›").disabled, true, "Next goes with the end");
+  assert.equal(pagerLabel(p).textContent, "Page 3", "the last page still shows its pager");
+  // a filter that gave one page and nothing more: no pager
+  p.page.update({ page: 1, next_after: null });
+  assert.equal(pagerOf(p).hidden, true);
+});
+
+test("pagerHasTwoButtonsInEveryState", () => {
+  const p = livePage([session()]);
+  const states = [
+    { loaded: true, kind: "all", q: "", total: 440, page: 1 },
+    { page: 9 },
+    { loaded: false, items: [], page: 4 },
+    { loaded: true, kind: "active", next_after: "t", page: 2 },
+    { next_after: null },
+    { error: "boom" },
+  ];
+  for (const s of states) {
+    p.page.update(s);
+    assert.equal(pagerButtons(p).length, 2, JSON.stringify(s));
+  }
+});
+
+test("focusMovesToTheOtherArrowWhenTheFocusedOneBecomesDisabled", () => {
+  const p = livePage([session()]);
+  p.page.update({ loaded: true, kind: "all", q: "", total: 100, page: 1 });
+  const next = pagerBtnOf(p, "Next ›");
+  const prev = pagerBtnOf(p, "‹ Previous");
+  next.focus();
+  p.page.update({ page: 2 });
+  assert.equal(next.disabled, true);
+  assert.equal(globalThis.document.activeElement, prev, "Previous takes the focus");
+  p.page.update({ page: 1 });
+  assert.equal(globalThis.document.activeElement, next, "Previous went disabled: Next takes the focus");
+  p.page.update({ total: 150, page: 2 });
+  prev.focus();
+  p.page.update({ total: 200 });
+  assert.equal(globalThis.document.activeElement, prev, "an enabled button keeps its focus");
+});
+
+test("pagerStaysWhileAPageLoadsAndTheBoxShowsASkeleton", () => {
+  const p = livePage([session()]);
+  p.page.update({ loaded: true, kind: "all", q: "", total: 300, page: 1 });
+  assert.equal(pagerLabel(p).textContent, "Page 1 of 6");
+  p.page.update({ loaded: false, items: [], page: 2 });
+  assert.equal(pagerLabel(p).textContent, "Page 2 of 6", "still there, on the page being loaded");
+  const box = withClass(p.page.el, "sp-list")[0];
+  assert.ok(withClass(box, "skel").length > 0, "the skeleton is inside the box");
+  assert.ok(all(box).some((e) => e.attrs.role === "status" && /Loading sessions…/.test(textOf(e))));
+  assert.equal(withClass(pagerOf(p), "skel").length, 0);
+});
+
+test("aPageChangeScrollsTheBoxToItsTop", () => {
+  const p = livePage([session()]);
+  const box = withClass(p.page.el, "sp-list")[0];
+  p.page.update({ loaded: true, total: 300, page: 1 });
+  box.scrollTop = 400;
+  p.page.update({ items: [session({ id: "s9" })] });
+  assert.equal(box.scrollTop, 400, "a live update leaves the scroll alone");
+  p.page.update({ page: 2 });
+  assert.equal(box.scrollTop, 0);
 });
 
 test("arrowsSelectEnterOpens", () => {
@@ -223,13 +346,13 @@ test("arrowsSelectEnterOpens", () => {
 
 // A live update must not rebuild the rows: a focused session link would leave the page and
 // focus would drop to <body> (013 manual check step 1, F1). Rows are kept by session id.
-function livePage(items) {
+function livePage(items, handlers = {}) {
   installDom();
   Object.assign(document, {
     createDocumentFragment: () => new StubElement("fragment"),
     createTextNode: (text) => Object.assign(new StubElement("text"), { textContent: text }),
   });
-  const page = createSessionsPage({ onMore() {} });
+  const page = createSessionsPage({ onMore() {}, ...handlers });
   page.update({ items });
   const link = (id) => byTag(page.el, "a").find((a) => a.href === `#/sessions/${id}`);
   const row = (id) => byTag(page.el, "tr").find((r) => r.dataset && r.dataset.id === id);
@@ -271,30 +394,42 @@ test("focusedRowKeepsFocusWhenTheOrderChanges", () => {
 
 // Esc in the filter box restores the whole list (F4). Chrome clears a search box on Esc
 // and fires `search`, not `input`; other browsers do not clear it at all.
-function filteredPage() {
-  const p = livePage([session(), session({ id: "s2", title: "older", last_at: "2026-01-01T00:01:00Z" })]);
+// Since spec 029 the page only reports the text (the app debounces and reloads); Esc and a
+// cleared box report at once, typing reports as "settling".
+function searchPage() {
+  const reports = [];
+  const p = livePage([session()], { onQuery: (text, now) => reports.push([text, now]) });
   const input = byTag(p.page.el, "input")[0];
-  const rows = () => byTag(p.page.el, "tr").filter((r) => r.dataset && r.dataset.id).length;
-  const listed = () => byTag(p.page.el, "tbody").length > 0 && all(p.page.el).some((e) => e.tagName === "table") && !all(p.page.el).some((e) => e.textContent === "no sessions match");
   input.value = "zz";
   input.fire("input");
-  assert.ok(!listed(), "the filter hides every row");
-  return { input, rows, listed };
+  assert.deepEqual(reports, [["zz", false]], "typing is reported, to be debounced by the app");
+  return { input, reports, page: p.page };
 }
 
-test("escInSessionFilterRestoresTheList", () => {
-  const f = filteredPage();
+test("escInSessionFilterClearsTheBoxAndReportsAtOnce", () => {
+  const f = searchPage();
   f.input.fire("keydown", { key: "Escape" });
   assert.equal(f.input.value, "", "Esc clears the box");
-  assert.ok(f.listed(), "the rows show again");
-  assert.equal(f.rows(), 2);
+  assert.deepEqual(f.reports.at(-1), ["", true]);
+  f.input.fire("keydown", { key: "Escape" });
+  assert.equal(f.reports.length, 2, "Esc in an empty box reports nothing");
 });
 
-test("chromeSearchEventRestoresTheSessionList", () => {
-  const f = filteredPage();
+test("chromeSearchEventReportsAtOnce", () => {
+  const f = searchPage();
   f.input.value = ""; // Chrome clears the box itself, then fires search
   f.input.fire("search");
-  assert.ok(f.listed(), "the rows show again");
+  assert.deepEqual(f.reports.at(-1), ["", true]);
+});
+
+// the URL's text goes into the box without overwriting what is typed when it already matches
+test("setQueryFillsTheBoxFromTheUrl", () => {
+  const f = searchPage();
+  f.page.setQuery("zz");
+  assert.equal(f.input.value, "zz");
+  f.page.setQuery("other");
+  assert.equal(f.input.value, "other");
+  assert.equal(f.page.query(), "other");
 });
 
 // The sessions list formats for reading (visual cleanup, 2026-11-13; spec 017 AC1): compact
