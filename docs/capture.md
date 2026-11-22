@@ -33,7 +33,8 @@ proxies.
   blobs/ab/cdef…        content over 4 KiB, zstd-compressed, named by its sha256
 ```
 
-`gateway.db` holds three tables:
+`gateway.db` holds three capture tables (plus `hook_events`, `effects` and
+`effect_snapshots`, which this page does not cover):
 
 - **`exchanges`:** one row per proxied request, keyed by `request_id`, the gateway's
   request ID. It is the `request_id` field of the `request` access line and the
@@ -72,8 +73,8 @@ Nothing is pruned yet.
 
 Redacted in the stored copy (the value becomes `[REDACTED]`, the header name is kept):
 
-- the headers `Authorization`, `Proxy-Authorization`, `Cookie` and `Set-Cookie`, in
-  both directions;
+- the headers `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie` and
+  `X-Gateway-Key`, in both directions;
 - the headers each protocol adapter declares: Anthropic declares `x-api-key`;
 - the query parameters each protocol adapter declares as secret. Anthropic declares
   none.
