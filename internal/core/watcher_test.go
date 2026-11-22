@@ -183,3 +183,23 @@ func TestWatcher_RequestReadAfterEOF(t *testing.T) {
 		t.Fatalf("kept error = %v, want none", got)
 	}
 }
+
+// closedBeforeEOF is a request body closed before it ended: its first Read already fails
+// as a closed body.
+type closedBeforeEOF struct{}
+
+func (closedBeforeEOF) Read([]byte) (int, error) { return 0, http.ErrBodyReadAfterClose }
+func (closedBeforeEOF) Close() error             { return nil }
+
+// TestWatcher_RequestReadAfterCloseBeforeEOF: a closed-body read before the body ended is
+// a real failure; it is passed on and kept, not turned into a clean end.
+func TestWatcher_RequestReadAfterCloseBeforeEOF(t *testing.T) {
+	_, m := core.WithMeta(t.Context())
+	body := core.WatchRequestBody(m, closedBeforeEOF{})
+	if n, err := body.Read(make([]byte, 8)); n != 0 || !errors.Is(err, http.ErrBodyReadAfterClose) {
+		t.Fatalf("Read = %d, %v; want 0, %v", n, err, http.ErrBodyReadAfterClose)
+	}
+	if got := core.RequestBodyErr(m); !errors.Is(got, http.ErrBodyReadAfterClose) {
+		t.Fatalf("kept error = %v, want %v", got, http.ErrBodyReadAfterClose)
+	}
+}
