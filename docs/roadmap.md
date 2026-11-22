@@ -76,7 +76,7 @@ below and AC44, the API-key smoke test of Phase 1.
   the ungrouped, unassigned and full exchange pages on 016's theme.
 
 ## Later
-- Agent-loop kit: reinstall from brutally-Honest/agent-loop if a stricter spec flow is wanted again (removed in 031; settings in specs/031-remove-clutter/research.md).
+- Agent-loop kit: reinstall from brutally-Honest/agent-loop if a stricter spec flow is wanted again (removed in 031; settings in specs/031-remove-clutter/research.md; see ADR 0021).
 - The 025 Mac check: the first upgrade to 025 takes the changed-plist path (bootout,
   wait, bootstrap) against real `launchctl`; back-to-back reinstalls restart within about
   a second; `make verify` green; the own-gateway preflight with `/usr/sbin` off PATH; a

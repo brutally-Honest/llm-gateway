@@ -61,7 +61,7 @@ branch: feat/NNN-slug
 ## Edge cases
 ```
 
-The agent-loop kit (brutally-Honest/agent-loop) was removed in 031 and may be installed again later. Its repo settings are in specs/031-remove-clutter/research.md. Specs 003-017 were built with it and keep its frontmatter as history.
+The agent-loop kit (brutally-Honest/agent-loop) was removed in 031 and may be installed again later. Its repo settings are in specs/031-remove-clutter/research.md. Specs 003-017 were built with it and keep its frontmatter as history. See ADR 0021.
 
 ## Stack
 Decided in `PLAN.md` §8. Do not introduce a dependency without an ADR and the human's
