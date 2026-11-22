@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"sync/atomic"
 	"time"
 )
@@ -183,16 +184,30 @@ func (m *Meta) responseBodyErr() error {
 // requestWatcher passes every Read and Close straight through, changing no byte and
 // buffering nothing, and keeps the first read error that is not io.EOF. The transport
 // reads the request body on its own goroutine, so the error is atomic.
+//
+// A Read that fails with http.ErrBodyReadAfterClose after an earlier Read returned
+// io.EOF is answered with io.EOF instead, and is not kept as an error. The transport
+// reads once more after the declared length, to check for extra bytes; upstream can
+// answer before it does, and the first response write makes net/http close the
+// client's fully read body, so that read fails as a closed body. Passed on, it makes
+// the transport drop the upstream connection and cut a stream already flowing to the
+// client. The body had ended; this says so again.
 type requestWatcher struct {
 	rc  io.ReadCloser
 	err atomic.Pointer[error]
 	n   atomic.Int64 // bytes read, for the trace (spec 021)
+	eof atomic.Bool  // a Read returned io.EOF
 }
 
 func (w *requestWatcher) Read(p []byte) (int, error) {
 	n, err := w.rc.Read(p)
 	w.n.Add(int64(n))
-	if err != nil && !errors.Is(err, io.EOF) {
+	switch {
+	case errors.Is(err, io.EOF):
+		w.eof.Store(true)
+	case err != nil && n == 0 && w.eof.Load() && errors.Is(err, http.ErrBodyReadAfterClose):
+		return 0, io.EOF
+	case err != nil:
 		w.err.CompareAndSwap(nil, &err)
 	}
 	return n, err

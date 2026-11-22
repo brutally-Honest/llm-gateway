@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"net/http"
 	"testing"
 
 	"github.com/brutally-honest/llm-gateway/internal/core"
@@ -148,5 +149,37 @@ func TestWatcher_RequestErrorAcrossGoroutines(t *testing.T) {
 		default:
 			_ = core.RequestBodyErr(m)
 		}
+	}
+}
+
+// closedAfterEOF is a request body as net/http's server leaves it once the handler has
+// started its response: it ends, and any later Read fails as a closed body does.
+type closedAfterEOF struct{ done bool }
+
+func (b *closedAfterEOF) Read(p []byte) (int, error) {
+	if b.done {
+		return 0, http.ErrBodyReadAfterClose
+	}
+	b.done = true
+	return copy(p, "{}"), io.EOF
+}
+
+func (b *closedAfterEOF) Close() error { return nil }
+
+// TestWatcher_RequestReadAfterEOF: the transport reads the request body once more after
+// its declared length, and by then upstream may have answered and net/http closed the
+// client's body. That read must end the body, not fail the upstream connection.
+func TestWatcher_RequestReadAfterEOF(t *testing.T) {
+	_, m := core.WithMeta(t.Context())
+	body := core.WatchRequestBody(m, &closedAfterEOF{})
+	buf := make([]byte, 8)
+	if n, err := body.Read(buf); n != 2 || !errors.Is(err, io.EOF) {
+		t.Fatalf("first Read = %d, %v; want 2, io.EOF", n, err)
+	}
+	if n, err := body.Read(buf); n != 0 || !errors.Is(err, io.EOF) {
+		t.Fatalf("Read after EOF = %d, %v; want 0, io.EOF", n, err)
+	}
+	if got := core.RequestBodyErr(m); got != nil {
+		t.Fatalf("kept error = %v, want none", got)
 	}
 }
