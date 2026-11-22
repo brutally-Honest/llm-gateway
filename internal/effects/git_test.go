@@ -750,3 +750,265 @@ func TestCandidates_FallbackCache(t *testing.T) {
 		t.Errorf("cache has %d entries after a.txt changed, want only b.txt", len(g.cache[dir]))
 	}
 }
+
+// candidatesWithin runs candidates and fails the test when it does not return in d.
+func candidatesWithin(t *testing.T, d time.Duration, g *gitRunner, ctx context.Context, dir string) ([]gitEntry, error) {
+	t.Helper()
+	type res struct {
+		got []gitEntry
+		err error
+	}
+	ch := make(chan res, 1)
+	go func() {
+		got, err := g.candidates(ctx, dir)
+		ch <- res{got, err}
+	}()
+	select {
+	case r := <-ch:
+		return r.got, r.err
+	case <-time.After(d):
+		t.Fatalf("candidates did not return within %v", d)
+		return nil, nil
+	}
+}
+
+func plantIndex(t *testing.T, dir string, plant func(path string)) {
+	t.Helper()
+	p := filepath.Join(dir, ".git", "index")
+	if err := os.Remove(p); err != nil {
+		t.Fatal(err)
+	}
+	plant(p)
+}
+
+// A .git/index that is a symlink to /dev/zero is not read into memory: candidates
+// returns (git itself rejects the index) instead of filling memory.
+func TestCandidates_IndexSymlinkedToDevZero(t *testing.T) {
+	if _, err := os.Stat("/dev/zero"); err != nil {
+		t.Skip("no /dev/zero")
+	}
+	dir := repo(t)
+	write(t, filepath.Join(dir, "a.txt"), "one\n")
+	commitAll(t, dir)
+	plantIndex(t, dir, func(p string) {
+		if err := os.Symlink("/dev/zero", p); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if _, _, err := readIndexFile(filepath.Join(dir, ".git", "index")); err == nil {
+		t.Fatal("readIndexFile accepted /dev/zero")
+	}
+	_, _ = candidatesWithin(t, 20*time.Second, newGitRunner(10*time.Second), context.Background(), dir)
+}
+
+// A FIFO at .git/index never hangs the open or the read.
+func TestCandidates_IndexIsFifo(t *testing.T) {
+	dir := repo(t)
+	write(t, filepath.Join(dir, "a.txt"), "one\n")
+	commitAll(t, dir)
+	plantIndex(t, dir, func(p string) {
+		if err := exec.Command("mkfifo", p).Run(); err != nil {
+			t.Skipf("no mkfifo: %v", err)
+		}
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	start := time.Now()
+	_, _ = candidatesWithin(t, 5*time.Second, newGitRunner(30*time.Second), ctx, dir)
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("took %v", d)
+	}
+}
+
+func TestReadIndexFile_TooLarge(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "index")
+	f, err := os.Create(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(maxIndexBytes + 1); err != nil {
+		t.Skipf("no sparse files: %v", err)
+	}
+	_ = f.Close()
+	if _, _, err := readIndexFile(p); err == nil {
+		t.Fatal("an index over maxIndexBytes was read")
+	}
+}
+
+// Since git 2.37 a skip-worktree file that exists in the work tree is a modification;
+// an absent one is not. sparse.expectFilesOutsideOfPatterns turns the first off.
+func TestCandidates_SkipWorktree(t *testing.T) {
+	needGit(t)
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	setup := func(t *testing.T) string {
+		dir := repo(t)
+		write(t, filepath.Join(dir, "in", "a.txt"), "a\n")
+		write(t, filepath.Join(dir, "out", "b.txt"), "b\n")
+		write(t, filepath.Join(dir, "out", "c.txt"), "c\n")
+		commitAll(t, dir)
+		git(t, dir, "sparse-checkout", "set", "--cone", "in")
+		if _, err := os.Lstat(filepath.Join(dir, "out", "b.txt")); err == nil {
+			t.Fatal("out/b.txt is still there after sparse-checkout")
+		}
+		return dir
+	}
+	t.Run("absent is unchanged", func(t *testing.T) {
+		dir := setup(t)
+		got, err := newGitRunner(30*time.Second).candidates(context.Background(), dir)
+		if err != nil || len(got) != 0 {
+			t.Fatalf("got %v, %v", entrySet(got), err)
+		}
+		sameSet(t, dir)
+	})
+	t.Run("present is modified", func(t *testing.T) {
+		dir := setup(t)
+		write(t, filepath.Join(dir, "out", "b.txt"), "different\n")
+		got, err := newGitRunner(30*time.Second).candidates(context.Background(), dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s := strings.Join(entrySet(got), ";"); s != "out/b.txt tracked=true" {
+			t.Errorf("got %s", s)
+		}
+		sameSet(t, dir)
+	})
+	t.Run("expectFilesOutsideOfPatterns", func(t *testing.T) {
+		dir := setup(t)
+		git(t, dir, "config", "sparse.expectFilesOutsideOfPatterns", "true")
+		write(t, filepath.Join(dir, "out", "b.txt"), "different\n")
+		got, err := newGitRunner(30*time.Second).candidates(context.Background(), dir)
+		if err != nil || len(got) != 0 {
+			t.Fatalf("got %v, %v", entrySet(got), err)
+		}
+		sameSet(t, dir)
+	})
+	t.Run("fallback ls-files path", func(t *testing.T) {
+		dir := setup(t)
+		git(t, dir, "update-index", "--split-index")
+		write(t, filepath.Join(dir, "out", "b.txt"), "different\n")
+		got, err := newGitRunner(30*time.Second).candidates(context.Background(), dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s := strings.Join(entrySet(got), ";"); s != "out/b.txt tracked=true" {
+			t.Errorf("got %s", s)
+		}
+	})
+}
+
+// Hashing stops with the context: a huge sparse file whose size matches the index modulo
+// 2^32 does not run for minutes.
+func TestCandidates_HashingStopsWithContext(t *testing.T) {
+	dir := repo(t)
+	p := filepath.Join(dir, "big.bin")
+	write(t, p, "x")
+	commitAll(t, dir)
+	f, err := os.OpenFile(p, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	if err := f.Truncate(1<<33 + 1); err != nil {
+		t.Skipf("no sparse files: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err = candidatesWithin(t, 10*time.Second, newGitRunner(30*time.Second), ctx, dir)
+	if err == nil {
+		t.Error("candidates finished an 8 GiB hash")
+	}
+	if d := time.Since(start); d > 3*time.Second {
+		t.Errorf("took %v", d)
+	}
+}
+
+// A file rewritten in place with the same size and the same (future) mtime as its index
+// entry is racy: the entry is not older than the index file, so it is hashed.
+func TestCandidates_RacyEntryIsHashed(t *testing.T) {
+	dir := repo(t)
+	git(t, dir, "config", "core.trustctime", "false")
+	p := filepath.Join(dir, "a.txt")
+	write(t, p, "one\n")
+	commitAll(t, dir)
+	future := time.Now().Add(time.Hour)
+	if err := os.Chtimes(p, future, future); err != nil {
+		t.Fatal(err)
+	}
+	git(t, dir, "update-index", "--refresh") // the index stores the future mtime
+	g := newGitRunner(30 * time.Second)
+	if got, err := g.candidates(context.Background(), dir); err != nil || len(got) != 0 {
+		t.Fatalf("clean tree: %v, %v", entrySet(got), err)
+	}
+	write(t, p, "two\n")
+	if err := os.Chtimes(p, future, future); err != nil {
+		t.Fatal(err)
+	}
+	got, err := g.candidates(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := strings.Join(entrySet(got), ";"); s != "a.txt tracked=true" {
+		t.Errorf("racy rewrite not seen: %q", s)
+	}
+}
+
+// The fallback does not cache a file touched within the last second, and a same-size
+// rewrite of it is seen.
+func TestCandidates_FallbackCacheSkipsFreshFiles(t *testing.T) {
+	dir := repo(t)
+	p := filepath.Join(dir, "a.txt")
+	write(t, p, "one\n")
+	commitAll(t, dir)
+	git(t, dir, "update-index", "--split-index")
+	now := time.Now()
+	if err := os.Chtimes(p, now, now); err != nil {
+		t.Fatal(err)
+	}
+	g := newGitRunner(30 * time.Second)
+	if got, err := g.candidates(context.Background(), dir); err != nil || len(got) != 0 {
+		t.Fatalf("clean tree: %v, %v", entrySet(got), err)
+	}
+	if n := len(g.cache[dir]); n != 0 {
+		t.Fatalf("a file modified just now was cached (%d entries)", n)
+	}
+	write(t, p, "two\n")
+	if err := os.Chtimes(p, now, now); err != nil {
+		t.Fatal(err)
+	}
+	got, err := g.candidates(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := strings.Join(entrySet(got), ";"); s != "a.txt tracked=true" {
+		t.Errorf("same-size rewrite not seen: %q", s)
+	}
+}
+
+func TestSafeRelPath(t *testing.T) {
+	for p, want := range map[string]bool{
+		"a.txt": true, "d/e/f": true, ".gitignore": true, "x/.github/y": true,
+		"/etc/passwd": false, "../x": false, "a/../b": false, "./a": false, "a/./b": false,
+		"a//b": false, "a/": false, ".git/config": false, "d/.GIT/x": false, ".Git": false, "": false,
+	} {
+		if got := safeRelPath(p); got != want {
+			t.Errorf("safeRelPath(%q) = %v, want %v", p, got, want)
+		}
+	}
+}
+
+// A work tree not used for an hour loses its cache.
+func TestGitRunner_CacheDropsIdleTops(t *testing.T) {
+	g := newGitRunner(time.Second)
+	g.storeCache("/a", map[string]hashedFile{"x": {}})
+	g.storeCache("/b", map[string]hashedFile{"y": {}})
+	g.used = map[string]time.Time{"/a": time.Now().Add(-2 * time.Hour), "/b": time.Now()}
+	g.cachedFor("/b")
+	if _, ok := g.cache["/a"]; ok {
+		t.Error("idle top /a kept its cache")
+	}
+	if _, ok := g.cache["/b"]; !ok {
+		t.Error("recent top /b lost its cache")
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"hash"
 	"io"
 	"os"
@@ -30,7 +31,16 @@ type gitRunner struct {
 
 	mu    sync.Mutex
 	cache map[string]map[string]hashedFile // by top, then path: files hashed equal to the index
+	used  map[string]time.Time             // by top: when candidates last ran there
 }
+
+// cacheIdle is how long a work tree can go unused before its cache is dropped, so the
+// cache does not grow with every work tree the gateway has ever seen.
+const cacheIdle = time.Hour
+
+// maxIndexBytes is the largest index file the Go reader takes in; a bigger one (or one
+// that is not a regular file) goes to `git ls-files` instead of being read into memory.
+const maxIndexBytes = 512 << 20
 
 // hashedFile is a work-tree file the last candidates call hashed and found equal to its
 // index entry. Its stat identifies the content the next call may skip hashing.
@@ -74,6 +84,12 @@ func (g *gitRunner) run(ctx context.Context, dir string, args ...string) ([]byte
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	if err := cmd.Run(); err != nil {
+		if msg := strings.TrimSpace(errOut.String()); msg != "" {
+			if len(msg) > 300 {
+				msg = msg[:300]
+			}
+			return nil, fmt.Errorf("%w: %s", err, msg) // still an *exec.ExitError to errors.As
+		}
 		return nil, err
 	}
 	return out.Bytes(), nil
@@ -140,27 +156,42 @@ type headEntry struct {
 // checked-in form differs from its raw form can be listed although git calls it clean
 // (research D2). Submodules are skipped (D4).
 func (g *gitRunner) candidates(ctx context.Context, top string) ([]gitEntry, error) {
+	// The whole Go comparison has the git timeout as a deadline: hashing a huge file
+	// cannot outlast it.
+	ctx, cancel := context.WithTimeout(ctx, g.timeout)
+	defer cancel()
 	head, err := g.headEntries(ctx, top)
 	if err != nil {
 		return nil, err
 	}
 	hashLen := 20
 	sha := sha1.New
-	if out, err := g.run(ctx, top, "rev-parse", "--show-object-format"); err == nil &&
-		strings.TrimSpace(string(out)) == "sha256" {
-		hashLen, sha = 32, sha256.New
+	format, err := g.run(ctx, top, "rev-parse", "--show-object-format")
+	switch {
+	case err == nil:
+		if strings.TrimSpace(string(format)) == "sha256" {
+			hashLen, sha = 32, sha256.New
+		}
+	case ctx.Err() == nil && oldGitWithoutOption(err):
+		// git before 2.38 has no --show-object-format and only knows sha1.
+	default:
+		return nil, err
 	}
 	entries, indexMTime, err := g.indexEntries(ctx, top, hashLen)
 	if err != nil {
 		return nil, err
 	}
 	chk := &checker{
-		top: top, sha: sha, indexMTime: indexMTime,
+		ctx: ctx, top: top, sha: sha, indexMTime: indexMTime,
 		fileMode: true, trustCtime: true, symlinks: true,
 		old: g.cachedFor(top), seen: map[string]hashedFile{},
 		dirOK: map[string]bool{},
 	}
-	chk.readConfig(g.configBools(ctx, top))
+	cfg, err := g.configBools(ctx, top)
+	if err != nil {
+		return nil, err
+	}
+	chk.readConfig(cfg)
 
 	var out []gitEntry
 	inIndex := make(map[string]bool, len(entries))
@@ -170,6 +201,9 @@ func (g *gitRunner) candidates(ctx context.Context, top string) ([]gitEntry, err
 			continue
 		}
 		inIndex[e.path] = true
+		if !safeRelPath(e.path) {
+			continue // never opened, never listed
+		}
 		if e.stage > 0 {
 			if !listed[e.path] {
 				listed[e.path] = true
@@ -183,7 +217,9 @@ func (g *gitRunner) candidates(ctx context.Context, top string) ([]gitEntry, err
 			out = append(out, gitEntry{path: e.path})
 		case h.oid != e.oid || h.mode != e.mode:
 			out = append(out, gitEntry{path: e.path, tracked: true})
-		case e.skipWorktree || e.assumeValid:
+		case e.assumeValid:
+		case e.skipWorktree && !chk.presentOutsideSparse(e.path):
+			// skip-worktree and absent (or expected to be present: sparse.expectFilesOutsideOfPatterns)
 		default:
 			if err := ctx.Err(); err != nil {
 				return nil, err
@@ -199,6 +235,9 @@ func (g *gitRunner) candidates(ctx context.Context, top string) ([]gitEntry, err
 		}
 	}
 
+	if err := ctx.Err(); err != nil { // hashing stopped early: the answer is incomplete
+		return nil, err
+	}
 	g.storeCache(top, chk.seen)
 
 	untracked, err := g.run(ctx, top, "ls-files", "-z", "-o", "--exclude-standard")
@@ -248,7 +287,7 @@ func (g *gitRunner) headEntries(ctx context.Context, top string) (map[string]hea
 			continue
 		}
 		f := strings.Fields(meta) // mode, type, oid
-		if len(f) != 3 || f[0] == "160000" {
+		if len(f) != 3 || f[0] == "160000" || !safeRelPath(path) {
 			continue
 		}
 		mode, err := strconv.ParseUint(f[0], 8, 32)
@@ -270,11 +309,9 @@ func (g *gitRunner) indexEntries(ctx context.Context, top string, hashLen int) (
 		if !filepath.IsAbs(p) {
 			p = filepath.Join(top, p)
 		}
-		if data, err := os.ReadFile(p); err == nil {
-			if fi, err := os.Stat(p); err == nil {
-				if entries, err := readIndex(data, hashLen); err == nil {
-					return entries, fi.ModTime(), nil
-				}
+		if data, mtime, err := readIndexFile(p); err == nil {
+			if entries, err := readIndex(data, hashLen); err == nil {
+				return entries, mtime, nil
 			}
 		}
 	}
@@ -306,20 +343,89 @@ func (g *gitRunner) indexEntries(ctx context.Context, top string, hashLen int) (
 	return entries, time.Time{}, nil
 }
 
-// configBools are core.filemode, core.trustctime and core.symlinks as `git config` prints
-// them with --type=bool, one "name value" per line; empty when none is set (exit 1) or
-// the call fails, which leaves every default (true).
-func (g *gitRunner) configBools(ctx context.Context, top string) string {
-	out, err := g.run(ctx, top, "config", "--type=bool", "--get-regexp", `^core\.(filemode|trustctime|symlinks)$`)
+// readIndexFile reads the index file at p and returns it with its mtime, both from one
+// fstat. The file is opened without blocking (a FIFO planted there must not hang the
+// open), must be a regular file, and must not be larger than maxIndexBytes (a symlink to
+// /dev/zero or a huge sparse file must not fill memory); anything else is an error and
+// the caller falls back to git.
+func readIndexFile(p string) ([]byte, time.Time, error) {
+	f, err := os.OpenFile(p, os.O_RDONLY|oNonblock, 0)
 	if err != nil {
-		return ""
+		return nil, time.Time{}, err
 	}
-	return string(out)
+	defer func() { _ = f.Close() }()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	if !st.Mode().IsRegular() || st.Size() > maxIndexBytes {
+		return nil, time.Time{}, errors.New("index: not a regular file or too large")
+	}
+	data, err := io.ReadAll(io.LimitReader(f, st.Size()+1))
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	if int64(len(data)) != st.Size() {
+		return nil, time.Time{}, errors.New("index: size changed while reading")
+	}
+	return data, st.ModTime(), nil
+}
+
+// oldGitWithoutOption reports a git too old to know `rev-parse --show-object-format`:
+// exit 128 with the option named in its message. Any other failure is a real one.
+func oldGitWithoutOption(err error) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == 128 &&
+		strings.Contains(err.Error(), "show-object-format")
+}
+
+// safeRelPath is false for a path git itself would refuse to check out (the spirit of
+// verify_path): absolute, or with an empty, "." or ".." component, or a ".git" component
+// in any case. Such a path is never opened.
+func safeRelPath(p string) bool {
+	if p == "" || p[0] == '/' {
+		return false
+	}
+	for _, c := range strings.Split(p, "/") {
+		if c == "" || c == "." || c == ".." || strings.EqualFold(c, ".git") {
+			return false
+		}
+	}
+	return true
+}
+
+// configBools are core.filemode, core.trustctime, core.symlinks and
+// sparse.expectFilesOutsideOfPatterns as `git config` prints them with --type=bool, one
+// "name value" per line. Exit code 1 means none is set: empty, every default. Any other
+// failure (a timeout, a bad boolean) is an error, so a failed call never silently
+// changes how files are compared.
+func (g *gitRunner) configBools(ctx context.Context, top string) (string, error) {
+	out, err := g.run(ctx, top, "config", "--type=bool", "--get-regexp",
+		`^(core\.(filemode|trustctime|symlinks)|sparse\.expectfilesoutsideofpatterns)$`)
+	if err != nil {
+		var exitErr *exec.ExitError
+		if ctx.Err() == nil && errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return "", nil
+		}
+		return "", err
+	}
+	return string(out), nil
 }
 
 func (g *gitRunner) cachedFor(top string) map[string]hashedFile {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	now := time.Now()
+	for t, at := range g.used {
+		if t != top && now.Sub(at) > cacheIdle {
+			delete(g.used, t)
+			delete(g.cache, t)
+		}
+	}
+	if g.used == nil {
+		g.used = map[string]time.Time{}
+	}
+	g.used[top] = now
 	return g.cache[top] // never mutated after it is stored: safe to read unlocked
 }
 
@@ -340,12 +446,14 @@ func (g *gitRunner) storeCache(top string, seen map[string]hashedFile) {
 
 // checker compares work-tree files with index entries during one candidates call.
 type checker struct {
+	ctx        context.Context
 	top        string
 	sha        func() hash.Hash
 	indexMTime time.Time
 	fileMode   bool // core.filemode
 	trustCtime bool // core.trustctime
 	symlinks   bool // core.symlinks
+	sparseOut  bool // sparse.expectFilesOutsideOfPatterns
 	old        map[string]hashedFile
 	seen       map[string]hashedFile
 	dirOK      map[string]bool // work-tree folder (slash path) -> a real folder all the way down
@@ -365,8 +473,25 @@ func (c *checker) readConfig(out string) {
 			c.trustCtime = on
 		case "core.symlinks":
 			c.symlinks = on
+		case "sparse.expectfilesoutsideofpatterns":
+			c.sparseOut = on
 		}
 	}
+}
+
+// presentOutsideSparse is whether a skip-worktree path is to be compared: since git 2.37
+// git status reports a skip-worktree file that exists in the work tree (written outside
+// the sparse patterns) as modified, unless sparse.expectFilesOutsideOfPatterns is set.
+// An absent file, or one below a symlinked folder, is unchanged.
+func (c *checker) presentOutsideSparse(path string) bool {
+	if c.sparseOut {
+		return false
+	}
+	if i := strings.LastIndexByte(path, '/'); i >= 0 && !c.realDir(path[:i]) {
+		return false
+	}
+	_, err := os.Lstat(filepath.Join(c.top, filepath.FromSlash(path)))
+	return err == nil
 }
 
 // realDir reports whether rel (a slash path below top, "" for top) is a folder and so
@@ -458,7 +583,7 @@ func (c *checker) changed(e indexEntry) bool {
 			return true
 		}
 		writeBlobHeader(h, st.Size())
-		if n, err := io.Copy(h, f); err != nil || n != st.Size() {
+		if !c.hashChunks(h, f, st.Size()) {
 			return true
 		}
 	}
@@ -471,6 +596,27 @@ func (c *checker) changed(e indexEntry) bool {
 		c.seen[e.path] = id
 	}
 	return false
+}
+
+// hashChunks feeds exactly size bytes of f to h, a megabyte at a time, and stops when the
+// context ends, so a huge file cannot outlast the deadline. False when f is shorter or
+// longer than size, a read fails, or the context ended.
+func (c *checker) hashChunks(h hash.Hash, f io.Reader, size int64) bool {
+	buf := make([]byte, 1<<20)
+	var total int64
+	for total < size {
+		if c.ctx.Err() != nil {
+			return false
+		}
+		n, err := f.Read(buf[:min(int64(len(buf)), size-total)])
+		_, _ = h.Write(buf[:n])
+		total += int64(n)
+		if err != nil && (err != io.EOF || total < size) {
+			return false
+		}
+	}
+	n, err := f.Read(buf[:1]) // the file must end where its size says
+	return n == 0 && err == io.EOF
 }
 
 func writeBlobHeader(h hash.Hash, size int64) {
