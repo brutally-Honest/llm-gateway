@@ -34,8 +34,8 @@ A lower priority never degrades a higher one.
 
 ## Workflow
 Each change gets `specs/NNN-slug/spec.md` and `research.md`. It is built without
-stopping: every judgment call is recorded as a D-entry (`- **Dn** …`) under `## Decisions`
-in `research.md`. There is no plan.md, no tasks.md and no approval fields or status
+stopping on judgment calls: each is recorded as a D-entry (`- **Dn** …`) under
+`## Decisions` in `research.md` (except the cases under "Always stop and ask first"). There is no plan.md, no tasks.md and no approval fields or status
 frontmatter. Entries in `research.md` are never deleted: a correction is a new dated line.
 
 Branches: feat/NNN-slug, fix/NNN-slug, chore/NNN-slug. Every commit follows PLAN §11:
@@ -64,7 +64,8 @@ branch: feat/NNN-slug
 The agent-loop kit (brutally-Honest/agent-loop) was removed in 031 and may be installed again later. Its repo settings are in specs/031-remove-clutter/research.md. Specs 003-017 were built with it and keep its frontmatter as history.
 
 ## Stack
-Decided in `PLAN.md` §8. Do not introduce a dependency without an ADR.
+Decided in `PLAN.md` §8. Do not introduce a dependency without an ADR and the human's
+go-ahead.
 
 ## Commands
 - install: `make setup`
@@ -73,12 +74,12 @@ Decided in `PLAN.md` §8. Do not introduce a dependency without an ADR.
 
 Commit messages follow the user-level `commit-conventions` skill
 (`~/.claude/skills/commit-conventions/SKILL.md`, PLAN §11). It lives outside this repo,
-so install it on any machine or harness that commits here.
+so ask the human to install it on any machine or harness that commits here.
 
 ## Do not
 - Do not weaken lint, tests or config to make a check pass.
 - Do not add suppressions, skip tests, or delete assertions.
-- Do not add a dependency without an ADR.
+- Do not add a dependency without an ADR and the human's go-ahead.
 - Never get around a guard, hook or check by splitting, quoting, encoding or renaming
   strings, or by using another tool to perform the action that was blocked. Reading or
   editing a file with Read/Edit/Write is fine when only a Bash command naming it was
@@ -89,7 +90,7 @@ so install it on any machine or harness that commits here.
 A D-entry is for judgment calls inside the repo. These need the human's explicit go-ahead
 every time, even mid-build:
 - Anything outside the repo: other directories, system config, external services.
-- Any push, pull request merge, or change to a remote branch or ref (notes included).
+- Any push or merge (local or pull request), or change to a remote branch or ref (notes included).
 - Deleting user data: local stores, captures, untracked files, or anything not in git.
 - Adding a dependency, even with an ADR drafted.
 - Bypassing, disabling or skipping a hook, guard or check (`--no-verify` included).

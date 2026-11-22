@@ -200,6 +200,10 @@ it), `setup-shellcheck`, the CI jq/shellcheck/bash installs, and the hooks in
   - `TestView_TurnModels`: only its text-scan block is removed. Its `v.Turns[i].Models`
     assertions stay.
   deadcode now lists only the baseline entries.
+- **D17** (2026-11-22) The round-1 follow-up line ("delete `RenderViewText` and its printer
+  … if the text rendering of a view is no longer wanted") was removed from the Review
+  section at the human's request, since D16 does it. This is the one deletion in this
+  file; the follow-up review flagged it against the never-delete rule.
 
 ## Review (step 5)
 
@@ -237,3 +241,24 @@ fixture totals are not vacuous).
   "(CLI removed in 031)"; the row is history.
 - **P4** ADRs 0009/0016 and `view_test.go:416` name `gateway timeline`. → Kept as history
   and a test comment (see "Leftover grep").
+
+### Follow-up review (fresh opus reviewer, d286b3b and b392505; one round)
+No P1 or P2: nothing in production changes `session_key` after insert (the only
+`UPDATE exchanges` sets `parse`), so the deleted re-keying steps covered a path that no
+longer exists; the deleted text assertions only restated facts asserted on the `View`.
+`go vet`, the store/timeline/ui/core tests and deadcode (baseline only) are clean.
+- **P3** The round-1 "Follow-up (not in 031)" line about `RenderViewText` was deleted from
+  this file, against "entries are never deleted". → Kept deleted: the human asked for it
+  to be removed from the follow-up list (D17).
+- **P3** AGENTS.md "Any push, pull request merge" missed a local merge. → Fixed: "Any
+  push or merge (local or pull request)".
+- **P3** AGENTS.md Workflow read as if nothing ever stops a build. → Fixed: "without
+  stopping on judgment calls … (except the cases under 'Always stop and ask first')".
+- **P4** "Do not add a dependency without an ADR" (Stack and Do not) read as if an ADR
+  were enough. → Fixed: "an ADR and the human's go-ahead".
+- **P4** "install it on any machine" (commit-conventions skill) is an action outside the
+  repo. → Fixed: "ask the human to install it".
+- **P4** `internal/store/reader_versions.go` `Version` comment over-long after the edit.
+  → Rewrapped.
+- **P4** `TestStream_BackfilledExchangesAppearOnReconnectSnapshot` keeps "Backfilled" in
+  its name. → Kept (D15).
