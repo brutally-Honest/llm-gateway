@@ -1,13 +1,15 @@
 ---
 feature: 023-one-command-install
 kind: feat
-status: draft
+status: done
 version: 1
 created: 2026-11-20
 supersedes:
 branch: feat/023-one-command-install
 ---
 # One-command install
+
+> 2026-11-22: Built without the agent-loop kit.
 
 ## Goal
 A user on Linux or macOS runs one command and is done:

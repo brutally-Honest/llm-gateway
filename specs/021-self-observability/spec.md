@@ -1,13 +1,15 @@
 ---
 feature: 021-self-observability
 kind: feat
-status: draft
+status: done
 version: 1
 created: 2026-11-15
 supersedes:
 branch: feat/021-self-observability
 ---
 # Self-observability
+
+> 2026-11-22: Built without the agent-loop kit.
 
 ## Goal
 Phase 8 (PLAN §7): the gateway watches itself. It exposes Prometheus metrics about its

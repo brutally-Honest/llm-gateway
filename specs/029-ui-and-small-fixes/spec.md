@@ -1,6 +1,7 @@
 ---
 feature: 029-ui-and-small-fixes
 kind: fix
+status: done
 created: 2026-11-22
 branch: fix/029-ui-and-small-fixes
 ---

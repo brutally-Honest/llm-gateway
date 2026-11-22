@@ -18,6 +18,40 @@ below and AC44, the API-key smoke test of Phase 1.
    run, so the benchmark was left as it is (`internal/ui/timeline_bench_test.go`).
 
 ## Done
+- **032 kit removal ADR** (`specs/032-kit-removal-adr/`, chore): ADR 0021 records why the
+  agent-loop kit was removed (slow, and it blocked too often); ADR 0011, `AGENTS.md` and
+  this file point to it.
+- **031 remove clutter** (`specs/031-remove-clutter/`, chore): removed what was unused:
+  the agent-loop kit (so `make verify` is lint, test and web-test, with no `kit-test`),
+  the CLI viewer (`gateway sessions`, `gateway timeline`), `gateway backfill-sessions`,
+  the 016 mockups, the gateway's own Docker image and root compose file (the
+  observability stack stays) and a latency test that never ran under `-race`. CI lints
+  on Linux only.
+- **029 UI and small fixes** (`specs/029-ui-and-small-fixes/`, fix): the sessions list
+  pages on the server, 50 rows at a time with Previous and Next, filter and search done
+  there and kept in the URL; skeleton loaders; Preview and Raw padding; long turn text
+  capped in height. B12 (`docs/manual-checks/macos-v1.md`): a `claude` run that fails at
+  argument parsing still sends one SessionEnd hook, and its "Hooks only" session showed
+  active for minutes; a session whose only hook events are session ends, with no model
+  calls, is never active, in the list, the view and `kind=active`. The 017 E10 test
+  (`internal/ui/webtest/chip-live.test.js`); `fillDrawer` and the fields only it filled
+  are gone from the exchange API.
+- **028 CI flakes** (`specs/028-ci-flakes/`, fix): `TestRun_ShutdownCutsInFlightCallAfterGrace`
+  and `TestProxy_GoldenAnthropicStreamReplay` fixed at the cause: the request watcher
+  (`internal/core/meta.go`) answers net/http's read of a closed body after EOF with EOF,
+  so the transport no longer drops an HTTP/1.1 upstream connection mid-stream. A hub
+  test's race was in the test and is fixed there.
+- **027 UI polish** (`specs/027-ui-polish/`, feat): two styles, Lean (default, neutral
+  glass with a green accent) and Stark (square, violet), picked with the theme in a header
+  Settings dialog; the saved choice applies before first paint; Geist is bundled (ADR
+  0020). The sessions list has one Work cell, status glyphs, day tiles with hourly
+  sparklines and a whole-row link. A call opens in a docked panel; a session is one page
+  scroll of turn cards, newest first, with Files switchable by file or by turn.
+- **026 GitHub Actions** (`specs/026-github-actions/`, chore): `.github/workflows/verify.yml`
+  runs on every pull request and push to main on Linux and macOS (ADR 0019, which
+  supersedes ADR 0001). Linux runs `make verify`; macOS runs `make test` and
+  `make web-test` (lint is Linux-only, 031). Go comes from `go.mod`, Node is pinned to 22,
+  and the README shows the badge. `docs/release-checklist.md` lists the release steps.
 - **025 macOS re-test fixes** (`specs/025-macos-retest-fixes/`, fix): the findings of
   `docs/manual-checks/macos-v1-retest.md`. The launchd plist sets `ThrottleInterval` to
   1 s, so a reinstall soon after a start is no longer held about 10 s (B15); the roots
@@ -95,12 +129,6 @@ below and AC44, the API-key smoke test of Phase 1.
 - AC44, the API-key smoke test of Phase 1 (Claude Code in API-key mode through the
   gateway; `specs/001-core-and-anthropic-passthrough/research.md` Q4): needs a Console
   account and prepaid credits.
-- 017 E10 has no test for a live update that changes the very turn whose chip panel is
-  open (the code keeps the choice, `story.js` chipsNode; only the unchanged-turn case is
-  tested).
-- The exchange API still fills the retired drawer's fields (messages, carried, response;
-  `fillDrawer`), which no page reads since 017; dropping them saves a session build per
-  full exchange page.
 - The 014 Mac check: step 11 of `docs/manual-checks/014-effects.md`, the sandbox part of
   V1, V3 and V4 (`specs/014-file-and-network-effects/research.md`).
   - [x] Step 11 with the sandbox off, step 10 on launchd, the sandbox part of V1, V3 (HTTP)
@@ -114,10 +142,8 @@ below and AC44, the API-key smoke test of Phase 1.
 - Per-session network attribution when several Claude Code sessions run at once (today
   connections go to unassigned unless exactly one routed session is active; 014 AC10's
   rule). Idea: tag each claude launch with its own id in the proxy URL.
-- Fixed in 029 (B12): a `claude` run that fails at argument parsing still sends one
-  SessionEnd hook, and its "Hooks only" session showed active for minutes
-  (`docs/manual-checks/macos-v1.md`). A session whose only hook events are session ends,
-  with no model calls, is never active, in the list, the view and `kind=active`.
+- Label sessions by account: when several Claude accounts are used on one machine, show
+  which account each session came from; today their sessions are mixed.
 - The speed follow-ups, re-measured after 016.
   - Cold view build for large sessions (2.3 s server build at 2,000 calls; 016 research
     2026-11-13).
@@ -126,9 +152,6 @@ below and AC44, the API-key smoke test of Phase 1.
     (`specs/017-sessions-list-and-call-details/research.md`, Notes).
   - The today query scans the effects table, which has no index on time (017 D25).
   - These two may share one fix (a time index, or running totals); neither is chosen.
-- Watch `TestProxy_GoldenAnthropicStreamReplay` (`internal/protocols/anthropic`): it failed
-  once on an unrelated commit with "unexpected EOF" and passed on rerun; possible flake
-  (`specs/015-effect-attribution/research.md`, 2026-11-10).
 
 ## Not now
 - Remote access with auth: a gateway token on every route, then listeners off loopback.

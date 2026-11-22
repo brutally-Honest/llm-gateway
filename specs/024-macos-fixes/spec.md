@@ -1,13 +1,15 @@
 ---
 feature: 024-macos-fixes
 kind: fix
-status: draft
+status: done
 version: 1
 created: 2026-11-21
 supersedes:
 branch: fix/024-macos-fixes
 ---
 # macOS v1 fixes
+
+> 2026-11-22: Built without the agent-loop kit.
 
 ## Goal
 The macOS v1 check (`docs/manual-checks/macos-v1.md`, 2026-11-20) found the v1 blockers

@@ -1,13 +1,15 @@
 ---
 feature: 027-ui-polish
 kind: feat
-status: draft
+status: done
 version: 1
 created: 2026-11-21
 supersedes:
 branch: feat/027-ui-polish
 ---
 # UI polish before v1
+
+> 2026-11-22: Built without the agent-loop kit.
 
 Styles, theming and small UI changes, each proposed by Karthik, shown in light and dark at
 1,440 and 2,560 px, and accepted one at a time. Built outside the agent loop. One line per

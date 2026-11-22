@@ -30,13 +30,14 @@ A lower priority never degrades a higher one.
 - Credentials — auth headers (`Proxy-Authorization` included) and keys — never land
   in storage.
 - No route reachable from outside localhost without a gateway token.
-- Stateless process; state lives in external stores.
+- Stateless process is the target; v1 keeps its state on local disk (SQLite store and
+  blob files under `capture.dir`), plus the rate limiter's counts in memory (PLAN §5).
 
 ## Workflow
 Each change gets `specs/NNN-slug/spec.md` and `research.md`. It is built without
 stopping on judgment calls: each is recorded as a D-entry (`- **Dn** …`) under
-`## Decisions` in `research.md` (except the cases under "Always stop and ask first"). There is no plan.md, no tasks.md and no approval fields or status
-frontmatter. Entries in `research.md` are never deleted: a correction is a new dated line.
+`## Decisions` in `research.md` (except the cases under "Always stop and ask first"). There is no plan.md, no tasks.md and no approval fields; a spec may
+carry one frontmatter line, `status: draft` or `status: done`. Entries in `research.md` are never deleted: a correction is a new dated line.
 
 Branches: feat/NNN-slug, fix/NNN-slug, chore/NNN-slug. Every commit follows PLAN §11:
 `<type>(<scope from the §11 list>): <summary>`, lowercase, no trailing period,

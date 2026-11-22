@@ -1,13 +1,15 @@
 ---
 feature: 019-fast-shutdown
 kind: fix
-status: draft
+status: done
 version: 1
 created: 2026-11-15
 supersedes:
 branch: fix/019-fast-shutdown
 ---
 # Fast shutdown
+
+> 2026-11-22: Built without the agent-loop kit.
 
 ## Goal
 `systemctl --user restart llm-gateway` takes about 90 s and ends in SIGKILL: on a stop

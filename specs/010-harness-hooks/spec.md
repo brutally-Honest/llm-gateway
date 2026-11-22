@@ -1,7 +1,7 @@
 ---
 feature: 010-harness-hooks
 kind: feat
-status: approved
+status: done
 version: 2
 created: 2026-11-01
 supersedes:

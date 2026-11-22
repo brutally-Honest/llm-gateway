@@ -1,13 +1,15 @@
 ---
 feature: 025-macos-retest-fixes
 kind: fix
-status: draft
+status: done
 version: 1
 created: 2026-11-21
 supersedes:
 branch: fix/025-macos-retest-fixes
 ---
 # macOS re-test fixes
+
+> 2026-11-22: Built without the agent-loop kit.
 
 ## Goal
 The macOS re-test of the 024 fixes (`docs/manual-checks/macos-v1-retest.md`, 2026-11-21)

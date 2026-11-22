@@ -126,7 +126,7 @@ stop with nothing in flight takes well under a second.
 ## 5. Harness hooks
 
 Optional: Claude Code can also report its tool calls and permission checks to the gateway,
-so the timeline shows which asked-for tools ran. Install, coexistence with project hooks,
+so the web UI shows which asked-for tools ran. Install, coexistence with project hooks,
 removal and the match states are in [claude-code-hooks.md](claude-code-hooks.md).
 
 ## 6. Files and network (014)

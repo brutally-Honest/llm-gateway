@@ -1,7 +1,7 @@
 ---
 feature: 028-ci-flakes
 kind: fix
-status: draft
+status: done
 version: 1
 created: 2026-11-22
 supersedes:

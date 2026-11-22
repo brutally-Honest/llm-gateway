@@ -2,7 +2,7 @@
 feature: 011-capture-memory-limit-flake
 kind: fix
 mode: quick
-status: approved
+status: done
 version: 1
 created: 2026-11-01
 branch: fix/011-capture-memory-limit-flake

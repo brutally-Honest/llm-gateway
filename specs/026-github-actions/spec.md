@@ -1,13 +1,15 @@
 ---
 feature: 026-github-actions
 kind: chore
-status: draft
+status: done
 version: 1
 created: 2026-11-21
 supersedes:
 branch: ci/026-github-actions
 ---
 # GitHub Actions CI
+
+> 2026-11-22: Built without the agent-loop kit.
 
 ## Goal
 `make verify` runs on GitHub Actions for every pull request and every push to main, on
