@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -34,13 +35,29 @@ type change struct {
 	data     []byte
 	copyFrom string // the binary: copied from this path instead of data
 	backup   bool   // keep a .bak of old first
+	// private is the config: written 0600 in a 0700 folder.
+	private bool
+	// modeFix says the private file or its folder is looser than that, so the change
+	// counts even when the content is the same.
+	modeFix bool
 }
 
 func (c change) changed() bool {
 	if c.copyFrom != "" {
 		return true
 	}
-	return !c.exists || !bytes.Equal(c.old, c.data)
+	return !c.exists || !bytes.Equal(c.old, c.data) || c.modeFix
+}
+
+// modeOnly says only the modes of an existing file change, not its content.
+func (c change) modeOnly() bool {
+	return c.modeFix && c.exists && bytes.Equal(c.old, c.data)
+}
+
+// looser says path has a permission bit outside want (group or other bits for a folder).
+func looser(path string, want os.FileMode) bool {
+	st, err := os.Stat(path)
+	return err == nil && st.Mode().Perm()&^want != 0
 }
 
 type plan struct {
@@ -191,15 +208,22 @@ func buildPlan(e *Env, c Client, pre *Preflight, prev *State, o InstallOptions) 
 		return pl, config.Config{}, err
 	}
 	var cfg config.Config
+	cfgDir := filepath.Dir(p.Config)
 	if cfgExists {
 		if cfg, err = e.LoadConfig(p.Config); err != nil {
 			return pl, cfg, fmt.Errorf("the config %s is not valid (%w); fix it or move it away", p.tilde(p.Config), err)
 		}
 		pl.notes = append(pl.notes, "Config "+p.tilde(p.Config)+" exists: kept as it is.")
+		// Listed as unchanged, or updated when a looser mode on the file or its folder is
+		// tightened; the content is kept.
+		old, _, _ := readMaybe(p.Config)
+		fix := looser(p.Config, 0o600) || looser(cfgDir, 0o700)
+		pl.changes = append(pl.changes, change{label: "config", path: p.Config, old: old, exists: true,
+			data: old, private: true, modeFix: fix})
 	} else {
 		cfg = config.Defaults()
 		cfg.Effects.Network.Sandbox = sandboxOK
-		pl.changes = append(pl.changes, change{label: "config", path: p.Config, data: defaultConfig(sandboxOK)})
+		pl.changes = append(pl.changes, change{label: "config", path: p.Config, data: defaultConfig(sandboxOK), private: true})
 		pl.state.ConfigCreated = true
 	}
 	// The same rule the gateway starts with (spec 022), before anything is written.
@@ -478,6 +502,8 @@ func printDryRun(e *Env, p Paths, pl plan) {
 		switch {
 		case ch.copyFrom != "":
 			e.printf("\n== copy %s → %s\n", p.tilde(ch.copyFrom), p.tilde(ch.path))
+		case ch.modeOnly():
+			e.printf("\n== %s (%s): mode tightened (file 0600, folder 0700)\n", p.tilde(ch.path), ch.label)
 		case !ch.changed() && ch.backup:
 			e.printf("\n== %s (%s): unchanged, not made by install; a copy is kept as %s for uninstall\n",
 				p.tilde(ch.path), ch.label, p.tilde(backupPath(ch.path)))
@@ -532,9 +558,12 @@ func apply(e *Env, p Paths, pl plan) error {
 			continue // taken over as it is: only its copy was written
 		}
 		var err error
-		if ch.copyFrom != "" {
+		switch {
+		case ch.copyFrom != "":
 			err = copyAtomic(ch.copyFrom, ch.path)
-		} else {
+		case ch.private:
+			err = writePrivate(ch.path, ch.data)
+		default:
 			err = writeAtomic(ch.path, ch.data, 0o644)
 		}
 		if err != nil {
@@ -545,6 +574,28 @@ func apply(e *Env, p Paths, pl plan) error {
 		return e.service().Start(p, pl.serviceChanged)
 	}
 	return nil
+}
+
+// writePrivate writes path 0600 in a 0700 folder. The folder is made or tightened first,
+// so the temp file is never in a looser one; only the folder itself is chmod'ed, not its
+// parents.
+func writePrivate(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+		return err
+	}
+	if err := os.Mkdir(dir, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+		return err
+	}
+	if looser(dir, 0o700) {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			return err
+		}
+	}
+	if err := writeAtomic(path, data, 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600) // writeAtomic keeps an existing mode; this one is forced
 }
 
 func waitHealthy(e *Env, cfg config.Config) bool {
