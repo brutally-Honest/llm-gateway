@@ -1,6 +1,6 @@
 import { timeElement } from "./entries.js";
-import { filterSessions, FILTERS } from "./filters.js";
-import { bytes, dur, plural } from "./fmt.js";
+import { FILTERS } from "./filters.js";
+import { bytes, dur, plural, skeleton } from "./fmt.js";
 import { LABEL, explain, totalCost } from "./cost.js";
 
 export const NO_TITLE = "no prompt captured";
@@ -12,6 +12,7 @@ export function loadMore(data, onMore) {
   if (!data.next_after) return null;
   const b = document.createElement("button");
   b.textContent = "Load more";
+  b.disabled = Boolean(data.loadingMore);
   b.addEventListener("click", () => onMore());
   return b;
 }
@@ -484,9 +485,10 @@ function loader() {
 
 // createSessionsPage builds the landing page once; update(state) redraws the table, the
 // totals and the notes without touching the filter input, so typing keeps its focus.
-// state = { items, next_after, error, loaded, today, ungrouped: { items, next_after },
-// unassigned, unassignedItems }; until the first page has loaded the list shows a loader.
-// handlers = { onMore }.
+// state = { items, next_after, error, loaded, kind, q, total, scanned, loadingMore, today,
+// ungrouped: { items, next_after }, unassigned, unassignedItems }; until the first page has
+// loaded the list shows a loader. The rows are shown as given: the server filtered them.
+// handlers = { onMore, onKind(kind), onQuery(text, now) }.
 export function createSessionsPage(handlers) {
   const el = document.createElement("section");
   el.className = "sessions-page";
@@ -516,35 +518,33 @@ export function createSessionsPage(handlers) {
     b.type = "button";
     b.className = "seg";
     b.textContent = FILTER_LABELS[k];
-    b.addEventListener("click", () => {
-      kind = k;
-      redraw();
-    });
+    // the URL owns the kind: the app sets the hash, and the new kind comes back in update()
+    b.addEventListener("click", () => handlers.onKind && handlers.onKind(k));
     kinds.set(k, b);
     picker.append(b);
   }
   bar.append(input, picker);
-  const filterNote = document.createElement("p");
-  filterNote.className = "muted sp-filter-note";
   const list = document.createElement("div");
   list.className = "sp-list";
   const foot = document.createElement("div");
   foot.className = "sp-foot";
   const unassigned = document.createElement("div");
-  el.append(head, bar, filterNote, list, foot, unassigned);
+  el.append(head, bar, list, foot, unassigned);
 
   let kind = "all";
   let state = { items: [], next_after: null, error: "", loaded: true, today: null, ungrouped: { items: [], next_after: null }, unassigned: 0, unassignedItems: [] };
   let selected = "";
   let shown = [];
-  input.addEventListener("input", () => redraw());
-  // Esc clears the filter and shows the whole list in every browser; Chrome clears a search
-  // box on Esc by itself and fires `search`, not `input`, so that is handled too (F4).
-  input.addEventListener("search", () => redraw());
+  // The server searches: the page only reports the text (the app waits for typing to settle).
+  // Esc clears the box and reports at once, in every browser; Chrome clears a search box on
+  // Esc by itself and fires `search`, not `input`, so that is handled too (F4).
+  const report = (now) => handlers.onQuery && handlers.onQuery(input.value, now);
+  input.addEventListener("input", () => report(false));
+  input.addEventListener("search", () => report(true));
   input.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || input.value === "") return;
     input.value = "";
-    redraw();
+    report(true);
   });
   // The table and one row per session id are kept across redraws (F1): a live update
   // refills the rows in place and moves only rows whose place changed. When a move takes
@@ -600,26 +600,32 @@ export function createSessionsPage(handlers) {
     stat(compact(t.output), "output", t.output);
     stat(t.cost.text, `${LABEL} cost`, t.cost.title);
     foot.replaceChildren();
-    filterNote.textContent = "";
     if (state.error) {
+      shown = [];
+      selected = "";
       list.replaceChildren(note("error", state.error));
       return;
     }
     if (!state.loaded) {
+      shown = [];
+      selected = "";
       list.replaceChildren(loader());
       return;
     }
-    const f = filterSessions(state.items, { kind, text: input.value, hasMore: Boolean(state.next_after) });
-    shown = f.rows;
-    filterNote.textContent = f.note;
+    // the server has filtered and searched: every row held is a row shown
+    shown = state.items;
     if (!shown.some((s) => s.id === selected)) selected = "";
-    if (state.items.length === 0) {
-      list.replaceChildren(note("empty", "No sessions captured yet."));
-    } else if (shown.length === 0) {
-      list.replaceChildren(note("empty", "no sessions match"));
+    const filtering = kind !== "all" || (state.q || "") !== "";
+    if (shown.length === 0) {
+      selected = "";
+      if (!(state.total > 0)) list.replaceChildren(note("empty", "No sessions captured yet."));
+      else if (state.next_after) list.replaceChildren(note("muted", `No matches in the newest ${plural(state.scanned || 0, "session")} yet`));
+      else list.replaceChildren(note("empty", filtering ? "no sessions match" : "No sessions captured yet."));
     } else {
       drawRows();
     }
+    // Load more is fetching: placeholder rows under the table, the button disabled
+    if (state.loadingMore && state.next_after) list.append(skeleton("Loading more sessions…", 3, "rows"));
     const more = loadMore(state, handlers.onMore);
     if (more) foot.append(more);
     const ug = ungroupedText(state.ungrouped.items, state.ungrouped.next_after);
@@ -642,8 +648,15 @@ export function createSessionsPage(handlers) {
     el,
     update(next) {
       state = { ...state, ...next };
+      if (next.kind !== undefined) kind = next.kind;
       redraw();
     },
+    // setQuery puts text in the search box (the URL changed: Back, a link); typing is never
+    // overwritten, since update() leaves the box alone.
+    setQuery(q) {
+      if (input.value.trim() !== q) input.value = q;
+    },
+    query: () => input.value.trim(),
     // position is the key bar's session n/total, or null when nothing is selected.
     position() {
       const i = shown.findIndex((s) => s.id === selected);

@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { compact, createSessionsPage, localMidnight, lookText, moveSelection, rowCells, startText, todayCells, ungroupedText, unassignedRow } from "../web/sessions-page.js";
 import { StubElement, all, byTag, installDom, textOf, withClass } from "./dom-stub.js";
 import { upsertSession } from "../web/entries.js";
-import { filterSessions } from "../web/filters.js";
 import { handleKey, keyBar } from "../web/keys.js";
 
 const counter = (v) => ({ value: v, unreported: 0 });
@@ -163,48 +162,77 @@ test("todayLineShowsServerTotals", () => {
   assert.match(stat.title, /1 call left out: no price for m9/);
 });
 
-// spec 017 AC4: the filter shows the matching loaded rows; the kinds are buttons marked pressed.
-test("filterShowsMatchingLoadedRows", () => {
-  const rows = [session({ id: "a", title: "alpha", list: { ...session().list, needs_look: 1 } }), session({ id: "b", title: "beta", active: true })];
-  const p = livePage(rows);
+// spec 029: the server filters, so the page shows every row it is given. A kind button asks
+// the app (onKind) and is marked pressed once the app hands the kind back; typing is reported
+// as text, never applied to the rows here. (Replaces the 017 AC4 browser-side filter tests.)
+test("kindButtonsAskTheAppAndShowEveryRowGiven", () => {
+  const rows = [session({ id: "a", title: "alpha" }), session({ id: "b", title: "beta" })];
+  const p = livePage(rows, { onKind: (k) => asked.push(k) });
+  const asked = [];
   const shown = () => byTag(p.page.el, "tr").filter((r) => r.dataset && r.dataset.id).map((r) => r.dataset.id);
   const kind = (label) => byTag(p.page.el, "button").find((b) => b.textContent === label);
   assert.deepEqual(byTag(withClass(p.page.el, "seg-group")[0], "button").map((b) => b.textContent), ["All", "Needs a look", "Active", "Hooks only"]);
+  assert.equal(kind("All").attrs["aria-pressed"], "true");
   kind("Needs a look").fire("click");
-  assert.deepEqual(shown(), ["a"]);
+  kind("Hooks only").fire("click");
+  assert.deepEqual(asked, ["look", "hooks"]);
+  assert.deepEqual(shown(), ["a", "b"], "a click filters nothing by itself");
+  assert.equal(kind("All").attrs["aria-pressed"], "true", "the kind is the URL's, not the click's");
+  p.page.update({ kind: "look", items: [rows[0]] });
   assert.equal(kind("Needs a look").attrs["aria-pressed"], "true");
   assert.equal(kind("All").attrs["aria-pressed"], "false");
-  kind("Active").fire("click");
-  assert.deepEqual(shown(), ["b"]);
-  kind("All").fire("click");
-  assert.deepEqual(shown(), ["a", "b"]);
-});
-
-test("filterSaysFilteringNLoaded", () => {
-  const rows = [session({ id: "a", title: "alpha" }), session({ id: "b", title: "beta" })];
-  assert.equal(filterSessions(rows, { text: "alp", hasMore: true }).note, "filtering 2 loaded");
-  const p = livePage(rows);
-  p.page.update({ next_after: "tok" });
-  const input = byTag(p.page.el, "input")[0];
-  input.value = "alp";
-  input.fire("input");
-  assert.match(textOf(p.page.el), /filtering 2 loaded/);
-});
-
-// spec 017 E6: nothing matches → "no sessions match" once, in the list (D34), and Load
-// more stays while more exist.
-test("filterMatchingNothingKeepsLoadMore", () => {
-  const none = filterSessions([session()], { text: "zzz", hasMore: true });
-  assert.equal(none.note, "filtering 1 loaded");
-  assert.equal(none.loadMore, true);
-  const p = livePage([session()]);
-  p.page.update({ next_after: "tok" });
+  assert.deepEqual(shown(), ["a"]);
   const input = byTag(p.page.el, "input")[0];
   input.value = "zzz";
   input.fire("input");
-  assert.equal(textOf(p.page.el).split("no sessions match").length - 1, 1, "said once, not in the note too");
-  assert.match(textOf(p.page.el), /filtering 1 loaded/);
-  assert.ok(byTag(p.page.el, "button").some((b) => b.textContent === "Load more"), "Load more is kept");
+  assert.deepEqual(shown(), ["a"], "typing does not narrow the rows");
+});
+
+// spec 029 C: an empty store, no match and a short page with more behind it say different things.
+test("emptyStatesSayWhatIsTrue", () => {
+  const text = (p) => textOf(p.page.el);
+  const p = livePage([]);
+  p.page.update({ loaded: true, items: [], total: 0, next_after: null });
+  assert.match(text(p), /No sessions captured yet\./);
+  // a filter or search on, nothing left to test: no match
+  p.page.update({ kind: "active", q: "", total: 7, scanned: 7, next_after: null });
+  assert.equal(text(p).split("no sessions match").length - 1, 1, "said once");
+  assert.doesNotMatch(text(p), /No sessions captured yet/);
+  p.page.update({ kind: "all", q: "zzz" });
+  assert.match(text(p), /no sessions match/);
+  assert.doesNotMatch(text(p), /filtering .* loaded/, "the old note is gone");
+  // nothing yet but more rows to test: a muted line with the count scanned, Load more kept
+  p.page.update({ next_after: "tok", scanned: 500, total: 900 });
+  assert.match(text(p), /No matches in the newest 500 sessions yet/);
+  assert.doesNotMatch(text(p), /no sessions match/);
+  assert.equal(withClass(p.page.el, "muted").some((e) => /No matches in the newest/.test(e.textContent)), true, "muted");
+  const more = byTag(p.page.el, "button").find((b) => b.textContent === "Load more");
+  assert.ok(more, "Load more is kept");
+  assert.equal(more.disabled, false);
+});
+
+// spec 029 E2: while Load more fetches, placeholder rows sit under the table and the button
+// is disabled; they are gone when the rows arrive.
+test("loadMoreShowsSkeletonRowsAndDisablesTheButton", () => {
+  const p = livePage([session()]);
+  p.page.update({ next_after: "tok", total: 80 });
+  const more = () => byTag(p.page.el, "button").find((b) => b.textContent === "Load more");
+  const skels = () => withClass(p.page.el, "skel");
+  assert.equal(skels().length, 0);
+  assert.equal(more().disabled, false);
+  p.page.update({ loadingMore: true });
+  assert.ok(skels().length > 0, "skeleton rows show");
+  assert.ok(skels().every((s) => s.attrs["aria-hidden"] === "true"), "hidden from screen readers");
+  const status = all(p.page.el).filter((e) => e.attrs.role === "status");
+  assert.ok(status.some((e) => /Loading more sessions…/.test(textOf(e))), "a status line says so");
+  assert.equal(more().disabled, true);
+  assert.ok(byTag(p.page.el, "tr").some((r) => r.dataset && r.dataset.id === "s1"), "the rows stay");
+  p.page.update({ loadingMore: false, items: [session(), session({ id: "s2", title: "two" })] });
+  assert.equal(skels().length, 0);
+  assert.equal(more().disabled, false);
+  // the end of the list: no skeleton, no button
+  p.page.update({ loadingMore: true, next_after: null });
+  assert.equal(skels().length, 0);
 });
 
 test("arrowsSelectEnterOpens", () => {
@@ -223,13 +251,13 @@ test("arrowsSelectEnterOpens", () => {
 
 // A live update must not rebuild the rows: a focused session link would leave the page and
 // focus would drop to <body> (013 manual check step 1, F1). Rows are kept by session id.
-function livePage(items) {
+function livePage(items, handlers = {}) {
   installDom();
   Object.assign(document, {
     createDocumentFragment: () => new StubElement("fragment"),
     createTextNode: (text) => Object.assign(new StubElement("text"), { textContent: text }),
   });
-  const page = createSessionsPage({ onMore() {} });
+  const page = createSessionsPage({ onMore() {}, ...handlers });
   page.update({ items });
   const link = (id) => byTag(page.el, "a").find((a) => a.href === `#/sessions/${id}`);
   const row = (id) => byTag(page.el, "tr").find((r) => r.dataset && r.dataset.id === id);
@@ -271,30 +299,42 @@ test("focusedRowKeepsFocusWhenTheOrderChanges", () => {
 
 // Esc in the filter box restores the whole list (F4). Chrome clears a search box on Esc
 // and fires `search`, not `input`; other browsers do not clear it at all.
-function filteredPage() {
-  const p = livePage([session(), session({ id: "s2", title: "older", last_at: "2026-01-01T00:01:00Z" })]);
+// Since spec 029 the page only reports the text (the app debounces and reloads); Esc and a
+// cleared box report at once, typing reports as "settling".
+function searchPage() {
+  const reports = [];
+  const p = livePage([session()], { onQuery: (text, now) => reports.push([text, now]) });
   const input = byTag(p.page.el, "input")[0];
-  const rows = () => byTag(p.page.el, "tr").filter((r) => r.dataset && r.dataset.id).length;
-  const listed = () => byTag(p.page.el, "tbody").length > 0 && all(p.page.el).some((e) => e.tagName === "table") && !all(p.page.el).some((e) => e.textContent === "no sessions match");
   input.value = "zz";
   input.fire("input");
-  assert.ok(!listed(), "the filter hides every row");
-  return { input, rows, listed };
+  assert.deepEqual(reports, [["zz", false]], "typing is reported, to be debounced by the app");
+  return { input, reports, page: p.page };
 }
 
-test("escInSessionFilterRestoresTheList", () => {
-  const f = filteredPage();
+test("escInSessionFilterClearsTheBoxAndReportsAtOnce", () => {
+  const f = searchPage();
   f.input.fire("keydown", { key: "Escape" });
   assert.equal(f.input.value, "", "Esc clears the box");
-  assert.ok(f.listed(), "the rows show again");
-  assert.equal(f.rows(), 2);
+  assert.deepEqual(f.reports.at(-1), ["", true]);
+  f.input.fire("keydown", { key: "Escape" });
+  assert.equal(f.reports.length, 2, "Esc in an empty box reports nothing");
 });
 
-test("chromeSearchEventRestoresTheSessionList", () => {
-  const f = filteredPage();
+test("chromeSearchEventReportsAtOnce", () => {
+  const f = searchPage();
   f.input.value = ""; // Chrome clears the box itself, then fires search
   f.input.fire("search");
-  assert.ok(f.listed(), "the rows show again");
+  assert.deepEqual(f.reports.at(-1), ["", true]);
+});
+
+// the URL's text goes into the box without overwriting what is typed when it already matches
+test("setQueryFillsTheBoxFromTheUrl", () => {
+  const f = searchPage();
+  f.page.setQuery("zz");
+  assert.equal(f.input.value, "zz");
+  f.page.setQuery("other");
+  assert.equal(f.input.value, "other");
+  assert.equal(f.page.query(), "other");
 });
 
 // The sessions list formats for reading (visual cleanup, 2026-11-13; spec 017 AC1): compact

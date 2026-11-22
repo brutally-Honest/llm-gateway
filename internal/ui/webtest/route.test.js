@@ -18,8 +18,8 @@ test("exchangeHeadersUrlRoundTrips", () => {
 });
 
 test("oldRoutesStillParse", () => {
-  assert.deepEqual(parseRoute(""), { name: "sessions" });
-  assert.deepEqual(parseRoute("#/"), { name: "sessions" });
+  assert.deepEqual(parseRoute(""), { name: "sessions", kind: "all", q: "" });
+  assert.deepEqual(parseRoute("#/"), { name: "sessions", kind: "all", q: "" });
   assert.deepEqual(parseRoute("#/ungrouped"), { name: "ungrouped" });
   assert.deepEqual(parseRoute("#/sessions/abc"), { name: "session", id: "abc", call: null });
   assert.deepEqual(parseRoute("#/exchanges/e1"), { name: "exchange", id: "e1" });
@@ -34,4 +34,37 @@ test("callRouteNamesSessionAndCall", () => {
   assert.equal(buildRoute({ name: "session", id: "s1", call: "e7" }), "#/sessions/s1/call/e7");
   assert.deepEqual(parseRoute("#/sessions/s1/call/e7"), { name: "session", id: "s1", call: "e7" });
   assert.equal(buildRoute({ name: "session", id: "s1", call: null }), "#/sessions/s1");
+});
+
+// spec 029: the list's kind and search live in the hash query; kind is left out when all and
+// q when empty, and buildRoute is the exact inverse of parseRoute.
+test("sessionsRouteCarriesKindAndSearch", () => {
+  assert.equal(buildRoute({ name: "sessions", kind: "active", q: "some text" }), "#/?kind=active&q=some%20text");
+  assert.deepEqual(parseRoute("#/?kind=active&q=some%20text"), { name: "sessions", kind: "active", q: "some text" });
+  assert.equal(buildRoute({ name: "sessions", kind: "all", q: "" }), "#/");
+  assert.equal(buildRoute({ name: "sessions" }), "#/");
+  assert.equal(buildRoute({ name: "sessions", kind: "look", q: "" }), "#/?kind=look");
+  assert.equal(buildRoute({ name: "sessions", kind: "all", q: "x" }), "#/?q=x");
+  assert.deepEqual(parseRoute("#/?"), { name: "sessions", kind: "all", q: "" });
+  assert.deepEqual(parseRoute("#/?q=x"), { name: "sessions", kind: "all", q: "x" });
+});
+
+test("sessionsRouteRoundTripsAwkwardText", () => {
+  for (const q of ["a b", "a&b=c", "#hash", "100%", "%20", "a+b", "naïve 日本語 ✓", "x?y/z", " lead and trail "]) {
+    for (const kind of ["all", "look", "active", "hooks"]) {
+      const r = { name: "sessions", kind, q };
+      const h = buildRoute(r);
+      assert.deepEqual(parseRoute(h), r, h);
+      assert.equal(buildRoute(parseRoute(h)), h);
+    }
+  }
+  assert.equal(buildRoute({ name: "sessions", kind: "all", q: "a&b #%" }), "#/?q=a%26b%20%23%25");
+});
+
+test("sessionsRouteUnknownKindReadsAsAll", () => {
+  assert.deepEqual(parseRoute("#/?kind=bogus&q=x"), { name: "sessions", kind: "all", q: "x" });
+  assert.deepEqual(parseRoute("#/?kind="), { name: "sessions", kind: "all", q: "" });
+  assert.deepEqual(parseRoute("#/?kind=ALL"), { name: "sessions", kind: "all", q: "" });
+  assert.equal(buildRoute({ name: "sessions", kind: "bogus", q: "" }), "#/");
+  assert.deepEqual(parseRoute("#/?other=1&kind=hooks"), { name: "sessions", kind: "hooks", q: "" });
 });

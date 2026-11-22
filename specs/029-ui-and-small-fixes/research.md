@@ -81,3 +81,27 @@ None. The brief asked for a build without stopping; judgment calls are D-entries
   `internal/ui`, and "cursor" is one. Go identifiers, comments and tests say "after" or
   "position" instead; spec.md keeps the word "cursor" for the contract, since specs are
   not checked.
+- **D14** B12: the rule lives once, in `isActive(last, endOnly, now)` (`api_view.go`),
+  used by `buildSummary` (so `kind=active` follows), `buildView` and the view cache check.
+  The fact comes from SQL for the list (`SessionRow.EndOnly`: the hooks-only branch's
+  `MIN(phase = core.PhaseSessionEnd)`) and from the loaded hooks for the view
+  (`endOnlyHooks`). The canonical phase `session_end` is used, not Claude Code's
+  `SessionEnd`, so no client name enters `internal/ui` or the store. `hub.go:722` is left
+  alone: it sets `Inactive` only for sessions with exchanges, which B12 sessions never
+  have. The session is not hidden from the list (non-goal).
+- **D15** Browser paging keeps the page's existing "Load more" button (the pattern the
+  list already used), with no `limit` sent. Each query or page change bumps a generation
+  number and older answers are dropped (E7); Load more is disabled while it fetches and
+  shows three skeleton rows.
+- **D16** A sessions→sessions hash change is applied in place (`listSync` in `app.js`, the
+  twin of the session page's `sessionSync`): the page is not rebuilt, the stream keeps
+  running and the search box keeps focus. Search text is trimmed before it goes into the
+  URL. An unknown, empty or wrong-case `kind` in the URL reads as `all`.
+- **D17** Live updates in a filtered list: a row already shown is updated in place; an
+  unseen session triggers a debounced (500 ms) refetch of page 1 for the current kind and
+  q, merged by id. The browser does not copy the server's filter rules, so a shown row
+  that stops matching stays until the next page-1 load.
+- **D18** Skeletons: the session page (`setStatus` "Loading the session…") and the call
+  panel ("Loading call…") already had them, so only app-level tests were added there. New
+  ones: Load more's rows. `filterSessions` and the "filtering N loaded" note are removed
+  with their tests; `filters.js` keeps `FILTERS` and gains `normalizeKind`.
