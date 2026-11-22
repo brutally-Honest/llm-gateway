@@ -1,6 +1,6 @@
 import { timeElement } from "./entries.js";
 import { FILTERS } from "./filters.js";
-import { bytes, dur, plural, skeleton } from "./fmt.js";
+import { bytes, dur, plural } from "./fmt.js";
 import { LABEL, explain, totalCost } from "./cost.js";
 
 export const NO_TITLE = "no prompt captured";
@@ -265,6 +265,33 @@ export function moveSelection(index, delta, total) {
 
 const FILTER_LABELS = { all: "All", look: "Needs a look", active: "Active", hooks: "Hooks only" };
 
+// PAGE_SIZE is the rows of one page; the server's default and maximum limit.
+export const PAGE_SIZE = 50;
+
+// pageCount is the pages an unfiltered list of total sessions has; an empty list has one.
+export function pageCount(total) {
+  return Math.max(1, Math.ceil((total || 0) / PAGE_SIZE));
+}
+
+// pagerItems lists what the pager shows between its arrows: page numbers and "…" gaps. With
+// last set (an unfiltered list: the page count is known) it is the first page, the last, and
+// the current one with two on each side, a gap of one page shown as that page; without it
+// (a filtered list) every page reached so far.
+export function pagerItems(current, last, reached) {
+  if (last === null || last === undefined) return Array.from({ length: Math.max(reached || 1, current) }, (_, i) => i + 1);
+  const want = new Set([1, last]);
+  for (let k = current - 2; k <= current + 2; k++) if (k >= 1 && k <= last) want.add(k);
+  const out = [];
+  let prev = 0;
+  for (const k of [...want].sort((a, b) => a - b)) {
+    if (k - prev === 2) out.push(prev + 1);
+    else if (k - prev > 2) out.push("…");
+    out.push(k);
+    prev = k;
+  }
+  return out;
+}
+
 function td(tr, text, cls) {
   const c = document.createElement("td");
   if (cls) c.className = cls;
@@ -485,10 +512,11 @@ function loader() {
 
 // createSessionsPage builds the landing page once; update(state) redraws the table, the
 // totals and the notes without touching the filter input, so typing keeps its focus.
-// state = { items, next_after, error, loaded, kind, q, total, scanned, loadingMore, today,
-// ungrouped: { items, next_after }, unassigned, unassignedItems }; until the first page has
-// loaded the list shows a loader. The rows are shown as given: the server filtered them.
-// handlers = { onMore, onKind(kind), onQuery(text, now) }.
+// state = { items, next_after, error, loaded, kind, q, total, scanned, page, reached, today,
+// ungrouped: { items, next_after }, unassigned, unassignedItems }; page is the page shown (or
+// being loaded) and reached the furthest page seen, for a filtered list's numbers. Until the
+// page has loaded the box shows a loader. The rows are shown as given: the server filtered them.
+// handlers = { onPage(n), onKind(kind), onQuery(text, now) }.
 export function createSessionsPage(handlers) {
   const el = document.createElement("section");
   el.className = "sessions-page";
@@ -526,13 +554,65 @@ export function createSessionsPage(handlers) {
   bar.append(input, picker);
   const list = document.createElement("div");
   list.className = "sp-list";
+  // the pager sits right under the fixed-height box, so a page change never moves it
+  const pager = document.createElement("nav");
+  pager.className = "sp-pager";
+  pager.setAttribute("aria-label", "Pages");
+  pager.hidden = true;
   const foot = document.createElement("div");
   foot.className = "sp-foot";
   const unassigned = document.createElement("div");
-  el.append(head, bar, list, foot, unassigned);
+  el.append(head, bar, list, pager, foot, unassigned);
 
   let kind = "all";
-  let state = { items: [], next_after: null, error: "", loaded: true, today: null, ungrouped: { items: [], next_after: null }, unassigned: 0, unassignedItems: [] };
+  let pagerKey = "";
+  let lastPage = 1;
+  let state = { items: [], next_after: null, error: "", loaded: true, page: 1, reached: 1, today: null, ungrouped: { items: [], next_after: null }, unassigned: 0, unassignedItems: [] };
+
+  // drawPager shows the page numbers: an unfiltered list knows its page count (from total) and
+  // can jump to any page; a filtered one numbers the pages reached so far and has › while
+  // the page it is on says more follow. A list of one page shows no pager. The pager is only
+  // rebuilt when what it shows changed, and focus goes back to the button it was on.
+  function drawPager() {
+    const filtering = kind !== "all" || (state.q || "") !== "";
+    const page = state.page || 1;
+    const last = filtering ? null : pageCount(state.total);
+    const more = filtering ? Boolean(state.next_after) : page < last;
+    const items = pagerItems(page, last, state.reached);
+    const single = filtering ? items.length < 2 && !more : last < 2;
+    const show = !state.error && !single;
+    const key = show ? JSON.stringify([page, items, more]) : "";
+    if (key === pagerKey) return;
+    pagerKey = key;
+    pager.hidden = !show;
+    if (!show) {
+      pager.replaceChildren();
+      return;
+    }
+    const was = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.p : undefined;
+    const btn = (id, label, onGo, disabled, aria) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "btn sm";
+      b.textContent = label;
+      b.dataset.p = String(id);
+      if (aria) b.setAttribute("aria-label", aria);
+      b.disabled = disabled;
+      if (id === page) b.setAttribute("aria-current", "page");
+      b.addEventListener("click", onGo);
+      return b;
+    };
+    const go = (k) => () => handlers.onPage && handlers.onPage(k);
+    const nodes = [btn("prev", "‹", go(page - 1), page <= 1, "Previous page")];
+    for (const it of items) {
+      if (it === "…") nodes.push(span("pgap", "…"));
+      else nodes.push(btn(it, String(it), go(it), false, `Page ${it}`));
+    }
+    nodes.push(btn("next", "›", go(page + 1), !more, "Next page"));
+    pager.replaceChildren(...nodes);
+    const back = was === undefined ? null : nodes.find((n) => n.dataset && n.dataset.p === was && !n.disabled);
+    if (back) back.focus({ preventScroll: true });
+  }
   let selected = "";
   let shown = [];
   // The server searches: the page only reports the text (the app waits for typing to settle).
@@ -600,6 +680,12 @@ export function createSessionsPage(handlers) {
     stat(compact(t.output), "output", t.output);
     stat(t.cost.text, `${LABEL} cost`, t.cost.title);
     foot.replaceChildren();
+    // a page change starts at the top of the box
+    if ((state.page || 1) !== lastPage) {
+      lastPage = state.page || 1;
+      list.scrollTop = 0;
+    }
+    drawPager();
     if (state.error) {
       shown = [];
       selected = "";
@@ -624,10 +710,6 @@ export function createSessionsPage(handlers) {
     } else {
       drawRows();
     }
-    // Load more is fetching: placeholder rows under the table, the button disabled
-    if (state.loadingMore && state.next_after) list.append(skeleton("Loading more sessions…", 3, "rows"));
-    const more = loadMore(state, handlers.onMore);
-    if (more) foot.append(more);
     const ug = ungroupedText(state.ungrouped.items, state.ungrouped.next_after);
     if (ug) {
       const a = document.createElement("a");

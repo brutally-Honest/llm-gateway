@@ -18,8 +18,8 @@ test("exchangeHeadersUrlRoundTrips", () => {
 });
 
 test("oldRoutesStillParse", () => {
-  assert.deepEqual(parseRoute(""), { name: "sessions", kind: "all", q: "" });
-  assert.deepEqual(parseRoute("#/"), { name: "sessions", kind: "all", q: "" });
+  assert.deepEqual(parseRoute(""), { name: "sessions", kind: "all", q: "", page: 1 });
+  assert.deepEqual(parseRoute("#/"), { name: "sessions", kind: "all", q: "", page: 1 });
   assert.deepEqual(parseRoute("#/ungrouped"), { name: "ungrouped" });
   assert.deepEqual(parseRoute("#/sessions/abc"), { name: "session", id: "abc", call: null });
   assert.deepEqual(parseRoute("#/exchanges/e1"), { name: "exchange", id: "e1" });
@@ -40,19 +40,19 @@ test("callRouteNamesSessionAndCall", () => {
 // q when empty, and buildRoute is the exact inverse of parseRoute.
 test("sessionsRouteCarriesKindAndSearch", () => {
   assert.equal(buildRoute({ name: "sessions", kind: "active", q: "some text" }), "#/?kind=active&q=some%20text");
-  assert.deepEqual(parseRoute("#/?kind=active&q=some%20text"), { name: "sessions", kind: "active", q: "some text" });
+  assert.deepEqual(parseRoute("#/?kind=active&q=some%20text"), { name: "sessions", kind: "active", q: "some text", page: 1 });
   assert.equal(buildRoute({ name: "sessions", kind: "all", q: "" }), "#/");
   assert.equal(buildRoute({ name: "sessions" }), "#/");
   assert.equal(buildRoute({ name: "sessions", kind: "look", q: "" }), "#/?kind=look");
   assert.equal(buildRoute({ name: "sessions", kind: "all", q: "x" }), "#/?q=x");
-  assert.deepEqual(parseRoute("#/?"), { name: "sessions", kind: "all", q: "" });
-  assert.deepEqual(parseRoute("#/?q=x"), { name: "sessions", kind: "all", q: "x" });
+  assert.deepEqual(parseRoute("#/?"), { name: "sessions", kind: "all", q: "", page: 1 });
+  assert.deepEqual(parseRoute("#/?q=x"), { name: "sessions", kind: "all", q: "x", page: 1 });
 });
 
 test("sessionsRouteRoundTripsAwkwardText", () => {
   for (const q of ["a b", "a&b=c", "#hash", "100%", "%20", "a+b", "naïve 日本語 ✓", "x?y/z", " lead and trail "]) {
     for (const kind of ["all", "look", "active", "hooks"]) {
-      const r = { name: "sessions", kind, q };
+      const r = { name: "sessions", kind, q, page: 1 };
       const h = buildRoute(r);
       assert.deepEqual(parseRoute(h), r, h);
       assert.equal(buildRoute(parseRoute(h)), h);
@@ -62,11 +62,30 @@ test("sessionsRouteRoundTripsAwkwardText", () => {
 });
 
 test("sessionsRouteUnknownKindReadsAsAll", () => {
-  assert.deepEqual(parseRoute("#/?kind=bogus&q=x"), { name: "sessions", kind: "all", q: "x" });
-  assert.deepEqual(parseRoute("#/?kind="), { name: "sessions", kind: "all", q: "" });
-  assert.deepEqual(parseRoute("#/?kind=ALL"), { name: "sessions", kind: "all", q: "" });
+  assert.deepEqual(parseRoute("#/?kind=bogus&q=x"), { name: "sessions", kind: "all", q: "x", page: 1 });
+  assert.deepEqual(parseRoute("#/?kind="), { name: "sessions", kind: "all", q: "", page: 1 });
+  assert.deepEqual(parseRoute("#/?kind=ALL"), { name: "sessions", kind: "all", q: "", page: 1 });
   assert.equal(buildRoute({ name: "sessions", kind: "bogus", q: "" }), "#/");
-  assert.deepEqual(parseRoute("#/?other=1&kind=hooks"), { name: "sessions", kind: "hooks", q: "" });
+  assert.deepEqual(parseRoute("#/?other=1&kind=hooks"), { name: "sessions", kind: "hooks", q: "", page: 1 });
+});
+
+// spec 029 amendment: page joins the hash query, left out on page 1; anything that is not a
+// positive integer reads as page 1.
+test("sessionsRouteCarriesThePage", () => {
+  assert.equal(buildRoute({ name: "sessions", kind: "active", q: "x", page: 3 }), "#/?kind=active&q=x&page=3");
+  assert.equal(buildRoute({ name: "sessions", kind: "all", q: "", page: 3 }), "#/?page=3");
+  assert.equal(buildRoute({ name: "sessions", kind: "all", q: "", page: 1 }), "#/");
+  assert.equal(buildRoute({ name: "sessions", kind: "look", q: "", page: 1 }), "#/?kind=look");
+  assert.deepEqual(parseRoute("#/?kind=active&q=x&page=3"), { name: "sessions", kind: "active", q: "x", page: 3 });
+  for (const bad of ["0", "-2", "abc", "", "1.5", "2e3", " 3", "99999999999999999999"]) {
+    assert.equal(parseRoute(`#/?page=${encodeURIComponent(bad)}`).page, 1, `page=${bad}`);
+    assert.equal(buildRoute({ name: "sessions", kind: "all", q: "", page: bad }), "#/", `build page=${bad}`);
+  }
+  for (const r of [{ kind: "all", q: "", page: 7 }, { kind: "hooks", q: "a&b #", page: 2 }, { kind: "look", q: "", page: 12 }]) {
+    const h = buildRoute({ name: "sessions", ...r });
+    assert.deepEqual(parseRoute(h), { name: "sessions", ...r }, h);
+    assert.equal(buildRoute(parseRoute(h)), h);
+  }
 });
 
 test("aLongQInTheUrlIsCappedAt200BytesOnACodePointBoundary", () => {

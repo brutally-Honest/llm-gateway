@@ -275,6 +275,16 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .seg-group .seg[aria-pressed="true"] { color: var(--hi); background: var(--panel2); font-weight: 600; }
 .seg-group .seg:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: -2px; }
 .sp-list { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow-x: auto; }
+/* the sessions list is a box of fixed height that scrolls inside (029 fix 7): the window
+   height less what sits above and below it, so the pager is in view without scrolling the
+   page; short windows keep 360px. The 320px is measured (029 UI check) at 1,440x900 and
+   2,560x1,265: box top 263px + 14px gap + 27px pager + 16px below the pager. The height does
+   not depend on the rows, a loading skeleton, an empty state or the page, so the pager never moves. */
+.sessions-page > .sp-list { height: calc(100vh - 320px); min-height: 360px; overflow: auto; }
+.sp-pager { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sp-pager .btn[aria-current="page"] { border-color: var(--accent-strong); color: var(--on-accent); background: var(--accent-strong); }
+.sp-pager .btn:disabled { opacity: .45; }
+.sp-pager .pgap { color: var(--muted); padding: 0 2px; }
 .sp-list > .empty, .sp-list > .error { margin: 0; padding: 1.5rem 1.25rem; }
 .sp-list table { min-width: 72rem; }
 .sp-list th { position: sticky; top: 0; background: var(--card); text-transform: uppercase; letter-spacing: .04em; font-size: 11px; padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }

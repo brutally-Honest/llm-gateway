@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { StubElement, all, byTag, installDom, textOf, withClass } from "./dom-stub.js";
 
 // Spec 029 through the real app.js, api.js and pages: only the browser is stubbed. The
@@ -104,7 +105,11 @@ const ids = () => byTag(byId("app"), "tr").filter((r) => r.dataset && r.dataset.
 const text = () => textOf(byId("app"));
 const input = () => byTag(page(), "input")[0];
 const kindBtn = (label) => byTag(withClass(page(), "seg-group")[0], "button").find((b) => b.textContent === label);
-const loadMoreBtn = () => byTag(byId("app"), "button").find((b) => b.textContent === "Load more");
+const pagerEl = () => withClass(byId("app"), "sp-pager")[0];
+const pagerBtn = (label) => byTag(pagerEl(), "button").find((b) => b.textContent === label);
+const pagerText = () => byTag(pagerEl(), "button").map((b) => b.textContent).join(" ");
+const box = () => withClass(page(), "sp-list")[0];
+const rows = (from, n) => Array.from({ length: n }, (_, i) => sess(`r${from + i}`, `row ${from + i}`, `2026-01-01T01:00:00.${String(999 - from - i).padStart(3, "0")}Z`));
 const skeletons = () => withClass(byId("app"), "skel");
 const lastReq = () => sessionReqs.at(-1);
 const key = (k) => listeners.keydown.at(-1)({ key: k, preventDefault() {} });
@@ -289,7 +294,7 @@ test("anOlderQueryAnswerIsDropped", async (t) => {
   first.resolve(); // the older query answers last
   await settle();
   assert.deepEqual(ids(), ["new"], "the older answer does not replace it");
-  // the same for a Load more of an older query
+  // the same for a page of an older query: › answered after the query changed is dropped
   const more = deferred();
   serve = async () => ({ items: [sess("n1", "n1", stamp(3))], next_after: "tok", total: 9, scanned: 1 });
   await go("#/?q=zz");
@@ -300,46 +305,233 @@ test("anOlderQueryAnswerIsDropped", async (t) => {
     }
     return { items: [sess("fresh", "fresh", stamp(2))], next_after: null, total: 9, scanned: 1 };
   };
-  loadMoreBtn().fire("click");
+  pagerBtn("›").fire("click");
   await settle();
   await go("#/?q=other");
   more.resolve();
   await settle();
   assert.ok(!ids().includes("late"), "a page of another query is dropped");
+  assert.deepEqual(ids(), ["fresh"]);
 });
 
-test("loadMoreSendsAfterKindAndQAppendsWithoutDuplicatesAndShowsSkeletonRows", async (t) => {
-  const pageOne = Array.from({ length: 3 }, (_, i) => sess(`p${i}`, `p${i}`, stamp(30 - i)));
-  await fresh(t, "#/?kind=active&q=p", () => ({ items: pageOne, next_after: "t1", total: 100, scanned: 50 }));
-  assert.deepEqual(ids(), ["p0", "p1", "p2"]);
-  const gate = deferred();
-  serve = async () => {
-    await gate.promise;
-    return { items: [pageOne[2], sess("p3", "p3", stamp(10))], next_after: null, total: 100, scanned: 20 };
+// spec 029 amendment: an older page's answer never replaces a newer page's.
+test("aStalePageAnswerIsDropped", async (t) => {
+  const answers = { 1: rows(0, 50), 2: rows(50, 50), 3: rows(100, 50) };
+  await fresh(t, "#/", () => ({ items: answers[1], next_after: "x", total: 560, scanned: 50 }));
+  const slow = deferred();
+  serve = async (p) => {
+    const k = Number(p.get("offset") || 0) / 50 + 1;
+    if (k === 2) await slow.promise;
+    return { items: answers[k], next_after: "x", total: 560, scanned: 50 };
   };
-  loadMoreBtn().fire("click");
+  pagerBtn("2").fire("click");
   await settle();
-  assert.deepEqual(reqObj(lastReq()), { kind: "active", q: "p", after: "t1" });
-  assert.ok(skeletons().length > 0, "skeleton rows under the table");
-  assert.equal(loadMoreBtn().disabled, true);
-  assert.deepEqual(ids(), ["p0", "p1", "p2"], "the rows stay meanwhile");
-  loadMoreBtn().fire("click");
+  pagerBtn("3").fire("click");
   await settle();
-  assert.equal(sessionReqs.filter((p) => p.get("after")).length, 1, "a second click while it loads asks nothing");
+  assert.equal(ids()[0], "r100", "page 3 is shown");
+  slow.resolve(); // page 2 answers last
+  await settle();
+  assert.equal(ids()[0], "r100", "the older page's answer is dropped");
+  assert.equal(pagerBtn("3").attrs["aria-current"], "page");
+});
+
+// ---- numbered pages (spec 029 amendment, AC8) ----
+
+test("unfilteredPageClickSendsOffsetAndNumbersWithEllipsisForTwelvePages", async (t) => {
+  const answer = (p) => ({ items: rows(Number(p.get("offset") || 0), 50), next_after: "x", total: 560, scanned: 50 });
+  await fresh(t, "#/", answer);
+  assert.equal(pagerEl().tagName, "nav");
+  assert.equal(pagerEl().attrs["aria-label"], "Pages");
+  assert.equal(pagerText(), "‹ 1 2 3 12 ›");
+  assert.equal(pagerBtn("1").attrs["aria-current"], "page");
+  assert.equal(pagerBtn("‹").disabled, true, "no prev on page 1");
+  assert.deepEqual(reqObj(sessionReqs[0]), {}, "page 1 sends no offset");
+  assert.equal(pagerBtn("6"), undefined, "6 is not shown on page 1");
+  pagerBtn("3").fire("click");
+  await settle();
+  assert.deepEqual(entries.at(-1), ["push", "#/?page=3"], "a page click is a history entry");
+  assert.deepEqual(reqObj(lastReq()), { offset: "100" }, "offset = (3 - 1) * 50, no after");
+  assert.equal(ids()[0], "r100");
+  pagerBtn("5").fire("click");
+  await settle();
+  pagerBtn("6").fire("click");
+  await settle();
+  assert.deepEqual(reqObj(lastReq()), { offset: "250" });
+  assert.equal(pagerText(), "‹ 1 4 5 6 7 8 12 ›");
+  assert.equal(withClass(pagerEl(), "pgap").length, 2);
+  assert.equal(pagerBtn("6").attrs["aria-current"], "page");
+  assert.equal(hash, "#/?page=6");
+  // jump to the last page in one request
+  const n = sessionReqs.length;
+  pagerBtn("12").fire("click");
+  await settle();
+  assert.equal(sessionReqs.length, n + 1, "one request for a jump");
+  assert.deepEqual(reqObj(lastReq()), { offset: "550" });
+  assert.equal(pagerText(), "‹ 1 10 11 12 ›");
+  assert.equal(pagerBtn("›").disabled, true, "no next on the last page");
+  assert.equal(pagerBtn("‹").disabled, false);
+  pagerBtn("‹").fire("click");
+  await settle();
+  assert.deepEqual(reqObj(lastReq()), { offset: "500" });
+  assert.equal(pagerBtn("11").attrs["aria-current"], "page");
+  // back to 1 leaves the page out of the URL and the offset out of the request
+  pagerBtn("1").fire("click");
+  await settle();
+  assert.equal(hash, "#/");
+  assert.deepEqual(reqObj(lastReq()), {});
+});
+
+test("skeletonShowsInsideTheBoxWhileAPageLoadsAndThePagerStays", async (t) => {
+  await fresh(t, "#/", (p) => ({ items: rows(Number(p.get("offset") || 0), 50), next_after: "x", total: 300, scanned: 50 }));
+  const gate = deferred();
+  serve = async (p) => {
+    await gate.promise;
+    return { items: rows(Number(p.get("offset") || 0), 50), next_after: "x", total: 300, scanned: 50 };
+  };
+  pagerBtn("2").fire("click");
+  await settle();
+  assert.ok(withClass(box(), "skel").length > 0, "the skeleton is inside the box");
+  assert.match(textOf(box()), /Loading sessions…/);
+  assert.deepEqual(ids(), []);
+  assert.equal(pagerBtn("2").attrs["aria-current"], "page", "the pager shows the page being loaded");
+  assert.equal(withClass(pagerEl(), "skel").length, 0);
   gate.resolve();
   await settle();
-  assert.deepEqual(ids(), ["p0", "p1", "p2", "p3"], "appended, no duplicate");
+  assert.equal(ids().length, 50);
   assert.equal(skeletons().length, 0);
-  assert.equal(loadMoreBtn(), undefined, "no next page, no button");
 });
 
-test("loadMoreErrorReplacesTheSkeleton", async (t) => {
-  await fresh(t, "#/", () => ({ items: [sess("a", "a", stamp(1))], next_after: "t1", total: 100, scanned: 1 }));
-  serve = () => null;
-  loadMoreBtn().fire("click");
+test("aPageClickScrollsTheBoxToItsTop", async (t) => {
+  await fresh(t, "#/", (p) => ({ items: rows(Number(p.get("offset") || 0), 50), next_after: "x", total: 300, scanned: 50 }));
+  box().scrollTop = 500;
+  pagerBtn("2").fire("click");
   await settle();
-  assert.match(text(), /store boom/);
-  assert.equal(skeletons().length, 0);
+  assert.equal(box().scrollTop, 0);
+});
+
+test("filteredPagesSendAfterTokensNumbersGrowAndNextEndsWithTheLastPage", async (t) => {
+  const chain = { "": ["t1", 0], t1: ["t2", 1], t2: [null, 2] };
+  const answer = (p) => {
+    const [next, i] = chain[p.get("after") || ""];
+    return { items: [sess(`f${i}`, `f${i}`, stamp(30 - i))], next_after: next, total: 900, scanned: 40 };
+  };
+  await fresh(t, "#/?kind=active&q=p", answer);
+  assert.deepEqual(reqObj(lastReq()), { kind: "active", q: "p" }, "page 1 has no after");
+  assert.equal(pagerText(), "‹ 1 ›");
+  pagerBtn("›").fire("click");
+  await settle();
+  assert.equal(hash, "#/?kind=active&q=p&page=2");
+  assert.deepEqual(reqObj(lastReq()), { kind: "active", q: "p", after: "t1" });
+  assert.equal(pagerText(), "‹ 1 2 ›");
+  assert.deepEqual(ids(), ["f1"]);
+  pagerBtn("›").fire("click");
+  await settle();
+  assert.deepEqual(reqObj(lastReq()), { kind: "active", q: "p", after: "t2" });
+  assert.equal(pagerText(), "‹ 1 2 3 ›");
+  assert.equal(pagerBtn("›").disabled, true, "no next_after: › goes");
+  assert.equal(pagerBtn("3").attrs["aria-current"], "page");
+  // a reached page is one request, from its remembered position
+  const n = sessionReqs.length;
+  pagerBtn("1").fire("click");
+  await settle();
+  assert.equal(sessionReqs.length, n + 1);
+  assert.deepEqual(reqObj(lastReq()), { kind: "active", q: "p" });
+  assert.equal(pagerText(), "‹ 1 2 3 ›", "the pages reached stay numbered");
+  pagerBtn("3").fire("click");
+  await settle();
+  assert.equal(sessionReqs.length, n + 2);
+  assert.deepEqual(reqObj(lastReq()), { kind: "active", q: "p", after: "t2" });
+});
+
+test("pageIsInTheUrlAndReloadOfAnUnfilteredPageThreeSendsOffset100", async (t) => {
+  const answer = (p) => ({ items: rows(Number(p.get("offset") || 0), 50), next_after: "x", total: 560, scanned: 50 });
+  await fresh(t, "#/?page=3", answer);
+  assert.equal(sessionReqs.length, 1, "one request");
+  assert.deepEqual(reqObj(lastReq()), { offset: "100" });
+  assert.equal(ids()[0], "r100");
+  assert.equal(pagerBtn("3").attrs["aria-current"], "page");
+  assert.deepEqual(entries, [], "no entry is added for what the URL already says");
+  // a kind and a page together; not a positive integer reads as page 1
+  await go("#/?page=abc");
+  assert.deepEqual(reqObj(lastReq()), {});
+  assert.equal(pagerBtn("1").attrs["aria-current"], "page");
+});
+
+test("aPageBeyondTheLastIsCorrectedToTheLastPageAndTheUrl", async (t) => {
+  const answer = (p) => {
+    const off = Number(p.get("offset") || 0);
+    return { items: off >= 150 ? [] : rows(off, 50), next_after: off + 50 < 150 ? "x" : null, total: 150, scanned: 50 };
+  };
+  await fresh(t, "#/?page=99", answer);
+  assert.deepEqual(sessionReqs.map((p) => p.get("offset")), ["4900", "100"], "asked, then the last page");
+  assert.deepEqual(entries, [["replace", "#/?page=3"]], "the URL is corrected without a history entry");
+  assert.equal(hash, "#/?page=3");
+  assert.equal(ids()[0], "r100");
+  assert.equal(pagerBtn("3").attrs["aria-current"], "page");
+  // an empty store: one page, no pager numbers, the URL goes back to page 1
+  serve = () => ({ items: [], next_after: null, total: 0, scanned: 0 });
+  sessionReqs.length = 0;
+  entries.length = 0;
+  await go("#/?page=4");
+  assert.match(text(), /No sessions captured yet\./);
+  assert.equal(pagerEl().hidden, true);
+  assert.deepEqual(entries.at(-1), ["replace", "#/"]);
+});
+
+test("aFilteredPageInTheUrlWalksPagesOneToN", async (t) => {
+  const chain = { "": ["t1", 0], t1: ["t2", 1], t2: ["t3", 2], t3: [null, 3] };
+  const answer = (p) => {
+    const [next, i] = chain[p.get("after") || ""];
+    return { items: [sess(`w${i}`, `w${i}`, stamp(30 - i))], next_after: next, total: 900, scanned: 10 };
+  };
+  const gate = deferred();
+  await fresh(t, "#/", () => ({ items: [], next_after: null, total: 0, scanned: 0 }));
+  serve = async (p) => {
+    if (p.get("after") === "t1") await gate.promise;
+    return answer(p);
+  };
+  sessionReqs.length = 0;
+  entries.length = 0;
+  await go("#/?kind=active&page=3");
+  assert.deepEqual(sessionReqs.map((p) => p.get("after")), [null, "t1"], "in order, the second held back");
+  assert.ok(skeletons().length > 0, "the skeleton shows during the walk");
+  assert.deepEqual(ids(), []);
+  gate.resolve();
+  await settle();
+  assert.deepEqual(sessionReqs.map((p) => p.get("after")), [null, "t1", "t2"], "three requests for page 3");
+  assert.deepEqual(ids(), ["w2"]);
+  assert.equal(pagerText(), "‹ 1 2 3 ›");
+  assert.equal(pagerBtn("3").attrs["aria-current"], "page");
+  assert.deepEqual(entries, [], "the URL already says page 3");
+  // the pages run out first: the last page reached is shown and the URL says so
+  await go("#/?kind=active&page=9");
+  assert.deepEqual(sessionReqs.slice(-4).map((p) => p.get("after")), [null, "t1", "t2", "t3"]);
+  assert.deepEqual(ids(), ["w3"]);
+  assert.deepEqual(entries.at(-1), ["replace", "#/?kind=active&page=4"]);
+  assert.equal(pagerBtn("›").disabled, true);
+});
+
+test("aKindOrSearchChangeGoesBackToPageOne", async (t) => {
+  const answer = (p) => ({ items: rows(Number(p.get("offset") || 0), 50), next_after: "x", total: 560, scanned: 50 });
+  await fresh(t, "#/?page=4", answer);
+  assert.equal(pagerBtn("4").attrs["aria-current"], "page");
+  sessionReqs.length = 0;
+  kindBtn("Active").fire("click");
+  await settle();
+  assert.equal(hash, "#/?kind=active", "no page in the URL");
+  assert.deepEqual(reqObj(lastReq()), { kind: "active" }, "no after, no offset");
+  assert.equal(pagerBtn("1").attrs["aria-current"], "page");
+  // a search typed on a later page
+  serve = (p) => ({ items: [sess(`s${p.get("after") || 0}`, "s", stamp(3))], next_after: p.get("after") ? null : "t1", total: 9, scanned: 5 });
+  await go("#/?kind=active&page=2");
+  assert.equal(pagerBtn("2").attrs["aria-current"], "page");
+  input().value = "needle";
+  input().fire("input");
+  t.mock.timers.tick(300);
+  await settle();
+  assert.equal(hash, "#/?kind=active&q=needle");
+  assert.deepEqual(reqObj(lastReq()), { kind: "active", q: "needle" });
+  assert.equal(pagerBtn("1").attrs["aria-current"], "page");
 });
 
 test("emptyStatesFollowTheServersAnswer", async (t) => {
@@ -350,16 +542,16 @@ test("emptyStatesFollowTheServersAnswer", async (t) => {
   await go("#/?kind=look");
   assert.match(text(), /no sessions match/);
   assert.doesNotMatch(text(), /No sessions captured yet/);
-  // a short page with more to test: say so, keep Load more, sum what was scanned
+  // a short page with more to test: say so, keep › to go on, sum what was scanned
   serve = (p) => (p.get("after") ? { items: [], next_after: "t2", total: 2000, scanned: 500 } : { items: [], next_after: "t1", total: 2000, scanned: 500 });
   await go("#/?q=rare");
   assert.match(text(), /No matches in the newest 500 sessions yet/);
-  assert.ok(loadMoreBtn(), "Load more is kept");
-  loadMoreBtn().fire("click");
+  assert.ok(pagerBtn("›"), "› is there to continue");
+  pagerBtn("›").fire("click");
   await settle();
   assert.match(text(), /No matches in the newest 1000 sessions yet/, "summed across pages");
   serve = () => ({ items: [sess("hit", "rare hit", stamp(1))], next_after: null, total: 2000, scanned: 40 });
-  loadMoreBtn().fire("click");
+  pagerBtn("›").fire("click");
   await settle();
   assert.deepEqual(ids(), ["hit"]);
   assert.doesNotMatch(text(), /No matches in the newest/);
@@ -377,26 +569,21 @@ test("keysWorkOverTheRowsShown", async (t) => {
   assert.equal(document.activeElement, input(), "/ focuses the search box");
 });
 
-test("liveEventInAFilteredListUpdatesInPlaceAndRefetchesAForANewSession", async (t) => {
+test("liveEventInAFilteredListUpdatesInPlaceAndRefetchesPageOneForANewSession", async (t) => {
   const rowA = sess("a", "alpha", stamp(5), { active: true });
   const rowB = sess("b", "beta", stamp(4), { active: true });
   await fresh(t, "#/?kind=active", () => ({ items: [rowA, rowB], next_after: "t1", total: 9, scanned: 9 }));
-  serve = () => ({ items: [sess("old", "older page", stamp(1), { active: true })], next_after: null, total: 9, scanned: 5 });
-  loadMoreBtn().fire("click");
-  await settle();
-  assert.deepEqual(ids(), ["a", "b", "old"]);
   const stream = streams.at(-1);
   sessionReqs.length = 0;
   // a session the list holds: in place, no request
   stream.emit("session", { ...rowA, title: "alpha renamed", last_at: stamp(6) });
   t.mock.timers.tick(1000);
   await settle();
-  assert.deepEqual(ids(), ["a", "b", "old"]);
+  assert.deepEqual(ids(), ["a", "b"]);
   assert.match(text(), /alpha renamed/);
   assert.equal(sessionReqs.length, 0, "the server is not asked for a session already held");
-  // a session the list does not hold: after the burst settles, page 1 is read and merged;
-  // the page already loaded stays
-  serve = (p) => ({ items: [sess("c", "gamma new", stamp(9), { active: true }), { ...rowA, title: "alpha renamed", last_at: stamp(6) }], next_after: "other", total: 10, scanned: 3 });
+  // a session the list does not hold: after the burst settles, page 1 is read again
+  serve = () => ({ items: [sess("c", "gamma new", stamp(9), { active: true }), { ...rowA, title: "alpha renamed", last_at: stamp(6) }, rowB], next_after: "other", total: 10, scanned: 3 });
   stream.emit("session", sess("c", "gamma new", stamp(9), { active: true }));
   stream.emit("session", sess("c", "gamma new", stamp(9), { active: true }));
   t.mock.timers.tick(400);
@@ -406,53 +593,98 @@ test("liveEventInAFilteredListUpdatesInPlaceAndRefetchesAForANewSession", async 
   await settle();
   assert.equal(sessionReqs.length, 1, "one refetch for the burst");
   assert.deepEqual(reqObj(lastReq()), { kind: "active" }, "page 1 for the current kind and q");
-  assert.deepEqual(ids(), ["c", "a", "b", "old"], "merged by id, loaded pages kept");
-  assert.equal(sessionReqs.filter((p) => p.get("after")).length, 0, "no paging in the refetch");
+  assert.deepEqual(ids(), ["c", "a", "b"]);
+  t.mock.timers.tick(5000); // end the cooldown
+  // later pages: in place only, and no refetch for a session they do not hold
+  serve = () => ({ items: [sess("old", "older page", stamp(1), { active: true })], next_after: null, total: 10, scanned: 5 });
+  pagerBtn("›").fire("click");
+  await settle();
+  assert.deepEqual(reqObj(lastReq()), { kind: "active", after: "other" });
+  assert.deepEqual(ids(), ["old"]);
+  sessionReqs.length = 0;
+  stream.emit("session", sess("old", "older renamed", stamp(2), { active: true }));
+  stream.emit("session", sess("z", "unseen", stamp(10), { active: true }));
+  t.mock.timers.tick(10000);
+  await settle();
+  assert.deepEqual(ids(), ["old"], "no insert");
+  assert.match(text(), /older renamed/, "updated in place");
+  assert.equal(sessionReqs.length, 0, "no page-1 refetch while on a later page");
 });
 
-test("liveEventInAnUnfilteredListIsUpsertedAtOnce", async (t) => {
-  await fresh(t, "#/", () => ({ items: [sess("a", "alpha", stamp(2))], next_after: null, total: 1, scanned: 1 }));
+test("liveEventOnUnfilteredPageOneInsertsAtTheTopTrimsTo50AndTotalMovesThePageCount", async (t) => {
+  await fresh(t, "#/", () => ({ items: rows(0, 50), next_after: "x", total: 100, scanned: 50 }));
+  assert.equal(pagerText(), "‹ 1 2 ›");
   sessionReqs.length = 0;
-  streams.at(-1).emit("session", sess("n", "brand new", stamp(8)));
-  assert.deepEqual(ids(), ["n", "a"]);
-  t.mock.timers.tick(1000);
+  streams.at(-1).emit("session", sess("n", "brand new", "2026-01-01T02:00:00Z"));
+  assert.equal(ids().length, 50, "trimmed to the page size");
+  assert.equal(ids()[0], "n", "at the top");
+  assert.ok(!ids().includes("r49"), "the last row leaves the page");
+  serve = () => ({ items: [sess("n", "brand new", "2026-01-01T02:00:00Z"), ...rows(0, 49)], next_after: "x", total: 101, scanned: 50 });
+  t.mock.timers.tick(500);
+  await settle();
+  assert.equal(sessionReqs.length, 1, "one request for the total");
+  assert.deepEqual(reqObj(lastReq()), {});
+  assert.equal(pagerText(), "‹ 1 2 3 ›", "101 sessions are three pages");
+  assert.equal(ids().length, 50);
+  // a session the page holds is an in-place update, with no request
+  t.mock.timers.tick(5000);
+  sessionReqs.length = 0;
+  streams.at(-1).emit("session", sess("r3", "renamed", "2026-01-01T01:00:00.996Z"));
+  t.mock.timers.tick(10000);
   await settle();
   assert.equal(sessionReqs.length, 0);
+  assert.match(text(), /renamed/);
 });
 
-test("loadMoreAnsweredAfterThePageOneRefreshOnReturnIsDroppedSoNoRowsAreSkipped", async (t) => {
-  const pg = (from, n) => Array.from({ length: n }, (_, i) => sess(`r${from + i}`, `r${from + i}`, `2026-01-01T01:00:00.${String(999 - from - i).padStart(3, "0")}Z`));
-  const answers = { "": { items: pg(0, 50), next_after: "t50", total: 300, scanned: 50 }, t50: { items: pg(50, 50), next_after: "t100", total: 300, scanned: 50 }, t100: { items: pg(100, 50), next_after: "t150", total: 300, scanned: 50 } };
-  await fresh(t, "#/", (p) => answers[p.get("after") || ""]);
-  loadMoreBtn().fire("click");
+test("liveEventOnUnfilteredPageTwoUpdatesInPlaceWithNoInsertsAndTotalMovesThePageCount", async (t) => {
+  await fresh(t, "#/?page=2", () => ({ items: rows(50, 50), next_after: "x", total: 560, scanned: 50 }));
+  assert.equal(pagerText(), "‹ 1 2 3 4 12 ›");
+  const before = ids();
+  sessionReqs.length = 0;
+  streams.at(-1).emit("session", sess("n", "brand new", "2026-01-01T02:00:00Z"));
+  streams.at(-1).emit("session", sess("r50", "r50 renamed", "2026-01-01T01:00:00.949Z"));
+  assert.deepEqual(ids(), before, "nothing inserted, nothing moved");
+  assert.match(text(), /r50 renamed/, "a row on screen updates in place");
+  serve = () => ({ items: rows(50, 50), next_after: "x", total: 700, scanned: 50 });
+  t.mock.timers.tick(500);
   await settle();
-  assert.equal(ids().length, 100);
-  await go("#/ungrouped");
-  const p1 = deferred();
-  const p3 = deferred();
+  assert.deepEqual(reqObj(lastReq()), { offset: "50" }, "the page on screen is read for its total");
+  assert.deepEqual(ids(), before, "the rows do not shift under the reader");
+  assert.equal(pagerText(), "‹ 1 2 3 4 14 ›", "the page count follows the total (700 is 14 pages)");
+  assert.equal(pagerBtn("2").attrs["aria-current"], "page");
+  t.mock.timers.tick(5000);
+});
+
+test("aPageAnswerArrivingAfterLeavingTheListIsDropped", async (t) => {
+  await fresh(t, "#/", (p) => ({ items: rows(Number(p.get("offset") || 0), 50), next_after: "x", total: 300, scanned: 50 }));
+  const slow = deferred();
   serve = async (p) => {
-    const a = p.get("after") || "";
-    if (a === "") await p1.promise;
-    if (a === "t100") await p3.promise;
-    return answers[a];
+    if (p.get("offset") === "50") await slow.promise;
+    return { items: rows(Number(p.get("offset") || 0), 50), next_after: "x", total: 300, scanned: 50 };
   };
-  sessionReqs.length = 0;
-  await go("#/"); // back on the list: the held rows stay while page 1 is read again
-  assert.equal(ids().length, 100, "held rows are shown while page 1 loads");
-  loadMoreBtn().fire("click"); // Load more for the old deep position
+  pagerBtn("2").fire("click");
   await settle();
-  p1.resolve(); // page 1 lands first
+  await go("#/ungrouped");
+  await go("#/");
+  assert.equal(pagerBtn("1").attrs["aria-current"], "page", "back on page 1");
+  slow.resolve();
   await settle();
-  p3.resolve(); // then the answer for the old position
-  await settle();
-  assert.deepEqual(ids(), pg(0, 50).map((r) => r.id), "the stale page is not appended");
-  sessionReqs.length = 0;
-  serve = (p) => answers[p.get("after") || ""];
-  loadMoreBtn().fire("click");
-  await settle();
-  assert.equal(lastReq().get("after"), "t50", "Load more continues from page 1's own position");
-  assert.equal(ids().length, 100);
-  assert.ok(ids().includes("r60"), "rows 50-99 are not skipped");
+  assert.equal(ids()[0], "r0", "page 2's late answer does not replace page 1");
+  assert.equal(pagerBtn("1").attrs["aria-current"], "page");
+});
+
+// the box's height is set by the stylesheet and does not depend on what it holds
+test("theListBoxHasAFixedHeightThatDoesNotDependOnItsContent", () => {
+  const css = readFileSync(new URL("../web/style.css", import.meta.url), "utf8");
+  const m = css.match(/(^|\n)\.sessions-page > \.sp-list\s*\{([^}]*)\}/);
+  assert.ok(m, "a rule for the sessions list box");
+  const d = Object.fromEntries(m[2].split(";").filter((x) => x.includes(":")).map((x) => [x.slice(0, x.indexOf(":")).trim(), x.slice(x.indexOf(":") + 1).trim()]));
+  assert.equal(d.height, "calc(100vh - 320px)", "the window less what sits above and below (measured)");
+  assert.equal(d["min-height"], "360px");
+  assert.equal(d.overflow, "auto", "the table scrolls inside the box");
+  assert.equal(d["max-height"], undefined);
+  assert.match(css, /\.sp-pager \{[^}]*display: flex/, "the pager has its own row below the box");
+  assert.doesNotMatch(m[2], /(?<!min-)height:\s*auto/);
 });
 
 test("aFilteredListRefetchesPageOneAtMostEveryFiveSecondsKeepingTheLastEvent", async (t) => {

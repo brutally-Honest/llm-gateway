@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compact, createSessionsPage, localMidnight, lookText, moveSelection, rowCells, startText, todayCells, ungroupedText, unassignedRow } from "../web/sessions-page.js";
+import { compact, createSessionsPage, localMidnight, lookText, moveSelection, pageCount, pagerItems, rowCells, startText, todayCells, ungroupedText, unassignedRow } from "../web/sessions-page.js";
 import { StubElement, all, byTag, installDom, textOf, withClass } from "./dom-stub.js";
 import { upsertSession } from "../web/entries.js";
 import { handleKey, keyBar } from "../web/keys.js";
@@ -201,38 +201,110 @@ test("emptyStatesSayWhatIsTrue", () => {
   p.page.update({ kind: "all", q: "zzz" });
   assert.match(text(p), /no sessions match/);
   assert.doesNotMatch(text(p), /filtering .* loaded/, "the old note is gone");
-  // nothing yet but more rows to test: a muted line with the count scanned, Load more kept
+  // nothing yet but more rows to test: a muted line with the count scanned, › to go on
   p.page.update({ next_after: "tok", scanned: 500, total: 900 });
   assert.match(text(p), /No matches in the newest 500 sessions yet/);
   assert.doesNotMatch(text(p), /no sessions match/);
   assert.equal(withClass(p.page.el, "muted").some((e) => /No matches in the newest/.test(e.textContent)), true, "muted");
-  const more = byTag(p.page.el, "button").find((b) => b.textContent === "Load more");
-  assert.ok(more, "Load more is kept");
-  assert.equal(more.disabled, false);
+  const next = byTag(p.page.el, "button").find((b) => b.textContent === "›");
+  assert.ok(next, "› continues the walk");
+  assert.equal(next.disabled, false);
+  assert.equal(byTag(p.page.el, "button").some((b) => b.textContent === "Load more"), false, "no Load more");
 });
 
-// spec 029 E2: while Load more fetches, placeholder rows sit under the table and the button
-// is disabled; they are gone when the rows arrive.
-test("loadMoreShowsSkeletonRowsAndDisablesTheButton", () => {
+// the pager's numbers (spec 029 amendment): an unfiltered list has first, last and the current
+// page with two each side, a gap of one page shown as that page; a filtered one numbers the
+// pages reached so far.
+test("pagerItemsForUnfilteredAndFilteredLists", () => {
+  assert.deepEqual(pagerItems(6, 12), [1, "…", 4, 5, 6, 7, 8, "…", 12]);
+  assert.deepEqual(pagerItems(1, 12), [1, 2, 3, "…", 12]);
+  assert.deepEqual(pagerItems(12, 12), [1, "…", 10, 11, 12]);
+  assert.deepEqual(pagerItems(4, 12), [1, 2, 3, 4, 5, 6, "…", 12], "a one-page gap is the page");
+  assert.deepEqual(pagerItems(1, 1), [1]);
+  assert.deepEqual(pagerItems(3, null, 3), [1, 2, 3]);
+  assert.deepEqual(pagerItems(2, null, 4), [1, 2, 3, 4], "pages reached stay numbered after going back");
+  assert.equal(pageCount(0), 1);
+  assert.equal(pageCount(50), 1);
+  assert.equal(pageCount(51), 2);
+  assert.equal(pageCount(560), 12);
+});
+
+const pagerOf = (p) => withClass(p.page.el, "sp-pager")[0];
+const pagerText = (p) => byTag(pagerOf(p), "button").map((b) => b.textContent).join(" ");
+const pagerButtons = (p) => byTag(pagerOf(p), "button");
+
+test("unfilteredPagerShowsNumbersWithEllipsisAndEndsDisabled", () => {
+  const picked = [];
+  const p = livePage([session()], { onPage: (n) => picked.push(n) });
+  const nav = pagerOf(p);
+  assert.equal(nav.tagName, "nav");
+  assert.equal(nav.attrs["aria-label"], "Pages");
+  p.page.update({ loaded: true, kind: "all", q: "", total: 560, page: 6 });
+  assert.equal(nav.hidden, false);
+  assert.equal(pagerText(p), "‹ 1 4 5 6 7 8 12 ›");
+  assert.equal(withClass(nav, "pgap").length, 2, "two ellipses");
+  const cur = pagerButtons(p).filter((b) => b.attrs["aria-current"] === "page");
+  assert.deepEqual(cur.map((b) => b.textContent), ["6"]);
+  pagerButtons(p).find((b) => b.textContent === "12").fire("click");
+  pagerButtons(p).find((b) => b.textContent === "‹").fire("click");
+  pagerButtons(p).find((b) => b.textContent === "›").fire("click");
+  assert.deepEqual(picked, [12, 5, 7]);
+  // the ends: prev disabled on 1, next on the last
+  p.page.update({ page: 1 });
+  assert.equal(pagerButtons(p).find((b) => b.textContent === "‹").disabled, true);
+  assert.equal(pagerButtons(p).find((b) => b.textContent === "›").disabled, false);
+  p.page.update({ page: 12 });
+  assert.equal(pagerButtons(p).find((b) => b.textContent === "‹").disabled, false);
+  assert.equal(pagerButtons(p).find((b) => b.textContent === "›").disabled, true);
+  // one page, or none: no pager
+  p.page.update({ total: 50, page: 1 });
+  assert.equal(nav.hidden, true);
+  p.page.update({ total: 0, items: [] });
+  assert.equal(nav.hidden, true);
+  assert.match(textOf(p.page.el), /No sessions captured yet\./);
+});
+
+test("filteredPagerNumbersReachedPagesAndNextFollowsNextAfter", () => {
   const p = livePage([session()]);
-  p.page.update({ next_after: "tok", total: 80 });
-  const more = () => byTag(p.page.el, "button").find((b) => b.textContent === "Load more");
-  const skels = () => withClass(p.page.el, "skel");
-  assert.equal(skels().length, 0);
-  assert.equal(more().disabled, false);
-  p.page.update({ loadingMore: true });
-  assert.ok(skels().length > 0, "skeleton rows show");
-  assert.ok(skels().every((s) => s.attrs["aria-hidden"] === "true"), "hidden from screen readers");
-  const status = all(p.page.el).filter((e) => e.attrs.role === "status");
-  assert.ok(status.some((e) => /Loading more sessions…/.test(textOf(e))), "a status line says so");
-  assert.equal(more().disabled, true);
-  assert.ok(byTag(p.page.el, "tr").some((r) => r.dataset && r.dataset.id === "s1"), "the rows stay");
-  p.page.update({ loadingMore: false, items: [session(), session({ id: "s2", title: "two" })] });
-  assert.equal(skels().length, 0);
-  assert.equal(more().disabled, false);
-  // the end of the list: no skeleton, no button
-  p.page.update({ loadingMore: true, next_after: null });
-  assert.equal(skels().length, 0);
+  p.page.update({ loaded: true, kind: "active", q: "", total: 900, page: 1, reached: 1, next_after: "t1" });
+  assert.equal(pagerText(p), "‹ 1 ›");
+  p.page.update({ page: 3, reached: 3, next_after: "t3" });
+  assert.equal(pagerText(p), "‹ 1 2 3 ›");
+  assert.equal(pagerButtons(p).find((b) => b.attrs["aria-current"] === "page").textContent, "3");
+  assert.equal(pagerButtons(p).find((b) => b.textContent === "›").disabled, false);
+  p.page.update({ next_after: null });
+  assert.equal(pagerButtons(p).find((b) => b.textContent === "›").disabled, true, "› goes with the end");
+  assert.equal(pagerText(p), "‹ 1 2 3 ›", "the numbers stay");
+  p.page.update({ page: 1, reached: 3, next_after: "t1" });
+  assert.equal(pagerText(p), "‹ 1 2 3 ›", "going back keeps the pages reached");
+  assert.equal(pagerButtons(p).find((b) => b.textContent === "‹").disabled, true);
+  // a filter that gave one page and nothing more: no pager
+  p.page.update({ page: 1, reached: 1, next_after: null });
+  assert.equal(pagerOf(p).hidden, true);
+});
+
+test("pagerStaysWhileAPageLoadsAndTheBoxShowsASkeleton", () => {
+  const p = livePage([session()]);
+  p.page.update({ loaded: true, kind: "all", q: "", total: 300, page: 1 });
+  assert.equal(pagerText(p), "‹ 1 2 3 6 ›");
+  p.page.update({ loaded: false, items: [], page: 2 });
+  assert.equal(pagerText(p), "‹ 1 2 3 4 5 6 ›", "still there, on the page being loaded");
+  assert.equal(pagerButtons(p).find((b) => b.attrs["aria-current"] === "page").textContent, "2");
+  const box = withClass(p.page.el, "sp-list")[0];
+  assert.ok(withClass(box, "skel").length > 0, "the skeleton is inside the box");
+  assert.ok(all(box).some((e) => e.attrs.role === "status" && /Loading sessions…/.test(textOf(e))));
+  assert.equal(withClass(pagerOf(p), "skel").length, 0);
+});
+
+test("aPageChangeScrollsTheBoxToItsTop", () => {
+  const p = livePage([session()]);
+  const box = withClass(p.page.el, "sp-list")[0];
+  p.page.update({ loaded: true, total: 300, page: 1 });
+  box.scrollTop = 400;
+  p.page.update({ items: [session({ id: "s9" })] });
+  assert.equal(box.scrollTop, 400, "a live update leaves the scroll alone");
+  p.page.update({ page: 2 });
+  assert.equal(box.scrollTop, 0);
 });
 
 test("arrowsSelectEnterOpens", () => {

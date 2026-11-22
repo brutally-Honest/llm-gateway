@@ -190,3 +190,39 @@ No P1. Cursor logic, SQL, the removed exchange fields and B12 were found correct
 - **D21** A filtered `page=N` in the URL is reached by walking pages 1 … N, since positions
   are not kept in the URL (D6); each request is bounded by the scan budget, so the walk is
   slow only for deep pages of a rare match.
+- **D22** Long text (fix 9): the cap sits on `.chapter .tx > .tx-b` (24rem, as
+  `.effect-body`), so Raw grows inside the same box and gets no nested scroll; the copy
+  button lives in `.tx-h`, outside it. `scrollbar-gutter: stable` keeps the text width
+  fixed when the scrollbar appears. Cost: with classic scrollbars (Linux, Windows) a short
+  block keeps an empty gutter inside its 16px right padding. Story bar (fix 8): 16px below,
+  as `.sesstabs .tabp`'s top margin.
+- **D23** The sessions box height is `calc(100vh - 320px)`, min 360px, measured in Chrome:
+  box top 263px + 14px gap + 27px pager + 16px below it, at 1,440×900 and 2,560 wide. The
+  first estimate (`100vh - 20rem`) put the pager below the window: the root font is 14px,
+  so 20rem was 280px. If the page head grows (tiles wrapping on a narrow window) the pager
+  can drop below the fold; the box still scrolls and the page scrolls to it.
+- **D24** The current page is filled (`--on-accent` on `--accent-strong`), the pair
+  `contrast.test.js` already checks. The first tries were too faint (panel2 on panel, 0.09
+  against 0.05 white in dark) or failed 4.5:1 (accent-strong text on panel2: 3.36 base dark,
+  4.29 base light, 4.43 lean light); the test pair added for the second try was removed
+  with it.
+
+## UI check, amendment (2026-11-22, throwaway gateway rebuilt, 435 fictional sessions)
+
+300 more hooks-only sessions (`fx029-more-NNN`, made-up folders `/srv/fx029-none/zeta-N`)
+were added for 9 pages. Chrome, 1,440×900 and 2,560×1,400, light and dark:
+- Unfiltered pager `‹ 1 2 3 … 9 ›`; 3, 5, 1 and 9 each one request; `page=99` lands on
+  page 9 (35 rows) and the URL reads `page=9`; the box scrolls to its top on a page change;
+  Back steps 5 → 3 → 1. The pager's bottom is at 740 of 757 (1,440) and 1,240 of 1,257
+  (2,560), so it is in view without scrolling; the box keeps its height on every page.
+- Filtered (`kind=hooks`): `‹ [1] ›` → `‹ 1 [2] ›` → `‹ 1 2 [3] ›`, and the numbers stay
+  after going back to 1; `q=zeta-3` (43 rows) shows no pager; a link to
+  `kind=hooks&q=more&page=4` walks to page 4.
+- Current page: filled accent, plain in both themes (after D24).
+- Story bar: 16px between it and the first turn card, light and dark.
+- Long blocks: the 60-line prompt and answer of the "very long call" turn are 336px boxes
+  that scroll inside, in Preview and in Raw, with the same 1,009px text width as short
+  blocks (42px, unchanged) — no width or height jump on the switch; copy stays in the
+  header. On this Linux Chrome a short block keeps a 15px empty gutter at its right (D22);
+  it reads as a wider right margin, nothing visible.
+- No console errors.
