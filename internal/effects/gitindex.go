@@ -33,6 +33,10 @@ var errIndexUnsupported = errors.New("git index not supported by the reader")
 const (
 	modeGitlink = 0o160000
 	modeTree    = 0o040000
+
+	// maxPathExpansion bounds the bytes of all version 4 paths to this many times the size
+	// of the index file (a path is at most 4096 bytes and an entry at least 63).
+	maxPathExpansion = 64
 )
 
 // readIndex parses the git index file in data (formats 2, 3 and 4, see gitformat-index)
@@ -56,6 +60,9 @@ func readIndex(data []byte, hashLen int) ([]indexEntry, error) {
 	}
 	pos := 12
 	var prev []byte
+	// A version 4 path is rebuilt from the previous one, so a few small entries after one
+	// long path would expand quadratically. Real indexes stay far below this budget.
+	pathBudget := uint64(len(data)) * maxPathExpansion
 	out := make([]indexEntry, 0, count)
 	for i := uint32(0); i < count; i++ {
 		start := pos
@@ -100,6 +107,10 @@ func readIndex(data []byte, hashLen int) ([]indexEntry, error) {
 				return nil, errors.New("index: unterminated path")
 			}
 			path := append(append([]byte{}, prev[:uint64(len(prev))-strip]...), data[pos:pos+end]...)
+			if uint64(len(path)) > pathBudget {
+				return nil, fmt.Errorf("%w: paths expand beyond the file size", errIndexUnsupported)
+			}
+			pathBudget -= uint64(len(path))
 			pos += end + 1
 			prev = path
 			e.path = string(path)
