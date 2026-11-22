@@ -601,7 +601,10 @@ ul.effs .linkish code { color: var(--accent); }
    Raw, Copy) over the text (027 C4) */
 .chapter .tx { padding: 0; gap: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
 .chapter .tx > .tx-h { padding: 8px 8px 0 16px; }
-.chapter .tx > .tx-b { padding: 6px 16px 14px; }
+/* 029 AC10: a long prompt or answer scrolls inside the body, in Preview and Raw alike (Raw
+   adds no scroll of its own); the header with Copy stays outside; the gutter is kept so the
+   scrollbar never changes the text's width */
+.chapter .tx > .tx-b { padding: 6px 16px 14px; max-height: 24rem; overflow-y: auto; scrollbar-gutter: stable; }
 .chapter .tx > .reminders, .chapter .tx > p { padding: 8px 16px 0; }
 .chapter .tx.answer > .tx-h .who { color: var(--model); }
 .tx-h .mode { margin-left: auto; }
