@@ -6,10 +6,10 @@ BIN           := $(CURDIR)/bin
 GOLANGCI_LINT := $(BIN)/golangci-lint
 NOTES_REFSPEC := +refs/notes/*:refs/notes/*
 
-# `dev` when git can't describe the tree, e.g. a Docker build without .git.
+# `dev` when git can't describe the tree, e.g. a source tarball without .git.
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-.PHONY: setup setup-git setup-lint setup-shellcheck setup-node build run dist image test web-test lint verify \
+.PHONY: setup setup-git setup-lint setup-shellcheck setup-node build run dist test web-test lint verify \
 	observability-up observability-down
 
 # Idempotent: safe to run again at any time.
@@ -90,10 +90,6 @@ observability-up:
 
 observability-down:
 	$(OBS_COMPOSE) down
-
-# The build context has no .git, so the version is passed in as a build arg.
-image:
-	VERSION=$(VERSION) docker compose build
 
 test:
 	go test -race ./...

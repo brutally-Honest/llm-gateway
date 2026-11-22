@@ -6,11 +6,8 @@ configured `upstreams.anthropic.base_url`) as sent.
 
 ## 1. Setup
 
-Start the gateway (`make run`, or `docker compose up`). It listens on
-`127.0.0.1:7197`. The native install ([docs/install.md](../install.md)) is the supported
-path; the compose gateway is limited: it sees file effects only for folders mounted at
-the same path as on the host, and on macOS it needs Docker Desktop's "Enable host
-networking" ([known limits](../install.md#known-limits)).
+Start the gateway (`make run`, or the native install in
+[docs/install.md](../install.md)). It listens on `127.0.0.1:7197`.
 
 Then point Claude Code at it in the shell you start `claude` from:
 
@@ -125,9 +122,6 @@ stop with nothing in flight takes well under a second.
 
 - **`make run`:** the first Ctrl-C starts the stop. A **second Ctrl-C stops the gateway
   at once**, cutting any open streams.
-- **`docker compose stop`** (and `docker compose down`) waits the same way; the compose
-  file's `stop_grace_period` (30s) leaves room for the grace period and the capture
-  drain. `docker compose kill` stops the container at once.
 
 ## 5. Harness hooks
 
@@ -149,8 +143,8 @@ in `config.example.yaml`; why it works this way is in
 the binary, the config, the settings file, the login service and the `claude` function.
 The steps below are the same setup by hand.
 
-This needs the gateway **on the host**, not in Docker: a container cannot see your project
-folders or your programs. Docker keeps working for API capture alone.
+This needs the gateway **on the host**, where it can see your project folders and your
+programs.
 
 ### Build and configure
 
