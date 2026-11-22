@@ -613,7 +613,7 @@ ul.effs .linkish code { color: var(--accent); }
 .tx.prompt .tx-h .who { color: var(--accent); }
 .mode { margin-left: auto; display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .mode .seg { all: unset;
-  cursor: pointer; font-size: 11.5px; font-weight: 600; color: var(--muted); padding: 2px 9px; }
+  cursor: pointer; font-size: 11.5px; font-weight: 600; color: var(--muted); padding: 3px 9px; }
 .mode .seg:hover { color: var(--text); background: var(--panel2); }
 .mode .seg[aria-pressed="true"] { color: var(--hi); background: var(--panel2); }
 .mode .seg:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: -2px; }
