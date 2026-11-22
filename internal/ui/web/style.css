@@ -814,7 +814,7 @@ dialog:modal .call-scrim, dialog:modal .call-scrim:hover { top: 0; background: t
 }
 
 /* 027 C4: one Preview / Raw switch above the story; a tab's summary line; files expand in place */
-.story-bar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 14px 0 0; }
+.story-bar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 14px 0 0; margin-bottom: 16px; }
 .story-bar .mode { margin-left: 0; }
 .tabp .sum { margin: 0 10px 8px; font-size: 13px; color: var(--text); }
 .tabp .sum .one-line { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
