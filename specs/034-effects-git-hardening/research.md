@@ -166,3 +166,48 @@ partial clone with an `ext::` remote and `protocol.ext.allow=always` — nothing
   checkpoint runs off the request path and safety wins over speed (AGENTS priority
   observability first, but capture never blocks a request). Follow-up: a worker pool for
   the stat loop.
+
+## Review round 2 (opus, fresh context, 2026-11-22)
+
+No remaining way for repo settings to make a runner git call run a program (probed again).
+Old-code proof re-run: hostile, lazy-fetch, env-strip and fallback-cache tests fail on
+main's `git.go`; all five `modes_test.go` tests fail on main's `install.go`. 40 random
+rounds of the comparison matched `git status` exactly.
+
+| # | Pri | Finding | Action |
+|---|---|---|---|
+| S1 | P1 | `.git/index` symlinked to `/dev/zero` or a huge file: unbounded `os.ReadFile` kills the process (OOM); main's git failed at once | fixed: non-blocking open, regular file, size cap, length check (D25) |
+| S2 | P2 | FIFO at `.git/index` blocks the checkpoint forever | fixed with S1 |
+| S3 | P2 | skip-worktree file present in the work tree (written outside the sparse cone) missed; git ≥ 2.37 reports it | fixed: present skip-worktree files are compared (D26); spec edge case corrected |
+| S4 | P3 | hashing ignores ctx and the git timeout (huge sparse file) | fixed: chunked hash checks ctx; the Go comparison runs under the git timeout |
+| S5 | P3 | racy-entry check and fallback-cache 1 s guard untested | tests added |
+| S6 | P4 | index mtime read by a separate `Stat` | fixed with S1 (fstat) |
+| S7 | P4 | `--show-object-format` / `config` failures silently become defaults | fixed: only "not set" defaults, other failures fail the call |
+| S8 | P4 | stat cache keeps every work tree forever | fixed: tops unused for 1 h dropped |
+| S9 | P4 | `..`, absolute or `.git` paths from a crafted index are opened | fixed: skipped |
+| S10 | P4 | openbsd/dragonfly/solaris/aix lose inode and ctime | accepted (D22) |
+| S11 | P4 | `modes_test.go` uses `syscall.Stat_t` | accepted: CI is linux and macOS; main's `internal/store` already does not build on Windows |
+| S12 | P4 | `tighten()` failing on a config symlinked to another user's file stops the reinstall | fixed: a warning with the chmod to run (D27) |
+| S13 | P4 | one `candidates` per watched folder in the same repo | accepted, D24 follow-up |
+
+- **D25** (2026-11-22) The index is read only when it is a regular file of at most
+  512 MiB; anything else goes to the `ls-files` fallback, where git itself decides.
+- **D26** (2026-11-22) A skip-worktree entry is compared when its file is present, unless
+  `sparse.expectFilesOutsideOfPatterns=true`; absent is unchanged. Corrects D5.
+- **D27** (2026-11-22) A chmod that fails while tightening an existing config prints a
+  warning with the command to run instead of failing the install.
+- **D28** (2026-11-22) Two review rounds were run, the most the build allows; round 2's
+  fixes are not reviewed again by a third opus round.
+- **D29** (2026-11-22) `run` appends up to 300 characters of git's stderr to its error
+  (still an `*exec.ExitError` underneath), so an old git's unknown-option failure for
+  `--show-object-format` (exit 128 naming the option) can default to sha1; it is logged
+  only as the folder-skipped warning.
+- **D30** (2026-11-22) A crafted index or tree path (absolute, empty, `.`, `..` or a `.git`
+  component in any case) is skipped entirely: never opened, never listed, and not listed
+  as deleted from `HEAD` either.
+- **D31** (2026-11-22) A skip-worktree path under a symlinked leading folder counts as
+  absent (unchanged). A non-boolean value for the `core.*`/`sparse.*` keys read now fails
+  `candidates` instead of being ignored.
+- **D32** (2026-11-22) The fallback-cache guard test asserts a fresh file is not cached;
+  a same-size rewrite cannot be made to keep its ctime, so the answer-level check alone
+  cannot tell the guard apart.
