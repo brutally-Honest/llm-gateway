@@ -142,6 +142,8 @@ below and AC44, the API-key smoke test of Phase 1.
 - Per-session network attribution when several Claude Code sessions run at once (today
   connections go to unassigned unless exactly one routed session is active; 014 AC10's
   rule). Idea: tag each claude launch with its own id in the proxy URL.
+- Label sessions by account: when several Claude accounts are used on one machine, show
+  which account each session came from; today their sessions are mixed.
 - The speed follow-ups, re-measured after 016.
   - Cold view build for large sessions (2.3 s server build at 2,000 calls; 016 research
     2026-11-13).
