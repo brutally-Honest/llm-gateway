@@ -19,8 +19,9 @@ and awaiting their manual check.
 - `PLAN.md` — the one-page source of intent: goals, phases, stack rationale, open
   questions, commit conventions.
 - `AGENTS.md` — the rules any agent working in this repo must follow.
-- `specs/` — one folder per feature: `spec.md` (what and why), `plan.md` (how),
-  `tasks.md` (checklist), `research.md` (doubts, roadblocks and limits, with answers).
+- `specs/` — one folder per feature: `spec.md` (what and why) and `research.md`
+  (decisions as D-entries). Specs 003–017 also keep the old kit's `plan.md` and
+  `tasks.md` as history.
 - `docs/decisions/` — ADRs.
 - `docs/clients/` — one page per client: how to connect, known limits.
 
