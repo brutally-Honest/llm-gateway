@@ -96,3 +96,16 @@ name against `grep -rn 'Name: *"gateway_' internal` before keeping it.
 - **D4** The testdata READMEs and the ADR template fit no group, so they are group 4 (spec E1).
 - **D5** Specs 029, 031 and 032 have no `status:` line, and AGENTS.md says new specs carry no status frontmatter. The brief lists them as `done` explicitly, so a `status: done` line is added to their frontmatter; the brief, being the more specific instruction, wins.
 - **D6** Specs 007, 011 and 012 keep their frontmatter in `brief.md` (no `spec.md`), so their status is set there.
+- **D7** Spec 027 does have `status: draft`; the first status run misread it as missing. A second, single-line run set it to `done`; no duplicate key was added.
+- **D8** The roadmap's Done list ran from 017 to 025 and left out 026 and 027, which are finished. The brief names 028–032, but a Done list that skips two finished specs is stale, so 026 and 027 entries were added too.
+- **D9** "Labelling sessions by account" is not in the roadmap and no spec or doc records it (`grep -rniE 'by account|per.account'` finds nothing). It is not added: there is no source to word it from, and adding it would be new content. Listed in the report for the human.
+- **D10** README's "older specs (000–017) also keep plan.md and tasks.md" was half true: 017 keeps only `tasks.md`. The first fix (000–016) lost that, so it now names 017's `tasks.md` separately.
+- **D11** `docs/clients/claude-code.md:129` "the timeline shows which asked-for tools ran" is read as the removed CLI timeline (it sits beside the 010 hooks text, written when `gateway timeline` existed) and becomes "the web UI", matching the hooks page.
+- **D12** The hand-written systemd unit and plist in `docs/clients/claude-code.md` §6 differ from what `gateway install` writes (log path, KeepAlive, ThrottleInterval). They describe a valid manual setup, not the installer, so they are not false and stay.
+- **D13** The PLAN.md §8 Testing row keeps its rationale ("testcontainers gives real Redis/DB") as the reason the choice was made; only the Choice cell says it is not used.
+
+## Statuses left that still look wrong (not changed)
+- ADR vocabulary is mixed: 0002–0006, 0009, 0010, 0012–0016, 0019 and 0020 say `approved`; 0008, 0017, 0018 and 0021 say `accepted`. Same meaning, two words.
+- Specs 000–017 (except 007, 010, 011, 012) still carry the kit's `status:` frontmatter, which AGENTS.md says new specs do not have; kept as history.
+- Spec 004 keeps `status: done` in `brief.md`, like 007/011/012; consistent, no change.
+- Specs 029, 031 and 032 now carry `status: done` although AGENTS.md says new specs have no status frontmatter (D5).

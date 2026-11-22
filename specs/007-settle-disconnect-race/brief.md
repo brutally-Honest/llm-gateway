@@ -2,7 +2,7 @@
 feature: 007-settle-disconnect-race
 kind: fix
 mode: quick
-status: approved
+status: done
 version: 1
 created: 2026-10-12
 branch: fix/007-settle-disconnect-race

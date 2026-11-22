@@ -1,13 +1,15 @@
 ---
 feature: 020-api-equivalent-cost
 kind: feat
-status: draft
+status: done
 version: 1
 created: 2026-11-15
 supersedes:
 branch: feat/020-api-equivalent-cost
 ---
 # API-equivalent cost
+
+> 2026-11-22: Built without the agent-loop kit.
 
 ## Goal
 PLAN §7 Phase 9. Every model call and session shows what its captured tokens would

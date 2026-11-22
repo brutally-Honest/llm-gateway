@@ -1,13 +1,15 @@
 ---
 feature: 018-side-call-turns
 kind: fix
-status: draft
+status: done
 version: 1
 created: 2026-11-15
 supersedes:
 branch: fix/018-side-call-turns
 ---
 # Side calls shown as turns
+
+> 2026-11-22: Built without the agent-loop kit.
 
 ## Goal
 Claude Code's away summaries ("The user stepped away and is coming back…") and prompt

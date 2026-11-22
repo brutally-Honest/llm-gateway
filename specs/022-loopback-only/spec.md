@@ -1,13 +1,15 @@
 ---
 feature: 022-loopback-only
 kind: fix
-status: draft
+status: done
 version: 1
 created: 2026-11-20
 supersedes:
 branch: fix/022-loopback-only
 ---
 # Loopback only
+
+> 2026-11-22: Built without the agent-loop kit.
 
 ## Goal
 AGENTS.md says no route is reachable from outside localhost without a gateway token.

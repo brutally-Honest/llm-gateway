@@ -1,6 +1,7 @@
 ---
 feature: 032-kit-removal-adr
 kind: chore
+status: done
 created: 2026-11-22
 branch: chore/032-kit-removal-adr
 ---

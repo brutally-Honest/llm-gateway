@@ -1,6 +1,7 @@
 ---
 feature: 031-remove-clutter
 kind: chore
+status: done
 created: 2026-11-22
 branch: chore/031-remove-clutter
 ---

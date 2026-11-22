@@ -2,7 +2,7 @@
 feature: 012-session-header-live
 kind: fix
 mode: quick
-status: approved
+status: done
 version: 1
 created: 2026-11-02
 branch: fix/012-session-header-live

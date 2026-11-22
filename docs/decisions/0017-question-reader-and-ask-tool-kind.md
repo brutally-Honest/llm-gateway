@@ -1,9 +1,11 @@
 ---
-status: proposed
+status: accepted
 date: 2026-11-15
 ---
 
 # 0017 — questions and answers are read by the client's profile
+
+> 2026-11-22: Widened to optional profile interfaces.
 
 ## Context
 specs/017 (research D14) shows a tool call that asked the user questions — Claude Code's
