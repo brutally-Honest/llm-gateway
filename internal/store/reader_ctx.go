@@ -78,6 +78,13 @@ func (c *CtxReader) SessionPage(after *SessionAfter, limit int) ([]SessionRow, e
 	return c.r.sessions(c.ctx, q, args...)
 }
 
+// SessionPageAt lists up to limit sessions in SessionRows order after skipping offset
+// rows, the same order SessionPage walks. offset must not be negative and limit must be
+// positive; an offset at or past the last row gives no rows.
+func (c *CtxReader) SessionPageAt(offset, limit int) ([]SessionRow, error) {
+	return c.r.sessions(c.ctx, sessionSelect+sessionOrder+` LIMIT ? OFFSET ?`, limit, offset)
+}
+
 // SessionCount counts every session, the rows SessionPage lists.
 func (c *CtxReader) SessionCount() (int, error) {
 	var n int

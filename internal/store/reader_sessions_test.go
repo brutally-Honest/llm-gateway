@@ -393,3 +393,38 @@ func TestReader_SessionCount(t *testing.T) {
 		t.Fatalf("count = %d, err %v, want 3", n, err)
 	}
 }
+
+func TestReader_SessionPageAt(t *testing.T) {
+	r := seedSessions(t,
+		sx{"a", "local", "cc", "k1", 1},
+		sx{"b", "local", "cc", "k2", 5},
+		sx{"c", "local", "cc", "k3", 5}, // ties with k2 on last
+		sx{"d", "local", "cc", "k4", 3},
+		sx{"e", "local", "cc", "k5", 9},
+	)
+	c := r.WithContext(t.Context())
+	all, err := r.SessionRows(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ offset, limit, from, to int }{
+		{0, 5, 0, 5}, {0, 2, 0, 2}, {2, 2, 2, 4}, {3, 10, 3, 5}, {4, 1, 4, 5}, {5, 3, 5, 5}, {50, 3, 5, 5},
+	} {
+		rows, err := c.SessionPageAt(tc.offset, tc.limit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := sessionNames(all[tc.from:tc.to]); !reflect.DeepEqual(sessionNames(rows), want) && (len(rows) != 0 || len(want) != 0) {
+			t.Fatalf("SessionPageAt(%d, %d) = %v, want %v", tc.offset, tc.limit, sessionNames(rows), want)
+		}
+	}
+	// the same rows the after-key walk reads, ties included
+	page, err := c.SessionPage(&store.SessionAfter{Last: all[1].Last, PrincipalID: all[1].PrincipalID, Client: all[1].Client, SessionKey: all[1].SessionKey}, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at, err := c.SessionPageAt(2, 2)
+	if err != nil || !reflect.DeepEqual(sessionNames(at), sessionNames(page)) {
+		t.Fatalf("offset page %v (err %v) differs from after page %v", sessionNames(at), err, sessionNames(page))
+	}
+}

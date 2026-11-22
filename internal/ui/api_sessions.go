@@ -586,12 +586,31 @@ func (d Deps) listSessions(w http.ResponseWriter, r *http.Request) {
 		}
 		after = &store.SessionAfter{Last: t.At, PrincipalID: t.Principal, Client: t.Client, SessionKey: t.Key}
 	}
+	offset := 0
+	if query.Has("offset") {
+		n, err := strconv.Atoi(query.Get("offset"))
+		if err != nil || n < 0 {
+			writeErr(w, http.StatusBadRequest, "bad_request", "offset must be an integer, 0 or more")
+			return
+		}
+		if after != nil || kind != "all" || q != "" {
+			writeErr(w, http.StatusBadRequest, "bad_request", "offset cannot be combined with after, kind or q")
+			return
+		}
+		offset = n
+	}
 	ctx, cancel := storeCtx(r)
 	defer cancel()
 	c := d.Reader.WithContext(ctx)
 	page := sessionsPage{}
 	if kind == "all" && q == "" {
-		rows, err := c.SessionPage(after, limit+1)
+		var rows []store.SessionRow
+		var err error
+		if query.Has("offset") {
+			rows, err = c.SessionPageAt(offset, limit+1)
+		} else {
+			rows, err = c.SessionPage(after, limit+1)
+		}
 		if err != nil {
 			writeStoreErr(w, err)
 			return

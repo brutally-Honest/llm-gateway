@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -466,5 +467,83 @@ func TestSessionsPage_SmallLimitFilteredPages(t *testing.T) {
 	}
 	if len(got) != 12 || fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("matches = %v, want %v", got, want)
+	}
+}
+
+func TestSessionsPage_OffsetPages(t *testing.T) {
+	e := newAPIEnv(t)
+	e.seed(120)
+	first := e.sess("")
+	if got := e.sess("?offset=0"); !reflect.DeepEqual(got.keys(), first.keys()) || got.NextAfter == nil || *got.NextAfter != *first.NextAfter {
+		t.Fatalf("offset 0 = %v next %v, want the first page", got.keys(), got.NextAfter)
+	}
+	byAfter := e.sess("?after=" + url.QueryEscape(*first.NextAfter))
+	p2 := e.sess("?offset=50")
+	if !reflect.DeepEqual(p2.keys(), byAfter.keys()) || len(p2.Items) != 50 || p2.NextAfter == nil || p2.Scanned != 50 || p2.Total != 120 {
+		t.Fatalf("offset 50 = %d rows next %v scanned %d total %d, want the after-token page", len(p2.Items), p2.NextAfter, p2.Scanned, p2.Total)
+	}
+	if want := *byAfter.NextAfter; *p2.NextAfter != want {
+		t.Fatalf("offset 50 next_after differs from the token path")
+	}
+	p3 := e.sess("?offset=100")
+	if len(p3.Items) != 20 || p3.NextAfter != nil || p3.Scanned != 20 {
+		t.Fatalf("offset 100 = %d rows next %v", len(p3.Items), p3.NextAfter)
+	}
+	for _, off := range []string{"120", "500"} {
+		p := e.sess("?offset=" + off)
+		if len(p.Items) != 0 || p.NextAfter != nil || p.Total != 120 || p.Scanned != 0 {
+			t.Fatalf("offset %s = %v next %v total %d", off, p.keys(), p.NextAfter, p.Total)
+		}
+	}
+	var all []string
+	for _, off := range []string{"0", "50", "100"} {
+		all = append(all, e.sess("?offset="+off).keys()...)
+	}
+	want, _ := e.walk("?limit=50")
+	if !reflect.DeepEqual(all, want) || len(all) != 120 {
+		t.Fatalf("offsets 0,50,100 cover %d rows, want the %d of the after-token walk in order", len(all), len(want))
+	}
+	// a smaller limit moves the page by the offset, and next_after follows the last row
+	p := e.sess("?offset=7&limit=3")
+	if len(p.Items) != 3 || p.NextAfter == nil || !reflect.DeepEqual(p.keys(), want[7:10]) {
+		t.Fatalf("offset 7 limit 3 = %v next %v", p.keys(), p.NextAfter)
+	}
+	if after := e.sess("?limit=3&after=" + url.QueryEscape(*p.NextAfter)); !reflect.DeepEqual(after.keys(), want[10:13]) {
+		t.Fatalf("after offset page's token = %v", after.keys())
+	}
+}
+
+func TestSessionsPage_OffsetKeepsTieOrder(t *testing.T) {
+	e := newAPIEnv(t)
+	for i := range 12 {
+		e.save(fmt.Sprintf("r%d", i), fmt.Sprintf("s%02d", i), "cc", 1+i/4) // four sessions per last
+	}
+	want, _ := e.walk("?limit=5")
+	if len(want) != 12 {
+		t.Fatalf("walk saw %d", len(want))
+	}
+	var got []string
+	for _, off := range []string{"0", "5", "10"} {
+		got = append(got, e.sess("?limit=5&offset="+off).keys()...)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("offset order = %v, token order = %v", got, want)
+	}
+}
+
+func TestSessionsPage_OffsetBadParams(t *testing.T) {
+	e := newAPIEnv(t)
+	e.seed(3)
+	tok := url.QueryEscape(*e.sess("?limit=1").NextAfter)
+	for _, q := range []string{
+		"offset=-1", "offset=abc", "offset=1.5", "offset=", "offset=99999999999999999999",
+		"offset=0&after=" + tok, "offset=1&after=" + tok,
+		"offset=0&kind=active", "offset=1&kind=look", "offset=1&kind=hooks", "offset=0&q=x",
+	} {
+		wantEnvelope(t, e.get("/api/sessions?"+q), 400, "bad_request")
+	}
+	// kind=all and a q that trims to empty are the unfiltered list
+	if p := e.sess("?offset=1&kind=all&q=%20"); len(p.Items) != 2 {
+		t.Fatalf("offset with kind=all and blank q = %v", p.keys())
 	}
 }
