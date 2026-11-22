@@ -1,12 +1,15 @@
 package ui
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -227,6 +230,7 @@ func TestHub_HookRefreshAndCommitInSameWindowSendEachChangeOnce(t *testing.T) {
 		t.Fatal("no hook refresh armed for the session")
 	}
 	e.hub.refresh(who, p)
+	e.quiet() // a stale refresh leaves a catch-up that reads the store when its build lands
 	// Nothing else follows, the refresh included: the next event is the next commit.
 	e.save("d", "k", "cc", 20)
 	e.parseMsgs("d", "ok", []any{"user", text("last")})
@@ -591,5 +595,163 @@ func TestHub_HooksOnlySessionStreamGetsSummary(t *testing.T) {
 	assertSummary(s.nextData(), baseTime.Add(3*time.Second))
 	if ev := s.nextData(); ev.event != "hooks" {
 		t.Fatalf("after the summary = %+v, want hooks", ev)
+	}
+}
+
+// lateRefresh forces the interleaving the same-window test can meet on a slow runner: a
+// hook refresh whose read is stale arms a catch-up, and that catch-up's fresh wait is held
+// open until the test says so. gate is closed to let it go on; while it is held, hold is
+// set so only that wait blocks.
+type lateRefresh struct {
+	hold, released atomic.Bool
+	gate           chan struct{}
+	// read is closed when the released catch-up has read the store; it still holds sendMu
+	// then, so a commit published after it is dispatched after the catch-up's send.
+	read chan struct{}
+	once sync.Once
+}
+
+func (l *lateRefresh) tune(h *Hub) {
+	h.hookEvery = 10 * time.Second
+	read, fresh := h.read, h.fresh
+	h.read = func(ctx context.Context, who sessIdent, ids []string, summary, entries bool) (liveMsg, error) {
+		m, err := read(ctx, who, ids, summary, entries)
+		if !l.hold.Load() && ids == nil && entries && l.released.Load() {
+			l.once.Do(func() { close(l.read) })
+		}
+		if l.hold.Load() && ids == nil && entries {
+			m.StaleEntries = true // the refresh read from a cached build behind the store
+		}
+		return m, err
+	}
+	h.fresh = func(ctx context.Context, who sessIdent, entries bool) error {
+		if l.hold.Load() {
+			select {
+			case <-l.gate:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		return fresh(ctx, who, entries)
+	}
+}
+
+func TestHub_ForcedLateCatchUpSendsRefreshBeforeCommit(t *testing.T) {
+	l := &lateRefresh{gate: make(chan struct{}), read: make(chan struct{})}
+	e := newStreamEnv(t, l.tune)
+	e.toolSession(`{"a":1}`)
+	s := e.openRaw(e.sessionPath())
+	s.sessionFirst()
+	s.take(2)
+	e.save("c", "k", "cc", 10)
+	e.parseMsgs("c", "ok", []any{"user", text("later")})
+	e.hook("k", core.HarnessEvent{Phase: core.PhasePreTool, ToolCallID: "call_1", ToolName: "bash"}, 2)
+	e.hub.PublishHook(core.PrincipalLocal, "cc", "k")
+	e.publish("c")
+	s.take(2)
+	who := sessIdent{core.PrincipalLocal, "cc", "k"}
+	e.hub.mu.Lock()
+	p := e.hub.pending[who]
+	e.hub.mu.Unlock()
+	if p == nil || !p.timer.Stop() {
+		t.Fatal("no hook refresh armed for the session")
+	}
+	l.hold.Store(true)
+	e.hub.refresh(who, p) // stale: nothing sent, a catch-up armed and held
+	e.hub.mu.Lock()
+	armed := e.hub.catching[who] != nil
+	e.hub.mu.Unlock()
+	if !armed {
+		t.Fatal("the stale refresh armed no catch-up")
+	}
+	e.save("d", "k", "cc", 20)
+	e.parseMsgs("d", "ok", []any{"user", text("last")})
+	l.hold.Store(false)
+	l.released.Store(true)
+	close(l.gate) // the catch-up lands after d is saved and before it is published
+	<-l.read
+	e.publish("d")
+	// The hub's contract (AC54, spec 026 D11): a refresh sends every exchange that differs
+	// from what the stream last sent, a saved-but-unpublished d included, and the commit of
+	// d then still sends its entries event. Both are in order; the first is no extra event.
+	ev := s.nextData()
+	if ev.event != "exchange" || entriesOf(t, ev)[0]["exchange_id"] != "d" {
+		t.Fatalf("first event = %+v, want the refresh of d", ev)
+	}
+	ev = s.nextData()
+	if ev.event != "entries" || entriesOf(t, ev)[0]["exchange_id"] != "d" {
+		t.Fatalf("second event = %+v, want the commit's entries of d", ev)
+	}
+}
+
+// quietNow reports whether the hub has no catch-up waiting or running. Catching empty is
+// not enough: a catch-up leaves it before it takes sendMu, then reads and sends.
+func (e *streamEnv) quietNow() bool {
+	e.hub.mu.Lock()
+	defer e.hub.mu.Unlock()
+	return len(e.hub.catching) == 0 && e.hub.catchRuns == 0
+}
+
+// quiet waits until quietNow. It polls the hub's own state; the deadline only turns a
+// hang into a failure.
+func (e *streamEnv) quiet() {
+	e.t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if e.quietNow() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	e.t.Fatal("the hub's catch-ups never ended")
+}
+
+// quiet must not report the hub idle in either half of a catch-up: while it waits for its
+// build, and in the gap after it left catching and before its send is done. The test holds
+// sendMu to keep the catch-up in that gap.
+func TestHub_QuietCoversTheGapBeforeACatchUpSends(t *testing.T) {
+	l := &lateRefresh{gate: make(chan struct{}), read: make(chan struct{})}
+	e := newStreamEnv(t, l.tune)
+	e.toolSession(`{"a":1}`)
+	s := e.openRaw(e.sessionPath())
+	s.sessionFirst()
+	s.take(2)
+	who := sessIdent{core.PrincipalLocal, "cc", "k"}
+	e.hook("k", core.HarnessEvent{Phase: core.PhasePreTool, ToolCallID: "call_1", ToolName: "bash"}, 2)
+	e.hub.PublishHook(core.PrincipalLocal, "cc", "k")
+	e.hub.mu.Lock()
+	p := e.hub.pending[who]
+	e.hub.mu.Unlock()
+	if p == nil || !p.timer.Stop() {
+		t.Fatal("no hook refresh armed for the session")
+	}
+	l.hold.Store(true)
+	e.hub.refresh(who, p)
+	if e.quietNow() {
+		t.Fatal("quiet while the catch-up waits for its build")
+	}
+	e.hub.sendMu.Lock()
+	l.hold.Store(false)
+	close(l.gate) // the build lands; the catch-up leaves catching and waits for sendMu
+	left := false
+	deadline := time.Now().Add(10 * time.Second)
+	for !left && time.Now().Before(deadline) {
+		e.hub.mu.Lock()
+		left = len(e.hub.catching) == 0
+		e.hub.mu.Unlock()
+		if !left {
+			time.Sleep(time.Millisecond)
+		}
+	}
+	if !left {
+		t.Fatal("the catch-up never left catching")
+	}
+	if e.quietNow() {
+		t.Fatal("quiet in the gap between leaving catching and sending")
+	}
+	e.hub.sendMu.Unlock()
+	e.quiet()
+	if ev := s.nextData(); ev.event != "exchange" {
+		t.Fatalf("event = %+v, want the catch-up's refresh", ev)
 	}
 }

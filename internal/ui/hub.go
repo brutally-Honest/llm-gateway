@@ -147,6 +147,9 @@ type Hub struct {
 	pending map[sessIdent]*pendingRefresh
 	// catching holds the sessions with a catch-up waiting on a rebuild.
 	catching map[sessIdent]*pendingCatch
+	// catchRuns counts the catch-up goroutines not yet finished. A catch-up leaves catching
+	// before it takes sendMu, so catching empty does not mean nothing is left to send.
+	catchRuns int
 	// effPending holds one armed effects event per session; the unassigned effects use
 	// the session with an empty name.
 	effPending map[sessIdent]*time.Timer
@@ -569,8 +572,14 @@ func (h *Hub) catchUp(who sessIdent, entries bool, ids []string, need []store.Ve
 		return
 	}
 	h.catching[who] = &pendingCatch{entries: entries, ids: append([]string(nil), ids...), need: append([]store.Version(nil), need...)}
+	h.catchRuns++
 	h.mu.Unlock()
 	logging.Go(h.log, "ui_hub_catchup", func() error {
+		defer func() {
+			h.mu.Lock()
+			h.catchRuns--
+			h.mu.Unlock()
+		}()
 		ctx, cancel := context.WithTimeout(h.ctx, buildTimeout)
 		err := h.fresh(ctx, who, entries)
 		cancel()
