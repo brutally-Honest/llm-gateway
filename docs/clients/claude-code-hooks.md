@@ -96,7 +96,7 @@ Two more labels appear beside these:
   gateway did not capture, for example because the exchange had not been stored yet. The
   state changes to the matched one once the exchange is stored.
 
-Sessions known only from hook events are listed as `hooks only`, and one whose only hook events are `SessionEnd` is never shown as active.
+Sessions known only from hook events are listed as `hooks only` (◇; ● while active), and one whose only hook events are `SessionEnd` is never shown as active.
 
 Two viewer texts come from hook events. They appear in the web UI:
 

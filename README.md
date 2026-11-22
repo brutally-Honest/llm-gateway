@@ -78,8 +78,9 @@ on (`capture.enabled`): with capture off, no UI listener starts.
 What it shows:
 
 - **Sessions:** every captured session, plus the ungrouped exchanges that belong to none. A
-  session whose last exchange or hook event is under 5 minutes old is active, except a
-  hooks-only session whose only hook events are `SessionEnd`. The list filters on the server
+  session is active while its last exchange started under 5 minutes ago (a hooks-only
+  session: its last hook event), except a hooks-only session whose only hook events are
+  `SessionEnd`; the session page also counts hook events. The list filters on the server
   (All, Needs a look, Active, Hooks only), searches, and pages with Previous/Next and a
   "Page N of M" label; filter, search and page are kept
   in the URL hash.
