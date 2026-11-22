@@ -13,15 +13,14 @@ is not tied to one vendor.
 Status: **Phases 0–5**, the **web UI** (spec 009) and its **redesign** (spec 013) are done.
 Claude Code proxies through the gateway to Anthropic with capture, session timelines, token
 usage, per-key rate limiting and a live browser view (see `specs/`). **File and network
-effects** (spec 014: changed and read files, connections through a forward proxy) are built
-and awaiting their manual check.
+effects** (spec 014: changed and read files, connections through a forward proxy) are done.
 
 - `PLAN.md` — the one-page source of intent: goals, phases, stack rationale, open
   questions, commit conventions.
 - `AGENTS.md` — the rules any agent working in this repo must follow.
 - `specs/` — one folder per feature: `spec.md` (what and why) and `research.md`
-  (decisions as D-entries). Some older specs (000–017) also keep `plan.md` and
-  `tasks.md` as history.
+  (decisions as D-entries). Some older specs (000–016) also keep `plan.md` and
+  `tasks.md`, and 017 `tasks.md`, as history.
 - `docs/decisions/` — ADRs.
 - `docs/clients/` — one page per client: how to connect, known limits.
 
@@ -78,10 +77,15 @@ on (`capture.enabled`): with capture off, no UI listener starts.
 What it shows:
 
 - **Sessions:** every captured session, plus the ungrouped exchanges that belong to none. A
-  session with an exchange in the last 5 minutes is active.
+  session with an exchange in the last 5 minutes is active (not one whose only hook events
+  are `SessionEnd`). The list filters on the server (All, Needs a look, Active, Hooks only),
+  searches, and pages with numbered pages and Previous/Next; filter, search and page are kept
+  in the URL hash.
 - **Session timeline:** built from canonical events:
   prompts, tool calls paired with their results, and a chip per model call with its model, status
-  and token counters. Long timelines can be filtered by text or tool name.
+  and token counters. Each turn has chips (Story, Context, Files, Sites, Commands) that open
+  their own view, and a model call opens a details panel with Preview and Raw.
+- **Settings:** the header's gear sets the theme (Dark or Light) and the style (Lean or Stark).
 - **Live updates:** an active session's page updates within moments of each exchange being
   stored, and it reconnects on its own after a drop.
 - **Exchange detail:** one exchange at `#/exchanges/<id>`, with its raw request and response

@@ -40,7 +40,7 @@ timeout. Merge it into `~/.claude/settings.json` like this:
 Save the file, then start a new `claude` session so the settings are read.
 
 Install at **one** scope only. The same snippet at both user and project scope sends each
-event twice. The gateway stores both copies; the timeline shows one when the payload has a
+event twice. The gateway stores both copies; the web UI shows one when the payload has a
 tool-use id or the copies arrived within a second, and two otherwise.
 
 ## 2. Coexisting with project hooks
@@ -74,10 +74,9 @@ longer run the gateway.
 ## 4. Match states
 
 When a session has hook events, the gateway gives each captured tool call one state. The
-server turns the state and outcome into one chip per call, and the web UI and the timeline
-show that chip next to the call. The chip is a glyph and a short word, so it never relies
-on colour alone. The full state, reason and outcome are the chip's hover text, and the CLI
-timeline prints the state itself.
+server turns the state and outcome into one chip per call, and the web UI shows that chip
+next to the call. The chip is a glyph and a short word, so it never relies on colour alone.
+The full state, reason and outcome are the chip's hover text.
 
 | State | Chip | Meaning |
 |---|---|---|
@@ -97,13 +96,12 @@ Two more labels appear beside these:
   gateway did not capture, for example because the exchange had not been stored yet. The
   state changes to the matched one once the exchange is stored.
 
-Sessions known only from hook events are listed as `hooks only`.
+Sessions known only from hook events are listed as `hooks only` (◇), and one whose only hook events are `SessionEnd` is never shown as active.
 
-Two viewer texts come from hook events. They appear in the CLI timeline, in `--json` and
-in the web UI:
+Two viewer texts come from hook events. They appear in the web UI:
 
 - **`… N bytes omitted`**: the hook input was cut for display. `N` is the number of bytes
-  cut. `--json` and the web entry carry the same count.
+  cut.
 - **`hook unknown: <name>`**: the event name is not one the gateway maps. The stored name
   is shown as received.
 
@@ -121,7 +119,7 @@ in the web UI:
   its ungrouped list has no hook entries.
   A session id known from an exchange or a hook event is listed normally.
 - **Capture off:** with `capture.enabled: false`, hook events are counted but not stored,
-  so the timeline has nothing to show.
+  so the web UI has nothing to show.
 - **Shared writer:** hook events and LLM captures share one SQLite writer. A large hook
   burst can delay capture writes. The hook sink has its own queue (`hooks.queue_size`);
   when it is full, hook events are dropped and counted.
