@@ -226,3 +226,23 @@ were added for 9 pages. Chrome, 1,440×900 and 2,560×1,400, light and dark:
   header. On this Linux Chrome a short block keeps a 15px empty gutter at its right (D22);
   it reads as a wider right margin, nothing visible.
 - No console errors.
+
+## Review (round 2, 2026-11-22, fresh opus reviewer; the last round)
+
+No P1. Offset path, E9, stale-answer guards, URL state, CSS tokens and agnosticism were
+found correct; the reviewer's probes are in the session scratchpad.
+- **P2** A filtered page-1 refetch renewed page 2's start but kept stale starts for pages
+  3+, so a jump 1 → 3 after a new matching session skipped a row. → fixed: a fetched
+  `next_after` that differs from the stored start drops every later start.
+- **P3** On unfiltered page 2+ a held row with new activity re-sorted to the top, against
+  E10. → fixed: replaced at its index; the test now uses a newer `last_at` on a middle row.
+- **P3** Focus was lost when the clicked arrow became disabled (› onto the last page). →
+  fixed: focus goes to the current page.
+- **P3** The unfiltered total refresh read a whole page, and the unassigned list was read
+  on every page change. → fixed: `limit=1` for the total; unassigned only on page 1 or
+  when its count changed.
+- **P3** A filtered `page=N` walk makes N requests with no cap → left as D21 accepts it.
+- **P4** A markdown code block nested a scroller inside the capped body → fixed;
+  `copyButtonStaysInHeaderOutsideScrollBox` passed without the code → made to build a
+  block and check where Copy sits. Offset paging can repeat one row on the next page
+  after an insert → by design (D20).

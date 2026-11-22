@@ -611,7 +611,10 @@ export function createSessionsPage(handlers) {
     nodes.push(btn("next", "›", go(page + 1), !more, "Next page"));
     pager.replaceChildren(...nodes);
     const back = was === undefined ? null : nodes.find((n) => n.dataset && n.dataset.p === was && !n.disabled);
-    if (back) back.focus({ preventScroll: true });
+    // a button that is now disabled (› on the last page, ‹ on page 1) cannot keep focus: the
+    // current page's button takes it, so the keyboard stays in the pager
+    const target = back || (was === undefined ? null : nodes.find((n) => n.dataset && n.dataset.p === String(page)));
+    if (target) target.focus({ preventScroll: true });
   }
   let selected = "";
   let shown = [];

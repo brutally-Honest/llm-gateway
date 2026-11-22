@@ -619,6 +619,7 @@ ul.effs .linkish code { color: var(--accent); }
 .chapter .tx.answer > .tx-h .who { color: var(--model); }
 .tx-h .mode { margin-left: auto; }
 .tx-h .mode + .copy { margin-left: 0; }
+.chapter .tx-b .md pre { max-height: none; overflow-x: auto; overflow-y: visible; }
 .chapter .tx-b pre.raw { padding: 0; border: 0; background: none; max-height: none; overflow: visible; color: var(--text); }
 .tx-h { display: flex; align-items: center; gap: 10px; }
 .tx-h .who { font-size: 12px; font-weight: 700; color: var(--hi); text-transform: uppercase; letter-spacing: .04em; }

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { installDom, withClass } from "./dom-stub.js";
 
 const css = readFileSync(new URL("../web/style.css", import.meta.url), "utf8");
 
@@ -40,8 +41,28 @@ test("rawInsideChapterAddsNoScrollOfItsOwn", () => {
   assert.doesNotMatch(css, /\.chapter \.tx[^{]*\.tx-b\s*\{[^}]*(max-height:\s*none|overflow(-y)?:\s*visible)/);
 });
 
-test("copyButtonStaysInHeaderOutsideScrollBox", () => {
+test("copyButtonStaysInHeaderOutsideScrollBox", async () => {
   const head = rule(".chapter .tx > .tx-h");
   assert.equal(head["max-height"], undefined);
   assert.equal(head.overflow, undefined);
+  // and in the built block: the copy button is in .tx-h, never inside the scrolling .tx-b
+  installDom();
+  const { textBlock } = await import("../web/story.js");
+  for (const opts of [{ shared: true }, {}]) {
+    const box = textBlock("prompt", "Prompt", "some text", [], null, opts);
+    const h = withClass(box, "tx-h")[0];
+    const b = withClass(box, "tx-b")[0];
+    assert.ok(h && b, "a head and a body");
+    assert.equal(withClass(h, "copy").length, 1, "the copy button is in the header");
+    assert.equal(withClass(b, "copy").length, 0, "and not in the scroll box");
+  }
+});
+
+// a markdown code block inside the capped body must not be a second scroller vertically
+test("markdownCodeBlockInsideTheTurnBodyHasNoCapOfItsOwn", () => {
+  const pre = rule(".chapter .tx-b .md pre");
+  assert.equal(pre["max-height"], "none");
+  assert.equal(pre["overflow-y"], "visible");
+  // long lines still scroll sideways inside the block rather than overflow the card
+  assert.equal(pre["overflow-x"], "auto");
 });

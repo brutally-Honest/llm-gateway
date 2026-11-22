@@ -41,6 +41,7 @@ let listGen = 0; // bumps on every query change and page request; an older respo
 let curPage = 1; // the page the list shows or is loading
 let starts = [undefined]; // filtered lists: starts[k-1] is the position (after) page k starts at
 let scannedAt = []; // filtered lists: the rows the server tested for page k, at index k-1
+let unassignedSeen = null; // the unassigned count the list's section was last read for
 let reached = 1; // filtered lists: the furthest page seen, which the pager numbers
 let queryTimer = null; // typing in the search box settles after this
 let headTimer = null; // a live session the filtered list does not hold refetches page 1 after this
@@ -125,8 +126,7 @@ async function loadPage(n, keep = false) {
         p = await getJSON("sessions", sessionParams(k, starts[k - 1]));
         if (stale()) return;
         scannedAt[k - 1] = p.scanned || 0;
-        if (p.next_after) starts[k] = p.next_after;
-        else starts.length = k;
+        noteNext(k, p.next_after);
         if (k >= n || !p.next_after) break;
         k++;
       }
@@ -148,10 +148,25 @@ async function loadPage(n, keep = false) {
       sessionsLoaded: true,
       unassigned: p.unassigned_connections || 0,
     });
-    loadUnassigned(p.unassigned_connections || 0);
+    // the section is read for page 1, or when the count moved; a page change alone keeps it
+    const un = p.unassigned_connections || 0;
+    if (k === 1 || un !== unassignedSeen) loadUnassigned(un);
+    unassignedSeen = un;
   } catch (e) {
     if (stale()) return;
     store.set({ sessionsError: e.message });
+  }
+}
+
+// noteNext records where page k+1 of a filtered list starts (next, null when page k is the
+// last). When that differs from what was held, the starts after it were measured against
+// the old position (a row came in, one left) and are dropped; a later jump to such a page
+// walks from the last known start.
+function noteNext(k, next) {
+  if (!next) starts.length = k;
+  else if (starts[k] !== next) {
+    starts[k] = next;
+    starts.length = k + 1;
   }
 }
 
@@ -170,15 +185,17 @@ async function refetchHead() {
   const gen = listGen;
   const n = curPage;
   try {
-    const p = await getJSON("sessions", sessionParams(n, filtering() ? starts[n - 1] : undefined));
-    if (gen !== listGen) return;
     if (!filtering()) {
-      store.set({ sessionsTotal: p.total || 0, sessionsError: "" });
+      // only the total is wanted: one row is enough to get it
+      const t = await getJSON("sessions", { ...sessionParams(n), limit: 1 });
+      if (gen !== listGen) return;
+      store.set({ sessionsTotal: t.total || 0, sessionsError: "" });
       return;
     }
+    const p = await getJSON("sessions", sessionParams(n, starts[n - 1]));
+    if (gen !== listGen) return;
     noteHeadFloor(p);
-    if (p.next_after) starts[1] = p.next_after;
-    else starts.length = 1;
+    noteNext(1, p.next_after);
     scannedAt[0] = p.scanned || 0;
     store.set({ sessions: p.items, sessionsNext: p.next_after, sessionsTotal: p.total || 0, sessionsError: "" });
   } catch {
@@ -206,7 +223,9 @@ function applyList(kind, q, n = 1) {
 function onSession(row) {
   const s = store.get();
   if (s.sessions.some((x) => x.id === row.id)) {
-    store.set({ sessions: upsertSession(s.sessions, row) });
+    // only an unfiltered page 1 re-sorts; elsewhere the row keeps its place under the reader
+    if (!filtering() && curPage === 1) store.set({ sessions: upsertSession(s.sessions, row) });
+    else store.set({ sessions: s.sessions.map((x) => (x.id === row.id ? row : x)) });
     return;
   }
   if (filtering()) {

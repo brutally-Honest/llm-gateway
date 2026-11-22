@@ -623,7 +623,7 @@ test("liveEventOnUnfilteredPageOneInsertsAtTheTopTrimsTo50AndTotalMovesThePageCo
   t.mock.timers.tick(500);
   await settle();
   assert.equal(sessionReqs.length, 1, "one request for the total");
-  assert.deepEqual(reqObj(lastReq()), {});
+  assert.deepEqual(reqObj(lastReq()), { limit: "1" }, "one row, for the total only");
   assert.equal(pagerText(), "‹ 1 2 3 ›", "101 sessions are three pages");
   assert.equal(ids().length, 50);
   // a session the page holds is an in-place update, with no request
@@ -648,11 +648,124 @@ test("liveEventOnUnfilteredPageTwoUpdatesInPlaceWithNoInsertsAndTotalMovesThePag
   serve = () => ({ items: rows(50, 50), next_after: "x", total: 700, scanned: 50 });
   t.mock.timers.tick(500);
   await settle();
-  assert.deepEqual(reqObj(lastReq()), { offset: "50" }, "the page on screen is read for its total");
+  assert.deepEqual(reqObj(lastReq()), { offset: "50", limit: "1" }, "one row is read, for the total only");
   assert.deepEqual(ids(), before, "the rows do not shift under the reader");
   assert.equal(pagerText(), "‹ 1 2 3 4 14 ›", "the page count follows the total (700 is 14 pages)");
   assert.equal(pagerBtn("2").attrs["aria-current"], "page");
   t.mock.timers.tick(5000);
+});
+
+// a filtered dataset served by after-token = id of last row
+function makeServer(data) {
+  return (p) => {
+    const after = p.get("after");
+    const i = after ? data.findIndex((x) => x.id === after) + 1 : 0;
+    const items = data.slice(i, i + 50);
+    const more = i + 50 < data.length;
+    return { items, next_after: more ? items.at(-1).id : null, total: data.length, scanned: items.length };
+  };
+}
+
+test("aHeldRowWithNewActivityKeepsItsPlaceOnPageTwo", async (t) => {
+  await fresh(t, "#/?page=2", () => ({ items: rows(50, 50), next_after: "x", total: 560, scanned: 50 }));
+  const before = ids();
+  const mid = before.indexOf("r80");
+  streams.at(-1).emit("session", sess("r80", "r80 busy", "2026-01-01T02:00:00Z"));
+  assert.equal(ids().indexOf("r80"), mid, "the row did not move");
+  assert.deepEqual(ids(), before);
+  assert.match(text(), /r80 busy/, "but it updated in place");
+  t.mock.timers.tick(6000);
+});
+
+test("aHeldRowWithNewActivityKeepsItsPlaceOnAFilteredPageToo", async (t) => {
+  const data = rows(0, 150).map((r) => ({ ...r, active: true }));
+  await fresh(t, "#/?kind=active", makeServer(data));
+  pagerBtn("›").fire("click");
+  await settle();
+  const f = ids();
+  streams.at(-1).emit("session", { ...data[70], title: "busy", last_at: "2026-01-01T02:00:00Z" });
+  assert.deepEqual(ids(), f, "a filtered page does not re-sort either");
+  t.mock.timers.tick(6000);
+});
+
+test("aFilteredPageOneRefetchDropsTheStaleStartsSoAJumpToPageThreeSkipsNoRow", async (t) => {
+  let data = rows(0, 150).map((r) => ({ ...r, active: true }));
+  await fresh(t, "#/?kind=active", (p) => makeServer(data)(p));
+  pagerBtn("›").fire("click");
+  await settle();
+  pagerBtn("›").fire("click");
+  await settle();
+  pagerBtn("1").fire("click");
+  await settle();
+  const n = sess("N", "new", "2026-01-01T02:00:00Z", { active: true });
+  data = [n, ...data];
+  streams.at(-1).emit("session", n);
+  t.mock.timers.tick(600);
+  await settle();
+  const p1 = ids();
+  pagerBtn("3").fire("click");
+  await settle();
+  const p3 = ids();
+  pagerBtn("2").fire("click");
+  await settle();
+  const p2 = ids();
+  // 151 matches: pages of 50 are N..r48, r49..r98, r99..r148 (r149 is page 4)
+  assert.deepEqual([p1[0], p1.at(-1)], ["N", "r48"]);
+  assert.deepEqual([p2[0], p2.at(-1)], ["r49", "r98"], "page 2 follows page 1 with no gap");
+  assert.deepEqual([p3[0], p3.at(-1)], ["r99", "r148"], "page 3 follows page 2 with no gap");
+  t.mock.timers.tick(6000);
+});
+
+const twoPages = (p) => ({ items: rows(Number(p.get("offset") || 0), 50), next_after: Number(p.get("offset") || 0) < 50 ? "x" : null, total: 100, scanned: 50 });
+
+test("focusStaysInThePagerWhenNextBecomesDisabledOnTheLastPage", async (t) => {
+  await fresh(t, "#/", twoPages);
+  pagerBtn("›").focus();
+  pagerBtn("›").fire("click");
+  await settle();
+  assert.equal(pagerBtn("2").attrs["aria-current"], "page");
+  assert.equal(pagerBtn("›").disabled, true);
+  assert.equal(document.activeElement, pagerBtn("2"), "focus moved to the current page's button");
+});
+
+test("focusOnAPageNumberStaysOnThatNumberAfterTheClick", async (t) => {
+  await fresh(t, "#/", twoPages);
+  pagerBtn("2").focus();
+  pagerBtn("2").fire("click");
+  await settle();
+  assert.equal(document.activeElement, pagerBtn("2"));
+  pagerBtn("1").focus();
+  pagerBtn("1").fire("click");
+  await settle();
+  assert.equal(document.activeElement, pagerBtn("1"));
+});
+
+test("aPageChangeDoesNotReadTheUnassignedSectionAgainWhenItsCountIsUnchanged", async (t) => {
+  const reads = [];
+  replies["/api/effects/unassigned"] = { effects: [] };
+  const base = (p) => ({ ...twoPages(p), unassigned_connections: 3 });
+  await fresh(t, "#/", base);
+  const count = () => reads.length;
+  const orig = globalThis.fetch;
+  globalThis.fetch = async (url, ...a) => {
+    if (String(url).startsWith("/api/effects/unassigned")) reads.push(String(url));
+    return orig(url, ...a);
+  };
+  try {
+    pagerBtn("2").fire("click");
+    await settle();
+    assert.equal(count(), 0, "page 2 with the same count: no unassigned request");
+    pagerBtn("1").fire("click");
+    await settle();
+    assert.equal(count(), 1, "page 1 reads it");
+    serve = (p) => ({ ...twoPages(p), unassigned_connections: 4 });
+    pagerBtn("2").fire("click");
+    await settle();
+    assert.equal(count(), 2, "a changed count reads it on any page");
+  } finally {
+    globalThis.fetch = orig;
+    delete replies["/api/effects/unassigned"];
+  }
 });
 
 test("aPageAnswerArrivingAfterLeavingTheListIsDropped", async (t) => {
