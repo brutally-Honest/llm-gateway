@@ -84,3 +84,12 @@ so install it on any machine or harness that commits here.
   editing a file with Read/Edit/Write is fine when only a Bash command naming it was
   blocked.
 - When unsure, record the call as a D-entry in research.md and continue; if it cannot be decided safely, stop and ask.
+
+## Always stop and ask first
+A D-entry is for judgment calls inside the repo. These need the human's explicit go-ahead
+every time, even mid-build:
+- Anything outside the repo: other directories, system config, external services.
+- Any push, pull request merge, or change to a remote branch or ref (notes included).
+- Deleting user data: local stores, captures, untracked files, or anything not in git.
+- Adding a dependency, even with an ADR drafted.
+- Bypassing, disabling or skipping a hook, guard or check (`--no-verify` included).
