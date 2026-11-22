@@ -733,15 +733,18 @@ func TestHub_QuietCoversTheGapBeforeACatchUpSends(t *testing.T) {
 	e.hub.sendMu.Lock()
 	l.hold.Store(false)
 	close(l.gate) // the build lands; the catch-up leaves catching and waits for sendMu
+	left := false
 	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
+	for !left && time.Now().Before(deadline) {
 		e.hub.mu.Lock()
-		left := len(e.hub.catching) == 0
+		left = len(e.hub.catching) == 0
 		e.hub.mu.Unlock()
-		if left {
-			break
+		if !left {
+			time.Sleep(time.Millisecond)
 		}
-		time.Sleep(time.Millisecond)
+	}
+	if !left {
+		t.Fatal("the catch-up never left catching")
 	}
 	if e.quietNow() {
 		t.Fatal("quiet in the gap between leaving catching and sending")
