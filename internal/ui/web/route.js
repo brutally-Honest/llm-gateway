@@ -3,6 +3,23 @@ import { normalizeKind } from "./filters.js";
 
 const enc = encodeURIComponent;
 
+// Q_MAX_BYTES is the longest search text the server accepts (UTF-8 bytes).
+export const Q_MAX_BYTES = 200;
+
+// capQuery cuts search text to Q_MAX_BYTES of UTF-8, on a code point boundary so no
+// character is split. It is the one place text becomes q, whether typed or read from the URL.
+export function capQuery(text) {
+  const utf8 = new TextEncoder();
+  let bytes = 0;
+  let out = "";
+  for (const ch of String(text || "")) {
+    bytes += utf8.encode(ch).length;
+    if (bytes > Q_MAX_BYTES) break;
+    out += ch;
+  }
+  return out;
+}
+
 // parseRoute turns a location hash into { name, id?, call? }; anything else is "unknown".
 export function parseRoute(hash) {
   const h = hash || "#/";
@@ -11,7 +28,7 @@ export function parseRoute(hash) {
     // the list's state is in the hash query: #/?kind=active&q=some%20text (spec 029)
     if (h.startsWith("#/?")) {
       const p = new URLSearchParams(h.slice(3));
-      return { name: "sessions", kind: normalizeKind(p.get("kind")), q: p.get("q") || "" };
+      return { name: "sessions", kind: normalizeKind(p.get("kind")), q: capQuery(p.get("q")) };
     }
     if (h === "#/ungrouped") return { name: "ungrouped" };
     if (h === "#/effects/unassigned") return { name: "unassigned" };

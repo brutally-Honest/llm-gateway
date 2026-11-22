@@ -420,6 +420,93 @@ test("liveEventInAnUnfilteredListIsUpsertedAtOnce", async (t) => {
   assert.equal(sessionReqs.length, 0);
 });
 
+test("loadMoreAnsweredAfterThePageOneRefreshOnReturnIsDroppedSoNoRowsAreSkipped", async (t) => {
+  const pg = (from, n) => Array.from({ length: n }, (_, i) => sess(`r${from + i}`, `r${from + i}`, `2026-01-01T01:00:00.${String(999 - from - i).padStart(3, "0")}Z`));
+  const answers = { "": { items: pg(0, 50), next_after: "t50", total: 300, scanned: 50 }, t50: { items: pg(50, 50), next_after: "t100", total: 300, scanned: 50 }, t100: { items: pg(100, 50), next_after: "t150", total: 300, scanned: 50 } };
+  await fresh(t, "#/", (p) => answers[p.get("after") || ""]);
+  loadMoreBtn().fire("click");
+  await settle();
+  assert.equal(ids().length, 100);
+  await go("#/ungrouped");
+  const p1 = deferred();
+  const p3 = deferred();
+  serve = async (p) => {
+    const a = p.get("after") || "";
+    if (a === "") await p1.promise;
+    if (a === "t100") await p3.promise;
+    return answers[a];
+  };
+  sessionReqs.length = 0;
+  await go("#/"); // back on the list: the held rows stay while page 1 is read again
+  assert.equal(ids().length, 100, "held rows are shown while page 1 loads");
+  loadMoreBtn().fire("click"); // Load more for the old deep position
+  await settle();
+  p1.resolve(); // page 1 lands first
+  await settle();
+  p3.resolve(); // then the answer for the old position
+  await settle();
+  assert.deepEqual(ids(), pg(0, 50).map((r) => r.id), "the stale page is not appended");
+  sessionReqs.length = 0;
+  serve = (p) => answers[p.get("after") || ""];
+  loadMoreBtn().fire("click");
+  await settle();
+  assert.equal(lastReq().get("after"), "t50", "Load more continues from page 1's own position");
+  assert.equal(ids().length, 100);
+  assert.ok(ids().includes("r60"), "rows 50-99 are not skipped");
+});
+
+test("aFilteredListRefetchesPageOneAtMostEveryFiveSecondsKeepingTheLastEvent", async (t) => {
+  const rowA = sess("a", "alpha", stamp(5), { active: true });
+  await fresh(t, "#/?kind=active", () => ({ items: [rowA], next_after: "t1", total: 9, scanned: 9 }));
+  const stream = streams.at(-1);
+  sessionReqs.length = 0;
+  stream.emit("session", sess("c", "gamma", stamp(9), { active: true }));
+  t.mock.timers.tick(500);
+  await settle();
+  assert.equal(sessionReqs.length, 1, "the first event refetches after it settles");
+  stream.emit("session", sess("d", "delta", stamp(10), { active: true }));
+  stream.emit("session", sess("e", "eps", stamp(11), { active: true }));
+  t.mock.timers.tick(4000);
+  await settle();
+  assert.equal(sessionReqs.length, 1, "no second refetch inside the five seconds");
+  t.mock.timers.tick(1000);
+  await settle();
+  assert.equal(sessionReqs.length, 2, "the trailing refetch keeps the last events");
+  t.mock.timers.tick(10000);
+  await settle();
+  assert.equal(sessionReqs.length, 2, "nothing more without a new event");
+});
+
+test("aFilteredListIgnoresAnEventOlderThanTheOldestRowOfPageOne", async (t) => {
+  await fresh(t, "#/?kind=active", () => ({ items: [sess("a", "alpha", stamp(5), { active: true }), sess("b", "beta", stamp(4), { active: true })], next_after: "t1", total: 9, scanned: 9 }));
+  const stream = streams.at(-1);
+  sessionReqs.length = 0;
+  stream.emit("session", sess("old", "too old", stamp(1), { active: true }));
+  t.mock.timers.tick(10000);
+  await settle();
+  assert.equal(sessionReqs.length, 0, "it could not land on page 1");
+  stream.emit("session", sess("new", "new one", stamp(9), { active: true }));
+  t.mock.timers.tick(500);
+  await settle();
+  assert.equal(sessionReqs.length, 1, "a newer one still refetches");
+  t.mock.timers.tick(5000); // let the cooldown end so no timer is left pending for the next test
+});
+
+test("typingALongSearchSendsAndShowsAQueryCappedAt200Bytes", async (t) => {
+  await fresh(t, "#/");
+  sessionReqs.length = 0;
+  const box = input();
+  box.value = "é".repeat(150); // 300 bytes
+  box.fire("input");
+  t.mock.timers.tick(300);
+  await settle();
+  const q = lastReq().get("q");
+  assert.equal(new TextEncoder().encode(q).length, 200);
+  assert.equal(q, "é".repeat(100));
+  assert.equal(box.value, q, "the box shows the capped text");
+  assert.deepEqual(entries.at(-1), ["replace", `#/?q=${encodeURIComponent(q)}`]);
+});
+
 // ---- skeletons on the session page and the call panel (spec 029 AC4) ----
 
 const step = (n, id) => ({ n, exchange_id: id, at: `2026-01-01T00:00:0${n}Z`, dur_ms: 1000, did: "wrote the answer", tools: [] });

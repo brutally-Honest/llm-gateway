@@ -6,7 +6,7 @@ import { createStore } from "./store.js";
 import { createSessionPage } from "./session-page.js";
 import { createSessionsPage, localMidnight, note, UNASSIGNED_SHOWN } from "./sessions-page.js";
 import { initStyle, initTheme } from "./theme.js";
-import { buildRoute, parseRoute } from "./route.js";
+import { buildRoute, capQuery, parseRoute } from "./route.js";
 import { handleKey, isTextInput } from "./keys.js";
 import { createCallDialog } from "./call-dialog.js";
 import { mountShell } from "./shell.js";
@@ -40,8 +40,12 @@ let list = { kind: "all", q: "" }; // the query the shown list is for
 let listGen = 0; // bumps on every query change and page change; an older response is dropped (E7)
 let queryTimer = null; // typing in the search box settles after this
 let headTimer = null; // a live session the filtered list does not hold refetches page 1 after this
+let headCool = null; // after a refetch, the next one waits for this (HEAD_EVERY_MS)
+let headDirty = false; // an event arrived that no refetch has covered yet
+let headFloor = null; // last_at (ms) of the oldest row of page 1, null when unknown or page 1 is not full
 const TYPING_MS = 300;
 const HEAD_MS = 500;
+const HEAD_EVERY_MS = 5000;
 
 // load reads the ungrouped list; the sessions list has its own loaders below.
 async function load(kind, after) {
@@ -71,11 +75,16 @@ function sessionParams(after) {
 // replaces the rows, a later page (after) adds the rows not held yet. A response for a query
 // or page that has since changed is dropped.
 async function loadSessions(after) {
+  // asking for page 1 invalidates any Load more still in flight; a later page lands only if
+  // the list is still at the position it was asked from (the one rule for stale answers)
+  if (!after) listGen++;
   const gen = listGen;
+  const stale = () => gen !== listGen || (after && store.get().sessionsNext !== after);
   if (after) store.set({ sessionsMore: true });
   try {
     const p = await getJSON("sessions", sessionParams(after));
-    if (gen !== listGen) return;
+    if (stale()) return;
+    if (!after) noteHeadFloor(p);
     const s = store.get();
     store.set({
       sessions: after ? addUnique(s.sessions, p.items) : p.items,
@@ -89,9 +98,16 @@ async function loadSessions(after) {
     });
     if (!after) loadUnassigned(p.unassigned_connections || 0);
   } catch (e) {
-    if (gen !== listGen) return;
+    if (stale()) return;
     store.set({ sessionsError: e.message, sessionsMore: false });
   }
+}
+
+// noteHeadFloor remembers the last_at of the oldest row of a page 1 answer; an event older
+// than that could not land on page 1. A page 1 that is not full holds every match, so no floor.
+function noteHeadFloor(p) {
+  const times = p.next_after ? p.items.map((x) => Date.parse(x.last_at)).filter((n) => !Number.isNaN(n)) : [];
+  headFloor = times.length ? Math.min(...times) : null;
 }
 
 // refetchHead reads page 1 for the current query again and merges its rows into the loaded
@@ -101,6 +117,7 @@ async function refetchHead() {
   try {
     const p = await getJSON("sessions", sessionParams());
     if (gen !== listGen) return;
+    noteHeadFloor(p);
     let rows = store.get().sessions;
     for (const it of p.items) rows = upsertSession(rows, it);
     store.set({ sessions: rows, sessionsTotal: p.total || 0, sessionsError: "" });
@@ -114,8 +131,7 @@ async function refetchHead() {
 function applyList(kind, q) {
   list = { kind, q };
   listGen++;
-  if (headTimer) clearTimeout(headTimer);
-  headTimer = null;
+  clearHead();
   store.set({ sessions: [], sessionsNext: null, sessionsLoaded: false, sessionsError: "", sessionsMore: false, sessionsScanned: 0, sessionsTotal: 0, sessionsKind: kind, sessionsQ: q });
   loadSessions();
 }
@@ -130,11 +146,31 @@ function onSession(row) {
     store.set({ sessions: upsertSession(s.sessions, row) });
     return;
   }
+  // older than page 1's oldest row: it could not land there
+  if (headFloor !== null && Date.parse(row.last_at) < headFloor) return;
+  headDirty = true;
+  if (!headTimer && !headCool) headTimer = setTimeout(fireHead, HEAD_MS);
+}
+
+// fireHead refetches page 1 and starts the cooldown; events during it set headDirty, and the
+// trailing refetch when it ends keeps the last of them from being lost.
+function fireHead() {
+  headTimer = null;
+  headDirty = false;
+  refetchHead();
+  headCool = setTimeout(() => {
+    headCool = null;
+    if (headDirty) fireHead();
+  }, HEAD_EVERY_MS);
+}
+
+function clearHead() {
   if (headTimer) clearTimeout(headTimer);
-  headTimer = setTimeout(() => {
-    headTimer = null;
-    refetchHead();
-  }, HEAD_MS);
+  if (headCool) clearTimeout(headCool);
+  headTimer = null;
+  headCool = null;
+  headDirty = false;
+  headFloor = null;
 }
 
 // loadUnassigned reads the first unassigned connections for the list's own section
@@ -413,7 +449,7 @@ function showSessions() {
     // a filter click is a history entry; the hashchange loads it (see listSync)
     onKind: (kind) => {
       cancelTyping();
-      location.hash = buildRoute({ name: "sessions", kind, q: pg.query() });
+      location.hash = buildRoute({ name: "sessions", kind, q: capQuery(pg.query()).trimEnd() });
     },
     // typing settles, then the current history entry is replaced (Back steps through filter
     // changes, not keystrokes); Esc and a cleared box do not wait
@@ -421,7 +457,8 @@ function showSessions() {
       cancelTyping();
       const go = () => {
         queryTimer = null;
-        const q = text.trim();
+        const q = capQuery(text.trim()).trimEnd();
+        pg.setQuery(q); // the box shows what is sent
         if (q === list.q) return;
         history.replaceState(history.state, "", buildRoute({ name: "sessions", kind: list.kind, q }));
         applyList(list.kind, q);
@@ -487,8 +524,7 @@ function route() {
   sessionSync = null;
   listSync = null;
   cancelTyping();
-  if (headTimer) clearTimeout(headTimer);
-  headTimer = null;
+  clearHead();
   listGen++;
   if (view) view();
   view = null;

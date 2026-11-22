@@ -68,3 +68,25 @@ test("sessionsRouteUnknownKindReadsAsAll", () => {
   assert.equal(buildRoute({ name: "sessions", kind: "bogus", q: "" }), "#/");
   assert.deepEqual(parseRoute("#/?other=1&kind=hooks"), { name: "sessions", kind: "hooks", q: "" });
 });
+
+test("aLongQInTheUrlIsCappedAt200BytesOnACodePointBoundary", () => {
+  const bytes = (s) => new TextEncoder().encode(s).length;
+  const url = (q) => `#/?q=${encodeURIComponent(q)}`;
+  assert.equal(parseRoute(url("a".repeat(300))).q, "a".repeat(200));
+  // 'a' + two-byte characters: byte 200 falls inside a character, which is dropped whole
+  const two = "a" + "é".repeat(149);
+  const q2 = parseRoute(url(two)).q;
+  assert.equal(q2, "a" + "é".repeat(99));
+  assert.ok(bytes(q2) <= 200);
+  // four-byte characters (surrogate pairs) and three-byte ones
+  for (const ch of ["😀", "€", "日"]) {
+    for (const pad of ["", "a", "ab", "abc"]) {
+      const q = parseRoute(url(pad + ch.repeat(100))).q;
+      assert.ok(bytes(q) <= 200, `${pad}${ch}: ${bytes(q)} bytes`);
+      assert.equal(q, pad + ch.repeat(Math.floor((200 - pad.length) / bytes(ch))));
+      assert.ok(!q.includes("�"));
+      assert.equal(decodeURIComponent(encodeURIComponent(q)), q, "valid text");
+    }
+  }
+  assert.equal(parseRoute(url("short")).q, "short");
+});

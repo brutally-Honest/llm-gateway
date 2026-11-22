@@ -145,3 +145,37 @@ Chrome, at 2,560 px and 1,440 px, light and dark:
 Not seen in the browser: the "No matches in the newest N sessions yet" state, which needs
 more than 500 sessions or a 2 s scan (covered by `app-list.test.js` and
 `TestSessionsPage_ScanCap`/`ScanBudgetStopsEarly`). Nothing looked off.
+At 14:11, past the five-minute window, `kind=active` returned 0 of 135 rows.
+
+## Review (round 1, 2026-11-22, fresh opus reviewer on `git diff main...HEAD`)
+
+No P1. Cursor logic, SQL, the removed exchange fields and B12 were found correct.
+- **P2** Load more racing the page-1 refresh on Back could append a deep page after a
+  fresh page 1 and move `next_after` past the rows in between, so they were never shown
+  (`app.js` showSessions held-rows branch, `loadSessions`). Reproduced by the reviewer's
+  probe test. → fixed: an answer applies only if the list is still at its position; test
+  added.
+- **P3** A filtered list refetched page 1 after every lull of a busy, non-matching
+  session: one full filtered scan per event burst. → fixed: refetch throttled to one per
+  5 s, and skipped when the event's session is older than page 1's oldest row.
+- **P3** The 2 s budget did not count the batch about to start. → fixed: no new batch
+  when elapsed + the last batch's duration passes the budget.
+- **P3** The search box had no byte limit, so a long paste showed a 400 in place of the
+  list. → fixed: q is capped at 200 UTF-8 bytes on a character boundary, typed or from
+  the URL.
+- **P3** D2's "digest cache makes repeat scans cheap" holds only up to the cache size
+  (512 sessions). → recorded as D19, not built.
+- **P4** search fields joined with "\n" could match across fields → fixed (each field
+  tested alone). `sessionSelect` back to `const` → fixed if the constant allows.
+  `SessionCount` on every page, shell links dropping the filter, no
+  `docs/manual-checks/029-*.md`, a stale comment in `api_exchange_cache_test.go` → left
+  as they are (P4, outside the review-fix scope).
+- Test gaps named: AC1 has no automated test (CSS, checked by hand); E4's "a paged-past
+  session whose last activity moves" has no test.
+
+## Decisions (continued)
+- **D19** (2026-11-22) Correction to D2's flip condition: the digest cache holds 512
+  sessions (`digest_cache.go`), so above that a filtered walk recomputes cold digests and
+  evicts the ones page 1 and the stream use. The flip point is "more sessions than the
+  digest cache", not "tens of thousands". SQL prefilters (session key, client, `last` for
+  `kind=active`) or a larger cache are the follow-up; neither is in 029.
