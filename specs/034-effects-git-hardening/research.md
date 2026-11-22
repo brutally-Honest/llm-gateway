@@ -211,3 +211,60 @@ rounds of the comparison matched `git status` exactly.
 - **D32** (2026-11-22) The fallback-cache guard test asserts a fresh file is not cached;
   a same-size rewrite cannot be made to keep its ctime, so the answer-level check alone
   cannot tell the guard apart.
+
+## Follow-ups (2026-11-22)
+
+- **D33** (2026-11-22) Corrects D17: the symlink copy hole (R2) is fixed in this PR, as
+  the same hostile-repo threat. Thesis for refusing every symlink with `Lstat` on each
+  component: simplest to reason about, never follows anything. Antithesis: it also refuses
+  a folder symlinked inside the root, which scan mode reaches today, and a
+  check-then-open walk races with a folder swapped for a link in between. Synthesis: every
+  work-tree file the runner reads, hashes or copies is opened through `os.Root` (Go 1.24+,
+  stdlib) for the watched root (the work tree `top` in `changed()`). The kernel-backed walk
+  refuses any path that leaves the root through a symlink or `..`, with no race, and
+  symlinks that stay inside still work. The final component must be a regular file both
+  by `Lstat` and by `fstat` after the open, so a final symlink is never copied. A refused
+  escape counts as "not a regular file", the same branch as today. Flip: if roots must
+  one day follow links out on purpose (e.g. a monorepo that symlinks a sibling checkout),
+  that would need an explicit allowlist of extra roots, not a relaxed open.
+- **D34** (2026-11-22) One `os.Root` per `checkRoot` call and one per `candidates` call.
+  `os.Root` exports no escape error, so after `rt.Lstat` fails the runner retries a plain
+  `os.Lstat`: if that succeeds the path escapes and is treated as not a regular file
+  (deleted, or a tombstone in git mode); if it fails too, the file is "unreadable now"
+  and checked again next time. A flip inside that window only delays a report.
+- **D35** (2026-11-22) The runner's `readFile` now opens non-blocking and requires a
+  regular file by `fstat`, closing the FIFO gap D17 noted (R7).
+- **D36** (2026-11-22) If `os.OpenRoot(top)` fails, `candidates` fails and the folder is
+  skipped for this checkpoint; treating every file as changed would flood false effects.
+- **D37** (2026-11-22) A-test evidence on the branch before the fix: `SymlinkedFolderToOutside`
+  and `SymlinkChain` fail in git and scan mode (a modified effect carrying the secret,
+  and the secret in `gateway.db-wal`). `FinalSymlinkToOutsideFile` passes before and
+  after: `Lstat` already saw a final link as non-regular. It is kept as a regression
+  guard and does not reproduce the hole. `SymlinkInsideRootStillWorks` passes in both,
+  showing in-root links keep today's behaviour.
+
+## Fuzz run (2026-11-22, git 2.53.0, go 1.25.4)
+
+`FuzzReadIndex` (`internal/effects/gitindex_fuzz_test.go`) runs `readIndex` at hash lengths
+20 and 32. It checks: no panic, no entries returned with an error, entry count at most
+`len/(40+hashLen+3)`, every path non-empty and every oid hex, and total path bytes at most
+`maxPathExpansion × len`. Seeds: git-made indexes for v2, v3 (skip-worktree and
+assume-unchanged), v4, sha256 v2 and v4, split index and cone sparse index, each also
+truncated at several points and with count `0xFFFFFFFF`; empty, header-only, random bytes
+with a fixed seed, absurd v4 strip varints, and a long-path regression seed. `make test`
+(`go test -race ./...`) runs only the seeds, in about 0.06 s.
+
+| Run | Time | Execs | Result |
+|---|---|---|---|
+| 1 | 176 s | — | **failed**: hashLen 32, 14 370 path bytes from 3 302 input bytes |
+| 2 (after the fix) | 10 m 0 s | 15 733 961 (≈40 100/s at the end), 10 new interesting, 149 in the corpus | pass, no crasher |
+
+- **D38** (2026-11-22) Bug found by run 1: a v4 path is rebuilt from the previous one and
+  each copy is kept, so one long path followed by many strip-0 entries grows memory
+  quadratically. Fix: a path-byte budget of `64 × len(index)`; going over it is
+  `errIndexUnsupported`, so the `ls-files` fallback answers. The run-1 crasher
+  (`testdata/fuzz/FuzzReadIndex/6e8242082b016071`, 4.35×) is kept as a seed. Under the 64×
+  budget it is harmless, and the `long` seed (≈94×) is the one that fails without the fix.
+  The property was 4× in run 1 and was loosened to the budget.
+- **D39** (2026-11-22) The fuzz test has its own small git helper: the repo helpers take
+  `*testing.T` and the fuzz body has `*testing.F`.
