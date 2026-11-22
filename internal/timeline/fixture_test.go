@@ -189,3 +189,64 @@ func TestBuild_RealSessionFixture(t *testing.T) {
 		}
 	}
 }
+
+// callsOf derives the model calls of exchanges the way the usage path does; an
+// exchange without a request event is not a model call and is left out.
+func callsOf(t *testing.T, r *store.Reader, exs []store.ExchangeRow) []timeline.CallUsage {
+	t.Helper()
+	var calls []timeline.CallUsage
+	for _, ex := range exs {
+		evs, err := r.Events(ex.RequestID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c := timeline.CallOf(ex, evs); c != nil {
+			calls = append(calls, *c)
+		}
+	}
+	return calls
+}
+
+func TestBuild_RealSessionFixtureUsageTotals(t *testing.T) {
+	r := openFixture(t)
+	sessions, err := r.SessionRows(0)
+	if err != nil || len(sessions) != 1 {
+		t.Fatalf("sessions = %v, %v", sessions, err)
+	}
+	s := sessions[0]
+	exs, err := r.SessionExchanges(s.PrincipalID, s.Client, s.SessionKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := timeline.Summarize(callsOf(t, r, exs))
+	g := sum.Total
+	if sum.Calls != 10 || g.Calls != 10 || g.Errored != 1 || g.Missing != 0 || g.Incomplete() {
+		t.Errorf("calls %d/%d errored %d missing %d incomplete %v, want 10, 10, 1, 0, false",
+			sum.Calls, g.Calls, g.Errored, g.Missing, g.Incomplete())
+	}
+	for name, c := range map[string]struct {
+		got  timeline.Sum
+		want int64
+	}{
+		"input": {g.Input, 9123}, "output": {g.Output, 1084},
+		"cache write": {g.CacheWrite, 129405}, "cache read": {g.CacheRead, 422293},
+	} {
+		if c.got.Value == nil || *c.got.Value != c.want {
+			t.Errorf("%s = %v, want %d", name, c.got.Value, c.want)
+		}
+	}
+	// One model, unnamed here: this package must not spell a provider (core purity test).
+	if len(sum.Models) != 1 || sum.Models[0].Model == "" {
+		t.Errorf("models = %+v, want exactly one named model", sum.Models)
+	}
+
+	// HEAD /api/hello has no session key and no request event: it sits alone in the
+	// ungrouped set and is not a model call, so it is neither summed nor counted missing.
+	ungrouped, err := r.UngroupedExchanges(0)
+	if err != nil || len(ungrouped) != 1 || ungrouped[0].Method != "HEAD" || ungrouped[0].Path != "/api/hello" {
+		t.Fatalf("ungrouped = %+v, %v, want only HEAD /api/hello", ungrouped, err)
+	}
+	if calls := callsOf(t, r, ungrouped); len(calls) != 0 {
+		t.Errorf("HEAD /api/hello counted as %d model call(s)", len(calls))
+	}
+}
