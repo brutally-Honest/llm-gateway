@@ -179,3 +179,14 @@ No P1. Cursor logic, SQL, the removed exchange fields and B12 were found correct
   evicts the ones page 1 and the stream use. The flip point is "more sessions than the
   digest cache", not "tens of thousands". SQL prefilters (session key, client, `last` for
   `kind=active`) or a larger cache are the follow-up; neither is in 029.
+- **D20** (2026-11-22) Page numbers (amendment, fix 7): the human chose the hybrid.
+  Thesis: an unfiltered list knows `total`, so a full pager with jumps costs one SQL
+  `OFFSET` and no summaries for skipped rows. Antithesis: one paging model for both modes
+  (Prev/Next everywhere) is simpler and never needs `offset`; a full pager in both modes
+  would need a filtered match count, a scan of every session per request, which breaks the
+  2 s budget (D12). Synthesis: `offset` for the unfiltered list, `after` for filtered pages
+  with the pages reached numbered. Flip: if filtered lists get a cheap match count (SQL
+  prefilters, D19), the filtered pager can become a full one too.
+- **D21** A filtered `page=N` in the URL is reached by walking pages 1 … N, since positions
+  are not kept in the URL (D6); each request is bounded by the scan budget, so the walk is
+  slow only for deep pages of a rare match.
