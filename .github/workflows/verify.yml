@@ -1,4 +1,4 @@
-# make verify on Linux and macOS for every PR and every push to main (spec 026, ADR 0019).
+# Every PR and every push to main (spec 026, ADR 0019): Linux runs make verify (lint included); macOS runs the tests only, lint is Linux-only (spec 031).
 name: verify
 
 on:
@@ -67,13 +67,33 @@ jobs:
           }
           shellcheck --version | sed -n 's/^version: //p'
 
+      # Lint is OS-independent, so it runs once, on Linux (spec 031). macOS skips the
+      # golangci-lint install and runs the tests only.
       # setup-lint skips the download when ./bin holds the pinned version, so the key is
       # the Makefile, where GOLANGCI_LINT_VERSION lives.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - if: runner.os == 'Linux'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: bin/golangci-lint
           key: golangci-lint-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
 
-      - run: make setup
+      - name: Setup (Linux)
+        if: runner.os == 'Linux'
+        run: make setup
 
-      - run: make verify
+      # make setup minus setup-lint.
+      - name: Setup (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          make setup-git setup-shellcheck setup-node
+          go mod download
+
+      - name: Verify (Linux)
+        if: runner.os == 'Linux'
+        run: make verify
+
+      - name: Test (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          make test
+          make web-test
