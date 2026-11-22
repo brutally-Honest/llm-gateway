@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"syscall"
 	"testing"
 )
 
@@ -50,6 +51,7 @@ func TestReinstallTightensLooseConfigModes(t *testing.T) {
 	if err := os.Chmod(p.Config, 0o664); err != nil {
 		t.Fatal(err)
 	}
+	ino := inode(t, p.Config)
 	if code := f.install(InstallOptions{Yes: true}); code != ExitOK {
 		t.Fatalf("reinstall exit %d\n%s", code, f.out)
 	}
@@ -58,6 +60,71 @@ func TestReinstallTightensLooseConfigModes(t *testing.T) {
 	if f.read(".config/llm-gateway/config.yaml") != before {
 		t.Fatal("config content changed")
 	}
+	if ino != 0 && inode(t, p.Config) != ino {
+		t.Fatal("config was rewritten (inode changed); a reinstall must only chmod it")
+	}
+	if !regexp.MustCompile(`(?m)config\s+updated\s+\S*config\.yaml$`).MatchString(f.out.String()) {
+		t.Fatalf("summary does not list config.yaml as updated:\n%s", f.out)
+	}
+}
+
+// inode is the inode number of path, or 0 when the platform's Sys() is not a *syscall.Stat_t.
+func inode(t *testing.T, path string) uint64 {
+	t.Helper()
+	st, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sys, ok := st.Sys().(*syscall.Stat_t); ok {
+		return sys.Ino
+	}
+	return 0
+}
+
+// A reinstall over a symlinked config keeps the link and the content, and tightens the
+// target it points to instead of replacing the link with a regular file.
+func TestReinstallSymlinkedConfigTightensTarget(t *testing.T) {
+	f := newFake(t, "linux")
+	if code := f.install(InstallOptions{Yes: true}); code != ExitOK {
+		t.Fatalf("first exit %d\n%s", code, f.out)
+	}
+	p := f.paths()
+	before := f.read(".config/llm-gateway/config.yaml")
+	target := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(target, []byte(before), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(target, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(p.Config); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, p.Config); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Dir(p.Config), 0o775); err != nil {
+		t.Fatal(err)
+	}
+	if code := f.install(InstallOptions{Yes: true}); code != ExitOK {
+		t.Fatalf("reinstall exit %d\n%s", code, f.out)
+	}
+	st, err := os.Lstat(p.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("config.yaml is no longer a symlink")
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != before {
+		t.Fatal("symlink target content changed")
+	}
+	expectPerm(t, target, 0o600)
+	expectPerm(t, filepath.Dir(p.Config), 0o700)
 	if !regexp.MustCompile(`(?m)config\s+updated\s+\S*config\.yaml$`).MatchString(f.out.String()) {
 		t.Fatalf("summary does not list config.yaml as updated:\n%s", f.out)
 	}

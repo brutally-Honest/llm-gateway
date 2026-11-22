@@ -40,6 +40,9 @@ type change struct {
 	// modeFix says the private file or its folder is looser than that, so the change
 	// counts even when the content is the same.
 	modeFix bool
+	// tightenOnly says an existing private file is never rewritten: apply only chmods the
+	// folder and the file (through a symlink too, so its real target is tightened).
+	tightenOnly bool
 }
 
 func (c change) changed() bool {
@@ -215,11 +218,11 @@ func buildPlan(e *Env, c Client, pre *Preflight, prev *State, o InstallOptions) 
 		}
 		pl.notes = append(pl.notes, "Config "+p.tilde(p.Config)+" exists: kept as it is.")
 		// Listed as unchanged, or updated when a looser mode on the file or its folder is
-		// tightened; the content is kept.
+		// tightened; the content is never written (tightenOnly).
 		old, _, _ := readMaybe(p.Config)
 		fix := looser(p.Config, 0o600) || looser(cfgDir, 0o700)
 		pl.changes = append(pl.changes, change{label: "config", path: p.Config, old: old, exists: true,
-			data: old, private: true, modeFix: fix})
+			data: old, private: true, modeFix: fix, tightenOnly: true})
 	} else {
 		cfg = config.Defaults()
 		cfg.Effects.Network.Sandbox = sandboxOK
@@ -557,6 +560,12 @@ func apply(e *Env, p Paths, pl plan) error {
 		if !ch.changed() {
 			continue // taken over as it is: only its copy was written
 		}
+		if ch.tightenOnly {
+			if err := tighten(ch.path); err != nil {
+				return fmt.Errorf("tightening %s: %w", ch.path, err)
+			}
+			continue
+		}
 		var err error
 		switch {
 		case ch.copyFrom != "":
@@ -572,6 +581,24 @@ func apply(e *Env, p Paths, pl plan) error {
 	}
 	if pl.service {
 		return e.service().Start(p, pl.serviceChanged)
+	}
+	return nil
+}
+
+// tighten chmods an existing config's folder to 0700 and the config to 0600 when either is
+// looser. It never writes content: a symlinked config keeps its link and its target gets
+// the mode.
+func tighten(path string) error {
+	dir := filepath.Dir(path)
+	if looser(dir, 0o700) {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			return err
+		}
+	}
+	if looser(path, 0o600) {
+		if err := os.Chmod(path, 0o600); err != nil {
+			return err
+		}
 	}
 	return nil
 }
