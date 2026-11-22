@@ -82,8 +82,8 @@ name against `grep -rn 'Name: *"gateway_' internal` before keeping it.
 
 ### UI main labels (`internal/ui/web`)
 - Header: Sessions, Settings (gear; dialog with Theme: Dark / Light, Style: Lean / Stark) (`shell.js:32-137`).
-- Sessions list: search box "Filter sessions"; filter chips All, Needs a look, Active, Hooks only (`sessions-page.js:266`); server-side filter and search; numbered pages in a fixed box with Previous/Next ("Page N of M"); state in the URL hash `#/?kind=…&q=…&page=…` (`route.js:28-80`).
-- Session page: "Session overview", Turns, "Needs a look", Story / Context / Files / Sites / Commands chips per turn, "What this session touched", "Unassigned connections".
+- Sessions list: search box "Filter sessions"; filter chips All, Needs a look, Active, Hooks only (`sessions-page.js:266`); server-side filter and search; Previous/Next with a "Page N of M" label; state in the URL hash `#/?kind=…&q=…&page=…` (`route.js:28-80`).
+- Session page: "Session overview", Turns, "Needs a look", session-level tabs Story / Files / Commands / Sites / Context (`session-page.js:9,120`, `side-card.js:9-14`) and per-turn chips All, model calls, tool calls, files changed, read, searches, sites, failed (`story.js:431-440`), "What this session touched", "Unassigned connections".
 - Call details panel: "Model call", "Call #N", Preview / Raw, "Raw request body", "Raw response stream", "Full exchange page", "Close call" (`call-dialog.js`).
 - Skeleton loaders while data loads (029); text fallbacks "Loading sessions…", "Loading the session…", "Loading call…".
 - Other pages: `#/ungrouped` (Ungrouped, with "Load more"), `#/effects/unassigned`, `#/exchanges/<id>` (`route.js:38-44`).
@@ -109,3 +109,8 @@ name against `grep -rn 'Name: *"gateway_' internal` before keeping it.
 - Specs 000–017 (except 007, 010, 011, 012) still carry the kit's `status:` frontmatter, which AGENTS.md says new specs do not have; kept as history.
 - Spec 004 keeps `status: done` in `brief.md`, like 007/011/012; consistent, no change.
 - Specs 029, 031 and 032 now carry `status: done` although AGENTS.md says new specs have no status frontmatter (D5).
+- **D14** AC5 grep (2026-11-22, after the group commits): every remaining hit outside `specs/` and `docs/manual-checks/` is history or a negation, so none is changed. `AGENTS.md:39` and `PLAN.md:232` say there is no plan.md or tasks.md; `README.md:22-23` says old specs keep them as history (true: `ls specs/*/plan.md`); `PLAN.md:122` and `:158` are the Phase A and Viewer rows, each marked "removed in 031"; `docs/roadmap.md:25-26` is the 031 Done entry that names what was removed; ADRs 0002 (dated line), 0007, 0009, 0011 and 0016 are ADR bodies; `cmd/gateway/run_test.go:57`, `run_config_test.go:183` and `internal/config/load.go:100` are code comments citing old plan.md files (no code changes in this spec). The AC5 exception list is read as covering these.
+- **D15** Opus review round 1 P3 #5 (the §11 scope list adds scopes used once, and `gateway` overlaps `server`): kept. The brief asks for every scope main's commits use, and the list says what history holds; trimming it is the human's call.
+- **D16** Opus review round 1 P3 #8 (status frontmatter on 029/031/032 against AGENTS.md): kept, per D5; raised in the report.
+- **D17** Opus review round 1 P4 #10 (startup-error.json is also on-disk state) and #11 (no `cost/` in PLAN's layout tree): not changed. The first is a record the service writes on a failed start, not gateway state; the second is a missing entry in an illustrative tree, not a false claim. P4 #12 needs no change.
+- **D18** README "last exchange or hook event": checked in `internal/ui/view.go:151-160` (`lastActivity` takes the max of exchange starts and hook receive times).
