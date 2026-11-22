@@ -17,7 +17,8 @@ Audit SEC-6: `gateway install` leaves the config folder `0775`/`0755` and `confi
 ## Goal
 - No git call the gateway makes can run a program named by the repo it runs in.
 - Effects report the same changes as today (same paths, same tracked/untracked answer,
-  same before versions from `HEAD`).
+  same before versions from `HEAD`), except where git's answer needs a filter to compute
+  (research D2) or enters a submodule (D4).
 - The config folder is `0700` and `config.yaml` is `0600`, on a new install and on a
   reinstall over looser modes.
 

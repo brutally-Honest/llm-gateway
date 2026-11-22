@@ -106,3 +106,63 @@ How each is blocked after this change: see D1–D5.
 - **D14** (2026-11-22) Old-code proof: with main's `git.go`, `TestGit_HostileRepoRunsNothing`
   fails in all three subtests — `filter clean` ran `[clean fsmonitor]`, `filter process`
   ran `[fsmonitor process]`, `full checkpoint` ran `[clean fsmonitor]`.
+
+## Review round 1 (opus, fresh context, 2026-11-22)
+
+No P1. Verified by running: the old-code proof (D14, same markers); every runner git call
+under a repo with `.git/info/attributes` clean/smudge/process filters, `core.fsmonitor`,
+aliases shadowing builtins, `core.sshCommand`, `credential.helper`, `gpg.program`,
+`core.alternateRefsCommand` and an `include.path` pager — nothing ran; a `blob:none`
+partial clone with an `ext::` remote and `protocol.ext.allow=always` — nothing ran with
+`GIT_NO_LAZY_FETCH=1`, and nothing ran without it (`GIT_ALLOW_PROTOCOL=none` alone holds);
+45 s / 3.4M-run fuzz of the index reader, no panic.
+
+| # | Pri | Finding | Action |
+|---|---|---|---|
+| R1 | P2 | Reinstall rewrote an existing `config.yaml` (temp + rename): a symlinked config became a regular file, and an edit made during the prompt was lost | fixed: existing config is only chmod'ed (D15) |
+| R2 | P2 | (pre-existing on main) a tracked path under a symlinked folder is read through the link: an unpacked repo can make the runner copy an outside file into the store; new `changed()` read it too | `changed()` fixed: leading-symlink path is listed and never opened (D16); the runner's own read in `checkpoint.go` is out of scope → follow-up spec (D17) |
+| R3 | P3 | `candidates` ≈3.7× slower than `git status` at 100k files; fallback rehashes everything | fixed: size shortcut, no per-entry `Sprintf`, no reflection, fallback stat cache (D18) |
+| R4 | P3 | Goal said "same changes as today" though D2 differs (LFS, autocrlf touched files) | spec Goal reworded |
+| R5 | P4 | ctime not compared: same-size rewrite with restored mtime missed | fixed: ctime compared unless `core.trustctime=false` |
+| R6 | P4 | `core.symlinks=false` reports every symlink entry changed | fixed: link text compared to the plain file |
+| R7 | P4 | Lstat→Open race could block on a FIFO | fixed in `changed()`: non-blocking open + fstat; `readFile` in the runner has the same pre-existing gap → D17 |
+| R8 | P4 | inherited `GIT_DIR`, `GIT_INDEX_FILE`, `GIT_CONFIG_PARAMETERS`… | fixed: stripped before the pins |
+| R9 | P4 | `HEAD` and index read at different moments | accepted (D19) |
+| R10 | P4 | exit 1 also for a corrupt/missing `HEAD` commit | accepted (D19) |
+| R11 | P4 | dry-run/describe wording for a mode-only fix | accepted: "update" is accurate |
+| R12 | P4 | equivalence tests ran the two sides with different global config | fixed: both sides `GIT_CONFIG_GLOBAL=/dev/null` |
+| R13 | P4 | no regression tests for `.git/info/attributes`, smudge, lazy fetch, worktree, nested repo, `core.worktree` | added |
+
+- **D15** (2026-11-22) An existing config is never rewritten by install: only its folder
+  (to `0700`) and the file (to `0600`, through a symlink to its target) are chmod'ed when
+  looser. Corrects D13's "content is never rewritten differently": it is not rewritten.
+- **D16** (2026-11-22) A tracked path whose leading folder is a symlink is listed as
+  changed (tracked) without being opened, as git refuses such paths.
+- **D17** (2026-11-22) The runner (`checkpoint.go`) still reads candidate and saved paths
+  through a symlinked folder and opens them without a FIFO guard — on main too. Fixing it
+  changes what the runner captures, outside this spec's files; it needs its own spec
+  (proposed `fix/035-effects-symlinked-folders`).
+- **D18** (2026-11-22) Performance: as git, a size mismatch with a non-zero index size is
+  changed without hashing; inode and ctime come from a build-tagged `syscall.Stat_t`
+  helper; the fallback keeps a per-runner stat→oid cache so an unchanged file is hashed
+  once.
+- **D19** (2026-11-22) Accepted: `HEAD` and the index are not one atomic snapshot (one
+  checkpoint can flip `tracked` for a path committed in between; the runner's snapshot
+  absorbs it), and a repo whose `HEAD` commit is missing reads as unborn (corrupt repo;
+  git status fails there too).
+- **D20** (2026-11-22) Leading folders are `Lstat`ed once per `candidates` call and cached;
+  a symlinked or missing one makes every file below it changed (tracked), as git does.
+- **D21** (2026-11-22) The fallback cache keeps a match only when the file's mtime is more
+  than 1 s old (it has no index mtime to guard the racy case); without inode and ctime
+  (non-unix) its key is size and mtime.
+- **D22** (2026-11-22) Inode and ctime come from `stat_linux.go` / `stat_bsd.go` (darwin,
+  freebsd, netbsd); other systems use `stat_other.go` with no inode or ctime, which count
+  as a match.
+- **D23** (2026-11-22) `GIT_CEILING_DIRECTORIES` and `GIT_DISCOVERY_ACROSS_FILESYSTEM` are
+  kept: they are the user's own limits on discovery, not a repo location.
+- **D24** (2026-11-22) Performance after R3, 100k files, clean tree: `candidates` ≈555 ms
+  against ≈85 ms for `git status` (fallback ≈645 ms after its first call). About 55 % is
+  the sequential `Lstat` per entry; git stats in threads. Accepted for this fix: the
+  checkpoint runs off the request path and safety wins over speed (AGENTS priority
+  observability first, but capture never blocks a request). Follow-up: a worker pool for
+  the stat loop.
