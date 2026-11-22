@@ -1,5 +1,5 @@
 // Formatting only (spec 016): every fact on the session page comes from the server's view;
-// these turn its numbers and times into text, as `gateway timeline` does.
+// these turn its numbers and times into text.
 
 // dur renders milliseconds as 0.4s, 32s, 2m 05s or 1h 03m; "—" when unknown.
 export function dur(ms) {

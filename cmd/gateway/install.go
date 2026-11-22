@@ -24,7 +24,7 @@ Usage:
   gateway uninstall [flags]    remove what install set up; keeps your config and data
   gateway doctor [--json]      check the install and the running gateway
   gateway hooks print          print the Claude Code settings document
-  gateway sessions | timeline | dump | backfill-sessions
+  gateway dump | backfill-sessions
                                read the capture store
   gateway help                 this text (also -h, --help)
   gateway --version            print the version

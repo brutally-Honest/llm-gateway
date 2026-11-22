@@ -19,6 +19,25 @@ import (
 
 const ccHeader = "X-Claude-Code-Session-Id"
 
+// viewerBase and viewerRun moved here from viewer_test.go when the CLI viewer was removed
+// (spec 031).
+var viewerBase = time.Date(2024, 3, 1, 12, 0, 0, 0, time.UTC)
+
+func viewerRun(t *testing.T, dir string, args ...string) (int, string) {
+	t.Helper()
+	var out syncBuffer
+	env := map[string]string{"GATEWAY_CAPTURE_DIR": dir}
+	code := run(t.Context(), deps{
+		args: args,
+		lookupEnv: func(name string) (string, bool) {
+			v, ok := env[name]
+			return v, ok
+		},
+		stdout: &out,
+	})
+	return code, out.String()
+}
+
 func saveBare(t *testing.T, s *store.Store, id, client string, h http.Header) {
 	t.Helper()
 	ex := &core.Exchange{RequestID: id, PrincipalID: core.PrincipalLocal, Protocol: "test", Client: client,

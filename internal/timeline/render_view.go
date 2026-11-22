@@ -1,24 +1,12 @@
 package timeline
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"strconv"
 	"strings"
 	"time"
 )
-
-// RenderViewJSON writes the view as one JSON line: the object GET /api/sessions/{id}/view
-// returns (spec 016 AC15).
-func RenderViewJSON(w io.Writer, v View) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(w, "%s\n", b)
-	return err
-}
 
 // RenderViewText writes the view as text: the overview, then one block per turn with its
 // prompt, times, step lines, tool lines and effects, the between-turn blocks in place,

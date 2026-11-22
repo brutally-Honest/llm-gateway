@@ -162,7 +162,7 @@ func lastActivity(bs builtSession, hooks []store.HookRow) int64 {
 }
 
 // BuildView builds a session's view straight from the store, with no cache: what
-// `gateway timeline` prints (spec 016 AC15). full keeps every text whole.
+// the page shows (spec 016 AC15). full keeps every text whole.
 func BuildView(ctx context.Context, r *store.Reader, s store.SessionRow, rules map[string]ClientRules, skew time.Duration, full bool, now time.Time) (timeline.View, error) {
 	c := r.WithContext(ctx)
 	who := sessIdent{s.PrincipalID, s.Client, s.SessionKey}

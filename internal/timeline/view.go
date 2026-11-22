@@ -6,8 +6,8 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/store"
 )
 
-// The session view (spec 016, ADR 0016): one session as the page and `gateway timeline`
-// show it. BuildView computes every fact once; the browser and the CLI only format it.
+// The session view (spec 016, ADR 0016): one session as the page
+// shows it. BuildView computes every fact once; the browser only formats it.
 // Times are RFC 3339 in UTC, durations milliseconds; a nil pointer is unknown, never 0.
 
 // ViewRules is the client knowledge the view needs; a nil ViewRules means no side calls,

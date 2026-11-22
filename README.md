@@ -78,7 +78,7 @@ What it shows:
 
 - **Sessions:** every captured session, plus the ungrouped exchanges that belong to none. A
   session with an exchange in the last 5 minutes is active.
-- **Session timeline:** the same timeline `gateway timeline` prints, built from canonical events:
+- **Session timeline:** built from canonical events:
   prompts, tool calls paired with their results, and a chip per model call with its model, status
   and token counters. Long timelines can be filtered by text or tool name.
 - **Live updates:** an active session's page updates within moments of each exchange being

@@ -51,6 +51,15 @@ type UngroupedSource interface {
 	UngroupedExchanges(limit int) ([]store.ExchangeRow, error)
 }
 
+// UngroupedExchange is one exchange with no session key; Call is set when it is a
+// model call.
+type UngroupedExchange struct {
+	RequestID, Client, Method, Path string
+	Start                           int64
+	Status                          int
+	Call                            *CallUsage
+}
+
 // ListUngrouped lists the newest exchanges with no session key (limit 0 lists all)
 // and the usage Summary of all of them, whatever the limit. exchanges is how many
 // ungrouped exchanges the Summary covers.

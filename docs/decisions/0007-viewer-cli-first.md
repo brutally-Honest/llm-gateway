@@ -5,8 +5,9 @@ date: 2026-10-11
 
 # 0007 — The viewer is a local CLI first; a web UI comes later
 
-> Superseded by [ADR 0009](0009-web-ui-vanilla-js-read-only.md), which adds the web UI. The
-> CLI viewer described below stays as it is.
+> Superseded by 031 (the web UI is the viewer): the CLI viewer below was removed. Earlier,
+> [ADR 0009](0009-web-ui-vanilla-js-read-only.md) added the web UI and the
+> CLI stayed as it was.
 
 ## Context
 PLAN.md OQ-7 asked what the viewer is, to be decided by Phase 3 (sessions & timeline).

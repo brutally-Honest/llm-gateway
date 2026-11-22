@@ -2,7 +2,7 @@
 
 Claude Code can report its own hook events to the gateway: each tool call it asks for,
 whether the permission check ran, each tool result, sub-agents, session start and stop.
-The gateway stores them next to the captured model calls, so `gateway timeline` and the
+The gateway stores them next to the captured model calls, so the
 web UI can show whether a tool the model asked for actually ran.
 
 Hooks are optional. The proxy works without them (see [claude-code.md](claude-code.md)).
@@ -117,9 +117,9 @@ in the web UI:
   a tool on the file system or network (see [PLAN.md §3](../../PLAN.md#3-client-support)).
 - **Sub-agents:** their events carry an agent id and type, shown as labels on the event
   and its tool call. They are not nested under the parent's tool call.
-- **Hook events with no session id (known v1 gap):** they are stored, but `gateway sessions`
-  shows them only as a count. The web UI ungrouped list has no hook entries, so they are
-  not visible there. A session id known from an exchange or a hook event is listed normally.
+- **Hook events with no session id (known v1 gap):** they are stored, but not visible in the web UI:
+  its ungrouped list has no hook entries.
+  A session id known from an exchange or a hook event is listed normally.
 - **Capture off:** with `capture.enabled: false`, hook events are counted but not stored,
   so the timeline has nothing to show.
 - **Shared writer:** hook events and LLM captures share one SQLite writer. A large hook
