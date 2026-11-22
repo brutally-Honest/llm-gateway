@@ -5,16 +5,16 @@ import (
 	"context"
 	"crypto/sha1"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
-	"fmt"
 	"hash"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -27,6 +27,19 @@ import (
 type gitRunner struct {
 	bin     string // "" when git is not installed: every folder is scanned (E1)
 	timeout time.Duration
+
+	mu    sync.Mutex
+	cache map[string]map[string]hashedFile // by top, then path: files hashed equal to the index
+}
+
+// hashedFile is a work-tree file the last candidates call hashed and found equal to its
+// index entry. Its stat identifies the content the next call may skip hashing.
+type hashedFile struct {
+	size    int64
+	mtimeNs int64
+	ctimeNs int64
+	ino     uint64
+	oid     string
 }
 
 func newGitRunner(timeout time.Duration) *gitRunner {
@@ -55,7 +68,7 @@ func (g *gitRunner) run(ctx context.Context, dir string, args ...string) ([]byte
 		"-C", dir,
 	}, args...)
 	cmd := exec.CommandContext(ctx, g.bin, argv...)
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(gitEnv(),
 		"GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0", "GIT_PAGER=cat",
 		"GIT_NO_LAZY_FETCH=1", "GIT_ALLOW_PROTOCOL=none", "GIT_OPTIONAL_LOCKS=0", "LC_ALL=C")
 	var out, errOut bytes.Buffer
@@ -64,6 +77,32 @@ func (g *gitRunner) run(ctx context.Context, dir string, args ...string) ([]byte
 		return nil, err
 	}
 	return out.Bytes(), nil
+}
+
+// inheritedGitVars are repo-location and config variables the gateway may have inherited
+// (it can be started from a git hook or alias). They would point git at another repo,
+// object store or config, or name a program, so none reaches git.
+var inheritedGitVars = map[string]bool{
+	"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_INDEX_FILE": true,
+	"GIT_OBJECT_DIRECTORY": true, "GIT_ALTERNATE_OBJECT_DIRECTORIES": true,
+	"GIT_COMMON_DIR": true, "GIT_NAMESPACE": true, "GIT_CONFIG_PARAMETERS": true,
+	"GIT_CONFIG_COUNT": true, "GIT_EXTERNAL_DIFF": true, "GIT_EXEC_PATH": true,
+}
+
+// gitEnv is the gateway's environment without the repo-location variables. HOME and
+// GIT_CONFIG_GLOBAL stay: they are the user's own config, not the repo's.
+func gitEnv() []string {
+	env := os.Environ()
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		k, _, _ := strings.Cut(kv, "=")
+		if inheritedGitVars[k] || strings.HasPrefix(k, "GIT_CONFIG_KEY_") ||
+			strings.HasPrefix(k, "GIT_CONFIG_VALUE_") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }
 
 // topLevel is the work tree dir is in; false when it is in none or git is missing.
@@ -88,7 +127,7 @@ type gitEntry struct {
 
 // headEntry is one file of the HEAD commit.
 type headEntry struct {
-	mode string // as ls-tree prints it, e.g. "100644"
+	mode uint32 // as ls-tree prints it in octal, e.g. 0o100644
 	oid  string
 }
 
@@ -115,10 +154,13 @@ func (g *gitRunner) candidates(ctx context.Context, top string) ([]gitEntry, err
 	if err != nil {
 		return nil, err
 	}
-	fileMode := true
-	if out, err := g.run(ctx, top, "config", "--type=bool", "core.filemode"); err == nil {
-		fileMode = strings.TrimSpace(string(out)) != "false"
+	chk := &checker{
+		top: top, sha: sha, indexMTime: indexMTime,
+		fileMode: true, trustCtime: true, symlinks: true,
+		old: g.cachedFor(top), seen: map[string]hashedFile{},
+		dirOK: map[string]bool{},
 	}
+	chk.readConfig(g.configBools(ctx, top))
 
 	var out []gitEntry
 	inIndex := make(map[string]bool, len(entries))
@@ -139,14 +181,14 @@ func (g *gitRunner) candidates(ctx context.Context, top string) ([]gitEntry, err
 		switch {
 		case !inHead:
 			out = append(out, gitEntry{path: e.path})
-		case h.oid != e.oid || h.mode != fmt.Sprintf("%06o", e.mode):
+		case h.oid != e.oid || h.mode != e.mode:
 			out = append(out, gitEntry{path: e.path, tracked: true})
 		case e.skipWorktree || e.assumeValid:
 		default:
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
-			if changed(top, e, indexMTime, fileMode, sha) {
+			if chk.changed(e) {
 				out = append(out, gitEntry{path: e.path, tracked: true})
 			}
 		}
@@ -156,6 +198,8 @@ func (g *gitRunner) candidates(ctx context.Context, top string) ([]gitEntry, err
 			out = append(out, gitEntry{path: p, tracked: true})
 		}
 	}
+
+	g.storeCache(top, chk.seen)
 
 	untracked, err := g.run(ctx, top, "ls-files", "-z", "-o", "--exclude-standard")
 	if err != nil {
@@ -207,7 +251,11 @@ func (g *gitRunner) headEntries(ctx context.Context, top string) (map[string]hea
 		if len(f) != 3 || f[0] == "160000" {
 			continue
 		}
-		out[path] = headEntry{mode: f[0], oid: f[2]}
+		mode, err := strconv.ParseUint(f[0], 8, 32)
+		if err != nil {
+			continue
+		}
+		out[path] = headEntry{mode: uint32(mode), oid: f[2]}
 	}
 	return out, nil
 }
@@ -258,68 +306,176 @@ func (g *gitRunner) indexEntries(ctx context.Context, top string, hashLen int) (
 	return entries, time.Time{}, nil
 }
 
+// configBools are core.filemode, core.trustctime and core.symlinks as `git config` prints
+// them with --type=bool, one "name value" per line; empty when none is set (exit 1) or
+// the call fails, which leaves every default (true).
+func (g *gitRunner) configBools(ctx context.Context, top string) string {
+	out, err := g.run(ctx, top, "config", "--type=bool", "--get-regexp", `^core\.(filemode|trustctime|symlinks)$`)
+	if err != nil {
+		return ""
+	}
+	return string(out)
+}
+
+func (g *gitRunner) cachedFor(top string) map[string]hashedFile {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.cache[top] // never mutated after it is stored: safe to read unlocked
+}
+
+// storeCache keeps the files this call hashed equal to the index; files not seen in this
+// call are dropped with the old map.
+func (g *gitRunner) storeCache(top string, seen map[string]hashedFile) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.cache == nil {
+		g.cache = map[string]map[string]hashedFile{}
+	}
+	if len(seen) == 0 {
+		delete(g.cache, top)
+		return
+	}
+	g.cache[top] = seen
+}
+
+// checker compares work-tree files with index entries during one candidates call.
+type checker struct {
+	top        string
+	sha        func() hash.Hash
+	indexMTime time.Time
+	fileMode   bool // core.filemode
+	trustCtime bool // core.trustctime
+	symlinks   bool // core.symlinks
+	old        map[string]hashedFile
+	seen       map[string]hashedFile
+	dirOK      map[string]bool // work-tree folder (slash path) -> a real folder all the way down
+}
+
+func (c *checker) readConfig(out string) {
+	for _, line := range strings.Split(out, "\n") {
+		name, val, ok := strings.Cut(line, " ")
+		if !ok {
+			continue
+		}
+		on := strings.TrimSpace(val) != "false"
+		switch name {
+		case "core.filemode":
+			c.fileMode = on
+		case "core.trustctime":
+			c.trustCtime = on
+		case "core.symlinks":
+			c.symlinks = on
+		}
+	}
+}
+
+// realDir reports whether rel (a slash path below top, "" for top) is a folder and so
+// is every folder above it: none is a symlink. Git refuses a path with a symlinked
+// leading folder, and following one could read a file outside the work tree.
+func (c *checker) realDir(rel string) bool {
+	if rel == "" || rel == "." {
+		return true
+	}
+	if ok, seen := c.dirOK[rel]; seen {
+		return ok
+	}
+	parent := ""
+	if i := strings.LastIndexByte(rel, '/'); i >= 0 {
+		parent = rel[:i]
+	}
+	ok := c.realDir(parent)
+	if ok {
+		fi, err := os.Lstat(filepath.Join(c.top, filepath.FromSlash(rel)))
+		ok = err == nil && fi.IsDir()
+	}
+	c.dirOK[rel] = ok
+	return ok
+}
+
 // changed reports whether the work-tree file of index entry e differs from the index:
-// missing, a different kind, a different executable bit, or different raw content. A
-// file whose size, mtime and inode match the entry and is older than the index file is
-// trusted; a newer one is racy (git could not tell a same-size rewrite) and is hashed.
-func changed(top string, e indexEntry, indexMTime time.Time, fileMode bool, sha func() hash.Hash) bool {
-	abs := filepath.Join(top, filepath.FromSlash(e.path))
+// missing (or below a symlinked folder), a different kind, a different executable bit, a
+// different size, or different raw content. A file whose size, mtime, ctime and inode
+// match the entry and is older than the index file is trusted; a newer one is racy (git
+// could not tell a same-size rewrite) and is hashed.
+func (c *checker) changed(e indexEntry) bool {
+	if i := strings.LastIndexByte(e.path, '/'); i >= 0 && !c.realDir(e.path[:i]) {
+		return true
+	}
+	abs := filepath.Join(c.top, filepath.FromSlash(e.path))
 	fi, err := os.Lstat(abs)
 	if err != nil {
 		return true
 	}
 	isLink := e.mode&0o170000 == 0o120000
+	asFile := false // a link entry kept as a regular file (core.symlinks=false)
 	switch {
 	case isLink:
 		if fi.Mode()&os.ModeSymlink == 0 {
-			return true
+			if c.symlinks || !fi.Mode().IsRegular() {
+				return true
+			}
+			asFile = true
 		}
 	case !fi.Mode().IsRegular():
 		return true
-	case fileMode && (fi.Mode().Perm()&0o100 != 0) != (e.mode&0o100 != 0):
+	case c.fileMode && (fi.Mode().Perm()&0o100 != 0) != (e.mode&0o100 != 0):
 		return true
 	}
-	if e.hasStat && !indexMTime.IsZero() && fi.ModTime().Before(indexMTime) &&
+	if e.size != 0 && uint32(fi.Size()) != e.size {
+		return true
+	}
+	ino, csec, cnsec, haveIDs := statIDs(fi)
+	if e.hasStat && !c.indexMTime.IsZero() && fi.ModTime().Before(c.indexMTime) &&
 		uint32(fi.Size()) == e.size && uint32(fi.ModTime().Unix()) == e.mtimeSec &&
-		uint32(fi.ModTime().Nanosecond()) == e.mtimeNsec && inodeMatches(fi, e.ino) {
+		uint32(fi.ModTime().Nanosecond()) == e.mtimeNsec &&
+		(!haveIDs || (uint32(ino) == e.ino &&
+			(!c.trustCtime || (uint32(csec) == e.ctimeSec && uint32(cnsec) == e.ctimeNsec)))) {
 		return false
 	}
-	h := sha()
-	if isLink {
+	id := hashedFile{size: fi.Size(), mtimeNs: fi.ModTime().UnixNano(), ctimeNs: csec*1e9 + cnsec, ino: ino, oid: e.oid}
+	if prev, ok := c.old[e.path]; ok && prev == id {
+		c.seen[e.path] = prev
+		return false
+	}
+	h := c.sha()
+	if isLink && !asFile {
 		target, err := os.Readlink(abs)
 		if err != nil {
 			return true
 		}
-		_, _ = fmt.Fprintf(h, "blob %d\x00%s", len(target), target)
+		writeBlobHeader(h, int64(len(target)))
+		_, _ = io.WriteString(h, target)
 	} else {
-		f, err := os.Open(abs)
+		// O_NONBLOCK: the path can be swapped for a FIFO after the Lstat; the open must
+		// not wait for a writer, and the fstat below must still say regular file.
+		f, err := os.OpenFile(abs, os.O_RDONLY|oNonblock, 0)
 		if err != nil {
 			return true
 		}
 		defer func() { _ = f.Close() }()
-		_, _ = fmt.Fprintf(h, "blob %d\x00", fi.Size())
-		if _, err := io.Copy(h, f); err != nil {
+		st, err := f.Stat()
+		if err != nil || !st.Mode().IsRegular() {
+			return true
+		}
+		writeBlobHeader(h, st.Size())
+		if n, err := io.Copy(h, f); err != nil || n != st.Size() {
 			return true
 		}
 	}
-	return fmt.Sprintf("%x", h.Sum(nil)) != e.oid
+	if hex.EncodeToString(h.Sum(nil)) != e.oid {
+		return true
+	}
+	// Remember a match for the next call, but not a file touched within the last second:
+	// a same-size rewrite in that window could keep the same mtime.
+	if time.Since(fi.ModTime()) > time.Second {
+		c.seen[e.path] = id
+	}
+	return false
 }
 
-// inodeMatches compares the inode with the index's (git stores it in 32 bits). Where the
-// platform's stat has no inode, it matches, as git does on such platforms.
-func inodeMatches(fi os.FileInfo, ino uint32) bool {
-	sys := reflect.ValueOf(fi.Sys())
-	if sys.Kind() == reflect.Pointer {
-		sys = sys.Elem()
-	}
-	if sys.Kind() != reflect.Struct {
-		return true
-	}
-	f := sys.FieldByName("Ino")
-	if !f.IsValid() || !f.CanUint() {
-		return true
-	}
-	return uint32(f.Uint()) == ino
+func writeBlobHeader(h hash.Hash, size int64) {
+	_, _ = h.Write(strconv.AppendInt([]byte("blob "), size, 10))
+	_, _ = h.Write([]byte{0})
 }
 
 // show is the last committed version of rel in the work tree at top, if any. It never

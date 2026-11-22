@@ -116,6 +116,9 @@ func touchFuture(t *testing.T, path string) {
 // with the same tracked answer.
 func TestCandidates_MatchesGitStatus(t *testing.T) {
 	needGit(t)
+	// Both sides (candidates and the reference git status) read the same config.
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	base := func(t *testing.T, extra ...string) string {
 		t.Helper()
 		dir := resolve(t.TempDir())
@@ -250,6 +253,69 @@ func TestCandidates_MatchesGitStatus(t *testing.T) {
 		write(t, filepath.Join(dir, "mod.txt"), "changed but assumed\n")
 		sameSet(t, dir)
 	})
+	t.Run("linked worktree", func(t *testing.T) {
+		dir := base(t)
+		wt := filepath.Join(resolve(t.TempDir()), "wt")
+		git(t, dir, "worktree", "add", "-q", wt)
+		write(t, filepath.Join(wt, "mod.txt"), "two!\n")
+		touchFuture(t, filepath.Join(wt, "mod.txt"))
+		write(t, filepath.Join(wt, "wt-new.txt"), "n\n")
+		if err := os.Remove(filepath.Join(wt, "del.txt")); err != nil {
+			t.Fatal(err)
+		}
+		sameSet(t, wt)
+	})
+	t.Run("nested untracked repo", func(t *testing.T) {
+		dir := base(t)
+		nested := filepath.Join(dir, "vendor", "inner")
+		write(t, filepath.Join(nested, "x.txt"), "x\n")
+		git(t, nested, "init", "-q")
+		git(t, nested, "add", "-A")
+		git(t, nested, "commit", "-q", "-m", "inner")
+		prep(t, dir)
+		sameSet(t, dir)
+	})
+	t.Run("core.worktree", func(t *testing.T) {
+		wtree, gdir := resolve(t.TempDir()), filepath.Join(resolve(t.TempDir()), "g.git")
+		git(t, wtree, "init", "-q", "--separate-git-dir", gdir)
+		git(t, wtree, "config", "core.worktree", wtree)
+		write(t, filepath.Join(wtree, "a.txt"), "one\n")
+		write(t, filepath.Join(wtree, "b.txt"), "two\n")
+		commitAll(t, wtree)
+		write(t, filepath.Join(wtree, "a.txt"), "uno\n")
+		touchFuture(t, filepath.Join(wtree, "a.txt"))
+		write(t, filepath.Join(wtree, "c.txt"), "new\n")
+		sameSet(t, wtree)
+		got, err := newGitRunner(30*time.Second).candidates(context.Background(), wtree)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s := strings.Join(entrySet(got), ";"); !strings.Contains(s, "a.txt tracked=true") {
+			t.Errorf("a.txt not listed as changed: %s", s)
+		}
+	})
+	t.Run("core.symlinks=false", func(t *testing.T) {
+		dir := base(t)
+		git(t, dir, "config", "core.symlinks", "false")
+		// git keeps a link as a regular file holding the link text on such a file system.
+		if err := os.Remove(filepath.Join(dir, "link")); err != nil {
+			t.Fatal(err)
+		}
+		write(t, filepath.Join(dir, "link"), "mod.txt")
+		sameSet(t, dir)
+		got, err := newGitRunner(30*time.Second).candidates(context.Background(), dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range got {
+			if e.path == "link" {
+				t.Errorf("link listed although its file holds the link text")
+			}
+		}
+		write(t, filepath.Join(dir, "link"), "other")
+		touchFuture(t, filepath.Join(dir, "link"))
+		sameSet(t, dir)
+	})
 	t.Run("sha256", func(t *testing.T) {
 		needGit(t)
 		dir := resolve(t.TempDir())
@@ -355,20 +421,25 @@ func (h hostile) found(t *testing.T) []string {
 // newHostile makes a committed repo (a.txt, b.txt, filter attributes on a.txt) and then
 // plants the settings, so setting up never runs them. driver is the filter setting under
 // test.
-func newHostile(t *testing.T, filterKey string) hostile {
+func newHostile(t *testing.T, filterKey string, viaInfo bool) hostile {
 	t.Helper()
 	needGit(t)
 	h := hostile{dir: resolve(t.TempDir()), markers: resolve(t.TempDir())}
 	git(t, h.dir, "init", "-q")
 	write(t, filepath.Join(h.dir, "a.txt"), "aaaa\n")
 	write(t, filepath.Join(h.dir, "b.txt"), "bbbb\n")
-	write(t, filepath.Join(h.dir, ".gitattributes"), "a.txt filter=evil diff=evil\n")
+	if viaInfo {
+		write(t, filepath.Join(h.dir, ".git", "info", "attributes"), "a.txt filter=evil diff=evil\n")
+	} else {
+		write(t, filepath.Join(h.dir, ".gitattributes"), "a.txt filter=evil diff=evil\n")
+	}
 	write(t, filepath.Join(h.dir, ".gitignore"), "*.ign\n")
 	git(t, h.dir, "add", "-A")
 	git(t, h.dir, "commit", "-q", "-m", "init")
 	cat := "cat"
 	git(t, h.dir, "config", "core.fsmonitor", h.script(t, "fsmonitor", "exit 0"))
 	git(t, h.dir, "config", "filter.evil."+filterKey, h.script(t, filterKey, cat))
+	git(t, h.dir, "config", "filter.evil.smudge", h.script(t, "smudge", cat))
 	git(t, h.dir, "config", "diff.external", h.script(t, "diffexternal", "exit 0"))
 	git(t, h.dir, "config", "diff.evil.textconv", h.script(t, "textconv", cat))
 	git(t, h.dir, "config", "diff.evil.command", h.script(t, "diffcommand", "exit 0"))
@@ -386,9 +457,17 @@ func newHostile(t *testing.T, filterKey string) hostile {
 // core.fsmonitor, the clean filter or the process filter, diff.external, a textconv
 // driver and the pager, runs none of them, and still reports the right candidates.
 func TestGit_HostileRepoRunsNothing(t *testing.T) {
-	for _, key := range []string{"clean", "process"} {
-		t.Run("filter "+key, func(t *testing.T) {
-			h := newHostile(t, key)
+	for _, tc := range []struct {
+		key, name string
+		viaInfo   bool
+	}{
+		{"clean", "filter clean", false},
+		{"process", "filter process", false},
+		{"clean", "filter clean via info/attributes", true},
+		{"process", "filter process via info/attributes", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHostile(t, tc.key, tc.viaInfo)
 			g := newGitRunner(30 * time.Second)
 			ctx := context.Background()
 
@@ -419,7 +498,7 @@ func TestGit_HostileRepoRunsNothing(t *testing.T) {
 		})
 	}
 	t.Run("full checkpoint", func(t *testing.T) {
-		h := newHostile(t, "clean")
+		h := newHostile(t, "clean", false)
 		// Baseline from the committed state, then the hostile edit again.
 		ts := openStore(t)
 		r := newTestRunner(t, ts.st)
@@ -439,4 +518,235 @@ func TestGit_HostileRepoRunsNothing(t *testing.T) {
 			t.Errorf("a checkpoint ran repo-named programs: %v", m)
 		}
 	})
+}
+
+// A partial clone whose remote is an ext:: transport would run a program when show needs a
+// blob it lacks (a lazy fetch). The runner turns lazy fetch and transports off.
+func TestGit_LazyFetchRunsNothing(t *testing.T) {
+	needGit(t)
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	src, dst, markers := resolve(t.TempDir()), filepath.Join(resolve(t.TempDir()), "clone"), resolve(t.TempDir())
+	git(t, src, "init", "-q")
+	git(t, src, "config", "uploadpack.allowFilter", "true")
+	git(t, src, "config", "uploadpack.allowAnySHA1InWant", "true")
+	write(t, filepath.Join(src, "a.txt"), "aaaa\n")
+	commitAll(t, src)
+	if out, err := exec.Command("git", "clone", "-q", "--filter=blob:none", "--no-checkout", "--no-local",
+		"file://"+src, dst).CombinedOutput(); err != nil {
+		t.Skipf("git cannot make a partial clone: %v %s", err, out)
+	}
+	marker := filepath.Join(markers, "ext-ran")
+	script := filepath.Join(markers, "ext.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\ntouch "+marker+"\nexit 1\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	git(t, dst, "config", "remote.origin.url", "ext::"+script)
+	git(t, dst, "config", "protocol.allow", "always")
+	git(t, dst, "config", "protocol.ext.allow", "always")
+
+	// Control: plain git does run the program, so the setup is a real lazy fetch.
+	ctl, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	_ = exec.CommandContext(ctl, "git", "-C", dst, "show", "HEAD:a.txt").Run()
+	if _, err := os.Stat(marker); err != nil {
+		t.Skip("plain git did not lazy-fetch through ext::; cannot probe on this git")
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+
+	g := newGitRunner(30 * time.Second)
+	if _, ok := g.show(context.Background(), dst, "a.txt"); ok {
+		t.Error("show returned a blob the clone does not have")
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Error("show ran the remote's ext:: program")
+	}
+}
+
+// The gateway's own environment may carry repo-location variables; none reaches git.
+func TestGitEnv_StripsRepoLocationVars(t *testing.T) {
+	for _, k := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+		"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_CONFIG_PARAMETERS",
+		"GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_EXTERNAL_DIFF", "GIT_EXEC_PATH"} {
+		t.Setenv(k, "/x")
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("HOME", "/home/x")
+	env := strings.Join(gitEnv(), "\n")
+	for _, bad := range []string{"GIT_DIR=", "GIT_WORK_TREE=", "GIT_INDEX_FILE=", "GIT_OBJECT_DIRECTORY=",
+		"GIT_ALTERNATE_OBJECT_DIRECTORIES=", "GIT_COMMON_DIR=", "GIT_NAMESPACE=", "GIT_CONFIG_PARAMETERS=",
+		"GIT_CONFIG_COUNT=", "GIT_CONFIG_KEY_0=", "GIT_CONFIG_VALUE_0=", "GIT_EXTERNAL_DIFF=", "GIT_EXEC_PATH="} {
+		if strings.Contains("\n"+env, "\n"+bad) {
+			t.Errorf("%s was passed to git", bad)
+		}
+	}
+	for _, keep := range []string{"GIT_CONFIG_GLOBAL=/dev/null", "HOME=/home/x"} {
+		if !strings.Contains(env, keep) {
+			t.Errorf("%s was dropped", keep)
+		}
+	}
+}
+
+// A same-size rewrite with the old mtime put back changes the ctime; the entry's stat no
+// longer matches, so the file is hashed and listed.
+func TestCandidates_CtimeChangeIsSeen(t *testing.T) {
+	dir := repo(t)
+	p := filepath.Join(dir, "a.txt")
+	write(t, p, "one\n")
+	commitAll(t, dir)
+	time.Sleep(20 * time.Millisecond)
+	git(t, dir, "update-index", "--refresh") // index newer than the file: not racy
+	fi, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := newGitRunner(30 * time.Second)
+	if got, err := g.candidates(context.Background(), dir); err != nil || len(got) != 0 {
+		t.Fatalf("clean tree: %v, %v", got, err)
+	}
+	write(t, p, "two\n")
+	if err := os.Chtimes(p, fi.ModTime(), fi.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := g.candidates(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := strings.Join(entrySet(got), ";"); s != "a.txt tracked=true" {
+		t.Errorf("same-size rewrite with restored mtime: %s", s)
+	}
+}
+
+// A folder replaced by a symlink to a folder outside the work tree is not followed: the
+// files below it are listed as changed without being opened, as git refuses such paths.
+func TestCandidates_SymlinkedLeadingFolderIsNotFollowed(t *testing.T) {
+	setup := func(t *testing.T) (dir, outside string) {
+		dir = repo(t)
+		outside = resolve(t.TempDir())
+		write(t, filepath.Join(dir, "d", "id_key"), "secret\n")
+		write(t, filepath.Join(dir, "d", "e", "f.txt"), "deep\n")
+		write(t, filepath.Join(dir, "keep.txt"), "k\n")
+		commitAll(t, dir)
+		time.Sleep(20 * time.Millisecond)
+		git(t, dir, "update-index", "--refresh")
+		if err := os.RemoveAll(filepath.Join(dir, "d")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(outside, filepath.Join(dir, "d")); err != nil {
+			t.Fatal(err)
+		}
+		return dir, outside
+	}
+	run := func(t *testing.T, dir string) []gitEntry {
+		t.Helper()
+		type res struct {
+			got []gitEntry
+			err error
+		}
+		ch := make(chan res, 1)
+		go func() {
+			got, err := newGitRunner(30*time.Second).candidates(context.Background(), dir)
+			ch <- res{got, err}
+		}()
+		select {
+		case r := <-ch:
+			if r.err != nil {
+				t.Fatal(r.err)
+			}
+			return r.got
+		case <-time.After(5 * time.Second):
+			t.Fatal("candidates blocked: it opened a file below a symlinked folder")
+			return nil
+		}
+	}
+	t.Run("same content outside", func(t *testing.T) {
+		dir, outside := setup(t)
+		write(t, filepath.Join(outside, "id_key"), "secret\n")
+		write(t, filepath.Join(outside, "e", "f.txt"), "deep\n")
+		s := strings.Join(entrySet(run(t, dir)), ";")
+		for _, want := range []string{"d/id_key tracked=true", "d/e/f.txt tracked=true"} {
+			if !strings.Contains(s, want) {
+				t.Errorf("%q not listed: %s", want, s)
+			}
+		}
+		if strings.Contains(s, "keep.txt") {
+			t.Errorf("unchanged keep.txt listed: %s", s)
+		}
+	})
+	t.Run("fifo outside", func(t *testing.T) {
+		dir, outside := setup(t)
+		if err := exec.Command("mkfifo", filepath.Join(outside, "id_key")).Run(); err != nil {
+			t.Skipf("no mkfifo: %v", err)
+		}
+		s := strings.Join(entrySet(run(t, dir)), ";")
+		if !strings.Contains(s, "d/id_key tracked=true") {
+			t.Errorf("d/id_key not listed: %s", s)
+		}
+	})
+}
+
+// A tracked file swapped for a FIFO is a changed file, and listing it never blocks.
+func TestCandidates_FifoInPlaceOfFile(t *testing.T) {
+	dir := repo(t)
+	write(t, filepath.Join(dir, "a.txt"), "one\n")
+	commitAll(t, dir)
+	if err := os.Remove(filepath.Join(dir, "a.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("mkfifo", filepath.Join(dir, "a.txt")).Run(); err != nil {
+		t.Skipf("no mkfifo: %v", err)
+	}
+	done := make(chan []gitEntry, 1)
+	go func() {
+		got, _ := newGitRunner(30*time.Second).candidates(context.Background(), dir)
+		done <- got
+	}()
+	select {
+	case got := <-done:
+		if s := strings.Join(entrySet(got), ";"); !strings.Contains(s, "a.txt tracked=true") {
+			t.Errorf("a.txt not listed: %s", s)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("candidates blocked on a FIFO")
+	}
+}
+
+// Files the fallback (split index) hashed equal to the index are not hashed again while
+// their stat is unchanged, and are dropped from the cache once they are not seen.
+func TestCandidates_FallbackCache(t *testing.T) {
+	dir := repo(t)
+	write(t, filepath.Join(dir, "a.txt"), "one\n")
+	write(t, filepath.Join(dir, "b.txt"), "two\n")
+	commitAll(t, dir)
+	git(t, dir, "update-index", "--split-index")
+	old := time.Now().Add(-time.Hour)
+	for _, n := range []string{"a.txt", "b.txt"} {
+		if err := os.Chtimes(filepath.Join(dir, n), old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g := newGitRunner(30 * time.Second)
+	if _, err := g.candidates(context.Background(), dir); err != nil {
+		t.Fatal(err)
+	}
+	if len(g.cache[dir]) != 2 {
+		t.Fatalf("cache has %d entries, want 2", len(g.cache[dir]))
+	}
+	// Same-size rewrite, old mtime restored: ctime changes, so it is hashed and listed.
+	write(t, filepath.Join(dir, "a.txt"), "uno\n")
+	if err := os.Chtimes(filepath.Join(dir, "a.txt"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	got, err := g.candidates(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := strings.Join(entrySet(got), ";"); !strings.Contains(s, "a.txt tracked=true") || strings.Contains(s, "b.txt") {
+		t.Errorf("candidates = %s", s)
+	}
+	if len(g.cache[dir]) != 1 {
+		t.Errorf("cache has %d entries after a.txt changed, want only b.txt", len(g.cache[dir]))
+	}
 }

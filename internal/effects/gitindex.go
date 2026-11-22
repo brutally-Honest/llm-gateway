@@ -18,6 +18,8 @@ type indexEntry struct {
 	skipWorktree bool
 	assumeValid  bool
 	hasStat      bool
+	ctimeSec     uint32
+	ctimeNsec    uint32
 	mtimeSec     uint32
 	mtimeNsec    uint32
 	size         uint32
@@ -63,6 +65,8 @@ func readIndex(data []byte, hashLen int) ([]indexEntry, error) {
 		b := data[pos:]
 		e := indexEntry{
 			hasStat:   true,
+			ctimeSec:  binary.BigEndian.Uint32(b[0:4]),
+			ctimeNsec: binary.BigEndian.Uint32(b[4:8]),
 			mtimeSec:  binary.BigEndian.Uint32(b[8:12]),
 			mtimeNsec: binary.BigEndian.Uint32(b[12:16]),
 			ino:       binary.BigEndian.Uint32(b[20:24]),
