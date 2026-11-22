@@ -45,12 +45,52 @@ Where they have failed:
   answering net/http's closed-body read after EOF with EOF. Rejected: buffering or
   reading the request body ahead (breaks passthrough), rewriting Content-Length or
   `Body` (reshapes the request), and a longer test timeout (not the cause).
+  Also rejected (added after review): `http.NewResponseController(w).EnableFullDuplex()`,
+  which stops the server from closing the body on first write. It removes the close
+  itself, but it changes HTTP/1.1 connection handling for every request, which is a
+  broader and less tested change. That would flip if an upstream really answered before
+  reading the request body, since the watcher fix does not cover that case.
+  Known limit: the fix relies on Go's server body returning `io.EOF` with its last bytes
+  (`transfer.go` `body.readLocked`, Go 1.25.4). If a release returned `(n, nil)` and then
+  EOF, the guard would not fire. `TestWatcher_RequestReadAfterEOF` models today's
+  behaviour, and the golden replay under load would catch a regression.
 - D5 (2026-11-22) — The shutdown test's failure (`upstream_aborted`, the stream dead
   before shutdown, a fast exit 0) is the mechanism D4 fixes. In that test the fake
   upstream answers, and the transport's extra body read then drops the upstream
   connection. So no second product change is made. Instead of A's retry, the main
   session re-runs A's loaded reproduction three times on 4164f43 as the before/after
   proof, and there is no separate shutdown commit unless that proof fails.
+- D6 (2026-11-22) — This fix was built the way the human's brief for 028 sets out (a main
+  session plus subagents, with spec.md and research.md only). It has no plan.md or
+  tasks.md, and it did not go through the agent-loop kit that AGENTS.md names, which the
+  brief calls retired. spec.md keeps `status: draft` because nobody has approved it;
+  approval is the human's to give. The review raised this as P4.
+- D7 (2026-11-22) — Review P3s and P4s were handled in the main session's own files
+  (research.md), apart from the missing negative test, which went to a haiku subagent.
+  There was no P1 or P2, so no second opus review was run.
+
+## Verification (on 4164f43 + d338afd, 2026-11-22)
+- AC2, unloaded: `go test -race -count=100 -run '^TestRun_ShutdownCutsInFlightCallAfterGrace$' ./cmd/gateway`
+  ran three times: ok 47.6 s, ok 47.6 s, ok 47.8 s.
+- AC6: `make verify` ran three times in a row: green 105 s, green 77 s, green 76 s.
+
+## Review (fresh opus subagent, `git diff main...HEAD`, 2026-11-22)
+No P1 or P2. The reviewer checked the cause against Go 1.25.4 (`transfer.go` writeBody's
+extra read and body.readLocked's EOF with the last bytes; `server.go` chunkWriter closing
+the body; `transport.go` writeLoop closing the connection). It found that a real client
+disconnect (`io.ErrUnexpectedEOF`) is still kept, that no new race was introduced, and
+that both flaky tests are unchanged.
+- P3 `internal/core/watcher_test.go`: no test for a closed-body read before EOF, so
+  dropping the `eof` guard would pass. → `TestWatcher_RequestReadAfterCloseBeforeEOF`
+  added (haiku subagent), with a mutation check.
+- P3 research D4: the full-duplex alternative was not recorded. → Added to D4.
+- P4 research root cause: "whenever upstream answers early" was too broad. → Narrowed to
+  HTTP/1.1 upstreams with a fixed-length body (dated correction line).
+- P4 `meta.go`: the fix relies on the stdlib returning EOF with the last bytes. → Recorded
+  as a known limit in D4; code unchanged.
+- P4 spec `status: draft` with no plan/tasks. → D6.
+- The reviewer had marked AC6 "not verified"; the three green `make verify` runs are now
+  recorded above.
 
 ## Reproductions and fixes
 
@@ -105,8 +145,12 @@ Where they have failed:
   When upstream had already answered, the gateway's first response write made net/http
   close the fully read client body. That read then failed with
   `http: invalid Read on closed Body`, and `persistConn.writeLoop` closed the upstream
-  connection, cutting a stream that was still flowing. A real client can hit this
-  whenever upstream answers early.
+  connection, cutting a stream that was still flowing. A real client can hit this only
+  when the upstream leg is HTTP/1.1 with a fixed-length request body. Over HTTP/2 (TLS
+  providers such as api.anthropic.com negotiate it) the transport does not read again
+  after EOF (`h2_bundle.go`), and a chunked request body has no extra read.
+  (Correction 2026-11-22, after review: an earlier line here said "whenever upstream
+  answers early", which was too broad.)
 - **Fix (4164f43):** after a Read has returned `io.EOF`, a Read that returns no bytes and
   `http.ErrBodyReadAfterClose` returns `io.EOF` and is not kept as an error. Every other
   error is passed on and kept as before. Nothing is buffered or read ahead. The
