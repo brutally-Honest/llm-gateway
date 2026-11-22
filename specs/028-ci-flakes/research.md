@@ -33,7 +33,8 @@ Where they have failed:
   evidence of the flakes. Rejected: stopping to ask, since the brief says build without
   stopping and both tests can be reproduced locally.
 - D2 (2026-11-22) — The `internal/ui` hub flake that CI did catch is left out of scope (spec
-  Non-goals); it is a different test from the two the brief names.
+  Non-goals); it is a different test from the two the brief names. *(Superseded
+  2026-11-22 by D11: the follow-up brief brought it into this PR.)*
 - D3 (2026-11-22) — The brief's direction for the shutdown test ("record the shutdown
   cause before closing anything") does not match the failure: the ordering is already
   right, and the stream dies `upstream_aborted` before shutdown starts. No change is made
@@ -86,6 +87,24 @@ Where they have failed:
   and the repo's history take precedence here. The test commit was rewritten too
   (a2fcb98 → cd6f50f), and its note was added after the rewrite. 4164f43 keeps its hash
   and note (checked by hash and by the note's sha256).
+- D11 (2026-11-22, supersedes D2) — The `internal/ui` hub flake is fixed in this PR
+  (3871f65), and the cause is in the test.
+  - **The race:** the test's own `hub.refresh` could read a stale build and arm a
+    catch-up. The test waited only for `catching` to be empty, but `catchUp` deletes
+    `catching[who]` before it takes `sendMu`. The catch-up could therefore read the
+    store after `e.save("d")` and send `exchange d` ahead of the commit's `entries d`.
+  - **Why it is the test:** that order is within the hub's contract (009 AC54: a refresh
+    sends every exchange that differs from what was last sent; 026 D11 accepts a refresh
+    between save and publish). The hub does not promise the order the test assumed.
+  - **Fix:** `Hub.catchRuns` counts running catch-up goroutines. The test helpers
+    `quietNow`/`quiet` wait for `catching` to be empty and `catchRuns` to be 0. The flaky
+    test calls `e.quiet()` after its refresh, and its assertions are unchanged.
+  - **Rejected:** product ordering changes that hold a refresh back until publish. They
+    would change the live UI's behaviour to suit a test, against AC54.
+  - **Trade-off:** `catchRuns` is product state read only by tests.
+  - Side note: 026 D11's phrase "the commit then sends nothing new" is slightly off,
+    because `writeLive` always sends the committed exchange's `entries`. 026 is history
+    and is not edited.
   There was no P1 or P2, so no second opus review was run.
 
 ## Verification (on 4164f43 + d338afd, 2026-11-22)
@@ -188,3 +207,66 @@ that both flaky tests are unchanged.
   It completed with no `timeout` wrapper: **1600 golden-replay runs, 0 failures**, exit 0,
   final line `PASS`, in 649 s (10 m 49 s). At the before-fix rate of about 1 in 300–600,
   roughly 3–5 failures would have been expected.
+
+### TestHub_HookRefreshAndCommitInSameWindowSendEachChangeOnce — first attempt (subagent, 2026-11-22)
+CI: run 44863192822, job 136720956516, macos-latest (3 cores), `hub_hook_test.go:222: extra event: {event:exchange … "d:0" … "d:1" …}`.
+Every local run below used a `-race` build of `./internal/ui` under `taskset -c 1-11`
+(the last one under `-c 1-2`). All of them completed, and **0 failed out of 3,400**:
+
+| Setup | Runs | Failures |
+|---|---|---|
+| no load, `-test.count=500 -test.timeout 0` | 500 | 0 |
+| 16 hogs, `GOGC=1`, `-cpu=1,2,4`, count 300 | 900 | 0 |
+| 12 hogs, `-cpu=1,4`, count 300, instrumented | 600 | 0 |
+| 20 hogs, `GOGC=1`, `-cpu=1,2`, count 400, instrumented | 800 | 0 |
+| 6 hogs on 2 cores, `GOGC=1`, `-cpu=1,2`, count 300, instrumented | 600 | 0 |
+
+- What the instrumentation showed: in every run, the read of commit `c` comes from a
+  stale cached build (`hub.go:~511`) and arms a catch-up (`hub.go:~556`).
+- Hypothesis, not proven: a second asynchronous read (a late catch-up, or a stale
+  refresh) lands between `e.save("d")` and `e.publish("d")`, and sends `exchange d`
+  before the `entries:d` batch.
+- No change was made. The retry forces that interleaving deterministically through the
+  hub's `read`/`fresh` hooks, to decide whether the cause is in the product (the same
+  change sent twice) or in the test (an ordering the hub doesn't promise).
+
+### TestHub_HookRefreshAndCommitInSameWindowSendEachChangeOnce — retry and fix (subagent, 2026-11-22)
+- **Deterministic before:** the subagent wrote `TestHub_ForcedLateCatchUpSendsRefreshBeforeCommit`
+  (`internal/ui/hub_hook_test.go`). It wraps the hub's `read`/`fresh` hooks to make the
+  test's own refresh stale and hold its catch-up on a gate, then saves `d`, releases the
+  gate, waits until the catch-up has read, and only then publishes `d`. Asserting the
+  flaky test's "next event is `entries:d`", it failed **20/20** on the old code with the
+  CI symptom:
+  `hub_hook_test.go:674: extra event: {event:exchange … "d:0" … "d:1" … "text":"last" …}`.
+  As committed, the test asserts what the contract allows instead (`exchange d`, then
+  `entries d`).
+- **Statistical:** `GOGC=1 taskset -c 1 $S/ui2.test -test.timeout 0 -test.cpu=1 -test.count=1000 -test.run '^TestHub_HookRefreshAndCommitInSameWindowSendEachChangeOnce$'`
+  with 3 hogs on core 1: before 1000/1000 pass, after 1000/1000 pass. With the first
+  attempt's 3,400 runs, about 4,400 loaded runs on 12-core Linux never hit the window.
+  The deterministic test is the evidence.
+- **The fix's own test:** `TestHub_QuietCoversTheGapBeforeACatchUpSends` holds `sendMu` and
+  gates `fresh`, so it is in the gap. It fails ("quiet in the gap between leaving catching
+  and sending") when `&& catchRuns == 0` is removed from `quietNow`.
+- **After:** `go test -race -count=200 -run TestHub_ ./internal/ui` passed 3/3. That run
+  takes about 16 minutes, so the subagent used a prebuilt binary with `-test.timeout 0`.
+  The main session ran `-count=20` of the three hub tests (ok) and `go test -race ./internal/ui` (ok, 30.7 s).
+
+### Review of 3871f65 (fresh opus subagent, 2026-11-22)
+No P1 or P2. Verdict: the commit fixes the cause. The reviewer checked every
+asynchronous sender (re-armed catch-ups, the dispatcher's catch-up, the hook and effects
+timers, heartbeats); all are covered by `quiet()` or never fire in this test. Every
+`catchRuns++` has one deferred decrement, which runs after `sendMu` is released, on
+every path including a panic. There is no deadlock and no new race. A mutation probe
+(`go test -overlay`, without `&& catchRuns == 0`) fails the gap test.
+- P3 `internal/ui/hub_hook_test.go:736-745`: the first deadline loop in
+  `TestHub_QuietCoversTheGapBeforeACatchUpSends` fell through silently on timeout, so the
+  gap assertion could pass vacuously. → It now fails with "the catch-up never left
+  catching" (haiku subagent, separate commit).
+- P4 D11 and the 3871f65 note: "the test waited only for `catching` to be empty" is wrong.
+  → Correction (2026-11-22): before 3871f65 the test did not wait for the hub at all
+  after its refresh. The race window was the catch-up's whole life, its `fresh` wait
+  included, not only the gap after the `catching` delete. `quiet()` covers both. A
+  correction was appended to the note (`git notes append`).
+- P4 the test name and the "Nothing else follows" comment: under the allowed
+  interleaving, `d` is sent as `exchange` and then as `entries` (each event type once, per
+  AC54). → Recorded only; the test's own order is pinned by `quiet()`.
