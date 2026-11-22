@@ -209,9 +209,13 @@ func encodeID(t *testing.T, p, c, k string) string {
 
 func TestAPI_EmptyStoreEmptyLists(t *testing.T) {
 	e := newAPIEnv(t)
-	for _, p := range []string{"/api/sessions", "/api/ungrouped"} {
+	// /api/sessions also carries total and scanned (spec 029); /api/ungrouped keeps its shape.
+	for p, want := range map[string]string{
+		"/api/sessions":  `{"items":[],"next_after":null,"total":0,"scanned":0}`,
+		"/api/ungrouped": `{"items":[],"next_after":null}`,
+	} {
 		rec := e.get(p)
-		if rec.Code != 200 || rec.Body.String() != `{"items":[],"next_after":null}`+"\n" {
+		if rec.Code != 200 || rec.Body.String() != want+"\n" {
 			t.Fatalf("%s = %d %s", p, rec.Code, rec.Body)
 		}
 	}

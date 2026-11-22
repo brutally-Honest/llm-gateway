@@ -60,3 +60,24 @@ None. The brief asked for a build without stopping; judgment calls are D-entries
   apply a live rebuild with a second failure, and the panel stays open with both rows and
   the chip reads "✗ 2 failed". The test passed first time, so no bug was found; a probe
   expecting the old count failed as it should.
+- **D10** Server half: the filtered scan reads batches of at least 51 rows
+  (`max(limit+1, 51)`, capped by what is left of the 500): each `SessionPage` call runs
+  the session GROUP BY over the whole store, so batches of `limit+1` with `limit=1` could
+  run it about 250 times in one request. When a scan stops on the last row of a full
+  batch, it reads one more row to learn whether `next_after` is needed, so a null cursor
+  always means the end.
+- **D11** `kind` values are case-sensitive (`ALL` is a 400); a cursor is decoded as before.
+  `total` comes from `SessionCount`, the session union wrapped in `COUNT(*)`, placed in
+  `internal/store/reader_ctx.go` beside `SessionPage`. `/api/sessions` gets its own response
+  type, so `/api/ungrouped` keeps its old shape.
+- **D12** (2026-11-22) Correction to D3: a 500-row cap alone is not enough. Under
+  `make verify` (race detector), testing 500 cold rows took over the 5 s store timeout and
+  returned 504, and real sessions are heavier. The scan also stops before a new batch once
+  it has spent `scanBudget` (2 s) in this request; the first batch always runs, and
+  `next_after` stays at the last tested row. `scanCap` and `scanBudget` are package vars so
+  tests can lower them: the cap test runs at 50 rows, since 600 rows still timed out under
+  `-race`.
+- **D13** The repo's purity test (`internal/core/purity_test.go`) forbids client names in
+  `internal/ui`, and "cursor" is one. Go identifiers, comments and tests say "after" or
+  "position" instead; spec.md keeps the word "cursor" for the contract, since specs are
+  not checked.

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -24,7 +25,11 @@ const (
 	storeTimeout = 5 * time.Second
 
 	defaultListLimit = 50
-	maxListLimit     = 200
+	// maxListLimit caps /api/sessions; maxUngroupedLimit caps /api/ungrouped (D4).
+	maxListLimit      = 50
+	maxUngroupedLimit = 200
+	// maxSearchLen is the longest q, in bytes after trimming.
+	maxSearchLen = 200
 
 	listSessions  = "s"
 	listUngrouped = "u"
@@ -120,6 +125,17 @@ type listPage struct {
 	NextAfter *string          `json:"next_after"`
 	// UnassignedConnections counts network effects linked to no session (sessions list
 	// only); absent means none.
+	UnassignedConnections int `json:"unassigned_connections,omitempty"`
+}
+
+// sessionsPage is the /api/sessions response: a listPage plus total and scanned.
+type sessionsPage struct {
+	Items     []sessionSummary `json:"items"`
+	NextAfter *string          `json:"next_after"`
+	// Total counts every session, ignoring kind and q.
+	Total int `json:"total"`
+	// Scanned is how many rows this request tested.
+	Scanned               int `json:"scanned"`
 	UnassignedConnections int `json:"unassigned_connections,omitempty"`
 }
 
@@ -416,15 +432,143 @@ func Warm(ctx context.Context, d Deps) error {
 	return err
 }
 
+// sessionMatches tests a built summary against the list filter and search text; q is
+// already lowercased and trimmed.
+func sessionMatches(s sessionSummary, kind, q string) bool {
+	switch kind {
+	case "look":
+		if s.List == nil || s.List.NeedsLook <= 0 {
+			return false
+		}
+	case "active":
+		if !s.Active {
+			return false
+		}
+	case "hooks":
+		if !s.HooksOnly && (!s.HasHooks || s.HasCalls) {
+			return false
+		}
+	}
+	if q == "" {
+		return true
+	}
+	parts := []string{s.Title, s.Client, s.SessionKey, s.ID}
+	if s.List != nil {
+		parts = append(parts, s.List.Folder, s.List.FolderFull)
+	}
+	parts = append(parts, s.Models...)
+	return strings.Contains(strings.ToLower(strings.Join(parts, "\n")), q)
+}
+
+func sessionAfter(row store.SessionRow) *string {
+	n := encodeAfter(afterToken{List: listSessions, At: row.Last, Principal: row.PrincipalID, Client: row.Client, Key: row.SessionKey})
+	return &n
+}
+
+func afterOfRow(row store.SessionRow) *store.SessionAfter {
+	return &store.SessionAfter{Last: row.Last, PrincipalID: row.PrincipalID, Client: row.Client, SessionKey: row.SessionKey}
+}
+
+// scanCap and scanBudget are vars so tests can lower the cap or exhaust the budget.
+var (
+	// scanCap is how many rows one filtered or searched request tests (D3).
+	scanCap = 500
+	// scanBudget is how long one request keeps starting new batches, well under storeTimeout
+	// so the response and its counts still fit (D10).
+	scanBudget = 2 * time.Second
+)
+
+// scanSessions reads rows from after in batches and tests each against kind and q. It stops
+// on the first of three rules: limit rows match and it is known whether another row exists;
+// scanCap rows were tested; or scanBudget of wall time passed before a new batch (the first
+// batch always runs, so every request progresses). Or the rows run out. next is the after
+// token of the last tested row when an untested row remains.
+func (d Deps) scanSessions(ctx context.Context, c *store.CtxReader, after *store.SessionAfter, limit int, kind, q string) (items []sessionSummary, next *string, scanned int, err error) {
+	items = []sessionSummary{}
+	now := d.now()
+	start := time.Now()
+	for {
+		if scanned > 0 && time.Since(start) > scanBudget {
+			peek, err := c.SessionPage(after, 1)
+			if err != nil {
+				return nil, nil, 0, err
+			}
+			if len(peek) > 0 {
+				n := encodeAfter(afterToken{List: listSessions, At: after.Last, Principal: after.PrincipalID, Client: after.Client, Key: after.SessionKey})
+				next = &n
+			}
+			return items, next, scanned, nil
+		}
+		// a batch of at least 51 rows keeps a small limit from running the session query hundreds of times
+		size := min(max(limit+1, defaultListLimit+1), scanCap-scanned)
+		rows, err := c.SessionPage(after, size)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		if len(rows) == 0 {
+			return items, nil, scanned, nil
+		}
+		ids := make([]string, len(rows))
+		for i, row := range rows {
+			ids[i] = sessionID(row)
+		}
+		sums, _, err := d.summarizeRows(ctx, c, ids, rows, now)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		for i, sum := range sums {
+			scanned++
+			if sessionMatches(sum, kind, q) {
+				items = append(items, sum)
+			}
+			if len(items) < limit && scanned < scanCap {
+				continue
+			}
+			// stopped at row i: is there an untested row after it?
+			more := i < len(rows)-1
+			if !more && len(rows) == size {
+				peek, err := c.SessionPage(afterOfRow(rows[i]), 1)
+				if err != nil {
+					return nil, nil, 0, err
+				}
+				more = len(peek) > 0
+			}
+			if more {
+				next = sessionAfter(rows[i])
+			}
+			return items, next, scanned, nil
+		}
+		if len(rows) < size {
+			return items, nil, scanned, nil
+		}
+		after = afterOfRow(rows[len(rows)-1])
+	}
+}
+
 func (d Deps) listSessions(w http.ResponseWriter, r *http.Request) {
 	limit, ok := parseLimit(r, defaultListLimit, maxListLimit)
 	if !ok {
 		writeErr(w, http.StatusBadRequest, "bad_request", "limit must be a positive integer")
 		return
 	}
+	query := r.URL.Query()
+	kind := "all"
+	if query.Has("kind") {
+		kind = query.Get("kind")
+		if kind != "all" && kind != "look" && kind != "active" && kind != "hooks" {
+			writeErr(w, http.StatusBadRequest, "bad_request", "kind must be all, look, active or hooks")
+			return
+		}
+	}
+	q := strings.TrimSpace(query.Get("q"))
+	if len(q) > maxSearchLen {
+		writeErr(w, http.StatusBadRequest, "bad_request", "q must be at most 200 bytes")
+		return
+	}
+	q = strings.ToLower(q)
 	var after *store.SessionAfter
-	if r.URL.Query().Has("after") {
-		t, ok := decodeAfter(r.URL.Query().Get("after"), listSessions)
+	if query.Has("after") {
+		t, ok := decodeAfter(query.Get("after"), listSessions)
 		if !ok {
 			writeErr(w, http.StatusBadRequest, "bad_request", "after is not a sessions position")
 			return
@@ -434,40 +578,58 @@ func (d Deps) listSessions(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := storeCtx(r)
 	defer cancel()
 	c := d.Reader.WithContext(ctx)
-	rows, err := c.SessionPage(after, limit+1)
+	page := sessionsPage{}
+	if kind == "all" && q == "" {
+		rows, err := c.SessionPage(after, limit+1)
+		if err != nil {
+			writeStoreErr(w, err)
+			return
+		}
+		more := len(rows) > limit
+		if more {
+			rows = rows[:limit]
+		}
+		ids := make([]string, len(rows))
+		for i, row := range rows {
+			ids[i] = sessionID(row)
+		}
+		items, _, err := d.summarizeRows(ctx, c, ids, rows, d.now())
+		if err != nil {
+			writeStoreErr(w, err)
+			return
+		}
+		page.Items, page.Scanned = items, len(items)
+		if more {
+			page.NextAfter = sessionAfter(rows[len(rows)-1])
+		}
+	} else {
+		items, next, scanned, err := d.scanSessions(ctx, c, after, limit, kind, q)
+		if err != nil {
+			writeStoreErr(w, err)
+			return
+		}
+		page.Items, page.NextAfter, page.Scanned = items, next, scanned
+	}
+	if page.Items == nil {
+		page.Items = []sessionSummary{}
+	}
+	total, err := c.SessionCount()
 	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
-	more := len(rows) > limit
-	if more {
-		rows = rows[:limit]
-	}
-	ids := make([]string, len(rows))
-	for i, row := range rows {
-		ids[i] = sessionID(row)
-	}
-	items, _, err := d.summarizeRows(ctx, c, ids, rows, d.now())
-	if err != nil {
-		writeStoreErr(w, err)
-		return
-	}
+	page.Total = total
 	unassigned, err := c.UnassignedConnections()
 	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
-	page := listPage{Items: items, UnassignedConnections: unassigned}
-	if more {
-		last := rows[len(rows)-1]
-		n := encodeAfter(afterToken{List: listSessions, At: last.Last, Principal: last.PrincipalID, Client: last.Client, Key: last.SessionKey})
-		page.NextAfter = &n
-	}
+	page.UnassignedConnections = unassigned
 	writeJSON(w, page)
 }
 
 func (d Deps) listUngrouped(w http.ResponseWriter, r *http.Request) {
-	limit, ok := parseLimit(r, defaultListLimit, maxListLimit)
+	limit, ok := parseLimit(r, defaultListLimit, maxUngroupedLimit)
 	if !ok {
 		writeErr(w, http.StatusBadRequest, "bad_request", "limit must be a positive integer")
 		return

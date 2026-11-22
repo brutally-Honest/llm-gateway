@@ -70,8 +70,9 @@ Unknown parameters are ignored. A repeated parameter uses its first value.
   (last activity descending, then principal, client, session key).
 - `next_after`: the position of the last row the server tested on this request; `null` when
   no row is left to test. The client asks again with it while it is not null.
-- With a filter or search, a request tests at most 500 rows (10 × the maximum limit), so
-  `items` may hold fewer than `limit` rows, even none, while `next_after` is set.
+- With a filter or search, a request tests at most 500 rows (10 × the maximum limit), and
+  starts no new batch of rows once it has spent 2 s scanning (the first batch always
+  runs), so `items` may hold fewer than `limit` rows, even none, while `next_after` is set.
 - `total`: every session in the store, ignoring `kind` and `q`, so the page can tell "no
   sessions captured yet" from "no sessions match".
 - `scanned`: how many rows this request tested.

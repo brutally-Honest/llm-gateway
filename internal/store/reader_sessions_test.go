@@ -326,3 +326,19 @@ func TestUngroupedHookCount(t *testing.T) {
 		t.Fatalf("sessions = %+v", rows)
 	}
 }
+
+func TestReader_SessionCount(t *testing.T) {
+	empty := seedSessions(t)
+	if n, err := empty.WithContext(t.Context()).SessionCount(); err != nil || n != 0 {
+		t.Fatalf("empty count = %d, err %v", n, err)
+	}
+	r := seedSessions(t,
+		sx{"a", "local", "cc", "k1", 1},
+		sx{"b", "local", "cc", "k1", 2}, // same session as a
+		sx{"c", "local", "cc", "k2", 3},
+		sx{"d", "local", "other", "k2", 4}, // another client, another session
+	)
+	if n, err := r.WithContext(t.Context()).SessionCount(); err != nil || n != 3 {
+		t.Fatalf("count = %d, err %v, want 3", n, err)
+	}
+}

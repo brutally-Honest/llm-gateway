@@ -78,6 +78,16 @@ func (c *CtxReader) SessionPage(after *SessionAfter, limit int) ([]SessionRow, e
 	return c.r.sessions(c.ctx, q, args...)
 }
 
+// SessionCount counts every session, the rows SessionPage lists.
+func (c *CtxReader) SessionCount() (int, error) {
+	var n int
+	err := c.r.db.QueryRowContext(c.ctx, `SELECT COUNT(*) FROM (`+sessionSelect+`)`).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("store %s: session count: %w", c.r.path, err)
+	}
+	return n, nil
+}
+
 // UngroupedPage lists up to limit exchanges with no session key, newest first (ties
 // by request ID), strictly after the after key (nil: from the start).
 func (c *CtxReader) UngroupedPage(after *UngroupedAfter, limit int) ([]ExchangeRow, error) {
