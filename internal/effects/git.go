@@ -181,8 +181,16 @@ func (g *gitRunner) candidates(ctx context.Context, top string) ([]gitEntry, err
 	if err != nil {
 		return nil, err
 	}
+	// Every work-tree file is opened through this root, which refuses a path that leaves
+	// top through a symlink or "..". Without it no comparison is trustworthy, so the
+	// folder is skipped for this checkpoint.
+	root, err := os.OpenRoot(top)
+	if err != nil {
+		return nil, fmt.Errorf("open work tree %s: %w", top, err)
+	}
+	defer func() { _ = root.Close() }()
 	chk := &checker{
-		ctx: ctx, top: top, sha: sha, indexMTime: indexMTime,
+		ctx: ctx, top: top, root: root, sha: sha, indexMTime: indexMTime,
 		fileMode: true, trustCtime: true, symlinks: true,
 		old: g.cachedFor(top), seen: map[string]hashedFile{},
 		dirOK: map[string]bool{},
@@ -448,6 +456,7 @@ func (g *gitRunner) storeCache(top string, seen map[string]hashedFile) {
 type checker struct {
 	ctx        context.Context
 	top        string
+	root       *os.Root // top, opened once: the race-free backstop for every file read
 	sha        func() hash.Hash
 	indexMTime time.Time
 	fileMode   bool // core.filemode
@@ -573,9 +582,9 @@ func (c *checker) changed(e indexEntry) bool {
 	} else {
 		// O_NONBLOCK: the path can be swapped for a FIFO after the Lstat; the open must
 		// not wait for a writer, and the fstat below must still say regular file.
-		f, err := os.OpenFile(abs, os.O_RDONLY|oNonblock, 0)
+		f, err := c.root.OpenFile(filepath.FromSlash(e.path), os.O_RDONLY|oNonblock, 0)
 		if err != nil {
-			return true
+			return true // missing, or leaves top through a symlink
 		}
 		defer func() { _ = f.Close() }()
 		st, err := f.Stat()

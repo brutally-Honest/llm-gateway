@@ -120,6 +120,16 @@ func (r *Runner) checkRoot(ctx context.Context, s *session, root string, saved m
 		}
 		return nil, err
 	}
+	// Every file is read through rt, which refuses a path that leaves root through a
+	// symlink or "..": a tracked path below a link to ~/.ssh is never copied.
+	rt, err := os.OpenRoot(root)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return saved, nil
+		}
+		return nil, err
+	}
+	defer func() { _ = rt.Close() }()
 	top, isGit := s.top(ctx, r.git, root)
 	mode := "scan"
 	tracked := map[string]bool{}
@@ -175,8 +185,15 @@ func (r *Runner) checkRoot(ctx context.Context, s *session, root string, saved m
 		}
 		abs := filepath.Join(root, rel)
 		prev, seen := saved[rel]
-		fi, err := os.Lstat(abs)
-		if err != nil || !fi.Mode().IsRegular() {
+		fi, err := rt.Lstat(rel)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			if _, plain := os.Lstat(abs); plain == nil {
+				// The path exists but leaves root through a symlink: it is not a regular
+				// file here, like a symlink at the path itself.
+				fi, err = nil, nil
+			}
+		}
+		if err != nil || fi == nil || !fi.Mode().IsRegular() {
 			if err != nil && !errors.Is(err, fs.ErrNotExist) {
 				continue // unreadable now; checked again next time
 			}
@@ -210,7 +227,7 @@ func (r *Runner) checkRoot(ctx context.Context, s *session, root string, saved m
 		if seen && prev.size == size && prev.mtimeNS == mtime {
 			continue
 		}
-		hash, data, err := r.readFile(abs, size)
+		hash, data, err := r.readFile(rt, rel, size)
 		if err != nil {
 			continue // unreadable now; checked again next time
 		}
@@ -245,15 +262,19 @@ func (r *Runner) checkRoot(ctx context.Context, s *session, root string, saved m
 	return out, nil
 }
 
-// readFile hashes the file at path. A text file (no NUL in its head) no larger than the
+// readFile hashes the file rel in rt. It is opened without blocking (a FIFO swapped in
+// after the Lstat must not hang the open) and must still be a regular file. A text file (no NUL in its head) no larger than the
 // copy limit is read whole and returned as its copy; anything else is hashed as a stream
 // and has no copy (E3).
-func (r *Runner) readFile(path string, size int64) (string, []byte, error) {
-	f, err := os.Open(path)
+func (r *Runner) readFile(rt *os.Root, rel string, size int64) (string, []byte, error) {
+	f, err := rt.OpenFile(rel, os.O_RDONLY|oNonblock, 0)
 	if err != nil {
 		return "", nil, err
 	}
 	defer func() { _ = f.Close() }()
+	if st, err := f.Stat(); err != nil || !st.Mode().IsRegular() {
+		return "", nil, errors.New("not a regular file")
+	}
 	head := make([]byte, headBytes)
 	n, err := io.ReadFull(f, head)
 	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
