@@ -246,3 +246,16 @@ found correct; the reviewer's probes are in the session scratchpad.
   `copyButtonStaysInHeaderOutsideScrollBox` passed without the code → made to build a
   block and check where Copy sits. Offset paging can repeat one row on the next page
   after an insert → by design (D20).
+
+## Decisions (continued)
+- **D25** (2026-11-22) Correction to D20's browser half, asked for by the human after
+  their check: numbered buttons are dropped because the row of buttons grew and moved as
+  the page changed (`‹ [1] 2 3 … 9 ›` → `‹ 1 2 3 4 [5] 6 7 8 9 ›`). The pager is Previous /
+  Next with a fixed-width label, "Page N of M" unfiltered and "Page N" filtered. The
+  server half (`offset`) and `page` in the URL stay: reload, Back and links still jump
+  straight to page N unfiltered, and walk to it filtered (D21).
+  Checked in Chrome at 2,560 px, light and dark (separate ports 18295–18299, since the
+  human's own manual check held 17295–17299): Next from page 1 to 9 kept Previous at x=480
+  and Next at x=715 on every page and in a filtered list ("Page 2"); Previous disabled on
+  page 1, Next on page 9. The click handlers sit inside the button helper so
+  `TestWeb_ActionsAreButtonsOrLinks` can see they are on real buttons.

@@ -104,6 +104,12 @@ Asked for after the first build, before the PR. Three more fixes:
    with no layout shift (the scrollbar does not change the text's width) in Preview and in
    Raw; the card's copy button stays where it is.
 
+**Change (2026-11-22, after the human's check):** the numbered buttons grew and shifted as
+the page changed. The pager is Previous / Next only, with a fixed-width label between them:
+`‹ Previous   Page 5 of 9   Next ›` unfiltered, `‹ Previous   Page 3   Next ›` filtered.
+Its width never changes from page to page. `offset` and `page` in the URL stay, so reload,
+Back and links still open page N directly.
+
 ### Contract change: `offset`
 | Key | Values | Absent | Invalid → 400 `bad_request` |
 |---|---|---|---|
@@ -137,8 +143,8 @@ Asked for after the first build, before the PR. Three more fixes:
   cache check).
 - **AC6** A webtest covers 017 E10.
 - **AC7** `fillDrawer` is gone, with every response field only it filled; no JS read them.
-- **AC8** The sessions list shows numbered pages as in the amendment (full pager unfiltered,
-  pages reached plus `›` when filtered), in a fixed-height box with the pager below; `page`
+- **AC8** The sessions list pages with Previous / Next and a fixed-width "Page N of M" label
+  ("Page N" when filtered), in a fixed-height box with the pager below; `page`
   is in the URL and reload and Back restore it. Load more is gone. `offset` follows its
   contract (AC3's "50 rows at a time" now means one page of 50).
 - **AC9** The story bar has space below it in both themes.

@@ -273,25 +273,6 @@ export function pageCount(total) {
   return Math.max(1, Math.ceil((total || 0) / PAGE_SIZE));
 }
 
-// pagerItems lists what the pager shows between its arrows: page numbers and "…" gaps. With
-// last set (an unfiltered list: the page count is known) it is the first page, the last, and
-// the current one with two on each side, a gap of one page shown as that page; without it
-// (a filtered list) every page reached so far.
-export function pagerItems(current, last, reached) {
-  if (last === null || last === undefined) return Array.from({ length: Math.max(reached || 1, current) }, (_, i) => i + 1);
-  const want = new Set([1, last]);
-  for (let k = current - 2; k <= current + 2; k++) if (k >= 1 && k <= last) want.add(k);
-  const out = [];
-  let prev = 0;
-  for (const k of [...want].sort((a, b) => a - b)) {
-    if (k - prev === 2) out.push(prev + 1);
-    else if (k - prev > 2) out.push("…");
-    out.push(k);
-    prev = k;
-  }
-  return out;
-}
-
 function td(tr, text, cls) {
   const c = document.createElement("td");
   if (cls) c.className = cls;
@@ -512,9 +493,9 @@ function loader() {
 
 // createSessionsPage builds the landing page once; update(state) redraws the table, the
 // totals and the notes without touching the filter input, so typing keeps its focus.
-// state = { items, next_after, error, loaded, kind, q, total, scanned, page, reached, today,
+// state = { items, next_after, error, loaded, kind, q, total, scanned, page, today,
 // ungrouped: { items, next_after }, unassigned, unassignedItems }; page is the page shown (or
-// being loaded) and reached the furthest page seen, for a filtered list's numbers. Until the
+// being loaded). Until the
 // page has loaded the box shows a loader. The rows are shown as given: the server filtered them.
 // handlers = { onPage(n), onKind(kind), onQuery(text, now) }.
 export function createSessionsPage(handlers) {
@@ -559,62 +540,53 @@ export function createSessionsPage(handlers) {
   pager.className = "sp-pager";
   pager.setAttribute("aria-label", "Pages");
   pager.hidden = true;
+  // built once and only updated, so the pager never changes shape and a button keeps its focus
+  const pagerBtn = (label, step) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn sm";
+    b.textContent = label;
+    b.addEventListener("click", () => handlers.onPage && handlers.onPage((state.page || 1) + step));
+    return b;
+  };
+  const prevBtn = pagerBtn("‹ Previous", -1);
+  const nextBtn = pagerBtn("Next ›", 1);
+  const pageLabel = span("pg-label", "");
+  pageLabel.setAttribute("aria-live", "polite");
+  pager.append(prevBtn, pageLabel, nextBtn);
   const foot = document.createElement("div");
   foot.className = "sp-foot";
   const unassigned = document.createElement("div");
   el.append(head, bar, list, pager, foot, unassigned);
 
   let kind = "all";
-  let pagerKey = "";
   let lastPage = 1;
-  let state = { items: [], next_after: null, error: "", loaded: true, page: 1, reached: 1, today: null, ungrouped: { items: [], next_after: null }, unassigned: 0, unassignedItems: [] };
+  let state = { items: [], next_after: null, error: "", loaded: true, page: 1, today: null, ungrouped: { items: [], next_after: null }, unassigned: 0, unassignedItems: [] };
 
-  // drawPager shows the page numbers: an unfiltered list knows its page count (from total) and
-  // can jump to any page; a filtered one numbers the pages reached so far and has › while
-  // the page it is on says more follow. A list of one page shows no pager. The pager is only
-  // rebuilt when what it shows changed, and focus goes back to the button it was on.
+  // drawPager updates the pager: Previous, a "Page N of M" label ("Page N" when filtered: only
+  // each page's next_after says more follow) and Next. The same three nodes are kept, so the
+  // pager never changes shape and a button keeps its focus. A list of one page shows no pager.
+  // A button that has just become disabled cannot keep focus: the other arrow takes it, else
+  // the list box (a pager with no enabled button leaves nowhere else to go).
+  list.tabIndex = -1;
   function drawPager() {
     const filtering = kind !== "all" || (state.q || "") !== "";
     const page = state.page || 1;
     const last = filtering ? null : pageCount(state.total);
     const more = filtering ? Boolean(state.next_after) : page < last;
-    const items = pagerItems(page, last, state.reached);
-    const single = filtering ? items.length < 2 && !more : last < 2;
+    const single = page <= 1 && !more;
     const show = !state.error && !single;
-    const key = show ? JSON.stringify([page, items, more]) : "";
-    if (key === pagerKey) return;
-    pagerKey = key;
     pager.hidden = !show;
-    if (!show) {
-      pager.replaceChildren();
-      return;
-    }
-    const was = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.p : undefined;
-    const btn = (id, label, onGo, disabled, aria) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "btn sm";
-      b.textContent = label;
-      b.dataset.p = String(id);
-      if (aria) b.setAttribute("aria-label", aria);
-      b.disabled = disabled;
-      if (id === page) b.setAttribute("aria-current", "page");
-      b.addEventListener("click", onGo);
-      return b;
-    };
-    const go = (k) => () => handlers.onPage && handlers.onPage(k);
-    const nodes = [btn("prev", "‹", go(page - 1), page <= 1, "Previous page")];
-    for (const it of items) {
-      if (it === "…") nodes.push(span("pgap", "…"));
-      else nodes.push(btn(it, String(it), go(it), false, `Page ${it}`));
-    }
-    nodes.push(btn("next", "›", go(page + 1), !more, "Next page"));
-    pager.replaceChildren(...nodes);
-    const back = was === undefined ? null : nodes.find((n) => n.dataset && n.dataset.p === was && !n.disabled);
-    // a button that is now disabled (› on the last page, ‹ on page 1) cannot keep focus: the
-    // current page's button takes it, so the keyboard stays in the pager
-    const target = back || (was === undefined ? null : nodes.find((n) => n.dataset && n.dataset.p === String(page)));
-    if (target) target.focus({ preventScroll: true });
+    if (!show) return;
+    const was = document.activeElement;
+    const text = filtering ? `Page ${page}` : `Page ${page} of ${last}`;
+    if (pageLabel.textContent !== text) pageLabel.textContent = text;
+    prevBtn.disabled = page <= 1;
+    nextBtn.disabled = !more;
+    if (was !== prevBtn && was !== nextBtn) return;
+    if (!was.disabled) return;
+    const other = was === prevBtn ? nextBtn : prevBtn;
+    (other.disabled ? list : other).focus({ preventScroll: true });
   }
   let selected = "";
   let shown = [];

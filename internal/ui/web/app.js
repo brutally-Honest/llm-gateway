@@ -28,7 +28,7 @@ const shell = mountShell({
   theme: initTheme(storage, root),
   look: initStyle(storage, root),
 });
-const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "", sessionsKind: "all", sessionsQ: "", sessionsTotal: 0, sessionsScanned: 0, sessionsPage: 1, sessionsReached: 1, ungrouped: [], ungroupedNext: null, ungroupedError: "", ungroupedHead: { items: [], next_after: null }, today: null, unassigned: 0, unassignedItems: [] });
+const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "", sessionsKind: "all", sessionsQ: "", sessionsTotal: 0, sessionsScanned: 0, sessionsPage: 1, ungrouped: [], ungroupedNext: null, ungroupedError: "", ungroupedHead: { items: [], next_after: null }, today: null, unassigned: 0, unassignedItems: [] });
 let closeStream = null;
 let view = null;
 let page = null; // the Sessions page while it is shown
@@ -42,7 +42,6 @@ let curPage = 1; // the page the list shows or is loading
 let starts = [undefined]; // filtered lists: starts[k-1] is the position (after) page k starts at
 let scannedAt = []; // filtered lists: the rows the server tested for page k, at index k-1
 let unassignedSeen = null; // the unassigned count the list's section was last read for
-let reached = 1; // filtered lists: the furthest page seen, which the pager numbers
 let queryTimer = null; // typing in the search box settles after this
 let headTimer = null; // a live session the filtered list does not hold refetches page 1 after this
 let headCool = null; // after a refetch, the next one waits for this (HEAD_EVERY_MS)
@@ -134,7 +133,6 @@ async function loadPage(n, keep = false) {
         curPage = k;
         fixURL(k);
       }
-      reached = Math.max(reached, k);
       if (k === 1) noteHeadFloor(p);
     }
     store.set({
@@ -143,7 +141,6 @@ async function loadPage(n, keep = false) {
       sessionsTotal: p.total || 0,
       sessionsScanned: filtering() ? scannedAt.slice(0, k).reduce((a, b) => a + b, 0) : p.scanned || 0,
       sessionsPage: k,
-      sessionsReached: reached,
       sessionsError: "",
       sessionsLoaded: true,
       unassigned: p.unassigned_connections || 0,
@@ -209,8 +206,7 @@ function applyList(kind, q, n = 1) {
   list = { kind, q };
   starts = [undefined];
   scannedAt = [];
-  reached = 1;
-  store.set({ sessionsNext: null, sessionsScanned: 0, sessionsTotal: 0, sessionsReached: 1, sessionsKind: kind, sessionsQ: q });
+  store.set({ sessionsNext: null, sessionsScanned: 0, sessionsTotal: 0,sessionsKind: kind, sessionsQ: q });
   loadPage(n);
 }
 
@@ -580,7 +576,6 @@ function showSessions() {
       total: s.sessionsTotal,
       scanned: s.sessionsScanned,
       page: s.sessionsPage,
-      reached: s.sessionsReached,
       today: s.today,
       ungrouped: s.ungroupedHead,
       unassigned: s.unassigned,
