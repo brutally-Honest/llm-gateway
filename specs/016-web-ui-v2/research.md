@@ -42,6 +42,7 @@ feature: 016-web-ui-v2
   `/al-*` commands, no `loop.sh`, no approval fingerprints — Karthik's choice.
 - D2 (2026-11-10) — Reference: `mockups/v4-story.html`, chosen by Karthik after two rounds of
   feedback; variants 1–3 removed (in git history at 36233f6). The spec wins where they differ.
+  mockups removed in 031, see git history
 - D3 (2026-11-10) — Split: 016 is the session page (15 ACs), 017 the sessions list and the
   call details that replace the 013 drawer — the session page alone fills the 15-AC budget.
 - D4 (2026-11-10) — The server computes every fact; the browser only displays. One builder

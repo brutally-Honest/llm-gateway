@@ -27,6 +27,7 @@ of it from flat entries, so the CLI and the page can disagree.
 
 Reference mockup: `specs/016-web-ui-v2/mockups/v4-story.html` (chosen 2026-11-10). Where the
 mockup and this spec differ, this spec wins.
+mockups removed in 031, see git history
 
 This changes earlier features (each AC listed is replaced or narrowed as said):
 - **013 AC7, AC8** (turn cards, `#n · duration` links): replaced by AC4–AC7 here. The rule
