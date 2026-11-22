@@ -30,7 +30,8 @@ A lower priority never degrades a higher one.
 - Credentials — auth headers (`Proxy-Authorization` included) and keys — never land
   in storage.
 - No route reachable from outside localhost without a gateway token.
-- Stateless process; state lives in external stores.
+- Stateless process is the target; v1 keeps its state on local disk (SQLite store and
+  blob files under `capture.dir`), plus the rate limiter's counts in memory (PLAN §5).
 
 ## Workflow
 Each change gets `specs/NNN-slug/spec.md` and `research.md`. It is built without

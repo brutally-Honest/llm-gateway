@@ -96,7 +96,7 @@ A lower priority never degrades a higher one.
 - **Capture never blocks.** SSE is teed and storage writes are async. If capture fails, the request still succeeds, and the failure is logged and counted.
 - **Credentials the gateway handles never land in storage:** auth headers, `Proxy-Authorization` included, and keys are always redacted. Secrets inside prompts and tool results are stored as-is on a trusted machine, protected by 0700/0600 permissions, with masking a later opt-in (OQ-5, ADR 0005).
 - **Never exposed without auth.** Any route reachable from outside localhost requires a gateway token.
-- **Stateless process.** State lives in external stores. *Documented, temporary exception:* the v1 rate limiter keeps per-key counts in process memory, so they reset on restart and are not shared between instances. It sits behind a `Limiter` strategy and is replaced by the Redis strategy when instances exist ([ADR 0008](docs/decisions/0008-in-memory-fixed-window-limiter.md)).
+- **Stateless process (target).** State lives in external stores. *Documented v1 exceptions:* v1 keeps its state on local disk, the SQLite store and blob files under `capture.dir` ([ADR 0004](docs/decisions/0004-capture-store.md), `docs/capture.md`), so it is one process on one machine; and the rate limiter keeps per-key counts in process memory, so they reset on restart and are not shared between instances. It sits behind a `Limiter` strategy and is replaced by the Redis strategy when instances exist ([ADR 0008](docs/decisions/0008-in-memory-fixed-window-limiter.md)).
 - **Provider-reported usage is primary; our own estimate is the auditor.** How we estimate per tokenizer is OQ-4.
 
 ## 6. Out of scope (v1)
@@ -113,7 +113,7 @@ Each phase maps to one or more features, and each feature gets its own spec fold
 
 | # | Phase | Goal | Done when |
 |---|---|---|---|
-| 0 | Foundation | Repo, AGENTS.md, spec templates, docker-compose, local gate (`make verify`: lint, test, `-race`; pre-push hook), logging, `/healthz` | On a fresh clone, after `make setup`, `make verify` passes, and a push containing a malformed commit subject or a failing check is rejected |
+| 0 | Foundation | Repo, AGENTS.md, spec templates, docker-compose (the gateway's own was removed in 031), local gate (`make verify`: lint, test with `-race`, web-test; pre-push hook), logging, `/healthz` | On a fresh clone, after `make setup`, `make verify` passes, and a push containing a malformed commit subject or a failing check is rejected |
 | 1 | Core + first protocol | Adapter/profile interfaces; Anthropic Messages passthrough (`/v1/messages`, `count_tokens`, `/v1/models`, `HEAD /api/hello`); Claude Code profile | A real Claude Code session (API key **and** subscription) runs through the gateway with no behaviour difference<br>API-key half pending: AC44 deferred, tracked in `specs/001-core-and-anthropic-passthrough/research.md` Q4. |
 | 2 | Capture + canonical events | Async raw capture with redaction; Anthropic parser → canonical events | Every exchange is stored and parsed; killing the store doesn't break the client |
 | 3 | Sessions & timeline | Group Claude Code requests into sessions via `x-claude-code-session-id`; viewer | Claude Code sessions replay as ordered timelines: prompt → tool calls → results. The timeline reads only canonical events, never Anthropic wire types, enforced by a purity test on the timeline package |
@@ -153,10 +153,10 @@ Status: **Decided** = settled; **Proposed** = my default, confirmed in the phase
 | Metrics | **Prometheus + Grafana** | The de-facto standard. Pull-based, so no agent is needed. Histograms give p50/p99 latency overhead, one of my learning goals. | **StatsD:** no native histograms/percentiles. **Datadog etc.:** SaaS, costs money, and data leaves my machine. | Decided | Phase 8 |
 | Tracing | **OpenTelemetry → Jaeger** | OTel is vendor-neutral, which matches the agnostic principle: the backend can swap without code changes. Jaeger gives a local UI in one container. | **Vendor SDKs:** lock-in. **Grafana Tempo:** fine, but needs more setup to browse locally than Jaeger. | Decided | Phase 8 |
 | Token estimation | **tiktoken-go** for OpenAI-family models | Independent count to audit provider-reported usage. | Its accuracy for non-OpenAI tokenizers (Claude, Gemini) is the problem in OQ-4. | Decided for OpenAI; **Open** for others | Phase 9 |
-| Testing | **Table-driven tests, `-race`, testcontainers-go, recorded stream fixtures** per protocol | Race detector catches tee/capture concurrency bugs. testcontainers gives real Redis/DB, not mocks that lie. Recorded real SSE streams (golden files) let each adapter be tested without live API calls or cost. | **Mocked stores only:** they pass while the real thing fails. **Live-API tests in CI:** cost money and flake. | Decided | Phase 0 |
-| Packaging | **docker-compose** for the stack; gateway also runnable as a plain binary | One command brings up store, Redis, Prometheus, Grafana, Jaeger. Running the binary directly keeps the dev loop fast. | **Kubernetes:** irrelevant for local single-user. | Decided; the gateway's own image and compose file were removed in 031: the gateway runs as a binary (native install), and compose runs only the observability stack | Phase 0 |
+| Testing | **Table-driven tests, `-race`, recorded stream fixtures** per protocol (testcontainers-go is not used: v1 has no Redis or DB service to test against) | Race detector catches tee/capture concurrency bugs. testcontainers gives real Redis/DB, not mocks that lie. Recorded real SSE streams (golden files) let each adapter be tested without live API calls or cost. | **Mocked stores only:** they pass while the real thing fails. **Live-API tests in CI:** cost money and flake. | Decided | Phase 0 |
+| Packaging | **docker-compose** for the stack; gateway also runnable as a plain binary | One command (`make observability-up`) brings up Prometheus, Grafana, Jaeger. Running the binary directly keeps the dev loop fast. | **Kubernetes:** irrelevant for local single-user. | Decided; the gateway's own image and compose file were removed in 031: the gateway runs as a binary (native install), and compose runs only the observability stack | Phase 0 |
 | Viewer | **Local CLI** (`gateway sessions`, `gateway timeline`), greppable and reading canonical events directly | Fast to build, and it reads canonical events directly. | **Grafana panels only:** poor for reading conversations. | Superseded for the web UI by [ADR 0009](docs/decisions/0009-web-ui-vanilla-js-read-only.md); the CLI viewer was removed in 031 ([ADR 0007](docs/decisions/0007-viewer-cli-first.md)) | Phase 3 |
-| Web UI | **Vanilla JS** (ES modules, custom elements, `<template>`, `fetch`, `EventSource`, hash routing) embedded with `go:embed`; no npm, no build step | No Node in the build, so the binary stays one static file. The page reads the same timeline entries as the CLI. Read-only, loopback only. | **React and Preact + Vite:** need Node in the build. **htmx:** a dependency that limits a rich timeline. **Preact + htm:** kept as the recorded fallback if vanilla becomes too costly. | Decided ([ADR 0009](docs/decisions/0009-web-ui-vanilla-js-read-only.md)) | Phase A (web UI) |
+| Web UI | **Vanilla JS** (ES modules, custom elements, `<template>`, `fetch`, `EventSource`, hash routing) embedded with `go:embed`; no npm, no build step | No Node in the build, so the binary stays one static file. The page reads the same timeline entries the CLI did. Read-only, loopback only. | **React and Preact + Vite:** need Node in the build. **htmx:** a dependency that limits a rich timeline. **Preact + htm:** kept as the recorded fallback if vanilla becomes too costly. | Decided ([ADR 0009](docs/decisions/0009-web-ui-vanilla-js-read-only.md)) | Phase A (web UI) |
 
 ---
 
@@ -225,7 +225,6 @@ internal/
   core/                    # proxy engine, canonical events: knows no provider
   protocols/<name>/        # one adapter per wire protocol
   clients/<name>/          # one profile per client/harness
-  providers/               # upstream config, pricing
 cmd/  deploy/
 ```
 
@@ -301,7 +300,7 @@ What is repo-specific, and so belongs here:
 
 ### Scopes
 
-A scope is a noun naming the area touched, matching this codebase: `proxy`, `capture`, `anthropic`, `openai-chat`, `claude-code`, `cost`, `ratelimit`, `routing`, `store`, `observability`, `config`, `server` (`internal/server`, `cmd/gateway`), `logging`, `ui` (`internal/ui`, the web page and its API), `deploy` (`deploy/`, the observability compose stack), `docs`, `repo` (repo-level tooling, hooks, process docs).
+A scope is a noun naming the area touched, matching this codebase: `proxy`, `capture`, `anthropic`, `openai-chat`, `claude-code`, `cost`, `ratelimit`, `routing`, `store`, `observability`, `config`, `server` (`internal/server`, `cmd/gateway`), `logging`, `ui` (`internal/ui`, the web page and its API), `deploy` (`deploy/`, the observability compose stack), `docs`, `repo` (repo-level tooling, hooks, process docs), `core` (`internal/core`, the proxy engine), `timeline` (`internal/timeline`), `install` (`gateway install`, `uninstall`, `doctor`, `install.sh`), `gateway` (`cmd/gateway`), `harness-hooks` (the harness hook events and endpoint), `contentcoding` (response decompression), `session-token-usage` (the Phase 4 usage counters), `spec` (files under `specs/`), `adr` (`docs/decisions/`), `roadmap` (`docs/roadmap.md`), `verify` (the `make verify` gate).
 
 **Branch and commit agree.** Commits on `feat/003-sessions-and-timeline` use scopes from that feature.
 
