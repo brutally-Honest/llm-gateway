@@ -36,8 +36,8 @@ A lower priority never degrades a higher one.
 ## Workflow
 Each change gets `specs/NNN-slug/spec.md` and `research.md`. It is built without
 stopping on judgment calls: each is recorded as a D-entry (`- **Dn** …`) under
-`## Decisions` in `research.md` (except the cases under "Always stop and ask first"). There is no plan.md, no tasks.md and no approval fields or status
-frontmatter. Entries in `research.md` are never deleted: a correction is a new dated line.
+`## Decisions` in `research.md` (except the cases under "Always stop and ask first"). There is no plan.md, no tasks.md and no approval fields; a spec may
+carry one frontmatter line, `status: draft` or `status: done`. Entries in `research.md` are never deleted: a correction is a new dated line.
 
 Branches: feat/NNN-slug, fix/NNN-slug, chore/NNN-slug. Every commit follows PLAN §11:
 `<type>(<scope from the §11 list>): <summary>`, lowercase, no trailing period,

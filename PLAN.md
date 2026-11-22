@@ -229,7 +229,7 @@ cmd/  deploy/
 ```
 
 ### Flow per feature
-Each change gets `specs/NNN-slug/` with `spec.md` and `research.md`. There is no `plan.md`, no `tasks.md`, and no approval fields or `status` frontmatter. The agent-loop kit (brutally-Honest/agent-loop) that used to drive this was removed in 031 and may be installed again later; its settings are in `specs/031-remove-clutter/research.md`. Specs 003–017 were built with it and keep its frontmatter as history; specs 000–002 predate it.
+Each change gets `specs/NNN-slug/` with `spec.md` and `research.md`. There is no `plan.md`, no `tasks.md`, and no approval fields; a spec may carry one frontmatter line, `status: draft` or `status: done`. The agent-loop kit (brutally-Honest/agent-loop) that used to drive this was removed in 031 and may be installed again later; its settings are in `specs/031-remove-clutter/research.md`. Specs 003–017 were built with it and keep its frontmatter as history; specs 000–002 predate it.
 
 1. **Spec.** Branch `feat/NNN-slug`, `fix/NNN-slug` or `chore/NNN-slug`; `specs/NNN-slug/spec.md` is drafted with me (skeleton below).
 2. **Build.** Built without stopping. Every judgment call is a D-entry (`- **Dn** …`) under `## Decisions` in `research.md`. Commits follow §11.
@@ -301,6 +301,8 @@ What is repo-specific, and so belongs here:
 ### Scopes
 
 A scope is a noun naming the area touched, matching this codebase: `proxy`, `capture`, `anthropic`, `openai-chat`, `claude-code`, `cost`, `ratelimit`, `routing`, `store`, `observability`, `config`, `server` (`internal/server`, `cmd/gateway`), `logging`, `ui` (`internal/ui`, the web page and its API), `deploy` (`deploy/`, the observability compose stack), `docs`, `repo` (repo-level tooling, hooks, process docs), `core` (`internal/core`, the proxy engine), `timeline` (`internal/timeline`), `install` (`gateway install`, `uninstall`, `doctor`, `install.sh`), `gateway` (`cmd/gateway`), `harness-hooks` (the harness hook events and endpoint), `contentcoding` (response decompression), `session-token-usage` (the Phase 4 usage counters), `spec` (files under `specs/`), `adr` (`docs/decisions/`), `roadmap` (`docs/roadmap.md`), `verify` (the `make verify` gate).
+
+Where `gateway` and `server` overlap (`cmd/gateway`), use `server` for new commits.
 
 **Branch and commit agree.** Commits on `feat/003-sessions-and-timeline` use scopes from that feature.
 
