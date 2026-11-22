@@ -158,9 +158,6 @@ func run(ctx context.Context, d deps) int {
 	if len(d.args) > 0 && d.args[0] == "hooks" {
 		return runHooks(d)
 	}
-	if len(d.args) > 0 && d.args[0] == "backfill-sessions" {
-		return runBackfill(d)
-	}
 	if isHelp(d.args) {
 		return runHelp(d)
 	}

@@ -40,7 +40,6 @@ func TestSubcommands_PrintPlainText(t *testing.T) {
 		{[]string{"doctor", "--help"}, exitOK, "Usage: gateway doctor"},
 		{[]string{"dump", "--help"}, exitOK, "Usage: gateway dump"},
 		{[]string{"hooks", "print", "--help"}, exitOK, "Usage: gateway hooks print [-config <path>]"},
-		{[]string{"backfill-sessions", "--help"}, exitOK, "Usage: gateway backfill-sessions [-config <path>]"},
 		{[]string{"dump", "one", "two"}, exitConfig, "gateway dump: invalid flags (reason: unexpected argument, count: 2)"},
 		{[]string{"hooks"}, exitConfig, "gateway hooks: invalid flags"},
 		{[]string{"bogus-command"}, exitConfig, "gateway: unexpected argument (the gateway takes none"},
