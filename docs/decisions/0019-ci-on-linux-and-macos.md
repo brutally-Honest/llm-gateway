@@ -41,3 +41,7 @@ the PR. The workflow takes the Go version from `go.mod` and golangci-lint throug
 - Node 22 is pinned in the workflow, the one tool version outside the Makefile and
   go.mod. It must still satisfy ADR 0013.
 - Cost of reversing: delete the workflow and the README badge. Nothing else depends on it.
+
+2026-11-22: CI no longer installs the kit's tools (Homebrew bash and jq), since the kit was
+removed in 031. It still installs shellcheck, which `TestInstallShShellcheck` needs
+(031 D3).

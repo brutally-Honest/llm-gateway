@@ -55,9 +55,8 @@ Upgrades, flags, every doctor check, paths and troubleshooting: [docs/install.md
 
 For working on the gateway itself (building from source).
 
-Prerequisite: `jq` on your `PATH`. `make verify` (which the pre-push hook runs) needs it
-for the agent-loop kit tests, and the kit's commit guard hook refuses every tool call
-without it.
+Prerequisite: `shellcheck` on your `PATH`. `make verify` (which the pre-push hook runs)
+needs it to lint `install.sh`.
 
 ```sh
 make setup

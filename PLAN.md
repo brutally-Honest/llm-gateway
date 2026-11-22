@@ -214,17 +214,12 @@ Each is resolved in the named phase's spec and recorded as an ADR. The leaning i
 ```
 AGENTS.md                  # rules for any agent working in this repo
 PLAN.md                    # this file
-.claude/
-  templates/               # agent-loop kit templates: spec, plan, tasks, research, brief, cr
-  templates.local/         # repo overrides, used first by loop.sh (spec.md adds the Agnosticism check)
 docs/decisions/            # ADRs: NNNN-title.md (context, decision, alternatives, consequences)
 docs/clients/              # one page per client: how to connect, known limits
 specs/
   003-sessions-and-timeline/
-    spec.md                # WHAT and WHY: drafted with me, approved by me
-    plan.md                # HOW: agent-drafted, human-approved
-    tasks.md               # T001 blocks, one commit each; progress lives in .agent-loop/, not here
-    research.md            # open questions, decisions and notes: feature-local
+    spec.md                # WHAT and WHY: drafted with me
+    research.md            # decisions and notes: feature-local
   ...
 internal/
   core/                    # proxy engine, canonical events: knows no provider
@@ -235,79 +230,64 @@ cmd/  deploy/
 ```
 
 ### Flow per feature
-Features from 003 on run through the agent-loop kit (`.claude/scripts/loop.sh` and the `/al-*` commands). Specs 000–002 predate it and keep their old formats as history.
+Each change gets `specs/NNN-slug/` with `spec.md` and `research.md`. There is no `plan.md`, no `tasks.md`, and no approval fields or `status` frontmatter. The agent-loop kit (brutally-Honest/agent-loop) that used to drive this was removed in 031 and may be installed again later; its settings are in `specs/031-remove-clutter/research.md`. Specs 003–017 were built with it and keep its frontmatter as history; specs 000–002 predate it.
 
-1. **Spec.** `/al-spec` creates the branch (`feat/NNN-slug`, `fix/NNN-slug` or `chore/NNN-slug`) and `specs/NNN-slug/`, interviews me, and drafts `spec.md` with `status: draft`. I approve it with `/al-approve`. No code before the spec is approved.
-2. **Plan and tasks.** `/al-plan` drafts `plan.md` and `tasks.md` against the approved spec and asks me its open questions; `/al-approve` approves both.
-3. **tasks.md.** One `### T001 — …` block per task, in build order, each one commit that leaves `make verify` green (format: `.claude/templates/tasks.md`). Nobody ticks it: progress lives in `.agent-loop/` and git (`loop.sh status`). A blocked task is named by its question line in `research.md` (`- **Q1** (open) T003 — …`), never marked on the task.
-4. **Build.** `/al-implement` runs implementer → checks → reviewer → fix rounds per task, until everything passes or my input is needed. When a task is blocked, I answer with `/al-answer Qn <answer>` and continue with `/al-resume`.
-5. **Changes.** A change to an approved spec, plan or tasks goes through `/al-change`, never a direct edit. After merge, a new feature with `/al-spec --supersedes NNN`.
-6. **Decisions.** Anything decided mid-way that outlives the feature becomes an ADR. Resolving an OQ always produces an ADR, and this file is updated in the same PR.
-7. **PR.** Links the spec, lists each acceptance criterion with its evidence (test name, log, screenshot), and notes any deviation from the plan.
-8. **Close.** The kit has no close step. When a feature's PR merges, I set `status: done` on its `spec.md`, `plan.md` and `tasks.md` in a follow-up commit.
+1. **Spec.** Branch `feat/NNN-slug`, `fix/NNN-slug` or `chore/NNN-slug`; `specs/NNN-slug/spec.md` is drafted with me (skeleton below).
+2. **Build.** Built without stopping. Every judgment call is a D-entry (`- **Dn** …`) under `## Decisions` in `research.md`. Commits follow §11.
+3. **Decisions.** A decision that outlives the feature or is hard to reverse becomes an ADR in `docs/decisions/`. Resolving an OQ always produces an ADR, and this file is updated in the same PR.
+4. **PR.** Links the spec, lists each acceptance criterion with its evidence (test name, log, screenshot), and notes any deviation from the spec.
 
 Small fixes don't need a spec folder. The PR description states the bug, the cause, the fix, and the test that proves it.
 
 ### AGENTS.md should contain
 - Project goal, the "not a harness" line, and the priority order (a link to this file)
 - The agnosticism rules from §2, which are **checked in every review**: no provider or client logic in `core/`
-- Workflow: the agent-loop kit (`/al-spec` → `/al-plan` → `/al-implement`); never code outside the current spec's scope
+- Workflow: spec.md + research.md per change, built without stopping, judgment calls recorded as D-entries; never code outside the current spec's scope
 - Hard rules: §5
 - Stack: §8, with an instruction not to introduce a dependency without an ADR
 - Commands: build, test (`go test -race ./...`), lint, compose up
 - Conventions: package layout, error wrapping, logging fields, test style
-- When unsure: stop, add the question to the feature's `research.md` as `- **Qn** (open) Tnnn — …` under `## Open questions`, and don't guess
+- When unsure: record the call as a D-entry in the feature's `research.md` under `## Decisions`; if it is hard to reverse, stop and ask
 
 ### spec.md skeleton
-New specs are rendered from `.claude/templates.local/spec.md`: the kit's template plus one repo section, the Agnosticism check.
 ```
-# NNN — Feature name
+---
+feature: NNN-slug
+kind: feat | fix | chore
+created: YYYY-MM-DD
+branch: feat/NNN-slug
+---
+
 ## Problem              who has it, what happens today, why it matters
 ## Goal                 what is true when this is done
 ## Non-goals            what this explicitly does not do
 ## Acceptance criteria  - **AC1** — When <trigger>, the system shall <result>.
 ## Edge cases           - **E1** — <situation> → <expected behaviour> (AC2)
-## Constraints          performance, security, compatibility, retention
-## Agnosticism check    which axis this touches; confirm core/ is unchanged or justify it; OQ-n → ADR link
-## Open questions       [NEEDS CLARIFICATION: …] until answered
-## Changelog
 ```
-Goal, Non-goals, Acceptance criteria, Edge cases and Constraints are the approved contract; changing them needs `/al-change`. The Agnosticism check is a review aid outside it. From the old skeleton: Scope / Out of scope → Goal / Non-goals; Do / Don't → Constraints / Non-goals.
+For a feature that touches a provider, client or protocol axis, confirm in the spec that `core/` is unchanged or justify it: the agnosticism rules (§2) are a review aid, not a template section.
 
 ### research.md: the feature's working memory
 
-**What goes here:** the drilled-down stuff that's too detailed for the spec or plan but worth remembering:
+**What goes here:** the drilled-down stuff that's too detailed for the spec but worth remembering:
 - **Flow:** "does Claude Code send `count_tokens` before or after the first message?"
 - **Low-level technical:** "`ReverseProxy` buffers when `Content-Length` is set — how to force flush?"
 - **Limits hit:** "Claude Code's `HEAD /api/hello` sends no `x-app`, so the profile can't label it."
 - **Roadblocks and workarounds:** what blocked, what unblocked it.
 
-**Where it's referenced:** a question names the task it blocks on its own line, and commit git notes cite questions (`Research: … (Q2, Q5)`). The spec and plan don't link to it; they stay at the level of intent and approach.
+**Where it's referenced:** commit git notes cite decisions (`Research: … (D2, D5)`). The spec doesn't link to it; it stays at the level of intent.
 
 **Escalation rules**, so nothing important stays buried:
-| If the answer… | Then |
+| If the decision… | Then |
 |---|---|
-| changes scope, acceptance criteria, or a constraint | change `spec.md` itself (not a link) through `/al-change` once it is approved, and note `→ spec` |
-| changes the approach | change `plan.md` itself through `/al-change` once it is approved, and note `→ plan` |
 | matters beyond this feature, or is hard to reverse | write an ADR, and note `→ ADR-NNNN` |
 | is local to this feature | it stays here; that's the default |
 
-**Entry format** (`.claude/templates/research.md`). The loop and its hooks parse only this question line, and only under `## Open questions`; anything else there is invisible to them:
-```
-## Open questions
-- **Q1** (open) T003 — Does ReverseProxy delay SSE flushes behind the capture wrapper? — options: A) set FlushInterval -1 B) flush in the tee
-```
-`/al-answer Q1 <answer>` changes `(open)` to `(answered)` and writes the answer underneath:
-```
-- **Q1** (answered) T003 — Does ReverseProxy delay SSE flushes behind the capture wrapper? — options: A) set FlushInterval -1 B) flush in the tee
-  - **Answer:** A; text/event-stream already flushes at once, test TestProxy_StreamsSSEWithoutBuffering (2026-10-11)
-```
-Decisions taken along the way go under `## Decisions`, and everything else under `## Notes`:
+**Entry format.** Every judgment call is a D-entry under `## Decisions`; everything else goes under `## Notes`:
 ```
 ## Decisions
-- D1 (2026-10-11) — Session ID comes from the client profile, not core — core must not name a client header
+- **D1** (2026-10-11) — Session ID comes from the client profile, not core — core must not name a client header
 ```
-Entries are never deleted. A wrong answer later gets a new dated line, not an edit, so the history of the confusion is kept.
+Entries are never deleted. A wrong decision later gets a new dated line, not an edit, so the history of the confusion is kept.
 
 ---
 

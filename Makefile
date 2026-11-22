@@ -9,7 +9,7 @@ NOTES_REFSPEC := +refs/notes/*:refs/notes/*
 # `dev` when git can't describe the tree, e.g. a Docker build without .git.
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-.PHONY: setup setup-git setup-lint setup-shellcheck setup-node build run dist image test kit-test web-test lint verify \
+.PHONY: setup setup-git setup-lint setup-shellcheck setup-node build run dist image test web-test lint verify \
 	observability-up observability-down
 
 # Idempotent: safe to run again at any time.
@@ -22,13 +22,13 @@ setup-git:
 	@git config --get-all remote.origin.fetch | grep -qxF '$(NOTES_REFSPEC)' || \
 		git config --add remote.origin.fetch '$(NOTES_REFSPEC)'
 
-# make kit-test (so make verify) lints the kit's scripts with shellcheck; setup only reports
-# whether it is installed (ADR 0011), because it comes from the system package manager.
+# make test (so make verify) lints install.sh with shellcheck (spec 023 AC23); setup only
+# reports whether it is installed, because it comes from the system package manager.
 setup-shellcheck:
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		echo "shellcheck $$(shellcheck --version | sed -n 's/^version: //p') found (make kit-test lints the kit's scripts with it)"; \
+		echo "shellcheck $$(shellcheck --version | sed -n 's/^version: //p') found (make test lints install.sh with it)"; \
 	else \
-		echo 'shellcheck not found: install it (apt install shellcheck, or brew install shellcheck) — make kit-test and make verify fail without it'; \
+		echo 'shellcheck not found: install it (apt install shellcheck, or brew install shellcheck) — make test and make verify fail without it'; \
 	fi
 
 # make web-test (so make verify) runs the web client's tests with node (ADR 0013, 22.12 or
@@ -98,10 +98,6 @@ image:
 test:
 	go test -race ./...
 
-# The agent-loop kit's shell tests; each runs in a throwaway git repo (needs jq).
-kit-test:
-	.claude/scripts/tests/run.sh
-
 # The web client's tests run on node's built-in runner (ADR 0013). The glob is quoted so
 # node expands it: the directory form exits 1 on node v25.
 web-test:
@@ -114,9 +110,8 @@ lint:
 	@test -x $(GOLANGCI_LINT) || { echo 'golangci-lint not found: run make setup' >&2; exit 1; }
 	$(GOLANGCI_LINT) run ./...
 
-# Lint, then test, then the web tests, then the kit's tests, in that order even under -j.
+# Lint, then test, then the web tests, in that order even under -j.
 verify:
 	@$(MAKE) --no-print-directory lint
 	@$(MAKE) --no-print-directory test
 	@$(MAKE) --no-print-directory web-test
-	@$(MAKE) --no-print-directory kit-test

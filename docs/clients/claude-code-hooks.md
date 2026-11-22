@@ -50,9 +50,8 @@ Claude Code reads hooks from every settings file in scope: user
 local (`.claude/settings.local.json`). For one event, each matching hook from each file
 runs. No file replaces another.
 
-The agent-loop kit in this repo keeps its hooks in the project `.claude/settings.json`:
-a guard on `PreToolUse`, a sub-agent handler on `SubagentStop`, and a command handler on
-`UserPromptExpansion`. With the gateway's hooks installed, those keep running unchanged.
+A project that keeps its own hooks in `.claude/settings.json`, such as a guard on
+`PreToolUse`, keeps them running unchanged with the gateway's hooks installed.
 The gateway's hooks never set a decision, so they neither allow nor block a tool. The
 gateway does not depend on the order in which hooks from different files run.
 

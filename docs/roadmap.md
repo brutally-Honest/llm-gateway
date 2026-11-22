@@ -77,6 +77,7 @@ below and AC44, the API-key smoke test of Phase 1.
   the ungrouped, unassigned and full exchange pages on 016's theme.
 
 ## Later
+- Agent-loop kit: reinstall from brutally-Honest/agent-loop if a stricter spec flow is wanted again (removed in 031; settings in specs/031-remove-clutter/research.md).
 - The 025 Mac check: the first upgrade to 025 takes the changed-plist path (bootout,
   wait, bootstrap) against real `launchctl`; back-to-back reinstalls restart within about
   a second; `make verify` green; the own-gateway preflight with `/usr/sbin` off PATH; a
@@ -114,8 +115,6 @@ below and AC44, the API-key smoke test of Phase 1.
 - Per-session network attribution when several Claude Code sessions run at once (today
   connections go to unassigned unless exactly one routed session is active; 014 AC10's
   rule). Idea: tag each claude launch with its own id in the proxy URL.
-- The agent-loop kit on macOS's bash 3.2: `loop.sh:91` (a `case` inside `$( )`) fails to
-  parse, so 14 kit scripts fail (`docs/manual-checks/macos-v1.md` B8).
 - A `claude` run that fails at argument parsing still sends one SessionEnd hook, which
   shows as an active "Hooks only" session for minutes (`docs/manual-checks/macos-v1.md` B12).
 - The speed follow-ups, re-measured after 016.
