@@ -169,3 +169,43 @@ it), `setup-shellcheck`, the CI jq/shellcheck/bash installs, and the hooks in
   subagent: the shellcheck restore (D3), README/hooks-doc/PLAN doc lines found by the
   grep, the F/E split edits (D10), and the one-line purity-test entry (D9), which
   `make verify` caught because the F subagent ran only targeted tests.
+
+## Review (step 5)
+
+### Round 1 (fresh opus reviewer, `git diff main...HEAD` at 3ddaefc)
+- **P1** `internal/store/backfill_test.go` (deleted in E) held `TestSetSessionKeys_OnlyFillsNull`,
+  the only test of `Store.SetSessionKeys`, which stays (D11). → Fixed: the test is back as
+  `internal/store/session_keys_test.go`, minus its `UnkeyedBatch` block.
+- **P3** `README.md:22-23` still described specs as spec/plan/tasks/research. → Fixed.
+- **P3** The deleted `TestFixture_*` (viewer) were the only check of usage totals on the
+  real `testdata/sessions/claude-code-task` fixture. → Fixed: an assertion of the same
+  totals in `internal/timeline/fixture_test.go`.
+- **P3** Not every commit reverts cleanly on HEAD: A's revert clashes on context lines in
+  `Makefile` and `verify.yml` changed by D and I; F's revert needs f6e87b2 reverted first
+  (it deleted code F's diff touches) and E before it (`backfill_test.go`). → Recorded,
+  not changed: revert in reverse order (I, D, …), and revert f6e87b2 together with F;
+  A's revert needs only trivial context fixes. Every commit was verified on its own tree.
+- **P4** D8's kept `RenderViewText` should be a named follow-up. → Recorded below.
+- **P4** AGENTS.md now says "record a D-entry and continue" where it said "stop". →
+  Intended by the brief ("built without stopping; every judgment call is a D-entry");
+  left for the human to confirm in review.
+- **P4** f6e87b2's `ui` scope covers mostly `internal/timeline`; PLAN §11 has no
+  `timeline` scope. → Kept.
+- **P4** `docs/roadmap.md:41-42` reads awkwardly. → Kept; correct as written.
+
+Follow-up (not in 031): delete `RenderViewText` and its printer together with the two
+`view_test.go` tests that call it, if the text rendering of a view is no longer wanted.
+
+### Round 2 (fresh opus reviewer, at 3ad9037; the last round)
+No P1 or P2. `go vet`, `go test -race -count=1 ./...` and the node tests (164/164) green;
+the round-1 fixes confirmed (the restored test matches the old one line for line; the
+fixture totals are not vacuous).
+- **P3** `internal/timeline/fixture_test.go`: the new totals test summed a hand-built call
+  list instead of the production paths (`BuildWithUsage`, `SessionStats`). → Fixed: it
+  takes the summary from `BuildWithUsage` and checks `SessionStats` agrees.
+- **P4** `README.md:22-24`: "Specs 003–017" was inaccurate (000–002 have plan/tasks too;
+  some 003–017 do not). → Fixed: "Some older specs (000–017)".
+- **P4** `PLAN.md:122`: Phase A's exit criterion names `gateway timeline`. → Annotated
+  "(CLI removed in 031)"; the row is history.
+- **P4** ADRs 0009/0016 and `view_test.go:416` name `gateway timeline`. → Kept as history
+  and a test comment (see "Leftover grep").

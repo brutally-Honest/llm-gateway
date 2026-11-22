@@ -20,7 +20,7 @@ and awaiting their manual check.
   questions, commit conventions.
 - `AGENTS.md` — the rules any agent working in this repo must follow.
 - `specs/` — one folder per feature: `spec.md` (what and why) and `research.md`
-  (decisions as D-entries). Specs 003–017 also keep the old kit's `plan.md` and
+  (decisions as D-entries). Some older specs (000–017) also keep `plan.md` and
   `tasks.md` as history.
 - `docs/decisions/` — ADRs.
 - `docs/clients/` — one page per client: how to connect, known limits.
