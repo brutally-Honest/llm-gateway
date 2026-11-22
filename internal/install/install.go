@@ -561,9 +561,7 @@ func apply(e *Env, p Paths, pl plan) error {
 			continue // taken over as it is: only its copy was written
 		}
 		if ch.tightenOnly {
-			if err := tighten(ch.path); err != nil {
-				return fmt.Errorf("tightening %s: %w", ch.path, err)
-			}
+			tighten(e, p, ch.path)
 			continue
 		}
 		var err error
@@ -585,22 +583,25 @@ func apply(e *Env, p Paths, pl plan) error {
 	return nil
 }
 
+// chmod is os.Chmod; a package variable so a test can make it fail without root.
+var chmod = os.Chmod
+
 // tighten chmods an existing config's folder to 0700 and the config to 0600 when either is
 // looser. It never writes content: a symlinked config keeps its link and its target gets
-// the mode.
-func tighten(path string) error {
+// the mode. A chmod that fails (say, a symlink to a file another user owns) only prints a
+// warning: the install itself is not stopped by it.
+func tighten(e *Env, p Paths, path string) {
 	dir := filepath.Dir(path)
 	if looser(dir, 0o700) {
-		if err := os.Chmod(dir, 0o700); err != nil {
-			return err
+		if err := chmod(dir, 0o700); err != nil {
+			e.printf("  warning  could not make %s private (%v); run: chmod 700 %s\n", p.tilde(dir), err, p.tilde(dir))
 		}
 	}
 	if looser(path, 0o600) {
-		if err := os.Chmod(path, 0o600); err != nil {
-			return err
+		if err := chmod(path, 0o600); err != nil {
+			e.printf("  warning  could not make %s private (%v); run: chmod 600 %s\n", p.tilde(path), err, p.tilde(path))
 		}
 	}
-	return nil
 }
 
 // writePrivate writes path 0600 in a 0700 folder. The folder is made or tightened first,

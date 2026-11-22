@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -142,6 +143,33 @@ func TestReinstallPrivateModesUnchanged(t *testing.T) {
 	expectPerm(t, p.Config, 0o600)
 	if !regexp.MustCompile(`(?m)config\s+unchanged\s+`).MatchString(f.out.String()) {
 		t.Fatalf("summary does not list config.yaml as unchanged:\n%s", f.out)
+	}
+}
+
+// A chmod that fails on reinstall (here EPERM, as for a symlink to another user's file)
+// prints a warning with the manual command and does not stop the install.
+func TestReinstallChmodFailureWarnsAndSucceeds(t *testing.T) {
+	f := newFake(t, "linux")
+	if code := f.install(InstallOptions{Yes: true}); code != ExitOK {
+		t.Fatalf("first exit %d\n%s", code, f.out)
+	}
+	p := f.paths()
+	if err := os.Chmod(p.Config, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	orig := chmod
+	chmod = func(name string, mode os.FileMode) error {
+		return &os.PathError{Op: "chmod", Path: name, Err: syscall.EPERM}
+	}
+	t.Cleanup(func() { chmod = orig })
+	if code := f.install(InstallOptions{Yes: true}); code != ExitOK {
+		t.Fatalf("reinstall exit %d, want ExitOK when only a chmod fails\n%s", code, f.out)
+	}
+	if !strings.Contains(f.out.String(), "could not make") {
+		t.Fatalf("no chmod warning in output:\n%s", f.out)
+	}
+	if !strings.Contains(f.out.String(), "run: chmod 600 ") {
+		t.Fatalf("warning lacks the manual chmod command:\n%s", f.out)
 	}
 }
 
