@@ -144,6 +144,7 @@ it), `setup-shellcheck`, the CI jq/shellcheck/bash installs, and the hooks in
   in `internal/timeline/view_test.go` call it, and a test that stays is never deleted. It
   is dead in production code from 031 on (deadcode lists it). `UngroupedExchange` moved
   from `render.go` to `sessions.go`, because `ListUngrouped` returns it.
+  - (2026-11-22) **Superseded by D16**: `RenderViewText` is deleted.
 - **D9** Item F: `TestCore_NoProviderOrClientIdentifiers` named `cmd/gateway/viewer.go` as
   one of the paths it walks. With the file gone the entry is removed; nothing replaces it
   (`dump.go` was never in the list). The sessions/timeline cases of
@@ -157,6 +158,7 @@ it), `setup-shellcheck`, the CI jq/shellcheck/bash installs, and the hooks in
   `internal/store/session_keys.go`): `internal/ui/digest_cache_test.go` (the out-of-scope
   digest cache) and `internal/store/reader_versions_test.go` use them. Production code no
   longer calls `SetSessionKeys`. `Unkeyed` and `UnkeyedBatch`, backfill-only, are removed.
+  - (2026-11-22) **Superseded by D15**: `SetSessionKeys` and `KeyAssignment` are deleted.
 - **D12** Step 4: the new deadcode orphans that F left (`timeline.ListSessions`,
   `ListUngrouped`, `SessionSource`, `SessionListing`, `UngroupedSource`,
   `UngroupedExchange`, `sessionUsage`, `preview`, `firstUserText`, and the store-reading
@@ -169,6 +171,35 @@ it), `setup-shellcheck`, the CI jq/shellcheck/bash installs, and the hooks in
   subagent: the shellcheck restore (D3), README/hooks-doc/PLAN doc lines found by the
   grep, the F/E split edits (D10), and the one-line purity-test entry (D9), which
   `make verify` caught because the F subagent ran only targeted tests.
+- **D15** Follow-up (human's request): `Store.SetSessionKeys` and `KeyAssignment`
+  (`internal/store/session_keys.go`) are deleted; no production code called them. The tests
+  that used them only to key an exchange after capture covered re-keying, which can no
+  longer happen without backfill, so they go:
+  - `TestSetSessionKeys_OnlyFillsNull` (`internal/store/session_keys_test.go`, the test
+    restored in review round 1): deleted whole.
+  - `TestSessionVersions_ChangesOnEveryWritePath` (`internal/store/reader_versions_test.go`):
+    its `backfill` step deleted; the `insert`, `parse landing` and `hook` steps stay.
+  - `TestDigestCache_ChangedSessionRecomputed` (`internal/ui/digest_cache_test.go`): its
+    `backfilled exchange` step deleted; the `new exchange` and `new hook line` steps and
+    the unchanged-read check stay. This touches the digest cache's test only, on the
+    human's instruction; `digest_cache.go` is unchanged.
+  No test needed a keyed exchange through the normal write path, because each already
+  stores keyed exchanges with `SaveExchange` in its other steps. The `Version` comment in
+  `internal/store/reader_versions.go` no longer lists a backfilled key, and two comments
+  in `TestStream_BackfilledExchangesAppearOnReconnectSnapshot` (`internal/ui/stream_test.go`)
+  no longer describe backfill. That test's name still says "Backfilled"; it is left, since
+  it still checks something valid (an exchange stored outside the hub shows up in the
+  reconnect snapshot).
+- **D16** Follow-up (human's request): `internal/timeline/render_view.go` (`RenderViewText`,
+  `viewPrinter`, `FormatDuration` and helpers) is deleted. Of its two test callers in
+  `internal/timeline/view_test.go`, neither checked a fact not already asserted on the
+  `View` value, so the text parts go rather than being rewritten:
+  - `TestView_TimeLineText`: deleted whole. It asserted the rounded text line of the Time
+    card; the test before it asserts `ClockMS`, `ModelMS`, `ToolMS`, `WaitMS` and
+    `BetweenMS` on the `View`, and that the parts sum to the clock.
+  - `TestView_TurnModels`: only its text-scan block is removed. Its `v.Turns[i].Models`
+    assertions stay.
+  deadcode now lists only the baseline entries.
 
 ## Review (step 5)
 
@@ -192,9 +223,6 @@ it), `setup-shellcheck`, the CI jq/shellcheck/bash installs, and the hooks in
 - **P4** f6e87b2's `ui` scope covers mostly `internal/timeline`; PLAN §11 has no
   `timeline` scope. → Kept.
 - **P4** `docs/roadmap.md:41-42` reads awkwardly. → Kept; correct as written.
-
-Follow-up (not in 031): delete `RenderViewText` and its printer together with the two
-`view_test.go` tests that call it, if the text rendering of a view is no longer wanted.
 
 ### Round 2 (fresh opus reviewer, at 3ad9037; the last round)
 No P1 or P2. `go vet`, `go test -race -count=1 ./...` and the node tests (164/164) green;

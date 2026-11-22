@@ -472,14 +472,14 @@ func TestStream_CommitDuringSnapshotNotMissed(t *testing.T) {
 
 func TestStream_BackfilledExchangesAppearOnReconnectSnapshot(t *testing.T) {
 	e := newStreamEnv(t, func(h *Hub) { h.heartbeat = 20 * time.Millisecond })
-	e.save("u", "", "cc", 5) // ungrouped until backfill
+	e.save("u", "", "cc", 5) // ungrouped: no key
 	path := "/api/sessions/" + sid() + "/stream"
 	s := e.openRaw(path)
 	s.skipSession = true // no row yet, so no session event; later ones are not under test
 	if ev := s.nextData(); ev.event != "hooks" || ev.data != "[]" {
 		t.Fatalf("connect snapshot = %+v, want an empty hooks event", ev)
 	}
-	e.save("u2", "k", "cc", 6) // backfill assigns it to the session; nothing is published
+	e.save("u2", "k", "cc", 6) // stored beside the stream, not committed through the hub; nothing is published
 	e.parseMsgs("u2", "ok", []any{"user", text("old")})
 	for i := 0; i < 3; i++ {
 		if ev := s.next(); ev.event != "" {

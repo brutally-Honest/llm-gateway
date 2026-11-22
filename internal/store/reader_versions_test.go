@@ -60,12 +60,6 @@ func TestSessionVersions_ChangesOnEveryWritePath(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	step("backfill", func() {
-		saveEx(t, s, "b", "local", "cc", "", 2)
-		if _, err := s.SetSessionKeys(t.Context(), []store.KeyAssignment{{RequestID: "b", Key: "k"}}); err != nil {
-			t.Fatal(err)
-		}
-	})
 	step("hook", func() { saveHookFor(t, s, "local", "cc", "k", 1) })
 }
 
