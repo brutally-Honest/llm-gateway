@@ -291,6 +291,57 @@ func TestSessionRows_HooksOnlySessionListed(t *testing.T) {
 	}
 }
 
+func TestSessionRows_EndOnlyFact(t *testing.T) {
+	dir := t.TempDir()
+	end := func(session, payload string, at int64) *store.HookRecord {
+		h := hookFor("local", "cc", session, payload, time.Unix(at, 0))
+		h.Event.Phase = core.PhaseSessionEnd
+		return h
+	}
+	start := func(session, payload string, at int64) *store.HookRecord {
+		h := hookFor("local", "cc", session, payload, time.Unix(at, 0))
+		h.Event.Phase = core.PhaseSessionStart
+		return h
+	}
+	saveHooks(t, dir,
+		end("only", `{"n":1}`, 100),
+		end("twice", `{"n":2}`, 100), end("twice", `{"n":3}`, 101),
+		start("mixed", `{"n":4}`, 100), end("mixed", `{"n":5}`, 101),
+		end("withex", `{"n":6}`, 100))
+	s, _ := open(t, dir)
+	ex := exchange("a", []byte("q"), []byte("r"))
+	ex.PrincipalID, ex.Client, ex.SessionKey = "local", "cc", "withex"
+	if err := s.SaveExchange(t.Context(), ex); err != nil {
+		t.Fatal(err)
+	}
+	r := openReader(t, dir)
+	rows, err := r.SessionRows(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, row := range rows {
+		got[row.SessionKey] = row.EndOnly
+	}
+	want := map[string]bool{"only": true, "twice": true, "mixed": false, "withex": false}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("end-only = %v, want %v", got, want)
+	}
+	one, err := r.WithContext(t.Context()).SessionByKey("local", "cc", "only")
+	if err != nil || !one.EndOnly {
+		t.Fatalf("by key = %+v, err %v", one, err)
+	}
+	page, err := r.WithContext(t.Context()).SessionPage(nil, 10)
+	if err != nil || len(page) != 4 {
+		t.Fatalf("page = %+v, err %v", page, err)
+	}
+	for _, row := range page {
+		if row.EndOnly != want[row.SessionKey] {
+			t.Errorf("page %s end-only = %v", row.SessionKey, row.EndOnly)
+		}
+	}
+}
+
 func TestSessionRows_ExchangeSessionNotHooksOnly(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := open(t, dir)

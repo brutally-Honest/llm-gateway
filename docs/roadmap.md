@@ -114,8 +114,10 @@ below and AC44, the API-key smoke test of Phase 1.
 - Per-session network attribution when several Claude Code sessions run at once (today
   connections go to unassigned unless exactly one routed session is active; 014 AC10's
   rule). Idea: tag each claude launch with its own id in the proxy URL.
-- A `claude` run that fails at argument parsing still sends one SessionEnd hook, which
-  shows as an active "Hooks only" session for minutes (`docs/manual-checks/macos-v1.md` B12).
+- Fixed in 029 (B12): a `claude` run that fails at argument parsing still sends one
+  SessionEnd hook, and its "Hooks only" session showed active for minutes
+  (`docs/manual-checks/macos-v1.md`). A session whose only hook events are session ends,
+  with no model calls, is never active, in the list, the view and `kind=active`.
 - The speed follow-ups, re-measured after 016.
   - Cold view build for large sessions (2.3 s server build at 2,000 calls; 016 research
     2026-11-13).

@@ -157,14 +157,13 @@ func buildSummary(id string, row store.SessionRow, st timeline.Stats, dg timelin
 	for _, m := range st.Usage.Models {
 		models = append(models, m.Model)
 	}
-	last := time.Unix(0, row.Last)
 	return sessionSummary{
 		ID: id, SessionKey: row.SessionKey, Client: row.Client, Models: models,
 		FirstAt: nsTime(row.First), LastAt: nsTime(row.Last),
 		ExchangeCount: row.Count, ModelCalls: st.ModelCalls, ToolCalls: st.ToolCalls, Errors: st.Errors,
 		MainErrors: dg.MainErrors, SideErrors: dg.SideErrors, Title: dg.Title, ToolStates: dg.ToolStates,
 		HasCalls: dg.HasCalls, HasHooks: dg.HasHooks,
-		Usage: usageToJSON(st.Usage), Active: now.Sub(last) < ActiveWindow, HooksOnly: row.HooksOnly,
+		Usage: usageToJSON(st.Usage), Active: isActive(row.Last, row.EndOnly, now), HooksOnly: row.HooksOnly,
 	}
 }
 

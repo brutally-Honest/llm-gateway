@@ -33,7 +33,9 @@ type viewEntry struct {
 	key    string
 	last   int64 // the session's last activity, unix ns
 	active bool
-	view   timeline.View
+	// endOnly is the session's end-only fact (B12) that active was decided with.
+	endOnly bool
+	view    timeline.View
 }
 
 // NewViewCache returns an empty view memo; the server passes one to Handler and NewHub.
@@ -49,7 +51,7 @@ func (c *ViewCache) get(id store.SessionIdent, key string, now time.Time) (timel
 		return timeline.View{}, false
 	}
 	e := el.Value.(*viewEntry)
-	if e.key != key || isActive(e.last, now) != e.active {
+	if e.key != key || isActive(e.last, e.endOnly, now) != e.active {
 		return timeline.View{}, false
 	}
 	c.ll.MoveToFront(el)
@@ -72,8 +74,24 @@ func (c *ViewCache) put(e *viewEntry) {
 	}
 }
 
-func isActive(last int64, now time.Time) bool {
-	return last > 0 && now.Sub(time.Unix(0, last)) < ActiveWindow
+// isActive is the one rule for "active": the last activity is under ActiveWindow old. A
+// session whose only hook events are session ends (endOnly, B12) is never active.
+func isActive(last int64, endOnly bool, now time.Time) bool {
+	return !endOnly && last > 0 && now.Sub(time.Unix(0, last)) < ActiveWindow
+}
+
+// endOnlyHooks reports whether a session has no exchange and every hook event is a
+// session end; it is the view-side twin of store.SessionRow.EndOnly.
+func endOnlyHooks(bs builtSession, hooks []store.HookRow) bool {
+	if len(bs.byID) > 0 || len(hooks) == 0 {
+		return false
+	}
+	for _, h := range hooks {
+		if h.Phase != string(core.PhaseSessionEnd) {
+			return false
+		}
+	}
+	return true
 }
 
 func (d Deps) viewDeps() viewDeps { return viewDeps{rules: d.Rules, skew: d.AttributionSkew} }
@@ -197,13 +215,14 @@ func (d Deps) buildView(ctx context.Context, who sessIdent, fresh bool) (_ timel
 		return timeline.View{}, false, err
 	}
 	last := lastActivity(built.bs, hooks)
-	active := isActive(last, now)
+	endOnly := endOnlyHooks(built.bs, hooks)
+	active := isActive(last, endOnly, now)
 	v, err := d.viewDeps().sessionView(c, who, built.bs, hooks, active, key)
 	if err != nil {
 		return timeline.View{}, false, err
 	}
 	if views != nil {
-		views.put(&viewEntry{id: ident, key: key, last: last, active: active, view: v})
+		views.put(&viewEntry{id: ident, key: key, last: last, active: active, endOnly: endOnly, view: v})
 	}
 	return v, false, nil
 }
