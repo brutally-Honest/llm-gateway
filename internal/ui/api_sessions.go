@@ -456,7 +456,13 @@ func sessionMatches(s sessionSummary, kind, q string) bool {
 		parts = append(parts, s.List.Folder, s.List.FolderFull)
 	}
 	parts = append(parts, s.Models...)
-	return strings.Contains(strings.ToLower(strings.Join(parts, "\n")), q)
+	// each field alone, so a q holding a newline cannot match across two fields
+	for _, p := range parts {
+		if strings.Contains(strings.ToLower(p), q) {
+			return true
+		}
+	}
+	return false
 }
 
 func sessionAfter(row store.SessionRow) *string {
@@ -475,19 +481,24 @@ var (
 	// scanBudget is how long one request keeps starting new batches, well under storeTimeout
 	// so the response and its counts still fit (D10).
 	scanBudget = 2 * time.Second
+	// scanNow is the clock the budget reads; tests replace it.
+	scanNow = time.Now
 )
 
 // scanSessions reads rows from after in batches and tests each against kind and q. It stops
 // on the first of three rules: limit rows match and it is known whether another row exists;
-// scanCap rows were tested; or scanBudget of wall time passed before a new batch (the first
-// batch always runs, so every request progresses). Or the rows run out. next is the after
+// scanCap rows were tested; or elapsed time plus the last batch's duration would pass
+// scanBudget, so no new batch starts (the first batch always runs, so every request
+// progresses). Or the rows run out. next is the after
 // token of the last tested row when an untested row remains.
 func (d Deps) scanSessions(ctx context.Context, c *store.CtxReader, after *store.SessionAfter, limit int, kind, q string) (items []sessionSummary, next *string, scanned int, err error) {
 	items = []sessionSummary{}
 	now := d.now()
-	start := time.Now()
+	start := scanNow()
+	var last time.Duration // how long the previous batch took, the estimate for the next
 	for {
-		if scanned > 0 && time.Since(start) > scanBudget {
+		batchStart := scanNow()
+		if scanned > 0 && batchStart.Sub(start)+last > scanBudget {
 			peek, err := c.SessionPage(after, 1)
 			if err != nil {
 				return nil, nil, 0, err
@@ -515,6 +526,7 @@ func (d Deps) scanSessions(ctx context.Context, c *store.CtxReader, after *store
 		if err != nil {
 			return nil, nil, 0, err
 		}
+		last = scanNow().Sub(batchStart)
 		for i, sum := range sums {
 			scanned++
 			if sessionMatches(sum, kind, q) {

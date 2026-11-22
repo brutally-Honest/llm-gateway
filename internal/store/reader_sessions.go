@@ -34,7 +34,7 @@ type UngroupedRow struct {
 
 // sessionSelect lists exchange sessions and, after them, sessions seen only in hook
 // events. Callers append AND conditions and sessionOrder.
-var sessionSelect = `SELECT principal_id, client, session_key, first, last, count, hooks_only, end_only FROM (
+const sessionSelect = `SELECT principal_id, client, session_key, first, last, count, hooks_only, end_only FROM (
 	SELECT principal_id, client, session_key, MIN(started_at) AS first, MAX(started_at) AS last,
 		COUNT(*) AS count, 0 AS hooks_only, 0 AS end_only
 	FROM exchanges WHERE session_key IS NOT NULL GROUP BY principal_id, client, session_key

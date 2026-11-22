@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -285,6 +286,48 @@ func TestSessionsPage_ScanBudgetStopsEarly(t *testing.T) {
 	e2.seed(51)
 	if p := e2.sess("?q=nomatch"); p.NextAfter != nil || p.Scanned != 51 {
 		t.Fatalf("end = next %v scanned %d", p.NextAfter, p.Scanned)
+	}
+}
+
+func TestSessionsPage_ScanBudgetCountsLastBatch(t *testing.T) {
+	// a fake clock that moves one second per reading: every batch then lasts one second
+	var ticks atomic.Int64
+	oldNow, oldBudget := scanNow, scanBudget
+	scanNow = func() time.Time { return time.Unix(ticks.Add(1), 0) }
+	// the first check reads 3 s elapsed plus a 1 s batch: over a 3.5 s budget, though elapsed alone is not
+	scanBudget = 3500 * time.Millisecond
+	t.Cleanup(func() { scanNow, scanBudget = oldNow, oldBudget })
+	e := newAPIEnv(t)
+	e.seed(120)
+	p := e.sess("?q=s1")
+	if p.Scanned != defaultListLimit+1 || p.NextAfter == nil {
+		t.Fatalf("first = scanned %d next %v", p.Scanned, p.NextAfter)
+	}
+	all, n := e.walk("?q=s1")
+	if n < 3 || len(all) != 20 {
+		t.Fatalf("walk = %d keys in %d requests", len(all), n)
+	}
+	seen := map[string]bool{}
+	for _, k := range all {
+		if seen[k] {
+			t.Fatalf("%s repeated", k)
+		}
+		seen[k] = true
+	}
+	for i := 100; i < 120; i++ {
+		if !seen[fmt.Sprintf("s%03d", i)] {
+			t.Fatalf("s%03d skipped", i)
+		}
+	}
+}
+
+func TestSessionMatches_FieldsAreSeparate(t *testing.T) {
+	s := sessionSummary{Title: "xa", Client: "bx"}
+	if sessionMatches(s, "all", "a\nb") {
+		t.Fatal("q with a newline matched across the title and client fields")
+	}
+	if !sessionMatches(s, "all", "xa") || !sessionMatches(s, "all", "bx") {
+		t.Fatal("single-field match lost")
 	}
 }
 
