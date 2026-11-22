@@ -105,3 +105,43 @@ None. The brief asked for a build without stopping; judgment calls are D-entries
   panel ("Loading call…") already had them, so only app-level tests were added there. New
   ones: Load more's rows. `filterSessions` and the "filtering N loaded" note are removed
   with their tests; `filters.js` keeps `FILTERS` and gains `normalizeKind`.
+
+## UI check (2026-11-22, branch at 8da69fe)
+
+Throwaway gateway (`bin/gateway`, `config.example.yaml` copy, ports 17295–17299, fresh data
+folder in the session scratchpad), seeded with fictional data only: 130 hooks-only sessions
+(`UserPromptSubmit` with made-up folders `/srv/fx029-none/{alpha-shop,…}`), one
+`SessionEnd`-only session (B12), one `SessionStart`+`SessionEnd` session (E8),
+`seed-call-kinds.mjs` (plain, streamed, long, errored calls) and two `seed-calls.mjs --calls 6`
+runs. 135 sessions in all. `seed-session.mjs` was not used because it makes a git repo under
+the home folder.
+
+API, every page walked: unfiltered 135 rows in 3 pages, no repeats; `kind=active` 134 (the
+end-only session left out), `kind=hooks` 132, `kind=look` 1 (the errored call),
+`q=gamma` 26, `kind=hooks&q=gamma` 26, `q=%_` 0, `kind=active&limit=1` 134 rows over 134
+pages with no repeats. `kind=bogus`, `limit=0` and a 201-byte `q` → 400. Empty store
+before seeding → `{"items":[],"next_after":null,"total":0,"scanned":0}`.
+
+Chrome, at 2,560 px and 1,440 px, light and dark:
+- Paging: 50 → 100 → 135 rows, unique ids, Load more gone at the end; during each fetch
+  three skeleton rows, "Loading more sessions…", button disabled.
+- Each filter (All, Needs a look, Active, Hooks only) sets the hash and shows the server's
+  rows; with fetch slowed in the page, a filter change shows six skeleton rows and
+  "Loading sessions…", then the rows.
+- Search typed in the box: one request after typing settles, `#/?q=gamma` via replaceState
+  (history length unchanged), focus kept. Filter plus search: `#/?kind=active&q=gamma`,
+  26 rows.
+- Back restored Active + "gamma"; reload of `#/?kind=hooks&q=beta` restored both (26 rows).
+- No match: "no sessions match".
+- B12: the end-only row shows ◇ "hooks only", not ●; the start+end row shows ● active.
+- Session page: skeleton ("Loading turns…") with fetch slowed, then the page. Call panel:
+  skeleton ("Loading call…"), then the call; calls open and step with Previous/Next, with
+  no console errors, without the removed fields.
+- Preview and Raw: padding 3px 9px, as `.btn.sm`; they look balanced in their box in both
+  themes. They are 23.8 px tall against 26.6 px for Previous/Next, from the 11.5 px font
+  and the box border (D8 leaves the font alone).
+- No horizontal scroll at 1,440 px.
+
+Not seen in the browser: the "No matches in the newest N sessions yet" state, which needs
+more than 500 sessions or a 2 s scan (covered by `app-list.test.js` and
+`TestSessionsPage_ScanCap`/`ScanBudgetStopsEarly`). Nothing looked off.
