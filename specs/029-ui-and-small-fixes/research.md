@@ -45,3 +45,18 @@ None. The brief asked for a build without stopping; judgment calls are D-entries
   store from a filter that matches nothing. A matched total is not offered (non-goal).
 - **D6** The list state lives in the hash query (`#/?kind=…&q=…`) because routing is
   hash-based; the cursor is not kept, so reload starts at the first page.
+- **D7** Fix 6 removed nine `exchangeJSON` fields that only `fillDrawer` filled:
+  `side_call`, `prev_id`, `thread_new`, `messages`, `messages_unavailable`, `carried`,
+  `new_count`, `response`, `response_tool_call_ids`. The JS hits for `messages`,
+  `response` and `carried` read the call-detail payload (`call-dialog.js` `d.saw`,
+  `d.response`), not the exchange JSON; `exchange-detail.js` reads none of them.
+  `timeline.ExchangeDetail.ResponseToolCallIDs` (`internal/timeline/exchange.go:33`) is
+  left in place: it is a timeline type and outside this fix.
+- **D8** Fix 1: the Preview/Raw toggle is `.mode .seg` (built by `textBlock` in
+  `story.js`, so the session page's toggles change too). Its padding goes from `2px 9px`
+  to `3px 9px`, the call panel's `.btn.sm`. Its font size (11.5px against 12px) is left as
+  it is: the brief asked for padding.
+- **D9** Fix 5: E10 is tested on the failed chip (`chip-live.test.js`): open its panel,
+  apply a live rebuild with a second failure, and the panel stays open with both rows and
+  the chip reads "✗ 2 failed". The test passed first time, so no bug was found; a probe
+  expecting the old count failed as it should.

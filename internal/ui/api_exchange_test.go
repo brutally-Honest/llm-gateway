@@ -58,79 +58,20 @@ func (e *digestEnv) exchange(id string) map[string]any {
 	return e.getMap("/api/exchanges/" + id)
 }
 
-func TestExchange_SideCallField(t *testing.T) {
+// The thread, message and reply facts left the exchange JSON for the call detail, and the
+// browser reads none of them from it: the exchange answer no longer carries their keys.
+func TestExchange_DrawerKeysAreGone(t *testing.T) {
 	e := withRules(t)
-	e.callReply("q", 1, `{"input_tokens":5}`, nil, "user:quota")
-	e.callReply("m", 2, `{"input_tokens":5}`, nil, "user:hello")
-	if q := e.exchange("q"); q["side_call"] != true {
-		t.Fatalf("q = %v", q["side_call"])
-	}
-	if m := e.exchange("m"); m["side_call"] != false {
-		t.Fatalf("m = %v", m["side_call"])
-	}
-	n := newDigestEnv(t, nil)
-	n.callReply("q", 1, `{"input_tokens":5}`, nil, "user:quota")
-	if n.exchange("q")["side_call"] != false {
-		t.Fatal("no rules must mean no side call")
-	}
-}
-
-func TestExchange_MessagesCarriedAndNew(t *testing.T) {
-	e := withRules(t)
-	e.callReply("a", 1, `{"input_tokens":5}`, &reply{text: "two", stop: "end_turn"}, "user:one")
-	e.callReply("b", 2, `{"input_tokens":9}`, nil, "user:one", "assistant:two", "user:three")
-	b := e.exchange("b")
-	if b["prev_id"] != "a" || b["thread_new"] != false || b["carried"] != 2.0 || b["new_count"] != 1.0 {
-		t.Fatalf("b = %v", b)
-	}
-	ms := b["messages"].([]any)
-	if len(ms) != 3 {
-		t.Fatalf("messages = %v", ms)
-	}
-	for i, wantNew := range []bool{false, false, true} {
-		m := ms[i].(map[string]any)
-		if m["new"] != wantNew {
-			t.Fatalf("message %d = %v", i, m)
-		}
-	}
-	if m := ms[2].(map[string]any); m["role"] != "user" || m["text"] != "three" {
-		t.Fatalf("last = %v", m)
-	}
-}
-
-func TestExchange_NewThreadMarked(t *testing.T) {
-	e := withRules(t)
-	e.callReply("a", 1, `{"input_tokens":5}`, nil, "user:one", "user:uno")
+	e.callReply("a", 1, `{"input_tokens":5}`, &reply{text: "x", stop: "end_turn", tools: []string{"t1"}}, "user:one")
 	a := e.exchange("a")
-	if a["thread_new"] != true || a["prev_id"] != "" || a["carried"] != 0.0 || a["new_count"] != 2.0 {
-		t.Fatalf("a = %v", a)
-	}
-	for _, m := range a["messages"].([]any) {
-		if m.(map[string]any)["new"] != true {
-			t.Fatalf("message = %v", m)
+	for _, k := range []string{"side_call", "prev_id", "thread_new", "messages", "messages_unavailable",
+		"carried", "new_count", "response", "response_tool_call_ids"} {
+		if _, ok := a[k]; ok {
+			t.Errorf("exchange JSON still has %q: %v", k, a[k])
 		}
 	}
-}
-
-func TestExchange_ResponseAndStopReason(t *testing.T) {
-	e := withRules(t)
-	e.callReply("a", 1, `{"input_tokens":5,"output_tokens":3}`, &reply{text: "hi there", stop: "end_turn"}, "user:one")
-	r := e.exchange("a")["response"].(map[string]any)
-	if r["text"] != "hi there" || r["stop_reason"] != "end_turn" || r["unavailable"] != nil {
-		t.Fatalf("response = %v", r)
-	}
-}
-
-func TestExchange_ResponseToolCallIDs(t *testing.T) {
-	e := withRules(t)
-	e.callReply("a", 1, `{"input_tokens":5}`, &reply{text: "x", stop: "stop-x", tools: []string{"t1", "t2"}}, "user:one")
-	ids := e.exchange("a")["response_tool_call_ids"].([]any)
-	if fmt.Sprint(ids) != "[t1 t2]" {
-		t.Fatalf("ids = %v", ids)
-	}
-	e.callReply("b", 2, `{"input_tokens":5}`, nil, "user:one")
-	if ids := e.exchange("b")["response_tool_call_ids"].([]any); len(ids) != 0 {
-		t.Fatalf("ids = %v", ids)
+	if a["id"] != "a" || a["status"] != 200.0 {
+		t.Fatalf("existing fields lost: %v", a)
 	}
 }
 
@@ -143,41 +84,21 @@ func TestExchange_NoUsageNoNumbers(t *testing.T) {
 	if u["has_usage"] != false || u["input"] != nil || u["output"] != nil || u["cache_write"] != nil || u["cache_read"] != nil {
 		t.Fatalf("usage = %v", u)
 	}
-	if a["response"].(map[string]any)["text"] != "x" || len(a["messages"].([]any)) != 1 {
-		t.Fatalf("a = %v", a)
-	}
 }
 
-// AC29: an exchange with no stored events or bodies still answers 200 with reasons.
+// AC29: an exchange with no stored events or bodies still answers 200.
 func TestExchange_BodyNotStoredStillAnswers(t *testing.T) {
 	e := withRules(t)
 	e.save("x", "k", "cc", 1)
 	x := e.exchange("x")
-	r := x["response"].(map[string]any)
-	if r["unavailable"] != "response_body_not_stored" || r["text"] != "" {
-		t.Fatalf("response = %v", r)
-	}
-	if x["messages_unavailable"] != "request_body_not_stored" || len(x["messages"].([]any)) != 0 {
-		t.Fatalf("x = %v", x)
-	}
 	if x["id"] != "x" || x["status"] != 200.0 {
 		t.Fatalf("existing fields lost: %v", x)
 	}
-	// A failed parse names the parse, not the body.
-	e.save("f", "k", "cc", 2)
-	if err := e.s.SaveParse(e.t.Context(), "f", core.PrincipalLocal, core.ParseFailed, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	f := e.exchange("f")
-	if f["response"].(map[string]any)["unavailable"] != "parse_failed" {
-		t.Fatalf("f = %v", f["response"])
-	}
 }
 
-// A call's new count (timeline call.new) and the exchange API's new_count are one
-// number: the request's messages missing from the thread's previous call, the reply
-// never counted.
-func TestExchange_NewCountAgreesWithTimelineCallNew(t *testing.T) {
+// The call's new count (timeline call.new): the request's messages missing from the
+// thread's previous call, the reply never counted.
+func TestCallFacts_NewCountFromTimeline(t *testing.T) {
 	e := withRules(t)
 	e.callReply("a", 1, `{"input_tokens":5}`, &reply{text: "two", stop: "end_turn"}, "user:one")
 	e.callReply("b", 2, `{"input_tokens":5}`, &reply{text: "four", stop: "end_turn"}, "user:one", "assistant:two", "user:three")
@@ -186,9 +107,6 @@ func TestExchange_NewCountAgreesWithTimelineCallNew(t *testing.T) {
 	for id, want := range map[string]float64{"a": 1, "b": 1, "c": 1} {
 		if got := f[id]["new"]; got != want {
 			t.Errorf("%s call.new = %v, want %v", id, got, want)
-		}
-		if got := e.exchange(id)["new_count"]; got != f[id]["new"] {
-			t.Errorf("%s new_count = %v, call.new = %v", id, got, f[id]["new"])
 		}
 	}
 }

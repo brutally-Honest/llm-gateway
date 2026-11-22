@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -36,14 +37,7 @@ func gateBuilds(t *testing.T) (release func()) {
 	return func() { released = true; close(gate) }
 }
 
-type detailJSON struct {
-	ID       string `json:"id"`
-	PrevID   string `json:"prev_id"`
-	Carried  int    `json:"carried"`
-	NewCount int    `json:"new_count"`
-}
-
-func getDetail(t *testing.T, base, id string, timeout time.Duration) (int, detailJSON) {
+func getDetail(t *testing.T, base, id string, timeout time.Duration) (int, map[string]any) {
 	t.Helper()
 	cl := &http.Client{Timeout: timeout}
 	resp, err := cl.Get(base + "/api/exchanges/" + id)
@@ -51,7 +45,7 @@ func getDetail(t *testing.T, base, id string, timeout time.Duration) (int, detai
 		t.Fatalf("GET /api/exchanges/%s: %v", id, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	var d detailJSON
+	var d map[string]any
 	if resp.StatusCode == 200 {
 		if err := json.NewDecoder(resp.Body).Decode(&d); err != nil {
 			t.Fatal(err)
@@ -86,13 +80,13 @@ func TestAPI_ExchangeDetailAnswersFromCachedBuildWithoutWaiting(t *testing.T) {
 	if took := time.Since(start); took > time.Second {
 		t.Fatalf("detail of b took %v while a rebuild is held, want an answer from the cached build at once", took)
 	}
-	if got != want {
-		t.Fatalf("detail of b from the cached build = %+v, want %+v as an up-to-date build gives", got, want)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("detail of b from the cached build = %v, want %v as an up-to-date build gives", got, want)
 	}
 
 	// c is newer than the cached build: its thread facts are not there, so it waits for
 	// the build, and gets them once that lands.
-	done := make(chan detailJSON, 1)
+	done := make(chan map[string]any, 1)
 	go func() {
 		code, d := getDetail(t, e.ts.URL, "c", 10*time.Second)
 		if code != 200 {
@@ -108,8 +102,8 @@ func TestAPI_ExchangeDetailAnswersFromCachedBuildWithoutWaiting(t *testing.T) {
 	release()
 	select {
 	case d := <-done:
-		if d.ID != "c" {
-			t.Fatalf("detail of c = %+v", d)
+		if d["id"] != "c" {
+			t.Fatalf("detail of c = %v", d)
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("detail of c did not answer once the build landed")
