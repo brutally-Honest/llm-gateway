@@ -67,6 +67,25 @@ Where they have failed:
   approval is the human's to give. The review raised this as P4.
 - D7 (2026-11-22) — Review P3s and P4s were handled in the main session's own files
   (research.md), apart from the missing negative test, which went to a haiku subagent.
+- D8 (2026-11-22) — Production impact: the bug was latent in product code, and only
+  HTTP/1.1 upstreams could trigger it: the test servers, or a plain `http://` upstream
+  in config, which `internal/config/upstream.go:61` allows only for a loopback host.
+  Real Anthropic traffic was not hit, because `newTransport` (`internal/core/proxy.go:288`)
+  sets `ForceAttemptHTTP2` and the default `base_url` is `https://api.anthropic.com`, so
+  TLS ALPN negotiates HTTP/2, and the HTTP/2 transport makes no extra read after EOF.
+  With `HTTPS_PROXY` set (`environmentProxy`, `proxy.go:271`), an `https` target goes
+  through a CONNECT tunnel. The stdlib (`transport.go:1828` `case cm.targetScheme == "https"`,
+  then `addTLS`) runs TLS with the same ALPN inside the tunnel, so it is still HTTP/2.
+  The remaining exception would be a TLS upstream that offers only HTTP/1.1 in ALPN.
+- D9 (2026-11-22) — The follow-up brief asks to "replace" D2 and the "indicative only"
+  line. AGENTS.md says research entries are never deleted, so each is kept, marked
+  superseded, with a dated line under it giving the new finding.
+- D10 (2026-11-22) — Commits d338afd and 07189f9 were reworded from `docs(docs)` to
+  `docs(spec)` (now 5ee327a and f6c71ce), at the human's request, to match earlier spec
+  commits such as d4841d6. `spec` is not in the PLAN §11 scope list; the human's choice
+  and the repo's history take precedence here. The test commit was rewritten too
+  (a2fcb98 → cd6f50f), and its note was added after the rewrite. 4164f43 keeps its hash
+  and note (checked by hash and by the note's sha256).
   There was no P1 or P2, so no second opus review was run.
 
 ## Verification (on 4164f43 + d338afd, 2026-11-22)
@@ -160,4 +179,12 @@ that both flaky tests are unchanged.
   `-count=100 -cpu=1,2,4 -run 'TestCapture_ForwardingUnchanged|^TestProxy_GoldenAnthropicStreamReplay$'`
   ran three times and passed each time (77–79 s each). The one-core `GOGC=1` setup ran
   twice for 270 s each and showed no failure before its timeout. Before the fix, the
-  same setup failed within 1–2 minutes.
+  same setup failed within 1–2 minutes. *(Superseded 2026-11-22 by the completed run
+  below: those two runs were killed at their timeout, so they count as indicative only.)*
+- Completed proof (2026-11-22, HEAD f6c71ce, subagent): built with
+  `go test -race -c -o $S/anth.test ./internal/protocols/anthropic`, then run from
+  `internal/protocols/anthropic` with 4 × `taskset -c 0 sh -c 'while :; do :; done'` hogs:
+  `GOGC=1 taskset -c 0 $S/anth.test -test.timeout 0 -test.v -test.cpu=2 -test.count=1600 -test.run '^TestCapture_ForwardingUnchanged$'`.
+  It completed with no `timeout` wrapper: **1600 golden-replay runs, 0 failures**, exit 0,
+  final line `PASS`, in 649 s (10 m 49 s). At the before-fix rate of about 1 in 300–600,
+  roughly 3–5 failures would have been expected.
