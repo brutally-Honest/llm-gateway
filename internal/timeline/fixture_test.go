@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -214,11 +215,10 @@ func TestBuild_RealSessionFixtureUsageTotals(t *testing.T) {
 		t.Fatalf("sessions = %v, %v", sessions, err)
 	}
 	s := sessions[0]
-	exs, err := r.SessionExchanges(s.PrincipalID, s.Client, s.SessionKey)
+	_, sum, err := timeline.BuildWithUsage(r, s, timeline.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sum := timeline.Summarize(callsOf(t, r, exs))
 	g := sum.Total
 	if sum.Calls != 10 || g.Calls != 10 || g.Errored != 1 || g.Missing != 0 || g.Incomplete() {
 		t.Errorf("calls %d/%d errored %d missing %d incomplete %v, want 10, 10, 1, 0, false",
@@ -238,6 +238,17 @@ func TestBuild_RealSessionFixtureUsageTotals(t *testing.T) {
 	// One model, unnamed here: this package must not spell a provider (core purity test).
 	if len(sum.Models) != 1 || sum.Models[0].Model == "" {
 		t.Errorf("models = %+v, want exactly one named model", sum.Models)
+	}
+	// The session stats path must agree with the summary from the build pass.
+	st, err := timeline.SessionStats(r, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.ModelCalls != 10 {
+		t.Errorf("SessionStats ModelCalls = %d, want 10", st.ModelCalls)
+	}
+	if !reflect.DeepEqual(st.Usage.Total, sum.Total) {
+		t.Errorf("SessionStats usage total %+v, BuildWithUsage total %+v", st.Usage.Total, sum.Total)
 	}
 
 	// HEAD /api/hello has no session key and no request event: it sits alone in the
