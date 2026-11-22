@@ -54,3 +54,5 @@ them.
 - PLAN.md §8's Config row moves from Proposed to Decided and links this ADR.
 - Cost of reversing: the format and parser sit behind one loader, so they are cheap to
   change. The env names are expensive: renaming one breaks every setup that uses it.
+
+2026-11-22: the gateway's own Dockerfile and docker-compose.yml were removed in 031; the config contract no longer has a compose file depending on it.

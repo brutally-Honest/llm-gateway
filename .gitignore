@@ -38,6 +38,3 @@ data/
 # Claude Code session worktrees
 .claude/worktrees/
 
-# Agent-loop kit state (run logs, verify logs, commit-msg scratch) and install backups
-.agent-loop/
-.claude/agent-loop-backup-*/

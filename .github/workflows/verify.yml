@@ -1,4 +1,4 @@
-# make verify on Linux and macOS for every PR and every push to main (spec 026, ADR 0019).
+# Every PR and every push to main (spec 026, ADR 0019): Linux runs make verify (lint included); macOS runs the tests only, lint is Linux-only (spec 031).
 name: verify
 
 on:
@@ -43,22 +43,17 @@ jobs:
         with:
           node-version: ${{ env.NODE_MAJOR }}
 
-      - name: Install jq and shellcheck (Linux)
+      # TestInstallShShellcheck lints install.sh with shellcheck and fails without it
+      # (spec 023 AC23, spec 031 D3).
+      - name: Install shellcheck (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q jq shellcheck
+          sudo apt-get install -y -q shellcheck
 
-      # macOS's /bin/bash is 3.2, which cannot parse the agent-loop kit's scripts (B8).
-      # Only bash's own folder goes first on PATH, so `#!/usr/bin/env bash` finds it.
-      # Putting all of $(brew --prefix)/bin first would also put the image's own node
-      # ahead of setup-node's (spec 026 D12). jq and shellcheck are found through it
-      # anyway, since the runner already has it on PATH.
-      - name: Install bash, jq and shellcheck (macOS)
+      - name: Install shellcheck (macOS)
         if: runner.os == 'macOS'
-        run: |
-          brew install bash jq shellcheck
-          echo "$(brew --prefix bash)/bin" >> "$GITHUB_PATH"
+        run: brew install shellcheck
 
       # Fails if PATH hands make verify a node other than setup-node's (spec 026 D12).
       - name: Show tool versions
@@ -70,17 +65,35 @@ jobs:
             echo "::error::node on PATH is $(node --version) at $(command -v node), want major $NODE_MAJOR from setup-node"
             exit 1
           }
-          bash -c 'echo "bash $BASH_VERSION at $(command -v bash)"'
-          jq --version
           shellcheck --version | sed -n 's/^version: //p'
 
+      # Lint is OS-independent, so it runs once, on Linux (spec 031). macOS skips the
+      # golangci-lint install and runs the tests only.
       # setup-lint skips the download when ./bin holds the pinned version, so the key is
       # the Makefile, where GOLANGCI_LINT_VERSION lives.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - if: runner.os == 'Linux'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: bin/golangci-lint
           key: golangci-lint-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
 
-      - run: make setup
+      - name: Setup (Linux)
+        if: runner.os == 'Linux'
+        run: make setup
 
-      - run: make verify
+      # make setup minus setup-lint.
+      - name: Setup (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          make setup-git setup-shellcheck setup-node
+          go mod download
+
+      - name: Verify (Linux)
+        if: runner.os == 'Linux'
+        run: make verify
+
+      - name: Test (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          make test
+          make web-test

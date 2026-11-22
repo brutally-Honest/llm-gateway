@@ -2,7 +2,7 @@
 
 Claude Code can report its own hook events to the gateway: each tool call it asks for,
 whether the permission check ran, each tool result, sub-agents, session start and stop.
-The gateway stores them next to the captured model calls, so `gateway timeline` and the
+The gateway stores them next to the captured model calls, so the
 web UI can show whether a tool the model asked for actually ran.
 
 Hooks are optional. The proxy works without them (see [claude-code.md](claude-code.md)).
@@ -50,9 +50,8 @@ Claude Code reads hooks from every settings file in scope: user
 local (`.claude/settings.local.json`). For one event, each matching hook from each file
 runs. No file replaces another.
 
-The agent-loop kit in this repo keeps its hooks in the project `.claude/settings.json`:
-a guard on `PreToolUse`, a sub-agent handler on `SubagentStop`, and a command handler on
-`UserPromptExpansion`. With the gateway's hooks installed, those keep running unchanged.
+A project that keeps its own hooks in `.claude/settings.json`, such as a guard on
+`PreToolUse`, keeps them running unchanged with the gateway's hooks installed.
 The gateway's hooks never set a decision, so they neither allow nor block a tool. The
 gateway does not depend on the order in which hooks from different files run.
 
@@ -118,9 +117,9 @@ in the web UI:
   a tool on the file system or network (see [PLAN.md §3](../../PLAN.md#3-client-support)).
 - **Sub-agents:** their events carry an agent id and type, shown as labels on the event
   and its tool call. They are not nested under the parent's tool call.
-- **Hook events with no session id (known v1 gap):** they are stored, but `gateway sessions`
-  shows them only as a count. The web UI ungrouped list has no hook entries, so they are
-  not visible there. A session id known from an exchange or a hook event is listed normally.
+- **Hook events with no session id (known v1 gap):** they are stored, but not visible in the web UI:
+  its ungrouped list has no hook entries.
+  A session id known from an exchange or a hook event is listed normally.
 - **Capture off:** with `capture.enabled: false`, hook events are counted but not stored,
   so the timeline has nothing to show.
 - **Shared writer:** hook events and LLM captures share one SQLite writer. A large hook

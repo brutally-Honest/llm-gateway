@@ -10,10 +10,10 @@ type SessionIdent struct {
 	Principal, Client, Key string
 }
 
-// Version summarises what a session holds in aggregates that move on every write
-// that can change its digest: an exchange insert (ExCount, ExMaxRow), a parse landing
-// (Parsed), a backfilled session key (ExCount, maybe ExMaxRow) and a hook insert
-// (HookCount, HookMaxID). A half the session lacks reads as zero. Comparable.
+// Version summarises what a session holds in aggregates that move on every write that
+// can change its digest: an exchange insert (ExCount, ExMaxRow), a parse landing
+// (Parsed) and a hook insert (HookCount, HookMaxID). A half the session lacks reads
+// as zero. Comparable.
 type Version struct {
 	ExCount   int
 	ExMaxRow  int64

@@ -19,8 +19,9 @@ and awaiting their manual check.
 - `PLAN.md` — the one-page source of intent: goals, phases, stack rationale, open
   questions, commit conventions.
 - `AGENTS.md` — the rules any agent working in this repo must follow.
-- `specs/` — one folder per feature: `spec.md` (what and why), `plan.md` (how),
-  `tasks.md` (checklist), `research.md` (doubts, roadblocks and limits, with answers).
+- `specs/` — one folder per feature: `spec.md` (what and why) and `research.md`
+  (decisions as D-entries). Some older specs (000–017) also keep `plan.md` and
+  `tasks.md` as history.
 - `docs/decisions/` — ADRs.
 - `docs/clients/` — one page per client: how to connect, known limits.
 
@@ -55,9 +56,8 @@ Upgrades, flags, every doctor check, paths and troubleshooting: [docs/install.md
 
 For working on the gateway itself (building from source).
 
-Prerequisite: `jq` on your `PATH`. `make verify` (which the pre-push hook runs) needs it
-for the agent-loop kit tests, and the kit's commit guard hook refuses every tool call
-without it.
+Prerequisite: `shellcheck` on your `PATH`. `make verify` (which the pre-push hook runs)
+needs it to lint `install.sh`.
 
 ```sh
 make setup
@@ -79,7 +79,7 @@ What it shows:
 
 - **Sessions:** every captured session, plus the ungrouped exchanges that belong to none. A
   session with an exchange in the last 5 minutes is active.
-- **Session timeline:** the same timeline `gateway timeline` prints, built from canonical events:
+- **Session timeline:** built from canonical events:
   prompts, tool calls paired with their results, and a chip per model call with its model, status
   and token counters. Long timelines can be filtered by text or tool name.
 - **Live updates:** an active session's page updates within moments of each exchange being

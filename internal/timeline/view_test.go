@@ -413,19 +413,6 @@ func TestView_Times(t *testing.T) {
 	eq(t, "session parts sum to the clock", tc.ModelMS+tc.ToolMS+tc.WaitMS+tc.BetweenMS, tc.ClockMS)
 }
 
-// AC15: gateway timeline's overview line reads the Time card's four parts.
-func TestView_TimeLineText(t *testing.T) {
-	v := seedFixture(true).view(t, true)
-	var out strings.Builder
-	if err := timeline.RenderViewText(&out, v, time.UTC); err != nil {
-		t.Fatal(err)
-	}
-	want := "time 22s (model 5.5s · tools 1.5s · waiting 2.2s · between turns 13s)"
-	if !strings.Contains(out.String(), want) {
-		t.Errorf("overview lacks %q:\n%s", want, out.String())
-	}
-}
-
 // AC6, AC8: a labelled effect under its tool; several after the step of its candidates;
 // harness in the turn's loose group with what was running; an outside edit whose window
 // opened before the next prompt between the two turns.
@@ -654,8 +641,7 @@ func TestView_CommandLineCountsLeaveOutSeveral(t *testing.T) {
 }
 
 // AC4 (research 2026-11-13, Karthik's feedback): each turn names the models its calls used,
-// sub-agents included, in first-use order; a side call's model is left out. The CLI's turn
-// line carries them too.
+// sub-agents included, in first-use order; a side call's model is left out.
 func TestView_TurnModels(t *testing.T) {
 	f := newFake()
 	x := &fixture{f: f}
@@ -673,19 +659,6 @@ func TestView_TurnModels(t *testing.T) {
 	}
 	eq(t, "turn 1 models", strings.Join(v.Turns[0].Models, ","), "big,mid")
 	eq(t, "turn 2 models", strings.Join(v.Turns[1].Models, ","), "mid")
-	var out strings.Builder
-	if err := timeline.RenderViewText(&out, v, time.UTC); err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for _, ln := range strings.Split(out.String(), "\n") {
-		if strings.HasPrefix(ln, "Turn 1 · ") && strings.HasSuffix(ln, ") · big, mid") {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("CLI turn 1 line has no models:\n%s", out.String())
-	}
 }
 
 // 017 AC14: a turn counts its model calls, sub-agents' included; a hooks-only turn has none.

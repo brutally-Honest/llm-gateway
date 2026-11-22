@@ -38,9 +38,8 @@ below and AC44, the API-key smoke test of Phase 1.
 - **022 loopback only** (`specs/022-loopback-only/`): every listener (API, UI, HTTP and
   SOCKS proxies) refuses any address outside 127.0.0.0/8, `::1` and `localhost`, with no
   override. Config loading, `gateway install` and `gateway doctor` share one check and
-  one message naming the key, the value and the reason. `docker-compose.yml` runs the
-  gateway on the host's network, with no exception in the code; the native install is
-  the supported path (`docs/install.md`, Known limits).
+  one message naming the key, the value and the reason, with no exception in the code
+  (`docs/install.md`, Known limits).
 - **023 one-command install** (`specs/023-one-command-install/`): `curl … install.sh | sh`
   on Linux and macOS. install.sh checks its own needs, downloads the release for the
   machine and verifies its SHA256; `gateway install` prints a preflight table, offers to
@@ -77,6 +76,7 @@ below and AC44, the API-key smoke test of Phase 1.
   the ungrouped, unassigned and full exchange pages on 016's theme.
 
 ## Later
+- Agent-loop kit: reinstall from brutally-Honest/agent-loop if a stricter spec flow is wanted again (removed in 031; settings in specs/031-remove-clutter/research.md).
 - The 025 Mac check: the first upgrade to 025 takes the changed-plist path (bootout,
   wait, bootstrap) against real `launchctl`; back-to-back reinstalls restart within about
   a second; `make verify` green; the own-gateway preflight with `/usr/sbin` off PATH; a
@@ -114,8 +114,6 @@ below and AC44, the API-key smoke test of Phase 1.
 - Per-session network attribution when several Claude Code sessions run at once (today
   connections go to unassigned unless exactly one routed session is active; 014 AC10's
   rule). Idea: tag each claude launch with its own id in the proxy URL.
-- The agent-loop kit on macOS's bash 3.2: `loop.sh:91` (a `case` inside `$( )`) fails to
-  parse, so 14 kit scripts fail (`docs/manual-checks/macos-v1.md` B8).
 - A `claude` run that fails at argument parsing still sends one SessionEnd hook, which
   shows as an active "Hooks only" session for minutes (`docs/manual-checks/macos-v1.md` B12).
 - The speed follow-ups, re-measured after 016.

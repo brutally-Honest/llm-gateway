@@ -33,27 +33,39 @@ A lower priority never degrades a higher one.
 - Stateless process; state lives in external stores.
 
 ## Workflow
-Features from 003 on are built with the agent-loop kit (/al-spec → /al-plan → /al-implement).
-Never edit or tick tasks.md during a build: progress is tracked by .claude/scripts/loop.sh.
-Approved spec/plan changes go through /al-change, not direct edits. Specs 000–002
-(`status: done`) are history. Branches: feat/NNN-slug, fix/NNN-slug, chore/NNN-slug.
-Every `Commit:` line in tasks.md follows PLAN §11: `<type>(<scope from the §11 list>): <summary>`,
-lowercase, no trailing period, ≤72 characters.
-Manual checks for UI tasks live in docs/manual-checks/; a planner's Manual: field names the file.
+Each change gets `specs/NNN-slug/spec.md` and `research.md`. It is built without
+stopping on judgment calls: each is recorded as a D-entry (`- **Dn** …`) under
+`## Decisions` in `research.md` (except the cases under "Always stop and ask first"). There is no plan.md, no tasks.md and no approval fields or status
+frontmatter. Entries in `research.md` are never deleted: a correction is a new dated line.
 
-Every doubt, roadblock or limit you hit goes in the same folder's `research.md`, under
-`## Open questions`, as `- **Qn** (open) Tnnn — <question> — options: A) … B) …`, and you
-stop with BLOCKED. The loop parses only that line format. The human answers with
-`/al-answer`, which turns it into `(answered)` with the answer underneath. Never mark the
-task line in tasks.md. **Entries in research.md are never deleted:** a correction is a new
-dated line, not an edit, so the history of the confusion is kept.
+Branches: feat/NNN-slug, fix/NNN-slug, chore/NNN-slug. Every commit follows PLAN §11:
+`<type>(<scope from the §11 list>): <summary>`, lowercase, no trailing period,
+≤72 characters.
+Manual checks for UI work live in docs/manual-checks/.
+If a decision outlives the feature or is hard to reverse, write an ADR in `docs/decisions/`.
 
-If an answer changes scope or a do/don't, or changes the approach, that goes through
-`/al-change` (the human runs it), never a direct edit of an approved `spec.md` or `plan.md`.
-If it outlives the feature or is hard to reverse, write an ADR in `docs/decisions/`.
+The spec skeleton:
+
+```markdown
+---
+feature: NNN-slug
+kind: feat | fix | chore
+created: YYYY-MM-DD
+branch: feat/NNN-slug
+---
+
+## Problem
+## Goal
+## Non-goals
+## Acceptance criteria
+## Edge cases
+```
+
+The agent-loop kit (brutally-Honest/agent-loop) was removed in 031 and may be installed again later. Its repo settings are in specs/031-remove-clutter/research.md. Specs 003-017 were built with it and keep its frontmatter as history.
 
 ## Stack
-Decided in `PLAN.md` §8. Do not introduce a dependency without an ADR.
+Decided in `PLAN.md` §8. Do not introduce a dependency without an ADR and the human's
+go-ahead.
 
 ## Commands
 - install: `make setup`
@@ -62,16 +74,23 @@ Decided in `PLAN.md` §8. Do not introduce a dependency without an ADR.
 
 Commit messages follow the user-level `commit-conventions` skill
 (`~/.claude/skills/commit-conventions/SKILL.md`, PLAN §11). It lives outside this repo,
-so install it on any machine or harness that commits here.
+so ask the human to install it on any machine or harness that commits here.
 
 ## Do not
 - Do not weaken lint, tests or config to make a check pass.
 - Do not add suppressions, skip tests, or delete assertions.
-- Do not add a dependency without an ADR.
+- Do not add a dependency without an ADR and the human's go-ahead.
 - Never get around a guard, hook or check by splitting, quoting, encoding or renaming
   strings, or by using another tool to perform the action that was blocked. Reading or
   editing a file with Read/Edit/Write is fine when only a Bash command naming it was
-  blocked. Running a human-only command (approve, answer, change, pass-manual) is never
-  fine by any route. If unsure, stop and ask.
-- When unsure, stop. Add the question to the feature's `research.md` under
-  `## Open questions` as `- **Qn** (open) Tnnn — …`, and do not guess.
+  blocked.
+- When unsure, record the call as a D-entry in research.md and continue; if it cannot be decided safely, stop and ask.
+
+## Always stop and ask first
+A D-entry is for judgment calls inside the repo. These need the human's explicit go-ahead
+every time, even mid-build:
+- Anything outside the repo: other directories, system config, external services.
+- Any push or merge (local or pull request), or change to a remote branch or ref (notes included).
+- Deleting user data: local stores, captures, untracked files, or anything not in git.
+- Adding a dependency, even with an ADR drafted.
+- Bypassing, disabling or skipping a hook, guard or check (`--no-verify` included).

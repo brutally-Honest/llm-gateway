@@ -74,12 +74,6 @@ func TestDigestCache_ChangedSessionRecomputed(t *testing.T) {
 		}
 	}
 	step("new exchange", func() { e.call("b", 2, 1, 0, "user:again") })
-	step("backfilled exchange", func() {
-		e.save("c", "", "cc", 3)
-		if _, err := e.s.SetSessionKeys(t.Context(), []store.KeyAssignment{{RequestID: "c", Key: "k"}}); err != nil {
-			t.Fatal(err)
-		}
-	})
 	step("new hook line", func() { e.hook("k", core.HarnessEvent{Phase: core.PhaseNotice}, 4) })
 	e.summary()
 	if got := e.computes(); got != want {

@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"context"
-	"math"
 	"os"
 	"time"
 
@@ -159,29 +157,4 @@ func lastActivity(bs builtSession, hooks []store.HookRow) int64 {
 		last = max(last, h.ReceivedAt)
 	}
 	return last
-}
-
-// BuildView builds a session's view straight from the store, with no cache: what
-// `gateway timeline` prints (spec 016 AC15). full keeps every text whole.
-func BuildView(ctx context.Context, r *store.Reader, s store.SessionRow, rules map[string]ClientRules, skew time.Duration, full bool, now time.Time) (timeline.View, error) {
-	c := r.WithContext(ctx)
-	who := sessIdent{s.PrincipalID, s.Client, s.SessionKey}
-	cut := entryCut
-	if full {
-		cut = math.MaxInt
-	}
-	exs, err := c.SessionExchanges(s.PrincipalID, s.Client, s.SessionKey)
-	if err != nil {
-		return timeline.View{}, err
-	}
-	bs, err := buildFrom(c, who, exs, rules[s.Client], cut)
-	if err != nil {
-		return timeline.View{}, err
-	}
-	hooks, err := c.HookEvents(s.PrincipalID, s.Client, s.SessionKey)
-	if err != nil {
-		return timeline.View{}, err
-	}
-	vd := viewDeps{rules: rules, skew: skew}
-	return vd.sessionView(c, who, bs, hooks, isActive(lastActivity(bs, hooks), now), "")
 }

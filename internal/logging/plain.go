@@ -10,8 +10,8 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// Plain returns a logger for the commands a person runs (sessions, timeline, dump, hooks
-// print, backfill-sessions): one plain text line per entry, "<prefix>: <msg> (key: value,
+// Plain returns a logger for the commands a person runs (dump, hooks
+// print): one plain text line per entry, "<prefix>: <msg> (key: value,
 // …)", never JSON. Structured logging is for the running gateway only, which logs with
 // New (spec 024 AC10). level is as for New.
 func Plain(w io.Writer, prefix, level string) *zap.Logger {

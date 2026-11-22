@@ -1,9 +1,14 @@
 ---
-status: approved
+status: superseded
 date: 2026-11-01
 ---
 
 # 0011 — shellcheck in the kit's tests
+
+> Superseded by 031 (the spec that removed the agent-loop kit): its scripts and `make
+> kit-test` are gone. shellcheck stays a `make verify` requirement for one test,
+> `TestInstallShShellcheck` (spec 023 AC23), so `make setup` still reports it and CI
+> still installs it (031 D3).
 
 ## Context
 The agent-loop kit under `.claude/` is about 30 bash scripts: the loop, the approval
