@@ -1,0 +1,442 @@
+package effects
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+	"testing"
+	"time"
+)
+
+// parseStatusForTest is the status parser candidates used before spec 034: ordinary (1),
+// renamed or copied (2, whose original path follows as its own field), unmerged (u) and
+// untracked (?) entries of `git status --porcelain=v2 -z`.
+func parseStatusForTest(b []byte) []gitEntry {
+	fields := strings.Split(string(b), "\x00")
+	var out []gitEntry
+	for i := 0; i < len(fields); i++ {
+		f := fields[i]
+		if len(f) < 2 {
+			continue
+		}
+		switch f[0] {
+		case '1':
+			if parts := strings.SplitN(f, " ", 9); len(parts) == 9 {
+				out = append(out, gitEntry{path: parts[8], tracked: !strings.Contains(parts[1], "A")})
+			}
+		case '2':
+			if parts := strings.SplitN(f, " ", 10); len(parts) == 10 {
+				out = append(out, gitEntry{path: parts[9]})
+			}
+			if i+1 < len(fields) && fields[i+1] != "" {
+				i++
+				out = append(out, gitEntry{path: fields[i], tracked: true})
+			}
+		case 'u':
+			if parts := strings.SplitN(f, " ", 11); len(parts) == 11 {
+				out = append(out, gitEntry{path: parts[10], tracked: true})
+			}
+		case '?':
+			out = append(out, gitEntry{path: f[2:]})
+		}
+	}
+	return out
+}
+
+// plainGit runs git in a safe test repo and returns its stdout.
+func plainGit(t *testing.T, dir string, args ...string) []byte {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	return out
+}
+
+// statusSet is what the old candidates answered, from git status and the ignored list.
+func statusSet(t *testing.T, dir string) []string {
+	t.Helper()
+	out := parseStatusForTest(plainGit(t, dir, "status", "--porcelain=v2", "-z", "--untracked-files=all"))
+	for _, p := range strings.Split(string(plainGit(t, dir, "ls-files", "-z", "-o", "-i", "--exclude-standard", "--directory")), "\x00") {
+		if p != "" && !strings.HasSuffix(p, "/") {
+			out = append(out, gitEntry{path: p})
+		}
+	}
+	return entrySet(out)
+}
+
+func entrySet(es []gitEntry) []string {
+	seen := map[string]bool{}
+	for _, e := range es {
+		seen[fmt.Sprintf("%s tracked=%v", e.path, e.tracked)] = true
+	}
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func sameSet(t *testing.T, dir string) {
+	t.Helper()
+	got, err := newGitRunner(30*time.Second).candidates(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, w := entrySet(got), statusSet(t, dir)
+	if strings.Join(g, "\n") != strings.Join(w, "\n") {
+		t.Errorf("candidates differ from git status\n got: %q\nwant: %q", g, w)
+	}
+}
+
+func commitAll(t *testing.T, dir string) {
+	t.Helper()
+	git(t, dir, "add", "-A")
+	git(t, dir, "commit", "-q", "-m", "c")
+}
+
+// slowly lets the test change a file without the index shortcut hiding it: a file's mtime
+// is moved to the future, so it is racy and stat-different.
+func touchFuture(t *testing.T, path string) {
+	t.Helper()
+	when := time.Now().Add(time.Hour)
+	if err := os.Chtimes(path, when, when); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// AC4: for each kind of change, the Go comparison lists the paths git status listed,
+// with the same tracked answer.
+func TestCandidates_MatchesGitStatus(t *testing.T) {
+	needGit(t)
+	base := func(t *testing.T, extra ...string) string {
+		t.Helper()
+		dir := resolve(t.TempDir())
+		git(t, dir, append([]string{"init", "-q"}, extra...)...)
+		write(t, filepath.Join(dir, "mod.txt"), "one\n")
+		write(t, filepath.Join(dir, "staged.txt"), "one\n")
+		write(t, filepath.Join(dir, "del.txt"), "x\n")
+		write(t, filepath.Join(dir, "rmcached.txt"), "x\n")
+		write(t, filepath.Join(dir, "old-name.txt"), "rename me, with enough content to match\n")
+		write(t, filepath.Join(dir, "sub", "nested", "keep.txt"), "k\n")
+		write(t, filepath.Join(dir, "exe.sh"), "#!/bin/sh\n")
+		write(t, filepath.Join(dir, "same.txt"), "same\n")
+		write(t, filepath.Join(dir, ".gitignore"), "*.log\nbuild/\n")
+		if err := os.Symlink("mod.txt", filepath.Join(dir, "link")); err != nil {
+			t.Fatal(err)
+		}
+		commitAll(t, dir)
+		return dir
+	}
+	mutate := func(t *testing.T, dir string) {
+		t.Helper()
+		write(t, filepath.Join(dir, "mod.txt"), "two!\n") // same size
+		touchFuture(t, filepath.Join(dir, "mod.txt"))
+		write(t, filepath.Join(dir, "staged.txt"), "staged change\n")
+		git(t, dir, "add", "staged.txt")
+		write(t, filepath.Join(dir, "added.txt"), "new\n")
+		git(t, dir, "add", "added.txt")
+		write(t, filepath.Join(dir, "gone-added.txt"), "new\n")
+		git(t, dir, "add", "gone-added.txt")
+		if err := os.Remove(filepath.Join(dir, "gone-added.txt")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(filepath.Join(dir, "del.txt")); err != nil {
+			t.Fatal(err)
+		}
+		git(t, dir, "rm", "-q", "--cached", "rmcached.txt")
+		git(t, dir, "mv", "old-name.txt", "new-name.txt")
+		write(t, filepath.Join(dir, "sub", "nested", "deep", "u.txt"), "u\n")
+		write(t, filepath.Join(dir, "top-untracked.txt"), "u\n")
+		write(t, filepath.Join(dir, "debug.log"), "ignored\n")
+		write(t, filepath.Join(dir, "build", "out.bin"), "ignored\n")
+		if err := os.Chmod(filepath.Join(dir, "exe.sh"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(filepath.Join(dir, "link")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink("elsewhere", filepath.Join(dir, "link")); err != nil {
+			t.Fatal(err)
+		}
+		git(t, dir, "add", "-N", "intent.txt")
+	}
+	prep := func(t *testing.T, dir string) {
+		write(t, filepath.Join(dir, "intent.txt"), "i\n")
+		mutate(t, dir)
+	}
+
+	t.Run("mixed changes", func(t *testing.T) {
+		dir := base(t)
+		prep(t, dir)
+		sameSet(t, dir)
+	})
+	t.Run("clean tree", func(t *testing.T) {
+		dir := base(t)
+		sameSet(t, dir)
+	})
+	t.Run("index version 4", func(t *testing.T) {
+		dir := base(t)
+		git(t, dir, "update-index", "--index-version", "4")
+		prep(t, dir)
+		sameSet(t, dir)
+	})
+	t.Run("split index falls back", func(t *testing.T) {
+		dir := base(t)
+		git(t, dir, "update-index", "--split-index")
+		prep(t, dir)
+		sameSet(t, dir)
+	})
+	t.Run("unborn head", func(t *testing.T) {
+		needGit(t)
+		dir := resolve(t.TempDir())
+		git(t, dir, "init", "-q")
+		write(t, filepath.Join(dir, "a.txt"), "a\n")
+		write(t, filepath.Join(dir, "b.txt"), "b\n")
+		git(t, dir, "add", "a.txt")
+		sameSet(t, dir)
+	})
+	t.Run("unmerged", func(t *testing.T) {
+		dir := base(t)
+		git(t, dir, "checkout", "-q", "-b", "side")
+		write(t, filepath.Join(dir, "same.txt"), "side\n")
+		git(t, dir, "commit", "-qam", "side")
+		git(t, dir, "checkout", "-q", "-")
+		write(t, filepath.Join(dir, "same.txt"), "main\n")
+		git(t, dir, "commit", "-qam", "main")
+		cmd := exec.Command("git", "-C", dir, "merge", "side")
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@x",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@x")
+		_ = cmd.Run() // conflicts: exit 1
+		if !strings.Contains(string(plainGit(t, dir, "status", "--porcelain=v2")), "u UU") {
+			t.Fatal("no merge conflict was made")
+		}
+		sameSet(t, dir)
+	})
+	t.Run("skip-worktree and assume-unchanged", func(t *testing.T) {
+		dir := base(t)
+		git(t, dir, "update-index", "--skip-worktree", "del.txt")
+		git(t, dir, "update-index", "--assume-unchanged", "mod.txt")
+		if err := os.Remove(filepath.Join(dir, "del.txt")); err != nil {
+			t.Fatal(err)
+		}
+		write(t, filepath.Join(dir, "mod.txt"), "changed but assumed\n")
+		sameSet(t, dir)
+		got, err := newGitRunner(30*time.Second).candidates(context.Background(), dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range got {
+			if e.path == "del.txt" || e.path == "mod.txt" {
+				t.Errorf("%s listed although it is skip-worktree or assume-unchanged", e.path)
+			}
+		}
+	})
+	t.Run("skip-worktree in the fallback", func(t *testing.T) {
+		dir := base(t)
+		git(t, dir, "update-index", "--split-index")
+		git(t, dir, "update-index", "--skip-worktree", "del.txt")
+		git(t, dir, "update-index", "--assume-unchanged", "mod.txt")
+		if err := os.Remove(filepath.Join(dir, "del.txt")); err != nil {
+			t.Fatal(err)
+		}
+		write(t, filepath.Join(dir, "mod.txt"), "changed but assumed\n")
+		sameSet(t, dir)
+	})
+	t.Run("sha256", func(t *testing.T) {
+		needGit(t)
+		dir := resolve(t.TempDir())
+		cmd := exec.Command("git", "init", "-q", "--object-format=sha256", dir)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Skipf("git cannot make a sha256 repo: %v %s", err, out)
+		}
+		write(t, filepath.Join(dir, "a.txt"), "one\n")
+		write(t, filepath.Join(dir, "b.txt"), "two\n")
+		commitAll(t, dir)
+		write(t, filepath.Join(dir, "a.txt"), "uno\n")
+		touchFuture(t, filepath.Join(dir, "a.txt"))
+		write(t, filepath.Join(dir, "c.txt"), "new\n")
+		sameSet(t, dir)
+		got, err := newGitRunner(30*time.Second).candidates(context.Background(), dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s := strings.Join(entrySet(got), ";"); !strings.Contains(s, "a.txt tracked=true") {
+			t.Errorf("sha256 repo: a.txt not listed as changed: %s", s)
+		}
+	})
+	t.Run("unchanged files are not hashed twice or listed", func(t *testing.T) {
+		dir := base(t)
+		time.Sleep(20 * time.Millisecond)
+		git(t, dir, "status", "-s") // refresh the index so nothing is racy
+		got, err := newGitRunner(30*time.Second).candidates(context.Background(), dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 0 {
+			t.Errorf("clean repo listed %v", got)
+		}
+	})
+}
+
+// A canceled context stops the comparison.
+func TestCandidates_Canceled(t *testing.T) {
+	dir := repo(t)
+	write(t, filepath.Join(dir, "a.txt"), "one\n")
+	commitAll(t, dir)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := newGitRunner(30*time.Second).candidates(ctx, dir); err == nil {
+		t.Fatal("candidates ran with a canceled context")
+	}
+}
+
+// A git call that times out must fail candidates, not report HEAD as unborn, which would
+// list every committed file as added.
+func TestCandidates_TimeoutIsNotUnbornHead(t *testing.T) {
+	dir := repo(t)
+	write(t, filepath.Join(dir, "a.txt"), "one\n")
+	commitAll(t, dir)
+	g := newGitRunner(time.Nanosecond)
+	// Called alone: HEAD must be an error, not an empty map (the unborn answer).
+	if head, err := g.headEntries(context.Background(), dir); err == nil {
+		t.Fatalf("headEntries with a 1ns timeout returned no error: %d entries", len(head))
+	}
+	got, err := g.candidates(context.Background(), dir)
+	if err == nil {
+		t.Fatalf("candidates with a 1ns timeout returned no error: %v", entrySet(got))
+	}
+	if len(got) != 0 {
+		t.Errorf("candidates returned entries with an error: %v", entrySet(got))
+	}
+}
+
+// hostile is a repo whose own config and attributes name programs. Each program touches a
+// marker file in a folder outside the repo, then passes stdin through.
+type hostile struct {
+	dir     string
+	markers string
+}
+
+func (h hostile) script(t *testing.T, name, body string) string {
+	t.Helper()
+	p := filepath.Join(h.markers, name+".sh")
+	marker := filepath.Join(h.markers, name)
+	text := "#!/bin/sh\ntouch " + marker + "\n" + body + "\n"
+	if err := os.WriteFile(p, []byte(text), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func (h hostile) found(t *testing.T) []string {
+	t.Helper()
+	ents, err := os.ReadDir(h.markers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, e := range ents {
+		if !strings.HasSuffix(e.Name(), ".sh") {
+			out = append(out, e.Name())
+		}
+	}
+	return out
+}
+
+// newHostile makes a committed repo (a.txt, b.txt, filter attributes on a.txt) and then
+// plants the settings, so setting up never runs them. driver is the filter setting under
+// test.
+func newHostile(t *testing.T, filterKey string) hostile {
+	t.Helper()
+	needGit(t)
+	h := hostile{dir: resolve(t.TempDir()), markers: resolve(t.TempDir())}
+	git(t, h.dir, "init", "-q")
+	write(t, filepath.Join(h.dir, "a.txt"), "aaaa\n")
+	write(t, filepath.Join(h.dir, "b.txt"), "bbbb\n")
+	write(t, filepath.Join(h.dir, ".gitattributes"), "a.txt filter=evil diff=evil\n")
+	write(t, filepath.Join(h.dir, ".gitignore"), "*.ign\n")
+	git(t, h.dir, "add", "-A")
+	git(t, h.dir, "commit", "-q", "-m", "init")
+	cat := "cat"
+	git(t, h.dir, "config", "core.fsmonitor", h.script(t, "fsmonitor", "exit 0"))
+	git(t, h.dir, "config", "filter.evil."+filterKey, h.script(t, filterKey, cat))
+	git(t, h.dir, "config", "diff.external", h.script(t, "diffexternal", "exit 0"))
+	git(t, h.dir, "config", "diff.evil.textconv", h.script(t, "textconv", cat))
+	git(t, h.dir, "config", "diff.evil.command", h.script(t, "diffcommand", "exit 0"))
+	git(t, h.dir, "config", "core.pager", h.script(t, "pager", cat))
+	git(t, h.dir, "config", "core.hooksPath", filepath.Join(h.markers, "hooks"))
+	// a.txt: same size, different content, mtime in the future: stat-dirty and racy.
+	write(t, filepath.Join(h.dir, "a.txt"), "AAAA\n")
+	touchFuture(t, filepath.Join(h.dir, "a.txt"))
+	write(t, filepath.Join(h.dir, "untracked.txt"), "u\n")
+	write(t, filepath.Join(h.dir, "secret.ign"), "i\n")
+	return h
+}
+
+// AC1, AC2, AC3: every git path the runner uses, in a repo whose config names programs for
+// core.fsmonitor, the clean filter or the process filter, diff.external, a textconv
+// driver and the pager, runs none of them, and still reports the right candidates.
+func TestGit_HostileRepoRunsNothing(t *testing.T) {
+	for _, key := range []string{"clean", "process"} {
+		t.Run("filter "+key, func(t *testing.T) {
+			h := newHostile(t, key)
+			g := newGitRunner(30 * time.Second)
+			ctx := context.Background()
+
+			top, ok := g.topLevel(ctx, h.dir)
+			if !ok {
+				t.Fatal("no top level")
+			}
+			got, err := g.candidates(ctx, top)
+			if err != nil {
+				t.Fatal(err)
+			}
+			set := strings.Join(entrySet(got), ";")
+			for _, want := range []string{"a.txt tracked=true", "untracked.txt tracked=false", "secret.ign tracked=false"} {
+				if !strings.Contains(set, want) {
+					t.Errorf("candidates lack %q: %s", want, set)
+				}
+			}
+			if strings.Contains(set, "b.txt") {
+				t.Errorf("unchanged b.txt is listed: %s", set)
+			}
+			data, ok := g.show(ctx, top, "a.txt")
+			if !ok || string(data) != "aaaa\n" {
+				t.Errorf("show a.txt = %q, %v; want the committed bytes", data, ok)
+			}
+			if m := h.found(t); len(m) > 0 {
+				t.Errorf("git ran repo-named programs: %v", m)
+			}
+		})
+	}
+	t.Run("full checkpoint", func(t *testing.T) {
+		h := newHostile(t, "clean")
+		// Baseline from the committed state, then the hostile edit again.
+		ts := openStore(t)
+		r := newTestRunner(t, ts.st)
+		checkpointIn(t, r, h.dir)
+		write(t, filepath.Join(h.dir, "a.txt"), "ZZZZ\n")
+		touchFuture(t, filepath.Join(h.dir, "a.txt"))
+		write(t, filepath.Join(h.dir, "new.txt"), "n\n")
+		checkpointIn(t, r, h.dir)
+		rows := byPath(t, ts.effects(t))
+		if _, ok := rows[filepath.Join(h.dir, "a.txt")]; !ok {
+			t.Errorf("a.txt change not recorded: %v", rows)
+		}
+		if _, ok := rows[filepath.Join(h.dir, "new.txt")]; !ok {
+			t.Errorf("new.txt not recorded: %v", rows)
+		}
+		if m := h.found(t); len(m) > 0 {
+			t.Errorf("a checkpoint ran repo-named programs: %v", m)
+		}
+	})
+}
