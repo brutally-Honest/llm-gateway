@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -78,6 +79,72 @@ func TestReadIndex_Version4Paths(t *testing.T) {
 		if e.path != want[i] {
 			t.Errorf("entry %d is %q, want %q", i, e.path, want[i])
 		}
+	}
+}
+
+// v4Entry is one version 4 entry (sha1) with the given prefix-strip byte and path suffix.
+func v4Entry(strip byte, suffix string) []byte {
+	e := make([]byte, 40+20+2)
+	e[26], e[27] = 0x81, 0xa4 // mode 0100644
+	e = append(e, strip)
+	e = append(e, suffix...)
+	return append(e, 0)
+}
+
+func v4Header(version, count uint32) []byte {
+	h := make([]byte, 12)
+	copy(h, "DIRC")
+	binary.BigEndian.PutUint32(h[4:], version)
+	binary.BigEndian.PutUint32(h[8:], count)
+	return h
+}
+
+// A path over 4096 bytes, and a crafted version 4 index that rebuilds one long path for
+// many entries, are refused as unsupported (the ls-files fallback answers) and do not
+// allocate the expanded paths.
+func TestReadIndex_OversizedPathsRefused(t *testing.T) {
+	// One 4000-byte path, then many strip-0 entries that each keep all of it: 1000
+	// entries would rebuild 4 MB of paths from a file of about 70 KB.
+	crafted := append(v4Header(4, 1001), v4Entry(0, strings.Repeat("p", 4000))...)
+	for i := 0; i < 1000; i++ {
+		crafted = append(crafted, v4Entry(0, "a")...)
+	}
+	if _, err := readIndex(crafted, 20); !errors.Is(err, errIndexUnsupported) {
+		t.Fatalf("crafted v4 index: %v, want unsupported", err)
+	}
+	// Measure what the refused read allocates: a bounded buffer plus the first path,
+	// far below the 4 MB it would take to rebuild every path.
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, _ = readIndex(crafted, 20)
+	runtime.ReadMemStats(&after)
+	if got := after.TotalAlloc - before.TotalAlloc; got > 1<<20 {
+		t.Errorf("refused read allocated %d bytes", got)
+	}
+
+	long := strings.Repeat("q", maxIndexPath+1)
+	v4 := append(v4Header(4, 1), v4Entry(0, long)...)
+	if _, err := readIndex(v4, 20); !errors.Is(err, errIndexUnsupported) {
+		t.Fatalf("v4 path of %d bytes: %v, want unsupported", len(long), err)
+	}
+	v2 := append(v4Header(2, 1), make([]byte, 40+20+2)...)
+	v2 = append(v2, long...)
+	v2 = append(v2, 0)
+	for len(v2)%8 != 0 {
+		v2 = append(v2, 0)
+	}
+	if _, err := readIndex(v2, 20); !errors.Is(err, errIndexUnsupported) {
+		t.Fatalf("v2 path of %d bytes: %v, want unsupported", len(long), err)
+	}
+	// The limit itself is accepted.
+	ok := append(v4Header(2, 1), make([]byte, 40+20+2)...)
+	ok = append(ok, long[1:]...)
+	ok = append(ok, 0)
+	for (len(ok)-12)%8 != 0 { // entries are padded relative to their start
+		ok = append(ok, 0)
+	}
+	if es, err := readIndex(ok, 20); err != nil || len(es) != 1 || len(es[0].path) != maxIndexPath {
+		t.Fatalf("path of %d bytes: %v, %v", maxIndexPath, es, err)
 	}
 }
 

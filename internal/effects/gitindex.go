@@ -34,10 +34,22 @@ const (
 	modeGitlink = 0o160000
 	modeTree    = 0o040000
 
+	// maxIndexPath is the longest path the reader accepts (git's PATH_MAX); an index with
+	// a longer one is left to the `git ls-files` fallback.
+	maxIndexPath = 4096
+
 	// maxPathExpansion bounds the bytes of all version 4 paths to this many times the size
-	// of the index file (a path is at most 4096 bytes and an entry at least 63).
-	maxPathExpansion = 64
+	// of the index file, and maxPathBytes caps that total outright. A real version 4 index
+	// measures about 0.5 (GOROOT), so 4 leaves wide headroom while a crafted file (one long
+	// path, then many strip-0 entries) cannot claim more than a few times its own size.
+	maxPathExpansion = 4
+	maxPathBytes     = 64 << 20
 )
+
+// indexPathBudget is the total path bytes a version 4 index of size n may expand to.
+func indexPathBudget(n int) uint64 {
+	return min(uint64(n)*maxPathExpansion, maxPathBytes)
+}
 
 // readIndex parses the git index file in data (formats 2, 3 and 4, see gitformat-index)
 // whose object ids are hashLen bytes long. It stops at the extensions. It never reads
@@ -59,10 +71,10 @@ func readIndex(data []byte, hashLen int) ([]indexEntry, error) {
 		return nil, errors.New("index: entry count exceeds file size")
 	}
 	pos := 12
-	var prev []byte
-	// A version 4 path is rebuilt from the previous one, so a few small entries after one
-	// long path would expand quadratically. Real indexes stay far below this budget.
-	pathBudget := uint64(len(data)) * maxPathExpansion
+	// A version 4 path is rebuilt in buf from the previous one, so a few small entries after
+	// one long path would expand quadratically. Real indexes stay far below this budget.
+	var buf []byte
+	pathBudget := indexPathBudget(len(data))
 	out := make([]indexEntry, 0, count)
 	for i := uint32(0); i < count; i++ {
 		start := pos
@@ -98,7 +110,7 @@ func readIndex(data []byte, hashLen int) ([]indexEntry, error) {
 		}
 		if version == 4 {
 			strip, n := indexVarint(data[pos:])
-			if n == 0 || strip > uint64(len(prev)) {
+			if n == 0 || strip > uint64(len(buf)) {
 				return nil, errors.New("index: bad path prefix")
 			}
 			pos += n
@@ -106,18 +118,26 @@ func readIndex(data []byte, hashLen int) ([]indexEntry, error) {
 			if end < 0 {
 				return nil, errors.New("index: unterminated path")
 			}
-			path := append(append([]byte{}, prev[:uint64(len(prev))-strip]...), data[pos:pos+end]...)
-			if uint64(len(path)) > pathBudget {
+			keep := len(buf) - int(strip)
+			// Check both limits before anything is appended or allocated.
+			size := uint64(keep) + uint64(end)
+			if size > maxIndexPath {
+				return nil, fmt.Errorf("%w: path longer than %d bytes", errIndexUnsupported, maxIndexPath)
+			}
+			if size > pathBudget {
 				return nil, fmt.Errorf("%w: paths expand beyond the file size", errIndexUnsupported)
 			}
-			pathBudget -= uint64(len(path))
+			pathBudget -= size
+			buf = append(buf[:keep], data[pos:pos+end]...)
 			pos += end + 1
-			prev = path
-			e.path = string(path)
+			e.path = string(buf)
 		} else {
 			end := bytes.IndexByte(data[pos:], 0)
 			if end < 0 {
 				return nil, errors.New("index: unterminated path")
+			}
+			if end > maxIndexPath {
+				return nil, fmt.Errorf("%w: path longer than %d bytes", errIndexUnsupported, maxIndexPath)
 			}
 			e.path = string(data[pos : pos+end])
 			pos += end + 1

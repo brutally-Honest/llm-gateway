@@ -149,11 +149,15 @@ func FuzzReadIndex(f *testing.F) {
 				if e.path == "" || len(e.oid) != 2*hashLen {
 					t.Fatalf("hashLen %d: bad entry %+v", hashLen, e)
 				}
+				if len(e.path) > maxIndexPath {
+					t.Fatalf("hashLen %d: path of %d bytes", hashLen, len(e.path))
+				}
 				total += len(e.path)
 			}
 			// Version 4 paths are rebuilt from the previous one; their total size must
-			// stay linear in the input, or a small file expands quadratically.
-			if total > maxPathExpansion*len(data) {
+			// stay within the budget, or a small file expands quadratically. Version 2
+			// and 3 paths are slices of the input, so len(data) bounds them.
+			if limit := max(indexPathBudget(len(data)), uint64(len(data))); uint64(total) > limit {
 				t.Fatalf("hashLen %d: %d path bytes from %d input bytes", hashLen, total, len(data))
 			}
 		}
