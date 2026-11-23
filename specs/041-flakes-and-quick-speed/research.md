@@ -123,6 +123,42 @@ An earlier scan of main with other offsets caught one more failure, at 91 ms. Th
 that fails is the gap between Record and the next Admit, about 1 to 10 ms, so the race is
 rare even when aimed at.
 
+## S1: first call details after a restart
+
+`placeInSession` now reads `ViewCache.peek`, a new non-blocking read of the session's
+last cached view. It never calls `latest`, `get` or `cachedView`, so it never starts or
+waits for a build. The title and the #n are given only when that view was built at the
+session's current build version (`buildKey`, the prefix of the view key, now shared with
+`buildView`), which costs one grouped version query. Otherwise both are left out. Both
+can change as a session grows:
+- `readEntries` numbers calls in start order, so a call that starts earlier but commits
+  later shifts every number after it;
+- a generated title, or a late call that comes first, changes the title.
+
+So an older view, even one that holds the call, could give a wrong value.
+
+UI with the fields missing (no JS change needed). The call dialog reads
+`/api/sessions/{id}/calls/{eid}`, not this endpoint, and is unaffected. The full exchange
+page shows "Exchange" for "Call #n", the breadcrumb `Sessions › Session` (still linked),
+and "this session" as the session link. These are accurate generic fallbacks, so step 7
+is not run.
+
+| Measure (gateway built at this commit, store copy) | Before | After |
+|---|---|---|
+| first `GET /api/exchanges/SLTZOTBK3XZDAGQ4F4CK2CYPLE` after a restart | 2.82, 2.75, 2.71 s | 0.0053, 0.0068, 0.0052 s (no title or #n) |
+| the same after `GET /api/sessions/{id}/view` (2.84 s build) | 9 ms | 8 ms, title "Pending and completed tasks", #535 |
+
+Tests changed:
+- `TestExchange_SessionTitleCallNumberAndStatusWord` now warms the view first.
+- `TestAPI_ExchangeDetailAnswersFromCachedBuildWithoutWaiting` used to require the detail
+  of a call newer than the cached build to wait for the gated build. It now requires that
+  call to answer within 1 s with no `call_n`.
+
+Both behaviours are changed on purpose here. New tests:
+- `TestExchange_NothingCachedAnswersWithoutBuilding`
+- `TestExchange_CachedCurrentViewGivesTitleAndNumber`
+- `TestExchange_OlderCachedViewGivesNoTitleOrNumber`
+
 ## Decisions
 - **D1** (2026-11-23) Number 041 as the brief says; 035 was planned for the speed fixes and
   is folded in here (spec header), so no 035 folder is created.
@@ -153,3 +189,12 @@ rare even when aimed at.
   option, so "fails on main" is shown at the wall clock (1/48 on main, 0/48 after). The
   in-repo test shows the clock is honoured through the fixed reset header. The
   `internal/ratelimit` unit tests already used a fixed clock and are unchanged.
+- **D9** (2026-11-23) S1's source is the view cache, not `TimelineCache.peek`: a peeked
+  build still needs `sessionView`, which reads effects, content and hooks from the store.
+  Thesis: serve any cached view's title and #n (more often filled in on live sessions).
+  Antithesis: the #n and the title both move as a session grows, and the brief forbids a
+  wrong title. Synthesis: both fields only from a view at the current build version; on
+  a busy live session they are often missing until the session page rebuilds the view.
+  It would flip if views carried a stable call number (one that is never renumbered).
+  The first version served the title from any view; it was gated in a follow-up before
+  the commit.
