@@ -28,6 +28,7 @@ import (
 type gitRunner struct {
 	bin     string // "" when git is not installed: every folder is scanned (E1)
 	timeout time.Duration
+	maxOut  int64 // stdout cap per call; 0 means maxGitOutput (tests lower it)
 
 	mu    sync.Mutex
 	cache map[string]map[string]hashedFile // by top, then path: files hashed equal to the index
@@ -62,13 +63,50 @@ func newGitRunner(timeout time.Duration) *gitRunner {
 
 var errNoGit = errors.New("git is not installed")
 
-// run runs git in dir with args and returns its stdout.
+// maxGitOutput caps the stdout one git call may produce. A hostile repo can make
+// `ls-tree -r` or `ls-files` print gigabytes from a tiny object store, and run holds the
+// output in memory. 256 MiB is far above any real repo's listing (about 100 bytes a file,
+// so millions of files) and small enough that one call cannot take the gateway down.
+const maxGitOutput = 256 << 20
+
+var errGitOutputTooLarge = errors.New("git output over the size cap")
+
+// capWriter collects up to limit bytes; the first write past it cancels git and fails.
+type capWriter struct {
+	buf    bytes.Buffer
+	limit  int64
+	over   bool
+	cancel context.CancelFunc
+}
+
+func (w *capWriter) Write(p []byte) (int, error) {
+	if int64(w.buf.Len())+int64(len(p)) > w.limit {
+		w.over = true
+		w.cancel()
+		return 0, errGitOutputTooLarge
+	}
+	return w.buf.Write(p)
+}
+
+// run runs git in dir with args and returns its stdout, at most maxOut (or maxGitOutput)
+// bytes; more fails with errGitOutputTooLarge.
 func (g *gitRunner) run(ctx context.Context, dir string, args ...string) ([]byte, error) {
+	limit := g.maxOut
+	if limit <= 0 {
+		limit = maxGitOutput
+	}
+	return g.runLimit(ctx, dir, limit, args...)
+}
+
+func (g *gitRunner) runLimit(ctx context.Context, dir string, limit int64, args ...string) ([]byte, error) {
 	if g.bin == "" {
 		return nil, errNoGit
 	}
 	ctx, cancel := context.WithTimeout(ctx, g.timeout)
 	defer cancel()
+	// cancelOut is derived before the command is built, so the capWriter can kill git.
+	ctx, cancelOut := context.WithCancel(ctx)
+	defer cancelOut()
 	argv := append([]string{
 		"--no-optional-locks",
 		"-c", "core.fsmonitor=false",
@@ -81,9 +119,14 @@ func (g *gitRunner) run(ctx context.Context, dir string, args ...string) ([]byte
 	cmd.Env = append(gitEnv(),
 		"GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0", "GIT_PAGER=cat",
 		"GIT_NO_LAZY_FETCH=1", "GIT_ALLOW_PROTOCOL=none", "GIT_OPTIONAL_LOCKS=0", "LC_ALL=C")
-	var out, errOut bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errOut
-	if err := cmd.Run(); err != nil {
+	out := &capWriter{limit: limit, cancel: cancelOut}
+	var errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = out, &errOut
+	err := cmd.Run()
+	if out.over {
+		return nil, errGitOutputTooLarge
+	}
+	if err != nil {
 		if msg := strings.TrimSpace(errOut.String()); msg != "" {
 			if len(msg) > 300 {
 				msg = msg[:300]
@@ -92,7 +135,7 @@ func (g *gitRunner) run(ctx context.Context, dir string, args ...string) ([]byte
 		}
 		return nil, err
 	}
-	return out.Bytes(), nil
+	return out.buf.Bytes(), nil
 }
 
 // inheritedGitVars are repo-location and config variables the gateway may have inherited
@@ -635,8 +678,10 @@ func writeBlobHeader(h hash.Hash, size int64) {
 
 // show is the last committed version of rel in the work tree at top, if any. It never
 // runs a diff driver or text conversion from the repo.
-func (g *gitRunner) show(ctx context.Context, top, rel string) ([]byte, bool) {
-	out, err := g.run(ctx, top, "show", "--no-ext-diff", "--no-textconv", "HEAD:"+filepath.ToSlash(rel))
+func (g *gitRunner) show(ctx context.Context, top, rel string, limit int64) ([]byte, bool) {
+	// limit+1 bytes at most are held, so a huge blob is never fully buffered; a blob over
+	// limit fails here, which the caller treats like one it found too big.
+	out, err := g.runLimit(ctx, top, limit+1, "show", "--no-ext-diff", "--no-textconv", "HEAD:"+filepath.ToSlash(rel))
 	if err != nil {
 		return nil, false
 	}

@@ -313,7 +313,7 @@ func (r *Runner) headVersion(ctx context.Context, top, root, rel string, cp *sto
 	if err != nil {
 		return ""
 	}
-	data, ok := r.git.show(ctx, top, fromTop)
+	data, ok := r.git.show(ctx, top, fromTop, r.maxCopy)
 	if !ok || int64(len(data)) > r.maxCopy || bytes.Contains(data[:min(len(data), headBytes)], []byte{0}) {
 		return ""
 	}

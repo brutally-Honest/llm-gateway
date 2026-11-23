@@ -2,6 +2,7 @@ package effects
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -488,7 +489,7 @@ func TestGit_HostileRepoRunsNothing(t *testing.T) {
 			if strings.Contains(set, "b.txt") {
 				t.Errorf("unchanged b.txt is listed: %s", set)
 			}
-			data, ok := g.show(ctx, top, "a.txt")
+			data, ok := g.show(ctx, top, "a.txt", 1<<20)
 			if !ok || string(data) != "aaaa\n" {
 				t.Errorf("show a.txt = %q, %v; want the committed bytes", data, ok)
 			}
@@ -557,7 +558,7 @@ func TestGit_LazyFetchRunsNothing(t *testing.T) {
 	}
 
 	g := newGitRunner(30 * time.Second)
-	if _, ok := g.show(context.Background(), dst, "a.txt"); ok {
+	if _, ok := g.show(context.Background(), dst, "a.txt", 1<<20); ok {
 		t.Error("show returned a blob the clone does not have")
 	}
 	if _, err := os.Stat(marker); err == nil {
@@ -1010,5 +1011,58 @@ func TestGitRunner_CacheDropsIdleTops(t *testing.T) {
 	}
 	if _, ok := g.cache["/b"]; !ok {
 		t.Error("recent top /b lost its cache")
+	}
+}
+
+// P1-b: run holds at most its cap of stdout; more kills git and fails with
+// errGitOutputTooLarge, while output under the cap comes back whole. show holds at most
+// limit+1 bytes of a blob.
+func TestGit_OutputCap(t *testing.T) {
+	needGit(t)
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	dir := resolve(t.TempDir())
+	git(t, dir, "init", "-q")
+	write(t, filepath.Join(dir, "a.txt"), strings.Repeat("x", 5000))
+	commitAll(t, dir)
+	ctx := context.Background()
+
+	g := newGitRunner(30 * time.Second)
+	g.maxOut = 1000
+	if _, err := g.run(ctx, dir, "show", "HEAD:a.txt"); !errors.Is(err, errGitOutputTooLarge) {
+		t.Errorf("run over the cap: err = %v, want errGitOutputTooLarge", err)
+	}
+	g.maxOut = 6000
+	if out, err := g.run(ctx, dir, "show", "HEAD:a.txt"); err != nil || len(out) != 5000 {
+		t.Errorf("run under the cap: %d bytes, %v", len(out), err)
+	}
+
+	g = newGitRunner(30 * time.Second)
+	if data, ok := g.show(ctx, dir, "a.txt", 5000); !ok || len(data) != 5000 {
+		t.Errorf("show at the limit: %d bytes, ok=%v", len(data), ok)
+	}
+	if _, ok := g.show(ctx, dir, "a.txt", 100); ok {
+		t.Error("show over the limit returned the blob")
+	}
+}
+
+// Past the cap git must be killed, not left blocked on a pipe nobody reads until the
+// timeout. The blob is well over the pipe buffer.
+func TestGit_OutputCapKillsGit(t *testing.T) {
+	needGit(t)
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	dir := resolve(t.TempDir())
+	git(t, dir, "init", "-q")
+	write(t, filepath.Join(dir, "big.txt"), strings.Repeat("x", 5<<20))
+	commitAll(t, dir)
+
+	g := newGitRunner(30 * time.Second)
+	g.maxOut = 1000
+	start := time.Now()
+	_, err := g.run(context.Background(), dir, "show", "HEAD:big.txt")
+	if !errors.Is(err, errGitOutputTooLarge) {
+		t.Errorf("err = %v, want errGitOutputTooLarge", err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("run took %v; git was not killed at the cap", d)
 	}
 }
