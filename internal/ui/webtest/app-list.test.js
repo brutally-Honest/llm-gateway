@@ -47,6 +47,9 @@ const sessionReqs = [];
 let serve = () => ({ items: [], next_after: null, total: 0, scanned: 0 });
 const other = { "/api/today": {}, "/api/ungrouped": { items: [], next_after: null } };
 const replies = {};
+const todayReqs = []; // every /api/today request
+const todayAt = []; // the virtual time of each, ms since the test's start
+let virtualMs = 0;
 const holds = {}; // path -> promise to wait for before answering
 let hash = "#/";
 const entries = []; // every hash assigned or replaced, to tell a new entry from a replacement
@@ -88,6 +91,10 @@ Object.assign(globalThis, {
       const body = await serve(params);
       return { ok: body !== null, status: body ? 200 : 500, statusText: "boom", json: async () => (body || { error: { message: "store boom" } }) };
     }
+    if (path === "/api/today") {
+      todayReqs.push(String(url));
+      todayAt.push(virtualMs);
+    }
     if (holds[path]) await holds[path];
     const body = replies[path] === undefined ? other[path] : replies[path];
     if (body && body.__status) return { ok: false, status: body.__status, statusText: "nope", json: async () => ({ error: { message: body.message } }) };
@@ -126,6 +133,9 @@ const deferred = () => {
 let booted = false;
 async function boot(t) {
   t.mock.timers.enable({ apis: ["setTimeout"] });
+  // app.js keeps its timers' handles between tests; a handle left pending would clear an
+  // unrelated timer of the next test's clock, so each test runs its clock out first
+  t.after(() => t.mock.timers.tick(60000));
   if (!booted) {
     booted = true;
     await import("../web/app.js");
@@ -965,4 +975,81 @@ test("callPanelShowsASkeletonWhileTheCallLoadsAndTheContentOrErrorReplacesIt", a
   assert.match(textOf(dialog()), /call exploded/);
   assert.doesNotMatch(textOf(dialog()), /Loading call…/);
   assert.equal(withClass(dialog(), "skel").length, 0);
+});
+
+// Spec 041 S2: session events refetch the totals at most once per 5 s, and the last event of
+// a burst is always followed by a fetch.
+const SPACING = 5000;
+const emitSession = (n) => streams.at(-1).emit("session", sess("c", "gamma", stamp(n % 50), { active: true }));
+async function todayStart(t) {
+  await fresh(t);
+  await settle();
+  todayReqs.length = 0;
+  todayAt.length = 0;
+}
+
+test("aSingleSessionEventFetchesTheTotalsOnce", async (t) => {
+  await todayStart(t);
+  emitSession(1);
+  await settle();
+  assert.equal(todayReqs.length, 1);
+  t.mock.timers.tick(SPACING * 3);
+  await settle();
+  assert.equal(todayReqs.length, 1, "nothing more follows a lone event");
+});
+
+test("aBurstOfTwentyEventsOneSecondApartFetchesOncePerFiveSecondsAndOnceMoreAfterIt", async (t) => {
+  await todayStart(t);
+  const tick = async (ms) => {
+    virtualMs += ms;
+    t.mock.timers.tick(ms);
+    await settle();
+  };
+  virtualMs = 0;
+  let lastEventAt = 0;
+  for (let i = 0; i < 20; i++) {
+    lastEventAt = virtualMs;
+    emitSession(i);
+    await settle();
+    await tick(1000);
+  }
+  await tick(SPACING * 3);
+  assert.ok(todayReqs.length >= 4 && todayReqs.length <= 5, `fetches for a 20 s burst: ${todayAt}`);
+  for (let i = 1; i < todayAt.length; i++) assert.ok(todayAt[i] - todayAt[i - 1] >= SPACING, `fetches too close: ${todayAt}`);
+  assert.ok(todayAt.at(-1) >= lastEventAt, `the last fetch started after the last event: ${todayAt} vs ${lastEventAt}`);
+});
+
+test("anEventWhileAFetchIsInFlightStillLeadsToALaterFetch", async (t) => {
+  await todayStart(t);
+  const gate = deferred();
+  holds["/api/today"] = gate.promise;
+  emitSession(1);
+  await settle();
+  assert.equal(todayReqs.length, 1, "the first fetch is held in flight");
+  emitSession(2);
+  t.mock.timers.tick(SPACING * 2); // the window ends while it is still in flight
+  await settle();
+  assert.equal(todayReqs.length, 1, "fetches do not overlap");
+  delete holds["/api/today"];
+  gate.resolve();
+  await settle();
+  assert.equal(todayReqs.length, 2, "the event that came during the fetch is fetched once it ends");
+  t.mock.timers.tick(SPACING * 3);
+  await settle();
+  assert.equal(todayReqs.length, 2);
+});
+
+test("anEventInsideTheWindowWaitsForTheWindowToEnd", async (t) => {
+  await todayStart(t);
+  emitSession(1);
+  await settle();
+  emitSession(2);
+  await settle();
+  assert.equal(todayReqs.length, 1);
+  t.mock.timers.tick(SPACING - 1);
+  await settle();
+  assert.equal(todayReqs.length, 1, "not before the five seconds are up");
+  t.mock.timers.tick(1);
+  await settle();
+  assert.equal(todayReqs.length, 2);
 });

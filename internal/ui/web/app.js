@@ -279,13 +279,35 @@ async function loadToday() {
   }
 }
 
-// scheduleToday refetches the totals after a burst of session events settles.
-function scheduleToday() {
-  if (todayTimer) clearTimeout(todayTimer);
+// TODAY_SPACING_MS is the least time between two fetches of the totals while session
+// events keep arriving.
+const TODAY_SPACING_MS = 5000;
+let todayBusy = false; // a fetch is in flight
+let todayDirty = false; // an event arrived that no fetch started since has covered
+
+// runToday fetches the totals and holds the next fetch back for TODAY_SPACING_MS.
+async function runToday() {
+  todayDirty = false;
+  todayBusy = true;
   todayTimer = setTimeout(() => {
     todayTimer = null;
-    loadToday();
-  }, 500);
+    if (todayDirty && !todayBusy) runToday();
+  }, TODAY_SPACING_MS);
+  try {
+    await loadToday();
+  } finally {
+    todayBusy = false;
+    if (todayDirty && !todayTimer) runToday();
+  }
+}
+
+// scheduleToday refetches the totals for a session event: at once when none was fetched
+// in the last TODAY_SPACING_MS, otherwise once that time is up, so a burst costs one fetch
+// per spacing and the last event of the burst is always covered by a fetch that starts
+// after it. Fetches never overlap.
+function scheduleToday() {
+  todayDirty = true;
+  if (!todayTimer && !todayBusy) runToday();
 }
 
 async function loadUngroupedHead() {
@@ -620,6 +642,7 @@ function route() {
   tpage = null;
   if (todayTimer) clearTimeout(todayTimer);
   todayTimer = null;
+  todayDirty = false;
   stopStream();
   setPage("");
   seq++;
