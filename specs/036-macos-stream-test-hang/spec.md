@@ -3,7 +3,7 @@ feature: 036-macos-stream-test-hang
 kind: fix
 created: 2026-11-23
 branch: fix/036-macos-stream-test-hang
-status: draft
+status: done
 ---
 
 ## Problem

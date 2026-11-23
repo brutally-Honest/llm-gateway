@@ -193,3 +193,20 @@ also passed with `-race -count=3` (35 s), so the watchdog did not trip on any te
   and asserts that `Stop()` is false afterwards. That proves the cleanup stopped it,
   with no 150 ms sleep. Probes: with the cleanup's `Stop` removed, the stop test fails.
   With a child that exits without arming, the firing test fails (no stacks, no frame).
+- **D8** (2026-11-23) Fresh review of `main...HEAD` against the spec: no P1 or P2.
+  It traced `accessLog`'s deferred func (`internal/server/middleware.go`): `Settle` runs
+  `OnUsage`, which runs `Limiter.Record`, then the `request` line is written, all on one
+  goroutine. So the single probe after the line is not racy. The P3s are settled here:
+  - The limiter's wall-clock 60 s window can reset between `Record` and the probe if
+    both straddle a minute boundary. That was already there before this change, and
+    every `rl*` test shares it. It now fails fast instead of hanging. A clock injected
+    into run's options is left for a later fix. It is out of scope here.
+  - A test held on a debugger breakpoint for over 60 s is killed by the watchdog. No
+    opt-out env var is added: an off switch for a guard is what AGENTS.md forbids
+    reaching for, and it would be an untested path. Raise `defaultWatchdog` locally
+    when debugging.
+  - The watchdog times the whole test, not each gateway. That is accepted, because the
+    slowest test takes a few seconds and the package runs in 35 s with `-count=3`.
+  - The repro script was a scratch file. The command and the table above describe it
+    in full: the four conditions were run in sequence, and hogs are `nproc` shell busy
+    loops started before the condition and killed after it.
