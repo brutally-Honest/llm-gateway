@@ -1,5 +1,5 @@
 # Throwaway macOS bench for spec 036. Lives only on chore/036-macos-bench; never merged.
-# Round 2: after-fix only, three rounds, printing every failure in full.
+# Round 3: after-fix only, six rounds of 500, go test -json so each failure line has a time.
 name: bench-036
 
 on:
@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        round: [1, 2, 3]
+        round: [1, 2, 3, 4, 5, 6]
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -30,12 +30,13 @@ jobs:
         run: |
           go version
           set +e
-          go test -race -v -run '^TestRun_ClientDisconnectMidStreamRecordsSeenTokens$' \
-            -count=200 -timeout 5m ./cmd/gateway > bench.log 2>&1
+          go test -json -race -v -run '^TestRun_ClientDisconnectMidStreamRecordsSeenTokens$' \
+            -count=500 -timeout 8m ./cmd/gateway > bench.json 2>&1
           rc=$?
-          echo "exit=$rc pass=$(grep -c -- '--- PASS' bench.log) fail=$(grep -c -- '--- FAIL' bench.log) timeout=$(grep -c 'test timed out' bench.log) watchdog=$(grep -c 'watchdog:' bench.log)"
-          echo "::group::failures"
-          grep -n -B3 -A40 -- '--- FAIL' bench.log
+          pass=$(jq -r 'select(.Action=="pass" and .Test!=null) | .Test' bench.json 2>/dev/null | wc -l)
+          fail=$(jq -r 'select(.Action=="fail" and .Test!=null) | .Test' bench.json 2>/dev/null | wc -l)
+          echo "exit=$rc pass=$pass fail=$fail timeout=$(grep -c 'test timed out' bench.json) watchdog=$(grep -c 'watchdog:' bench.json)"
+          echo "::group::failure lines with times"
+          jq -r 'select(.Output!=null) | select(.Output|test("_test.go:[0-9]+:|--- FAIL|panic|watchdog")) | "\(.Time) \(.Output|rtrimstr("\n"))"' bench.json 2>/dev/null | head -200
           echo "::endgroup::"
-          tail -20 bench.log
           exit $rc
