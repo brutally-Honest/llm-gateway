@@ -436,6 +436,13 @@ the `show` clamp cannot overflow; `os.SameFile` holds across bind mounts.
 - **D61** (2026-11-23) V4, corrects D49: an unchanged huge file that cannot be proven in time
   and has no saved row gives one modified effect, the same class D2 accepts. It gives no
   effect only when a saved row's hash matches.
+- **D62** (2026-11-23) Threat model for 034, set by the human; it closes the review loop. In
+  scope is an attacker who controls the repo's contents: files, symlinks inside the repo,
+  `.git/config`, `.gitattributes` and `.git/index`. Out of scope are races that need a live
+  local process running as the user (renaming parent folders, or swapping in FIFOs or links
+  between two syscalls), because such a process can already read the user's files directly.
+  D43 (the FIFO window before `os.OpenRoot`) and the macOS parent-swap window in D57 fall
+  under that and stay recorded limits. No further review rounds run on this PR.
 
 ## Follow-ups (2026-11-23)
 
