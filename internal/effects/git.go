@@ -445,14 +445,14 @@ func safeRelPath(p string) bool {
 	return true
 }
 
-// configBools are core.filemode, core.trustctime, core.symlinks and
+// configBools are core.filemode, core.trustctime, core.symlinks, core.sparseCheckout and
 // sparse.expectFilesOutsideOfPatterns as `git config` prints them with --type=bool, one
 // "name value" per line. Exit code 1 means none is set: empty, every default. Any other
 // failure (a timeout, a bad boolean) is an error, so a failed call never silently
 // changes how files are compared.
 func (g *gitRunner) configBools(ctx context.Context, top string) (string, error) {
 	out, err := g.run(ctx, top, "config", "--type=bool", "--get-regexp",
-		`^(core\.(filemode|trustctime|symlinks)|sparse\.expectfilesoutsideofpatterns)$`)
+		`^(core\.(filemode|trustctime|symlinks|sparsecheckout)|sparse\.expectfilesoutsideofpatterns)$`)
 	if err != nil {
 		var exitErr *exec.ExitError
 		if ctx.Err() == nil && errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
@@ -506,6 +506,7 @@ type checker struct {
 	trustCtime bool // core.trustctime
 	symlinks   bool // core.symlinks
 	sparseOut  bool // sparse.expectFilesOutsideOfPatterns
+	sparseOn   bool // core.sparseCheckout
 	old        map[string]hashedFile
 	seen       map[string]hashedFile
 	dirOK      map[string]bool // work-tree folder (slash path) -> a real folder all the way down
@@ -527,16 +528,20 @@ func (c *checker) readConfig(out string) {
 			c.symlinks = on
 		case "sparse.expectfilesoutsideofpatterns":
 			c.sparseOut = on
+		case "core.sparsecheckout":
+			c.sparseOn = on
 		}
 	}
 }
 
 // presentOutsideSparse is whether a skip-worktree path is to be compared: since git 2.37
 // git status reports a skip-worktree file that exists in the work tree (written outside
-// the sparse patterns) as modified, unless sparse.expectFilesOutsideOfPatterns is set.
-// An absent file, or one below a symlinked folder, is unchanged.
+// the sparse patterns) as modified, but only when core.sparseCheckout is on and
+// sparse.expectFilesOutsideOfPatterns is not set; otherwise a skip-worktree entry is
+// unchanged whatever the work tree holds. An absent file, or one below a symlinked
+// folder, is unchanged.
 func (c *checker) presentOutsideSparse(path string) bool {
-	if c.sparseOut {
+	if !c.sparseOn || c.sparseOut {
 		return false
 	}
 	if i := strings.LastIndexByte(path, '/'); i >= 0 && !c.realDir(path[:i]) {

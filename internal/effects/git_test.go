@@ -884,6 +884,18 @@ func TestCandidates_SkipWorktree(t *testing.T) {
 		}
 		sameSet(t, dir)
 	})
+	t.Run("skip-worktree without sparse checkout is unchanged", func(t *testing.T) {
+		dir := repo(t)
+		write(t, filepath.Join(dir, "cfg"), "one\n")
+		commitAll(t, dir)
+		git(t, dir, "update-index", "--skip-worktree", "cfg")
+		write(t, filepath.Join(dir, "cfg"), "two\n")
+		got, err := newGitRunner(30*time.Second).candidates(context.Background(), dir)
+		if err != nil || len(got) != 0 {
+			t.Fatalf("got %v, %v", entrySet(got), err)
+		}
+		sameSet(t, dir)
+	})
 	t.Run("fallback ls-files path", func(t *testing.T) {
 		dir := setup(t)
 		git(t, dir, "update-index", "--split-index")

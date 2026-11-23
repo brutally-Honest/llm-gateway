@@ -47,7 +47,9 @@ Audit SEC-6: `gateway install` leaves the config folder `0775`/`0755` and `confi
 ## Edge cases
 - Unborn `HEAD` (fresh `git init`): every index entry is added.
 - Sparse checkout (`skip-worktree`): an absent file is not reported; a present one is
-  compared, as git ≥ 2.37 does. `assume-unchanged` entries are not reported.
+  compared, as git ≥ 2.37 does, only when `core.sparseCheckout` is on. A
+  `skip-worktree` entry without sparse checkout is not reported. `assume-unchanged`
+  entries are not reported.
 - A planted `.git/index` that is a FIFO, a device or huge never hangs or exhausts memory.
 - Racy entries (file mtime not older than the index): hashed, not trusted by stat.
 - Submodules (gitlinks) are not entered: running git in them is the same hole.
