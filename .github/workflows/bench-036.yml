@@ -1,4 +1,5 @@
 # Throwaway macOS bench for spec 036. Lives only on chore/036-macos-bench; never merged.
+# Round 2: after-fix only, three rounds, printing every failure in full.
 name: bench-036
 
 on:
@@ -9,15 +10,11 @@ permissions:
 
 jobs:
   bench:
-    name: bench (${{ matrix.label }})
+    name: bench (after-fix-5eb96f6 round ${{ matrix.round }})
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - label: before-main-a560277
-            ref: a560277d33d704e23ed7033e19916e00749f6776
-          - label: after-fix-5eb96f6
-            ref: 5eb96f62bc21a218713a3764859a68e4bc592ee4
+        round: [1, 2, 3]
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -25,7 +22,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Check out the code under test
-        run: git checkout --detach ${{ matrix.ref }} && git log --oneline -1
+        run: git checkout --detach 5eb96f62bc21a218713a3764859a68e4bc592ee4 && git log --oneline -1
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
@@ -37,5 +34,8 @@ jobs:
             -count=200 -timeout 5m ./cmd/gateway > bench.log 2>&1
           rc=$?
           echo "exit=$rc pass=$(grep -c -- '--- PASS' bench.log) fail=$(grep -c -- '--- FAIL' bench.log) timeout=$(grep -c 'test timed out' bench.log) watchdog=$(grep -c 'watchdog:' bench.log)"
-          tail -60 bench.log
+          echo "::group::failures"
+          grep -n -B3 -A40 -- '--- FAIL' bench.log
+          echo "::endgroup::"
+          tail -20 bench.log
           exit $rc
