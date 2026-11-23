@@ -227,7 +227,7 @@ func (g *gitRunner) candidates(ctx context.Context, top string) ([]gitEntry, err
 	// Every work-tree file is opened through this root, which refuses a path that leaves
 	// top through a symlink or "..". Without it no comparison is trustworthy, so the
 	// folder is skipped for this checkpoint.
-	root, err := os.OpenRoot(top)
+	root, err := openDirRoot(top)
 	if err != nil {
 		return nil, fmt.Errorf("open work tree %s: %w", top, err)
 	}
