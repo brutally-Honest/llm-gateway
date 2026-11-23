@@ -96,6 +96,33 @@ The race was never lost on Linux without the sleep, so "before" means with the s
 20/20 before, 0/300 after. The sleep and the trace prints were removed;
 `git diff --stat -- internal` showed only `internal/ui/stream_test.go`.
 
+## F2: the rate-limit wall clock
+
+`ratelimit.Middleware` took `time.Now`, and the `cmd/gateway` run tests start a real
+gateway, so a `Record` and the next `Admit` could fall in different minute windows. Now
+`Middleware(l, a, log, opts ...Option)` takes `WithClock(f)`. `cmd/gateway`'s `deps` has a
+`rateClock` field, which `serve` passes on only when it is set; `main` never sets it. Every
+gateway-starting rate-limit run test goes through `rlGateway`, which fixes the clock at
+2001-02-03 04:05:30 UTC, mid-window.
+
+The new `TestRun_RateLimitFixedClockAtMinuteBoundary` fixes the clock at 04:05:59.999. One
+call over the token limit gets 200, the next gets 429, and `X-Gateway-Ratelimit-Reset`
+must be `2001-02-03T04:06:00Z`. That reset value is only possible when the injected
+clock reaches the limiter.
+
+Wall-clock proof. `scratchpad/f2/boundary.py` launches `TestRun_TokensRecordedFromStream`
+80 to 102 ms before a real minute boundary, in 3 ms steps, 6 launches a minute for 8
+minutes. The first token Record comes about 80 ms after launch.
+
+| Binary | Launches | Failures |
+|---|---|---|
+| main (`go test -race -c`, built before any edit) | 48 | 1 (82 ms before: `run_ratelimit_test.go:212: upstream saw 2 calls, want 1`) |
+| this branch | 48 | 0 |
+
+An earlier scan of main with other offsets caught one more failure, at 91 ms. The window
+that fails is the gap between Record and the next Admit, about 1 to 10 ms, so the race is
+rare even when aimed at.
+
 ## Decisions
 - **D1** (2026-11-23) Number 041 as the brief says; 035 was planned for the speed fixes and
   is folded in here (spec header), so no 035 folder is created.
@@ -118,3 +145,11 @@ The race was never lost on Linux without the sleep, so "before" means with the s
   uses a temporary sleep in `Hub.dispatch`, removed before the commit.
 - **D6** (2026-11-23) F1 runs were sharded (10 processes × `-count=10`) instead of one
   `-count=500`: each run takes about 5 s, so 500 in one process take about 40 minutes.
+- **D7** (2026-11-23) F2's clock is a variadic `ratelimit.Option` plus a test-only `deps`
+  field, not `deps.now`, which is the crash-loop backoff clock (spec 025). The
+  `ratelimit.Middleware(l, a, log)` call stays valid and the seam matches the other
+  test-only `deps` fields.
+- **D8** (2026-11-23) The boundary test cannot compile against main, which has no clock
+  option, so "fails on main" is shown at the wall clock (1/48 on main, 0/48 after). The
+  in-repo test shows the clock is honoured through the fixed reset header. The
+  `internal/ratelimit` unit tests already used a fixed clock and are unchanged.
