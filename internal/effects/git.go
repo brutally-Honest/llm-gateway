@@ -626,9 +626,10 @@ type checker struct {
 	budget     time.Duration   // hashing budget, started by the first proven match
 	timed      bool            // ctx carries the budget deadline
 	cancel     context.CancelFunc
-	cut        bool         // a hash was stopped by its context
-	deferHuge  bool         // set aside stat-dirty files of maxHashSize or more
-	deferred   []indexEntry // the files set aside
+	afterLstat func(abs string) // tests only: runs between the Lstat and the open
+	cut        bool             // a hash was stopped by its context
+	deferHuge  bool             // set aside stat-dirty files of maxHashSize or more
+	deferred   []indexEntry     // the files set aside
 }
 
 func (c *checker) readConfig(out string) {
@@ -711,6 +712,9 @@ func (c *checker) changed(e indexEntry) bool {
 	if err != nil {
 		return true
 	}
+	if c.afterLstat != nil {
+		c.afterLstat(abs) // test hook: swap the path before it is opened
+	}
 	isLink := e.mode&0o170000 == 0o120000
 	asFile := false // a link entry kept as a regular file (core.symlinks=false)
 	switch {
@@ -774,6 +778,15 @@ func (c *checker) changed(e indexEntry) bool {
 		defer func() { _ = f.Close() }()
 		st, err := f.Stat()
 		if err != nil || !st.Mode().IsRegular() {
+			return true
+		}
+		// The path was swapped between the Lstat and the open, or the file changed under
+		// us: it is changed, and the size the deferral judged is not the size read (D52).
+		if !os.SameFile(fi, st) || st.Size() != fi.Size() || !st.ModTime().Equal(fi.ModTime()) {
+			return true
+		}
+		// A hash outside the budget never reads a huge file; the huge phase has its own.
+		if !c.timed && st.Size() >= maxHashSize {
 			return true
 		}
 		writeBlobHeader(h, st.Size())

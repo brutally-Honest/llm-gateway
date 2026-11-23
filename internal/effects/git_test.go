@@ -2,6 +2,8 @@ package effects
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -1353,5 +1355,42 @@ func TestCandidates_ModifiedFirstFileDoesNotSpendBudget(t *testing.T) {
 	}
 	if set := entrySet(got); len(set) != 1 || set[0] != "f0.txt tracked=true" {
 		t.Errorf("want only f0.txt listed, got %q", set)
+	}
+}
+
+// A path swapped between the Lstat and the open is changed, and is not read: here the
+// replacement holds the very content the index expects, so reading it would call it clean.
+func TestChanged_SwappedBetweenLstatAndOpenIsListedUnread(t *testing.T) {
+	dir := resolve(t.TempDir())
+	write(t, filepath.Join(dir, "a.txt"), "body")
+	root, err := openDirRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	sum := sha1.Sum([]byte("blob 4\x00body"))
+	e := indexEntry{path: "a.txt", mode: 0o100644, oid: hex.EncodeToString(sum[:]), size: 4}
+	swap := func(abs string) {
+		tmp := abs + ".swap"
+		write(t, tmp, "body")
+		if err := os.Rename(tmp, abs); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, hook := range []func(string){nil, swap} {
+		chk := &checker{
+			ctx: context.Background(), parent: context.Background(), budget: time.Minute,
+			top: dir, root: root, sha: sha1.New, fileMode: true, symlinks: true,
+			seen: map[string]hashedFile{}, dirOK: map[string]bool{}, deferHuge: true,
+			afterLstat: hook,
+		}
+		got := chk.changed(e)
+		chk.stopBudget()
+		if want := hook != nil; got != want {
+			t.Errorf("swapped=%v: changed = %v, want %v", hook != nil, got, want)
+		}
+		if hook != nil && len(chk.seen) != 0 {
+			t.Errorf("swapped file was cached: %v", chk.seen)
+		}
 	}
 }
