@@ -1078,3 +1078,62 @@ func TestGit_OutputCapKillsGit(t *testing.T) {
 		t.Errorf("run took %v; git was not killed at the cap", d)
 	}
 }
+
+// P2-b: when one pass cannot hash every stat-mismatched file inside the hashing budget,
+// each failed pass still keeps what it proved, so repeated checkpoints finish and the
+// answer is git status's.
+func TestCandidates_HashProgressSurvivesTimeout(t *testing.T) {
+	needGit(t)
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	dir := resolve(t.TempDir())
+	git(t, dir, "init", "-q")
+	const files = 400
+	body := strings.Repeat("x", 32<<10)
+	for i := range files {
+		write(t, filepath.Join(dir, fmt.Sprintf("f%03d.txt", i)), body)
+	}
+	commitAll(t, dir)
+	// Stat-different from the index but old enough to be cached: every file must be hashed.
+	past := time.Now().Add(-time.Hour)
+	for i := range files {
+		if err := os.Chtimes(filepath.Join(dir, fmt.Sprintf("f%03d.txt", i)), past, past); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(t, filepath.Join(dir, "f007.txt"), body+"changed")
+	write(t, filepath.Join(dir, "new.txt"), "new")
+
+	g := newGitRunner(30 * time.Second)
+	g.hashTimeout = 15 * time.Millisecond // long enough to walk the cache, too short for every file
+	failed, last := 0, -1
+	var got []gitEntry
+	var err error
+	for call := 0; call < 1000; call++ {
+		got, err = g.candidates(context.Background(), dir)
+		g.mu.Lock()
+		n := len(g.cache[dir])
+		g.mu.Unlock()
+		if n < last {
+			t.Fatalf("call %d: cache shrank from %d to %d", call, last, n)
+		}
+		last = n
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("call %d: %v", call, err)
+		}
+		failed++
+	}
+	if err != nil {
+		t.Fatalf("never finished; cache holds %d of %d files", last, files)
+	}
+	if failed == 0 {
+		t.Skip("one pass finished inside the budget; nothing to prove on this machine")
+	}
+	g2, w := entrySet(got), statusSet(t, dir)
+	if strings.Join(g2, "\n") != strings.Join(w, "\n") {
+		t.Errorf("candidates differ from git status\n got: %q\nwant: %q", g2, w)
+	}
+}

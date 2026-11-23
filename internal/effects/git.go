@@ -26,9 +26,12 @@ import (
 // (core.fsmonitor, hooks, signature programs, transports, lazy fetch, pager) and the
 // commands used never hash a work-tree file through a filter.
 type gitRunner struct {
-	bin     string // "" when git is not installed: every folder is scanned (E1)
-	timeout time.Duration
-	maxOut  int64 // stdout cap per call; 0 means maxGitOutput (tests lower it)
+	bin     string        // "" when git is not installed: every folder is scanned (E1)
+	timeout time.Duration // each git call
+	// hashTimeout is the budget for the Go comparison (hashing) in one candidates call;
+	// 0 means timeout. Separate so slow hashing and slow git cannot starve each other.
+	hashTimeout time.Duration
+	maxOut      int64 // stdout cap per call; 0 means maxGitOutput (tests lower it)
 
 	mu    sync.Mutex
 	cache map[string]map[string]hashedFile // by top, then path: files hashed equal to the index
@@ -199,10 +202,13 @@ type headEntry struct {
 // checked-in form differs from its raw form can be listed although git calls it clean
 // (research D2). Submodules are skipped (D4).
 func (g *gitRunner) candidates(ctx context.Context, top string) ([]gitEntry, error) {
-	// The whole Go comparison has the git timeout as a deadline: hashing a huge file
-	// cannot outlast it.
-	ctx, cancel := context.WithTimeout(ctx, g.timeout)
-	defer cancel()
+	// Each git call has its own g.timeout (runLimit). The Go comparison has a separate
+	// hashing budget, so slow hashing cannot starve git and git cannot starve hashing: a
+	// huge file cannot outlast it (S4), and what it proved before it ran out is kept (D-P2b).
+	hashBudget := g.hashTimeout
+	if hashBudget <= 0 {
+		hashBudget = g.timeout
+	}
 	head, err := g.headEntries(ctx, top)
 	if err != nil {
 		return nil, err
@@ -232,8 +238,12 @@ func (g *gitRunner) candidates(ctx context.Context, top string) ([]gitEntry, err
 		return nil, fmt.Errorf("open work tree %s: %w", top, err)
 	}
 	defer func() { _ = root.Close() }()
+	// The budget starts here, after the git calls it must not be charged for, and the first
+	// file is always tried: every call makes progress.
+	hashCtx, cancel := context.WithTimeout(ctx, hashBudget)
+	defer cancel()
 	chk := &checker{
-		ctx: ctx, top: top, root: root, sha: sha, indexMTime: indexMTime,
+		ctx: hashCtx, top: top, root: root, sha: sha, indexMTime: indexMTime,
 		fileMode: true, trustCtime: true, symlinks: true,
 		old: g.cachedFor(top), seen: map[string]hashedFile{},
 		dirOK: map[string]bool{},
@@ -272,7 +282,8 @@ func (g *gitRunner) candidates(ctx context.Context, top string) ([]gitEntry, err
 		case e.skipWorktree && !chk.presentOutsideSparse(e.path):
 			// skip-worktree and absent (or expected to be present: sparse.expectFilesOutsideOfPatterns)
 		default:
-			if err := ctx.Err(); err != nil {
+			if err := hashCtx.Err(); err != nil {
+				g.keepProgress(top, chk)
 				return nil, err
 			}
 			if chk.changed(e) {
@@ -286,7 +297,8 @@ func (g *gitRunner) candidates(ctx context.Context, top string) ([]gitEntry, err
 		}
 	}
 
-	if err := ctx.Err(); err != nil { // hashing stopped early: the answer is incomplete
+	if err := hashCtx.Err(); err != nil { // hashing stopped early: the answer is incomplete
+		g.keepProgress(top, chk)
 		return nil, err
 	}
 	g.storeCache(top, chk.seen)
@@ -461,6 +473,19 @@ func (g *gitRunner) configBools(ctx context.Context, top string) (string, error)
 		return "", err
 	}
 	return string(out), nil
+}
+
+// keepProgress stores the matches a call that ran out of hashing budget had proven (same
+// rules as a full pass, D21), plus the old entries it never reached, so the next
+// checkpoint starts where this one stopped. An old entry is stat-keyed, so a stale one is
+// never trusted.
+func (g *gitRunner) keepProgress(top string, chk *checker) {
+	for p, v := range chk.old {
+		if _, ok := chk.seen[p]; !ok {
+			chk.seen[p] = v
+		}
+	}
+	g.storeCache(top, chk.seen)
 }
 
 func (g *gitRunner) cachedFor(top string) map[string]hashedFile {
