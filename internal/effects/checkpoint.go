@@ -119,10 +119,14 @@ func (r *Runner) checkpoint(ctx context.Context, s *session) error {
 //
 // Roots are symlink-free paths (resolve), so a symlink at dir means the folder was
 // swapped for a link (`mv proj x; ln -s ~/.ssh proj`): it is reported as gone, never
-// followed. After the open, the root must be the very directory Lstat saw.
+// followed. dirIdentity refuses a link in any component, parents included (where it
+// can); after the open, the root must be the very directory it identified, so a parent
+// swapped after the walk lands on another inode and is reported as gone. A mismatch
+// is checked once more against a fresh identity: an expired autofs mount point changes
+// dev/ino when the open triggers the mount.
 func openDirRoot(dir string) (*os.Root, error) {
 	gone := &fs.PathError{Op: "open", Path: dir, Err: fs.ErrNotExist}
-	fi, err := os.Lstat(dir)
+	fi, err := dirIdentity(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -134,6 +138,11 @@ func openDirRoot(dir string) (*os.Root, error) {
 		return nil, err
 	}
 	opened, err := rt.Stat(".")
+	if err == nil && !os.SameFile(fi, opened) {
+		if again, aerr := dirIdentity(dir); aerr == nil && again.IsDir() && os.SameFile(again, opened) {
+			return rt, nil
+		}
+	}
 	if err != nil || !os.SameFile(fi, opened) {
 		_ = rt.Close()
 		return nil, gone

@@ -146,6 +146,46 @@ func TestEscape_RootSwappedForSymlink(t *testing.T) {
 	})
 }
 
+// A PARENT of the watched root swapped for a symlink (`mv base/x base/y; ln -s out
+// base/x`) is gone too: the same-named child root outside, with a saved row, is never read.
+func TestEscape_AncestorSwappedForSymlink(t *testing.T) {
+	for _, mode := range []string{"git", "scan"} {
+		t.Run(mode, func(t *testing.T) {
+			setup := func(root string) {
+				write(t, filepath.Join(root, "keep.txt"), "mine\n")
+				write(t, filepath.Join(root, "id_key"), "mine\n")
+				if mode == "git" {
+					needGit(t)
+					git(t, root, "init", "-q")
+					git(t, root, "add", "-A")
+					git(t, root, "commit", "-q", "-m", "c")
+				}
+			}
+			base := resolve(t.TempDir())
+			dir := filepath.Join(base, "x", "proj")
+			setup(dir)
+			out := resolve(t.TempDir())
+			setup(filepath.Join(out, "proj"))
+			ts := openStore(t)
+			r := newTestRunner(t, ts.st)
+			checkpointIn(t, r, dir)
+
+			// Outside has the secret in a file the saved rows know, changed after the baseline.
+			if err := os.Rename(filepath.Join(base, "x"), filepath.Join(base, "y")); err != nil {
+				t.Fatal(err)
+			}
+			symlink(t, out, filepath.Join(base, "x"))
+			write(t, filepath.Join(out, "proj", "keep.txt"), secretMark+" changed\n")
+			write(t, filepath.Join(out, "proj", "new.txt"), secretMark+" new\n")
+			checkpointIn(t, r, dir)
+			noSecretStored(t, ts)
+			for _, p := range []string{"keep.txt", "id_key", "new.txt"} {
+				notModifiedOrCreated(t, ts, filepath.Join(dir, p))
+			}
+		})
+	}
+}
+
 // A chain a -> b -> outside, both links inside the root, leads outside all the same.
 func TestEscape_SymlinkChain(t *testing.T) {
 	modes(t, func(t *testing.T, dir string, commit func()) {
