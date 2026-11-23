@@ -268,6 +268,18 @@ func decodeEntries(t *testing.T, data string) []map[string]any {
 	return out
 }
 
+// onlyExchange reports whether every entry in data belongs to exchange id (and there is one).
+func onlyExchange(t *testing.T, data, id string) bool {
+	t.Helper()
+	es := decodeEntries(t, data)
+	for _, en := range es {
+		if en["exchange_id"] != id {
+			return false
+		}
+	}
+	return len(es) > 0
+}
+
 // seedThree stores three exchanges of session k with parsed messages.
 func (e *streamEnv) seedThree() {
 	e.save("b", "k", "cc", 20)
@@ -1140,6 +1152,7 @@ func TestStream_ReplayOf20CallsResendsAtMostThePreviousCall(t *testing.T) {
 		t.Fatalf("snapshot = %+v", snap[0])
 	}
 	total := 0
+	c01Live := false
 	for i := 2; i <= 21; i++ {
 		id := e.saveReplayCall(i)
 		e.publish(id)
@@ -1148,6 +1161,13 @@ func TestStream_ReplayOf20CallsResendsAtMostThePreviousCall(t *testing.T) {
 			ev := s.nextData()
 			if ev.event == "entries" && strings.Contains(ev.data, `"exchange_id":"`+id+`"`) {
 				break
+			}
+			// Publish only queues c01: the hub may read it after the stream subscribed, and
+			// then sends it live as well as in the snapshot, where it is replaced (AC24, E18).
+			// That is allowed once, for c01 alone, and it may land after later commits too.
+			if ev.event == "entries" && !c01Live && onlyExchange(t, ev.data, "c01") {
+				c01Live = true
+				continue
 			}
 			if ev.event != "exchange" {
 				t.Fatalf("commit before %s: unexpected %s event", id, ev.event)
