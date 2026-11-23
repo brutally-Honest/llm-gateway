@@ -378,3 +378,74 @@ against git 2.53 with sparse checkout on and off; `readExactly` makes one capped
   `stat_linux.go` and `stat_bsd.go` cover; other systems only build.
 - **D53** (2026-11-23) The round-4 fixes (D47-D50) were not reviewed by a fifth round: the
   build allows a fourth round only on a round-3 P1.
+- **D54** (2026-11-23) Corrects D53: the human allowed a narrow fifth round over the round-4
+  commits only (51d8a98, 074a0bd, f6999f0, b86e3f6); no sixth round.
+- **D55** (2026-11-23) D43 (a FIFO swapped in between `Lstat` and `os.OpenRoot` can block) and
+  D48 (a repo whose git listing passes 64 MiB or 2M records, about 600k files, is skipped)
+  stay recorded limits of this PR.
+- **D56** (2026-11-23) PR #65's macOS job (run 45100294664) failed at the 10-minute test
+  timeout in `cmd/gateway`, stuck in `TestRun_ClientDisconnectMidStreamRecordsSeenTokens`
+  (`core.(*responseWatcher).Read`; the effects runner was idle in its sweep loop), while
+  Ubuntu passed. main's runs 45013800880 (5120e65) and 45001477758 (b4b2d6c) show the same
+  pattern: the macOS Test step failed after about 10 minutes and Ubuntu passed. So it is a
+  hang already on main, not caused by 034, which touches neither `cmd/`, `internal/core` nor
+  `internal/server`. It gets its own spec (036) and is not fixed here.
+
+## Review round 5 (opus, fresh context, 2026-11-23)
+
+Narrow, as D54 allows: only the round-4 commits 51d8a98, 074a0bd, f6999f0 and b86e3f6.
+Checked sound: `eachRecord` on empty output, a trailing NUL, doubled NULs and paths with tabs,
+spaces or newlines (`-z`, cut at the first tab); kept fields are copied, so nothing pins the
+output buffer; deferred huge files are never cached unproven and never lost on a full pass;
+the `show` clamp cannot overflow; `os.SameFile` holds across bind mounts.
+
+| # | Pri | Finding | Action |
+|---|---|---|---|
+| V1 | P1 | 51d8a98 guarded only the last component: `Lstat` and `os.OpenRoot` both follow links in parent folders, so a parent swapped for a link pointed a root at outside files (probe read the outside secret) | fixed 15a39d6 (D57) |
+| V2 | P2 | the free first hash ran on the budget clock; a modified same-size first file cached nothing and the next file failed the call, so the folder stalled at every checkpoint | fixed f9f1c58 (D58) |
+| V3 | P2 | the 4 GiB deferral used the `Lstat` size but the hash used the `fstat` size: a huge file renamed in between was hashed whole without a budget | fixed 59e12eb (D59) |
+| V4 | P3 | D49 said an unproven huge file "gives no effect"; with no saved row the runner records one modified effect | corrected (D61) |
+| V5 | P3 | an expired automount root gives a different inode before and after the open triggers it, so it looked gone | fixed with V1 (D57) |
+| V6 | P3 | the untracked and ignored listings had neither the record cap nor in-place parsing | fixed 7be9cf0 (D60) |
+| V7 | P4 | a root that legitimately becomes a symlink is treated as gone, unlogged, until a reload re-resolves it | accepted (D47); logging is a follow-up |
+| V8 | P4 | with `max_copy_bytes` of 64 MiB or more, a blob between 64 MiB and the limit has no before-version | accepted: the git output cap wins (D48) |
+
+- **D57** (2026-11-23) V1, V5: `openDirRoot` identifies a root by a no-follow walk from `/`. On
+  Linux each component is opened with `openat(O_DIRECTORY|O_NOFOLLOW|O_NONBLOCK)`, so a
+  link or non-directory anywhere in the path is gone. macOS's `syscall` has no `Openat`, so
+  there every prefix is `Lstat`ed before and after an `O_NOFOLLOW` open; a parent swapped and
+  restored between the two checks can still slip through. Other systems keep `Lstat`. After
+  `os.OpenRoot`, `rt.Stat(".")` must be `os.SameFile` with that identity; a mismatch is
+  identified once more before the root counts as gone, for an automount the open triggered.
+  Production roots and git's `top` are already resolved, and the macOS `/var` link was
+  checked by running the darwin logic on Linux under a symlinked `TMPDIR`. Rejected:
+  `openat2` with `RESOLVE_NO_SYMLINKS`, which needs golang.org/x/sys (a dependency), and an
+  `EvalSymlinks` equality check, which races.
+- **D58** (2026-11-23) V2, corrects D50: hashes run under the caller's ctx until one proves a
+  file equal to the index, and the budget clock starts then. The budget is checked only right
+  before a hash starts, so a file that needs no hash never fails the call. Rejected: starting
+  the budget at the second hash, since a second mismatch under a spent budget stalls again.
+  Limit: a run of mismatching files hashes without a time bound, in proportion to the
+  changed bytes, which the runner reads again anyway.
+- **D59** (2026-11-23) V3: when the opened file is not the one `Lstat` saw (inode, size or
+  mtime), `changed()` lists it as changed without reading it or caching it. No hash outside
+  the budget reads a file of 4 GiB or more. That cap has no test, because it would need a
+  multi-TiB sparse file.
+- **D60** (2026-11-23) V6: the untracked and ignored `ls-files` listings go through
+  `eachRecord` under the 2M-record cap and copy only the kept path, completing D48.
+- **D61** (2026-11-23) V4, corrects D49: an unchanged huge file that cannot be proven in time
+  and has no saved row gives one modified effect, the same class D2 accepts. It gives no
+  effect only when a saved row's hash matches.
+
+## Follow-ups (2026-11-23)
+
+Found in review round 5 but older than round 4, so not in this PR:
+
+- **P3** `internal/effects/checkpoint.go:309-358` (`readFile`, at 7be9cf0): any candidate of any size,
+  untracked or in scan mode, is streamed in full under the runner's lifetime ctx. A sparse
+  multi-TiB file holds up its session's checkpoints for a long time; f6999f0 adds unproven
+  tracked huge files to the same path. Possible fix: cap streamed hashing, or key the row by
+  size and mtime above a threshold.
+
+Also later, though from round 4 (accepted, V7): **P4** `internal/effects/checkpoint.go:127`
+(`openDirRoot`) should log once when a root is treated as gone because it became a symlink.
