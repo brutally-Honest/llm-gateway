@@ -1140,6 +1140,33 @@ func TestGit_ListingParsersAndRecordCap(t *testing.T) {
 	}
 }
 
+// The untracked and ignored listings obey the record cap too: more files than the cap
+// fails the call, while under it the answer is whole.
+func TestCandidates_UntrackedAndIgnoredListingsObeyRecordCap(t *testing.T) {
+	needGit(t)
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	dir := resolve(t.TempDir())
+	git(t, dir, "init", "-q")
+	write(t, filepath.Join(dir, ".gitignore"), "*.log\n")
+	write(t, filepath.Join(dir, "tracked.txt"), "t")
+	commitAll(t, dir)
+	for i := range 4 {
+		write(t, filepath.Join(dir, fmt.Sprintf("u%d.txt", i)), "u")
+		write(t, filepath.Join(dir, fmt.Sprintf("i%d.log", i)), "i")
+	}
+	g := newGitRunner(30 * time.Second)
+	got, err := g.candidates(context.Background(), dir)
+	if err != nil || len(got) != 8 {
+		t.Fatalf("under the cap: %q, %v", entrySet(got), err)
+	}
+	// 4 untracked files, 4 ignored ones: a cap of 3 trips on either listing.
+	g.maxRecords = 3
+	if _, err := g.candidates(context.Background(), dir); !errors.Is(err, errGitOutputTooLarge) {
+		t.Errorf("over the record cap: err = %v, want errGitOutputTooLarge", err)
+	}
+}
+
 // Past the cap git must be killed, not left blocked on a pipe nobody reads until the
 // timeout. The blob is well over the pipe buffer.
 func TestGit_OutputCapKillsGit(t *testing.T) {

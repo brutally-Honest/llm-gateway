@@ -339,20 +339,24 @@ func (g *gitRunner) candidates(ctx context.Context, top string) ([]gitEntry, err
 	if err != nil {
 		return nil, err
 	}
-	for _, p := range strings.Split(string(untracked), "\x00") {
-		if p != "" {
-			out = append(out, gitEntry{path: p})
+	if err := eachRecord(untracked, g.recordCap(), func(rec []byte) {
+		if len(rec) > 0 {
+			out = append(out, gitEntry{path: string(rec)})
 		}
+	}); err != nil {
+		return nil, err
 	}
 	ignored, err := g.run(ctx, top, "ls-files", "-z", "-o", "-i", "--exclude-standard", "--directory")
 	if err != nil {
 		return nil, err
 	}
-	for _, p := range strings.Split(string(ignored), "\x00") {
-		if p == "" || strings.HasSuffix(p, "/") {
-			continue // a git-ignored folder: its contents are not checked
+	if err := eachRecord(ignored, g.recordCap(), func(rec []byte) {
+		if len(rec) == 0 || rec[len(rec)-1] == '/' {
+			return // a git-ignored folder: its contents are not checked
 		}
-		out = append(out, gitEntry{path: p})
+		out = append(out, gitEntry{path: string(rec)})
+	}); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
