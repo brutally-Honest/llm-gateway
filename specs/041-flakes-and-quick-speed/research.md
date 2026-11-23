@@ -211,6 +211,43 @@ All are under 100 ms except the cold first request after a restart for since 11-
 range wider than any one day. That request fills the memo once (about 0.25 s of SQL for
 2,200 calls).
 
+## F3: CI output that keeps failures
+
+CI runs the Go tests through `.github/scripts/go-test-ci.sh`. It writes
+`go test -race -json` to `$RUNNER_TEMP/go-test.json`, then prints with jq (preinstalled on
+both runners):
+- go's own one-line summary for each package;
+- for every failed test, and for every failed package with output of its own (a panic,
+  a timeout, a build error), a `===== FAIL <pkg> <Test> =====` block holding every output
+  line, each with its event timestamp.
+
+It exits with go test's code. On Linux, `make verify` is split into `make lint`, the
+script and `make web-test`; macOS runs the script and `make web-test`. Job and step names
+are unchanged, and `make test` locally is unchanged.
+
+Checks:
+- A demo package (scratchpad `f3demo`, outside the repo) with a failing test, a failing
+  subtest, a panic and a build error printed each in full with timestamps, exit 1.
+- The whole repo through the script: exit 0, 22 lines for 22 packages, the same count as
+  plain `go test`.
+- shellcheck is clean. actionlint is not installed, so it was not run. The macOS path
+  (bash 3.2, BSD tools) was checked by reading only; CI on this PR is its first real run.
+
+## S3 and S4
+
+- S3: migration step 6 runs `DROP INDEX IF EXISTS events_tool_call` and
+  `DROP INDEX IF EXISTS events_principal`; no earlier step is edited and there is no
+  VACUUM. `TestStore_MigratesFromEmpty` now checks both are absent.
+  `TestOpen_MigratesStoreFromVersion5DroppingUnusedIndexes` builds a store with steps
+  1-5 and `user_version = 5` (as main leaves it), with an event row carrying
+  `tool_call_id`. Open must reach version 6 with both indexes gone, `events_content`
+  kept and the row readable. When the step was replaced by `SELECT 1`, both tests failed.
+- S4: `DigestCache.run` logs `ui digest compute failed` at debug when the error is
+  `context.Canceled` or `context.DeadlineExceeded` (wrapped or not), and at warn
+  otherwise. `TestDigestCache_ComputeFailureLevelFollowsCause` covers canceled, wrapped
+  deadline and another error. When the condition was forced false, the first two cases
+  failed.
+
 ## Decisions
 - **D1** (2026-11-23) Number 041 as the brief says; 035 was planned for the speed fixes and
   is folded in here (spec header), so no 035 folder is created.
@@ -264,3 +301,10 @@ range wider than any one day. That request fills the memo once (about 0.25 s of 
   burst costs one fetch per 5 s.
 - **D12** (2026-11-23) S2 is two commits, the Go totals then the JS throttle, after one
   `make verify` of the whole tree. Neither part's tests depend on the other.
+- **D13** (2026-11-23) F3 uses jq over `go test -json`, not gotestsum, which would be a
+  new dependency, nor a Go formatter in the repo, which would be code to keep for CI
+  alone. jq ships on both GitHub runners. The JSON file stays on the runner and is not
+  uploaded: an upload step would add an action.
+- **D14** (2026-11-23) S4 logs a `DeadlineExceeded` (a compute past `buildTimeout`) at
+  debug too, as the brief says. A slow build that times out while the gateway is not
+  shutting down is then quiet at info level; its waiters still get the error.
