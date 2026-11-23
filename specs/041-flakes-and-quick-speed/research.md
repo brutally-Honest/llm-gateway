@@ -159,6 +159,58 @@ Both behaviours are changed on purpose here. New tests:
 - `TestExchange_CachedCurrentViewGivesTitleAndNumber`
 - `TestExchange_OlderCachedViewGivesNoTitleOrNumber`
 
+## S2: today's totals
+
+Where the time went (temporary timing test on the copy, read-only; today = 561 calls,
+since 11-15 = 2,217):
+
+| Part | today | since 11-15 |
+|---|---|---|
+| `ExchangesSince` (full rows) | 22-30 ms | ≈100 ms |
+| `SessionStats` (every event of every call) | ≈195 ms | 3.15-3.35 s |
+| `HookSessionsSince`, `EffectTotalsSince`, `hourlyBuckets` | ≈2 ms each | ≈3 ms each |
+
+`SessionStats` reads about 420 events per call, mostly message and tool_call rows, but
+the totals need only the `request` and `usage` events.
+
+Fix:
+- `CallMemo` holds each parsed call's `timeline.CallUsage` by request ID, capped at
+  50,000 entries and reset when full.
+- `ExchangeStubsSince` lists the calls without headers or bodies. It searches
+  `exchanges_started_at`, then sorts the request_id tie-break in a temp B-tree.
+- A memo miss reads only the request and usage events (`CallEvents`, events primary key).
+- Totals are summed again for each request from the stubs.
+
+Why the memo is safe:
+- `SaveParse` sets `parse` and inserts the events in one transaction, and a call's events
+  are inserted once (primary key `request_id, seq`). So a call with `parse` set never
+  changes, and only those are memoised. Unparsed calls are read again on every request.
+- Price tables are static for the process.
+- A new `since` lists its own stubs, so another day's totals are never served.
+- `TestToday_MemoisedEqualsReference` compares the response bytes with the old
+  computation, kept as a test-only reference, over a wide fixture and many `since`
+  values. It runs on a cold memo, a warm one, and after a new call, a late parse and a
+  new hook.
+
+UI: `scheduleToday` fetches at once when no fetch ran in the last 5 s, otherwise when the
+5 s are up. Fetches never overlap, and the last event of a burst is always followed by a
+fetch that starts after it. Four node tests cover this; they fail on the old app.js.
+
+| Measure (store copy, `curl -w %{time_total}`) | Before (main) | After |
+|---|---|---|
+| since today, cold first request after a restart | 0.214-0.24 s | 0.075-0.077 s |
+| since today, repeated | 0.20-0.24 s | 0.011-0.012 s |
+| since today, first request after a new call (`burst.sh 1 0`) | 0.235-0.245 s | 0.012-0.013 s |
+| since 11-15, cold first request after a restart | 2.88-3.42 s | 0.49-0.57 s |
+| since 11-15, repeated | 2.86-3.3 s | 0.023 s |
+| since 11-15, first request after a new call | 3.1-3.3 s | 0.022 s |
+| `/api/today` requests, 20 calls 1 s apart (`burst-count.sh … 1`) | 22 | 8: 3 at page load, then 10.2, 15.2, 20.2, 25.2, 30.2 s (last event ≈28 s) |
+| same, 20 calls 0.2 s apart | 3 | 5: page load at 0, 0.15 and 5.1 s, then 10.1 and 15.1 s (burst 8-12.2 s) |
+
+All are under 100 ms except the cold first request after a restart for since 11-15, a
+range wider than any one day. That request fills the memo once (about 0.25 s of SQL for
+2,200 calls).
+
 ## Decisions
 - **D1** (2026-11-23) Number 041 as the brief says; 035 was planned for the speed fixes and
   is folded in here (spec header), so no 035 folder is created.
@@ -198,3 +250,17 @@ Both behaviours are changed on purpose here. New tests:
   It would flip if views carried a stable call number (one that is never renumbered).
   The first version served the title from any view; it was gated in a follow-up before
   the commit.
+- **D10** (2026-11-23) S2 uses a per-call memo, not one aggregate query and not a
+  whole-response cache. Thesis for SQL: no Go state. Against: cost needs JSON parsing,
+  the model, the protocol's price book and the start time, which would duplicate
+  `internal/cost` in SQL. Thesis for a response cache keyed by (since, hours, store
+  version): a repeat costs one version query. Against: parse landings have no cheap global
+  version (events has no rowid), and the first request after a new call would recompute
+  everything. The memo makes that case cheap, and repeats are already 11-23 ms.
+  Flips if pricing moves into the database, or the stub list stops being cheap.
+- **D11** (2026-11-23) The throttle fires at once on the first event of a burst
+  (leading), then at most every 5 s with a guaranteed trailing fetch. The old code waited
+  500 ms after the last event, so a quiet single event now shows its totals sooner, and a
+  burst costs one fetch per 5 s.
+- **D12** (2026-11-23) S2 is two commits, the Go totals then the JS throttle, after one
+  `make verify` of the whole tree. Neither part's tests depend on the other.
