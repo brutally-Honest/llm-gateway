@@ -1,4 +1,4 @@
-# Every PR and every push to main (spec 026, ADR 0019): Linux runs make verify (lint included); macOS runs the tests only, lint is Linux-only (spec 031).
+# Every PR and every push to main (spec 026, ADR 0019): Linux runs lint, the Go tests (through .github/scripts/go-test-ci.sh) and the web tests; macOS runs the Go tests (same script) and the web tests. Lint is Linux-only (spec 031).
 name: verify
 
 on:
@@ -88,12 +88,16 @@ jobs:
           make setup-git setup-shellcheck setup-node
           go mod download
 
+      # go-test-ci.sh keeps a failing test's full output with timestamps in the log.
       - name: Verify (Linux)
         if: runner.os == 'Linux'
-        run: make verify
+        run: |
+          make lint || exit 1
+          .github/scripts/go-test-ci.sh || exit 1
+          make web-test || exit 1
 
       - name: Test (macOS)
         if: runner.os == 'macOS'
         run: |
-          make test
-          make web-test
+          .github/scripts/go-test-ci.sh || exit 1
+          make web-test || exit 1
