@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"hash"
 	"io"
 	"io/fs"
 	"os"
@@ -236,8 +237,13 @@ func (r *Runner) checkRoot(ctx context.Context, s *session, root string, saved m
 		if seen && prev.size == size && prev.mtimeNS == mtime {
 			continue
 		}
-		hash, data, err := r.readFile(rt, rel, size)
+		hash, data, err := r.readFile(ctx, rt, rel, size)
 		if err != nil {
+			if ctx.Err() != nil {
+				// Stopped mid-file: end the checkpoint unsaved so every file, this one
+				// included, is judged again against the old rows next time.
+				return nil, ctx.Err()
+			}
 			continue // unreadable now; checked again next time
 		}
 		st := fileState{size: size, mtimeNS: mtime, hash: hash}
@@ -274,15 +280,28 @@ func (r *Runner) checkRoot(ctx context.Context, s *session, root string, saved m
 // readFile hashes the file rel in rt. It is opened without blocking (a FIFO swapped in
 // after the Lstat must not hang the open) and must still be a regular file. A text file (no NUL in its head) no larger than the
 // copy limit is read whole and returned as its copy; anything else is hashed as a stream
-// and has no copy (E3).
-func (r *Runner) readFile(rt *os.Root, rel string, size int64) (string, []byte, error) {
+// and has no copy (E3). The stream is hashed in chunks that stop when ctx ends (the ctx
+// error is returned); a file that grows or shrinks while it is read is an error too, and
+// both are tried again at the next checkpoint.
+func (r *Runner) readFile(ctx context.Context, rt *os.Root, rel string, size int64) (string, []byte, error) {
 	f, err := rt.OpenFile(rel, os.O_RDONLY|oNonblock, 0)
 	if err != nil {
 		return "", nil, err
 	}
 	defer func() { _ = f.Close() }()
-	if st, err := f.Stat(); err != nil || !st.Mode().IsRegular() {
+	st, err := f.Stat()
+	if err != nil || !st.Mode().IsRegular() {
 		return "", nil, errors.New("not a regular file")
+	}
+	// stream hashes the rest of f, given how many bytes were already read from it.
+	stream := func(h hash.Hash, done int64) error {
+		if !hashChunks(ctx, h, f, st.Size()-done) {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return errors.New("file changed while it was read")
+		}
+		return nil
 	}
 	head := make([]byte, headBytes)
 	n, err := io.ReadFull(f, head)
@@ -302,14 +321,14 @@ func (r *Runner) readFile(rt *os.Root, rel string, size int64) (string, []byte, 
 		}
 		h := sha256.New()
 		_, _ = h.Write(data)
-		if _, err := io.Copy(h, f); err != nil {
+		if err := stream(h, int64(len(data))); err != nil {
 			return "", nil, err
 		}
 		return hex.EncodeToString(h.Sum(nil)), nil, nil
 	}
 	h := sha256.New()
 	_, _ = h.Write(head)
-	if _, err := io.Copy(h, f); err != nil {
+	if err := stream(h, int64(len(head))); err != nil {
 		return "", nil, err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil, nil

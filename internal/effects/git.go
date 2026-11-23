@@ -686,7 +686,7 @@ func (c *checker) changed(e indexEntry) bool {
 			return true
 		}
 		writeBlobHeader(h, st.Size())
-		if !c.hashChunks(h, f, st.Size()) {
+		if !hashChunks(c.ctx, h, f, st.Size()) {
 			return true
 		}
 	}
@@ -704,11 +704,11 @@ func (c *checker) changed(e indexEntry) bool {
 // hashChunks feeds exactly size bytes of f to h, a megabyte at a time, and stops when the
 // context ends, so a huge file cannot outlast the deadline. False when f is shorter or
 // longer than size, a read fails, or the context ended.
-func (c *checker) hashChunks(h hash.Hash, f io.Reader, size int64) bool {
+func hashChunks(ctx context.Context, h hash.Hash, f io.Reader, size int64) bool {
 	buf := make([]byte, 1<<20)
 	var total int64
 	for total < size {
-		if c.ctx.Err() != nil {
+		if ctx.Err() != nil {
 			return false
 		}
 		n, err := f.Read(buf[:min(int64(len(buf)), size-total)])
