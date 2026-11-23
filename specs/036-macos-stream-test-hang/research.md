@@ -210,3 +210,23 @@ also passed with `-race -count=3` (35 s), so the watchdog did not trip on any te
   - The repro script was a scratch file. The command and the table above describe it
     in full: the four conditions were run in sequence, and hogs are `nproc` shell busy
     loops started before the condition and killed after it.
+- **D9** (2026-11-23) macOS bench, with the human's go-ahead: draft PR #67 from
+  `chore/036-macos-bench`, never merged. It ran on `macos-latest`, go1.25.4
+  darwin/arm64. Each job ran `go test -race -v -run
+  '^TestRun_ClientDisconnectMidStreamRecordsSeenTokens$' -count=N ./cmd/gateway`.
+
+  | Code | Run | Jobs × count | Result |
+  |---|---|---|---|
+  | main a560277 (before) | 45186491823 | 1 × 200, `-timeout 5m` | hang after 5 passes; `test timed out` at 5 m |
+  | fix 5eb96f6 (after) | 45186491823 | 1 × 200, `-timeout 5m` | 199 pass, 1 fail, no hang, no watchdog |
+  | fix 5eb96f6 (after) | 45187715348 | 3 × 200, `-timeout 5m` | 600/600 |
+  | fix 5eb96f6 (after) | 45188482725 | 6 × 500, `-timeout 8m`, `-json` | 3000/3000 |
+
+  After the fix: 0 hangs and 1 failure in 3800 iterations. The one failure's message is
+  lost: the first workflow printed only the last 60 lines of the log, and the failing
+  iteration came earlier. Its run crossed a minute boundary (13:42:57 to 13:43:12 UTC),
+  which fits the wall-clock window reset in D8. But that is not shown: 3600 later
+  iterations, which crossed many boundaries, did not fail again. So the cause is
+  **unknown**, and AC4 holds for hangs only, not as a clean 3800/3800. The roadmap
+  item for the limiter's test clock (D8) is the likely fix if it recurs. The watchdog
+  and the `-json` timestamps will show it then.
