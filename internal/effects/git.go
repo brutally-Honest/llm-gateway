@@ -255,7 +255,7 @@ func (g *gitRunner) candidates(ctx context.Context, top string) ([]gitEntry, err
 		ctx: hashCtx, top: top, root: root, sha: sha, indexMTime: indexMTime,
 		fileMode: true, trustCtime: true, symlinks: true,
 		old: g.cachedFor(top), seen: map[string]hashedFile{},
-		dirOK: map[string]bool{},
+		dirOK: map[string]bool{}, deferHuge: true,
 	}
 	cfg, err := g.configBools(ctx, top)
 	if err != nil {
@@ -309,6 +309,25 @@ func (g *gitRunner) candidates(ctx context.Context, top string) ([]gitEntry, err
 	if err := hashCtx.Err(); err != nil { // hashing stopped early: the answer is incomplete
 		g.keepProgress(top, chk)
 		return nil, err
+	}
+	// Files of 4 GiB or more were set aside: one can outlast any budget, and would fail
+	// every call and skip the folder for good. They get one budget of their own, after
+	// every other file is judged. A file not proven equal to the index when that budget
+	// ends is listed as changed (a false "maybe changed" is safe: the checkpoint reads the
+	// file itself) and not cached. Only the caller's own context ends the call.
+	if len(chk.deferred) > 0 {
+		hugeCtx, cancelHuge := context.WithTimeout(ctx, hashBudget)
+		defer cancelHuge()
+		chk.ctx, chk.deferHuge = hugeCtx, false
+		for _, e := range chk.deferred {
+			if chk.changed(e) {
+				out = append(out, gitEntry{path: e.path, tracked: true})
+			}
+		}
+		if err := ctx.Err(); err != nil {
+			g.keepProgress(top, chk)
+			return nil, err
+		}
 	}
 	g.storeCache(top, chk.seen)
 
@@ -599,6 +618,8 @@ type checker struct {
 	old        map[string]hashedFile
 	seen       map[string]hashedFile
 	dirOK      map[string]bool // work-tree folder (slash path) -> a real folder all the way down
+	deferHuge  bool            // set aside stat-dirty files of maxHashSize or more
+	deferred   []indexEntry    // the files set aside
 }
 
 func (c *checker) readConfig(out string) {
@@ -663,6 +684,10 @@ func (c *checker) realDir(rel string) bool {
 	return ok
 }
 
+// maxHashSize is the size from which a stat-dirty tracked file is listed without hashing:
+// the index stores sizes as 32 bits.
+const maxHashSize = 1 << 32
+
 // changed reports whether the work-tree file of index entry e differs from the index:
 // missing (or below a symlinked folder), a different kind, a different executable bit, a
 // different size, or different raw content. A file whose size, mtime, ctime and inode
@@ -701,6 +726,13 @@ func (c *checker) changed(e indexEntry) bool {
 		uint32(fi.ModTime().Nanosecond()) == e.mtimeNsec &&
 		(!haveIDs || (uint32(ino) == e.ino &&
 			(!c.trustCtime || (uint32(csec) == e.ctimeSec && uint32(cnsec) == e.ctimeNsec)))) {
+		return false
+	}
+	if fi.Size() >= maxHashSize && !isLink && c.deferHuge {
+		// The index keeps a size mod 2^32, so a size match proves nothing here, and hashing
+		// a file this big can outlast the budget at every call. It is hashed after every
+		// other file, on a budget of its own (see candidates).
+		c.deferred = append(c.deferred, e)
 		return false
 	}
 	id := hashedFile{size: fi.Size(), mtimeNs: fi.ModTime().UnixNano(), ctimeNs: csec*1e9 + cnsec, ino: ino, oid: e.oid}

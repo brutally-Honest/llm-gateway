@@ -1218,3 +1218,42 @@ func TestCandidates_HashProgressSurvivesTimeout(t *testing.T) {
 		t.Errorf("candidates differ from git status\n got: %q\nwant: %q", g2, w)
 	}
 }
+
+// The index keeps a size mod 2^32, so a sparse file of 2^35+5 bytes passes the size check
+// against an index size of 5. Hashing it cannot finish in the budget, which used to fail
+// every call with a deadline error and skip the folder for good. It is listed as a tracked
+// change without being hashed. The expected answer is stated, not read from git status:
+// git would hash the 32 GiB file itself.
+func TestCandidates_HugeSparseFileIsListedNotHashed(t *testing.T) {
+	needGit(t)
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	dir := resolve(t.TempDir())
+	git(t, dir, "init", "-q")
+	write(t, filepath.Join(dir, "huge.bin"), "12345")
+	write(t, filepath.Join(dir, "small.txt"), "same")
+	commitAll(t, dir)
+	huge := filepath.Join(dir, "huge.bin")
+	if err := os.Truncate(huge, 1<<35+5); err != nil {
+		t.Skipf("no sparse files here: %v", err)
+	}
+	if fi, err := os.Stat(huge); err != nil || fi.Size() != 1<<35+5 {
+		t.Skipf("no sparse files here: %v", err)
+	}
+	g := newGitRunner(30 * time.Second)
+	g.hashTimeout = 50 * time.Millisecond
+	got, err := g.candidates(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("candidates: %v", err)
+	}
+	want := []string{"huge.bin tracked=true"}
+	if g2 := entrySet(got); strings.Join(g2, "\n") != strings.Join(want, "\n") {
+		t.Errorf("got %q, want %q", g2, want)
+	}
+	g.mu.Lock()
+	_, cached := g.cache[dir]["huge.bin"]
+	g.mu.Unlock()
+	if cached {
+		t.Error("an unproven huge file was cached")
+	}
+}
