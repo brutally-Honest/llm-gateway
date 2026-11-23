@@ -52,6 +52,50 @@ read of `events` is `Reader.Events` (`internal/store/reader.go:284`):
 `SEARCH events USING PRIMARY KEY (request_id=?)`. Outside `internal/store` only
 `internal/ui/api_timeline_test.go` names the events table.
 
+## F1: the stream replay flake
+
+Evidence: `scratchpad/f1/event_order.md` and `instr_fail.txt` (session scratchpad, not kept).
+
+Event order of the failure:
+1. The test saves c01 and calls `hub.Publish("c01")`, which only queues the commit.
+2. The test opens the session stream; it subscribes, then the snapshot sends c01 and the
+   hooks at position Row=1.
+3. The dispatcher handles c01 late. The stream now watches the session, so the hub reads
+   and sends c01. The test had already saved c02, so the read is stale (store at ExCount 2,
+   cached build at 1) and c01 goes to catch-up.
+4. Catch-up rebuilds at ExCount 2 (Row=2, not behind the snapshot) and sends a live batch:
+   `entries` for c01, then `exchange` events. The test, in round i=2, wanted only
+   `exchange` events before c02's `entries`, and failed at `stream_test.go:1153`.
+
+The stream is right by the 009 contract. AC24: "The snapshot is taken after the stream
+is subscribed, so no exchange committed around the open is missed; one sent both in the
+snapshot and live is replaced, never duplicated." E18: "an exchange already in the
+timeline answer arrives again in the snapshot and replaces itself". The test's
+expectation was wrong. The brief's suspicion was close: the catch-up only sends c01
+because the hub dispatched c01's commit after the stream subscribed. Without c02 saved
+first, c01 arrives as a plain live `entries` event, which fails the same way.
+
+Fix (test only): the loop accepts exactly one `entries` event whose entries all belong to
+c01, in any round. With a wider delay, c01 can land after c02's commit; a first version
+that allowed it only in round 2 failed 27/100. A second c01 event, or an `entries` event
+for any other exchange, still fails. "Resends at most the previous call" and
+`total <= 19` are unchanged.
+
+Rates (`ui.test` built with `go test -race -c`, each run inside
+`systemd-run --user --scope -p MemoryMax=6G`):
+
+| Code | Load | Command | Failures |
+|---|---|---|---|
+| main test, main product code | none, GOMAXPROCS=1 | `ui.test -test.run '^TestStream_ReplayOf20CallsResendsAtMostThePreviousCall$' -test.count=500 -test.v`, stopped at 51 runs | 0/51 |
+| main test, 60 ms sleep at the top of `Hub.dispatch` (temporary) | GOMAXPROCS=1 | 5 shards × 4 `-test.count=1` | 20/20 |
+| new test, same temporary sleep | GOMAXPROCS=1 | 3 rounds × 10 shards × `-test.count=10` | 0/300 |
+| new test, product code unchanged | 10 busy loops, GOMAXPROCS=1 | 3 rounds × 10 shards × `-test.count=10` | 0/100, 0/100, 0/100 |
+| new test, product code unchanged | 10 busy loops, GOMAXPROCS=4 | same | 0/100, 0/100, 0/100 |
+
+The race was never lost on Linux without the sleep, so "before" means with the sleep:
+20/20 before, 0/300 after. The sleep and the trace prints were removed;
+`git diff --stat -- internal` showed only `internal/ui/stream_test.go`.
+
 ## Decisions
 - **D1** (2026-11-23) Number 041 as the brief says; 035 was planned for the speed fixes and
   is folded in here (spec header), so no 035 folder is created.
@@ -61,3 +105,16 @@ read of `events` is `Reader.Events` (`internal/store/reader.go:284`):
   be asked for. The < 100 ms target is checked on both.
 - **D3** (2026-11-23) `make verify` times are wall time with Go's test cache as it was;
   the cache state is recorded beside each, since it changes the time more than the code.
+- **D4** (2026-11-23) The S3 migration is one-way like every step: `migrate` refuses a
+  database whose `user_version` is above the binary's step count, so after the new step
+  a main-built gateway will not open the store. No down-migration is added: the step only
+  drops two indexes, and rolling back means `CREATE INDEX` of both and
+  `PRAGMA user_version = 5` by hand. Spec E6 corrected to say so (it first claimed an older
+  binary still opens the store, which is wrong).
+- **D5** (2026-11-23) F1 is fixed in the test, not the stream: by 009 AC24 and E18, a
+  snapshotted exchange may also arrive live and replaces itself. No product behaviour
+  changes. No deterministic test of the race was added: it depends on when the
+  dispatcher goroutine runs, and no existing seam forces that without a sleep. The proof
+  uses a temporary sleep in `Hub.dispatch`, removed before the commit.
+- **D6** (2026-11-23) F1 runs were sharded (10 processes × `-count=10`) instead of one
+  `-count=500`: each run takes about 5 s, so 500 in one process take about 40 minutes.

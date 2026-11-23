@@ -74,5 +74,6 @@ S4 are fixed and measured before and after on a copy of a real store.
   totals must still be fetched once after it (AC5).
 - **E5** (S2): the day changes; totals keyed to an older day must never be served
   (AC5).
-- **E6** (S3): a store opened by an older binary after the migration still works; the
-  dropped indexes are not needed by any query (AC6).
+- **E6** (S3): a store already migrated by main opens and gains the new step; no query
+  needs the dropped indexes. An older binary refuses the migrated store, as with every
+  migration (`migrate` rejects a newer schema; research D4) (AC6).
