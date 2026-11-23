@@ -1306,3 +1306,52 @@ func TestCandidates_SpentBudgetStillMakesProgress(t *testing.T) {
 		t.Errorf("unchanged files listed: %q", entrySet(got))
 	}
 }
+
+// A first file modified to the same size is proven different by the free hash. That hash
+// must not spend the budget: the calls still make progress, and finish with the file listed.
+func TestCandidates_ModifiedFirstFileDoesNotSpendBudget(t *testing.T) {
+	needGit(t)
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	dir := resolve(t.TempDir())
+	git(t, dir, "init", "-q")
+	const files = 5
+	for i := range files {
+		write(t, filepath.Join(dir, fmt.Sprintf("f%d.txt", i)), "body")
+	}
+	commitAll(t, dir)
+	write(t, filepath.Join(dir, "f0.txt"), "bodY") // same size, different content
+	past := time.Now().Add(-time.Hour)
+	for i := range files {
+		if err := os.Chtimes(filepath.Join(dir, fmt.Sprintf("f%d.txt", i)), past, past); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g := newGitRunner(30 * time.Second)
+	g.hashTimeout = time.Nanosecond
+	last := 0
+	var got []gitEntry
+	var err error
+	for call := 1; call <= 3*files; call++ {
+		got, err = g.candidates(context.Background(), dir)
+		g.mu.Lock()
+		n := len(g.cache[dir])
+		g.mu.Unlock()
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("call %d: %v", call, err)
+		}
+		if n <= last {
+			t.Fatalf("call %d made no progress: cache holds %d files", call, n)
+		}
+		last = n
+	}
+	if err != nil {
+		t.Fatalf("never finished: %v", err)
+	}
+	if set := entrySet(got); len(set) != 1 || set[0] != "f0.txt tracked=true" {
+		t.Errorf("want only f0.txt listed, got %q", set)
+	}
+}

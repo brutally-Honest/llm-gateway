@@ -251,18 +251,16 @@ func (g *gitRunner) candidates(ctx context.Context, top string) ([]gitEntry, err
 	if err != nil {
 		return nil, err
 	}
-	// The budget starts here, after the last git call before hashing, so no git call is
-	// charged to it. The first file that needs a hash is hashed whole under ctx, not under
-	// the budget, so every call proves at least one file: a budget already spent cannot
-	// stop a call from making progress (D50).
-	hashCtx, cancel := context.WithTimeout(ctx, hashBudget)
-	defer cancel()
+	// The budget does not run yet: hashes run under ctx alone until one proves a file equal
+	// to the index, and the budget starts then (D51). So the free hashes cannot spend it,
+	// and every call proves at least one file unless the caller's own context ends it (D50).
 	chk := &checker{
-		ctx: hashCtx, parent: ctx, top: top, root: root, sha: sha, indexMTime: indexMTime,
+		ctx: ctx, parent: ctx, budget: hashBudget, top: top, root: root, sha: sha, indexMTime: indexMTime,
 		fileMode: true, trustCtime: true, symlinks: true,
 		old: g.cachedFor(top), seen: map[string]hashedFile{},
 		dirOK: map[string]bool{}, deferHuge: true,
 	}
+	defer chk.stopBudget()
 	chk.readConfig(cfg)
 
 	var out []gitEntry
@@ -293,11 +291,7 @@ func (g *gitRunner) candidates(ctx context.Context, top string) ([]gitEntry, err
 		case e.skipWorktree && !chk.presentOutsideSparse(e.path):
 			// skip-worktree and absent (or expected to be present: sparse.expectFilesOutsideOfPatterns)
 		default:
-			// The budget is checked before every file but the first one that needs a hash.
-			if err := hashCtx.Err(); err != nil && chk.hashes > 0 {
-				g.keepProgress(top, chk)
-				return nil, err
-			}
+			// The budget is checked inside changed, only before a hash starts.
 			if chk.changed(e) {
 				out = append(out, gitEntry{path: e.path, tracked: true})
 			}
@@ -313,7 +307,10 @@ func (g *gitRunner) candidates(ctx context.Context, top string) ([]gitEntry, err
 	// budget that ran out with nothing left to hash is not a failure.
 	if chk.cut {
 		g.keepProgress(top, chk)
-		return nil, hashCtx.Err()
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return nil, context.DeadlineExceeded
 	}
 	// Files of 4 GiB or more were set aside: one can outlast any budget, and would fail
 	// every call and skip the folder for good. They get one budget of their own, after
@@ -321,9 +318,11 @@ func (g *gitRunner) candidates(ctx context.Context, top string) ([]gitEntry, err
 	// ends is listed as changed (a false "maybe changed" is safe: the checkpoint reads the
 	// file itself) and not cached. Only the caller's own context ends the call.
 	if len(chk.deferred) > 0 {
+		chk.stopBudget()
 		hugeCtx, cancelHuge := context.WithTimeout(ctx, hashBudget)
 		defer cancelHuge()
-		chk.ctx, chk.deferHuge, chk.hashes = hugeCtx, false, 1 // a huge file never gets the free first hash
+		// A huge file never gets a free hash: its budget runs from the start.
+		chk.ctx, chk.deferHuge, chk.budget, chk.timed = hugeCtx, false, 0, true
 		for _, e := range chk.deferred {
 			if chk.changed(e) {
 				out = append(out, gitEntry{path: e.path, tracked: true})
@@ -623,11 +622,13 @@ type checker struct {
 	old        map[string]hashedFile
 	seen       map[string]hashedFile
 	dirOK      map[string]bool // work-tree folder (slash path) -> a real folder all the way down
-	parent     context.Context // the caller's context, for the first hash (no budget)
-	hashes     int             // hashes started so far
-	cut        bool            // a hash was stopped by its context
-	deferHuge  bool            // set aside stat-dirty files of maxHashSize or more
-	deferred   []indexEntry    // the files set aside
+	parent     context.Context // the caller's context
+	budget     time.Duration   // hashing budget, started by the first proven match
+	timed      bool            // ctx carries the budget deadline
+	cancel     context.CancelFunc
+	cut        bool         // a hash was stopped by its context
+	deferHuge  bool         // set aside stat-dirty files of maxHashSize or more
+	deferred   []indexEntry // the files set aside
 }
 
 func (c *checker) readConfig(out string) {
@@ -748,12 +749,14 @@ func (c *checker) changed(e indexEntry) bool {
 		c.seen[e.path] = prev
 		return false
 	}
+	// The budget is only checked before a hash starts: a file that needs none is never
+	// failed by it. Until the budget starts, c.ctx is the caller's context.
+	if c.timed && c.ctx.Err() != nil {
+		c.cut = true
+		return true
+	}
 	h := c.sha()
 	hctx := c.ctx
-	if c.hashes == 0 {
-		hctx = c.parent // the first hash is not cut by the budget
-	}
-	c.hashes++
 	if isLink && !asFile {
 		target, err := os.Readlink(abs)
 		if err != nil {
@@ -789,7 +792,26 @@ func (c *checker) changed(e indexEntry) bool {
 	if time.Since(fi.ModTime()) > time.Second {
 		c.seen[e.path] = id
 	}
+	c.startBudget()
 	return false
+}
+
+// startBudget starts the hashing budget once, when the first file is proven equal to the
+// index, so hashes that proved a difference (or nothing) have not spent it.
+func (c *checker) startBudget() {
+	if c.timed || c.budget <= 0 {
+		return
+	}
+	c.ctx, c.cancel = context.WithTimeout(c.parent, c.budget)
+	c.timed = true
+}
+
+// stopBudget releases the budget's timer, if it started.
+func (c *checker) stopBudget() {
+	if c.cancel != nil {
+		c.cancel()
+		c.cancel = nil
+	}
 }
 
 // hashChunks feeds exactly size bytes of f to h, a megabyte at a time, and stops when the
