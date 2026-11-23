@@ -248,6 +248,37 @@ Checks:
   deadline and another error. When the condition was forced false, the first two cases
   failed.
 
+## After (branch at c7b0333, same store copy)
+
+The copy gained about 50 calls from the burst runs between the two measurements.
+
+| What | Before (main) | After |
+|---|---|---|
+| S1: first `GET /api/exchanges/SLTZOTBK3XZDAGQ4F4CK2CYPLE` after a restart | 2.82, 2.75, 2.71 s | 0.0074, 0.0051, 0.0061 s |
+| S2: since today, cold first request after a restart | 0.214, 0.214 s | 0.074 s |
+| S2: since today, warm | 0.200-0.205 s | 0.011-0.012 s |
+| S2: since today, first request after a new call | 0.235-0.245 s | 0.013 s |
+| S2: since 11-15, cold | 2.88, 3.42 s | 0.55 s |
+| S2: since 11-15, warm | 2.86 s | 0.021-0.023 s |
+| S2: since 11-15, first request after a new call | 3.1-3.3 s | 0.024 s |
+| S2: `/api/today` requests, 20 calls 1 s apart | 22 | 8 (page load 0, 0.16, 5.2 s; then every 5 s to 30.2 s) |
+| S2: the same, 0.2 s apart | 3 | 5 (0, 0.15, 5.2, 10.2, 15.2 s) |
+| S3: plans using `events_tool_call` / `events_principal` | 0 of 47 | 0 of 49 (the two new `reader_today.go` queries included; the other 47 plans unchanged) |
+| S4: warn lines in five restarts' logs | (no `digest compute failed` line in the baseline runs either) | 0 |
+| `make verify` | 52.5 s, 15 of 22 packages cached | 58.8 s with the test cache cleared (`go clean -testcache`); 6.9 s fully cached |
+
+The S4 warning did not show in these quick restarts on either build, because no digest
+compute was running at shutdown. AC7 rests on
+`TestDigestCache_ComputeFailureLevelFollowsCause`.
+
+Database size on the copy (`stat -c %s` after `PRAGMA wal_checkpoint(TRUNCATE)`):
+
+| State | Bytes | Note |
+|---|---|---|
+| before (user_version 5) | 1,589,620,736 | 388,091 pages, 0 free |
+| after migration 6 (user_version 6) | 1,589,620,736 | 47,570 free pages (≈195 MB) are reused by new writes; the file does not shrink |
+| after a manual `VACUUM` (14.9 s) | 1,304,141,824 | −285.5 MB (−18 %): the two indexes plus the defragmentation VACUUM does |
+
 ## Decisions
 - **D1** (2026-11-23) Number 041 as the brief says; 035 was planned for the speed fixes and
   is folded in here (spec header), so no 035 folder is created.
