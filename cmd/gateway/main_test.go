@@ -17,6 +17,9 @@ var buildHome string
 // appears under it. Every test is meant to set its own capture.dir, so a store there
 // means one forgot and would have written into the real ~/.local/share.
 func TestMain(m *testing.M) {
+	if os.Getenv(watchdogChildEnv) != "" {
+		hangUnderWatchdog()
+	}
 	os.Exit(guardDataDir(m))
 }
 
