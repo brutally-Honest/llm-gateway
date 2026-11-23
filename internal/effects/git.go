@@ -32,6 +32,7 @@ type gitRunner struct {
 	// 0 means timeout. Separate so slow hashing and slow git cannot starve each other.
 	hashTimeout time.Duration
 	maxOut      int64 // stdout cap per call; 0 means maxGitOutput (tests lower it)
+	maxRecords  int   // record cap per listing parse; 0 means maxGitRecords (tests lower it)
 
 	mu    sync.Mutex
 	cache map[string]map[string]hashedFile // by top, then path: files hashed equal to the index
@@ -70,9 +71,15 @@ var errNoGit = errors.New("git is not installed")
 
 // maxGitOutput caps the stdout one git call may produce. A hostile repo can make
 // `ls-tree -r` or `ls-files` print gigabytes from a tiny object store, and run holds the
-// output in memory. 256 MiB is far above any real repo's listing (about 100 bytes a file,
-// so millions of files) and small enough that one call cannot take the gateway down.
-const maxGitOutput = 256 << 20
+// output in memory, and the parsers multiply it (buffer growth, map and struct overhead
+// per record: measured about 9x the output as peak heap). 64 MiB is far above a real
+// listing (about 100 bytes a file, so roughly 600k files); a bigger repo is skipped like
+// any other over-cap call, which is the safe side of the trade.
+const maxGitOutput = 64 << 20
+
+// maxGitRecords caps the records one listing parser accepts, whatever the byte size
+// (short records make many entries per byte). Real repos stay far below it.
+const maxGitRecords = 2_000_000
 
 var errGitOutputTooLarge = errors.New("git output over the size cap")
 
@@ -346,22 +353,56 @@ func (g *gitRunner) headEntries(ctx context.Context, top string) (map[string]hea
 	if err != nil {
 		return nil, err
 	}
-	for _, rec := range strings.Split(string(tree), "\x00") {
-		meta, path, ok := strings.Cut(rec, "\t")
+	if err := eachRecord(tree, g.recordCap(), func(rec []byte) {
+		meta, pathB, ok := bytes.Cut(rec, []byte{'\t'})
 		if !ok {
-			continue
+			return
 		}
-		f := strings.Fields(meta) // mode, type, oid
-		if len(f) != 3 || f[0] == "160000" || !safeRelPath(path) {
-			continue
+		f := bytes.Fields(meta) // mode, type, oid
+		if len(f) != 3 || string(f[0]) == "160000" {
+			return
 		}
-		mode, err := strconv.ParseUint(f[0], 8, 32)
+		path := string(pathB)
+		if !safeRelPath(path) {
+			return
+		}
+		mode, err := strconv.ParseUint(string(f[0]), 8, 32)
 		if err != nil {
-			continue
+			return
 		}
-		out[path] = headEntry{mode: uint32(mode), oid: f[2]}
+		out[path] = headEntry{mode: uint32(mode), oid: string(f[2])}
+	}); err != nil {
+		return nil, err
 	}
 	return out, nil
+}
+
+func (g *gitRunner) recordCap() int {
+	if g.maxRecords > 0 {
+		return g.maxRecords
+	}
+	return maxGitRecords
+}
+
+// eachRecord calls fn for every NUL-separated record of b, without copying b. More than
+// limit records fails with errGitOutputTooLarge. fn must copy what it keeps (string(...)),
+// so b can be freed once parsing ends.
+func eachRecord(b []byte, limit int, fn func(rec []byte)) error {
+	n := 0
+	for len(b) > 0 {
+		i := bytes.IndexByte(b, 0)
+		rec := b
+		if i < 0 {
+			b = nil
+		} else {
+			rec, b = b[:i], b[i+1:]
+		}
+		if n++; n > limit {
+			return errGitOutputTooLarge
+		}
+		fn(rec)
+	}
+	return nil
 }
 
 // indexEntries are the index's entries and the index file's modification time (zero
@@ -385,25 +426,27 @@ func (g *gitRunner) indexEntries(ctx context.Context, top string, hashLen int) (
 		return nil, time.Time{}, err
 	}
 	var entries []indexEntry
-	for _, rec := range strings.Split(string(out), "\x00") {
-		meta, path, ok := strings.Cut(rec, "\t")
+	if err := eachRecord(out, g.recordCap(), func(rec []byte) {
+		meta, path, ok := bytes.Cut(rec, []byte{'\t'})
 		if !ok {
-			continue
+			return
 		}
-		f := strings.Fields(meta) // tag, mode, oid, stage
+		f := bytes.Fields(meta) // tag, mode, oid, stage
 		if len(f) != 4 {
-			continue
+			return
 		}
-		mode, err := strconv.ParseUint(f[1], 8, 32)
-		stage, err2 := strconv.ParseUint(f[3], 10, 8)
+		mode, err := strconv.ParseUint(string(f[1]), 8, 32)
+		stage, err2 := strconv.ParseUint(string(f[3]), 10, 8)
 		if err != nil || err2 != nil {
-			continue
+			return
 		}
 		entries = append(entries, indexEntry{
-			path: path, mode: uint32(mode), oid: f[2], stage: uint8(stage),
-			skipWorktree: f[0] == "S" || f[0] == "s",
-			assumeValid:  f[0] != "" && f[0][0] >= 'a' && f[0][0] <= 'z',
+			path: string(path), mode: uint32(mode), oid: string(f[2]), stage: uint8(stage),
+			skipWorktree: string(f[0]) == "S" || string(f[0]) == "s",
+			assumeValid:  len(f[0]) > 0 && f[0][0] >= 'a' && f[0][0] <= 'z',
 		})
+	}); err != nil {
+		return nil, time.Time{}, err
 	}
 	return entries, time.Time{}, nil
 }
@@ -732,7 +775,12 @@ func writeBlobHeader(h hash.Hash, size int64) {
 func (g *gitRunner) show(ctx context.Context, top, rel string, limit int64) ([]byte, bool) {
 	// limit+1 bytes at most are held, so a huge blob is never fully buffered; a blob over
 	// limit fails here, which the caller treats like one it found too big.
-	out, err := g.runLimit(ctx, top, limit+1, "show", "--no-ext-diff", "--no-textconv", "HEAD:"+filepath.ToSlash(rel))
+	// min with maxGitOutput so a huge limit cannot lift the cap or overflow at MaxInt64.
+	hold := int64(maxGitOutput)
+	if limit < hold { // limit+1 cannot overflow here
+		hold = limit + 1
+	}
+	out, err := g.runLimit(ctx, top, hold, "show", "--no-ext-diff", "--no-textconv", "HEAD:"+filepath.ToSlash(rel))
 	if err != nil {
 		return nil, false
 	}

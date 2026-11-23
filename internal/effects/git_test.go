@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1074,6 +1075,66 @@ func TestGit_OutputCap(t *testing.T) {
 	}
 	if _, ok := g.show(ctx, dir, "a.txt", 100); ok {
 		t.Error("show over the limit returned the blob")
+	}
+}
+
+// show with a limit near MaxInt64 must neither overflow nor lift the output cap.
+func TestGit_ShowHugeLimitStaysCapped(t *testing.T) {
+	needGit(t)
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	dir := resolve(t.TempDir())
+	git(t, dir, "init", "-q")
+	write(t, filepath.Join(dir, "a.txt"), "hello")
+	commitAll(t, dir)
+	g := newGitRunner(30 * time.Second)
+	for _, limit := range []int64{math.MaxInt64, math.MaxInt64 - 1, 1 << 40} {
+		if data, ok := g.show(context.Background(), dir, "a.txt", limit); !ok || string(data) != "hello" {
+			t.Errorf("show limit %d: %q ok=%v", limit, data, ok)
+		}
+	}
+}
+
+// eachRecord yields every NUL-separated record (a last one without a terminator too),
+// and the listing parsers return the same entries as before; over the record cap both
+// fail with errGitOutputTooLarge.
+func TestGit_ListingParsersAndRecordCap(t *testing.T) {
+	needGit(t)
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	var got []string
+	if err := eachRecord([]byte("a\x00\x00bc"), 10, func(r []byte) { got = append(got, string(r)) }); err != nil ||
+		strings.Join(got, "|") != "a||bc" {
+		t.Errorf("eachRecord = %q, %v", got, err)
+	}
+	if err := eachRecord([]byte("a\x00b\x00c\x00"), 2, func([]byte) {}); !errors.Is(err, errGitOutputTooLarge) {
+		t.Errorf("eachRecord over cap: %v", err)
+	}
+
+	dir := resolve(t.TempDir())
+	git(t, dir, "init", "-q")
+	write(t, filepath.Join(dir, "a.txt"), "a")
+	write(t, filepath.Join(dir, "sub", "b.txt"), "b")
+	write(t, filepath.Join(dir, "c.txt"), "c")
+	commitAll(t, dir)
+	ctx := context.Background()
+
+	g := newGitRunner(30 * time.Second)
+	head, err := g.headEntries(ctx, dir)
+	if err != nil || len(head) != 3 || head["sub/b.txt"].mode != 0o100644 || len(head["a.txt"].oid) < 40 {
+		t.Fatalf("headEntries = %+v, %v", head, err)
+	}
+	// ls-files fallback parser, fed what git prints.
+	out, err := g.run(ctx, dir, "ls-files", "-z", "-s", "-v")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	if err := eachRecord(out, 10, func([]byte) { n++ }); err != nil || n != 3 {
+		t.Fatalf("ls-files records = %d, %v", n, err)
+	}
+
+	g.maxRecords = 2
+	if _, err := g.headEntries(ctx, dir); !errors.Is(err, errGitOutputTooLarge) {
+		t.Errorf("headEntries over the record cap: %v", err)
 	}
 }
 
