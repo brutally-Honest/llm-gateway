@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"hash"
 	"io"
 	"io/fs"
 	"os"
@@ -111,15 +112,57 @@ func (r *Runner) checkpoint(ctx context.Context, s *session) error {
 	return nil
 }
 
+// openDirRoot opens dir as a root. Anything that is not a directory is reported as
+// fs.ErrNotExist: os.OpenRoot opens without O_NONBLOCK, so a FIFO swapped in for the
+// folder (`mv proj x; mkfifo proj`) would block it forever. A FIFO swapped in between
+// the Lstat and the OpenRoot can still block (research D37).
+//
+// Roots are symlink-free paths (resolve), so a symlink at dir means the folder was
+// swapped for a link (`mv proj x; ln -s ~/.ssh proj`): it is reported as gone, never
+// followed. dirIdentity refuses a link in any component, parents included (where it
+// can); after the open, the root must be the very directory it identified, so a parent
+// swapped after the walk lands on another inode and is reported as gone. A mismatch
+// is checked once more against a fresh identity: an expired autofs mount point changes
+// dev/ino when the open triggers the mount.
+func openDirRoot(dir string) (*os.Root, error) {
+	gone := &fs.PathError{Op: "open", Path: dir, Err: fs.ErrNotExist}
+	fi, err := dirIdentity(dir)
+	if err != nil {
+		return nil, err
+	}
+	if !fi.IsDir() {
+		return nil, gone
+	}
+	rt, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	opened, err := rt.Stat(".")
+	if err == nil && !os.SameFile(fi, opened) {
+		if again, aerr := dirIdentity(dir); aerr == nil && again.IsDir() && os.SameFile(again, opened) {
+			return rt, nil
+		}
+	}
+	if err != nil || !os.SameFile(fi, opened) {
+		_ = rt.Close()
+		return nil, gone
+	}
+	return rt, nil
+}
+
 // checkRoot checks one watched folder against its saved rows and returns its rows after
 // this checkpoint; effects, copies and changed rows go into cp.
 func (r *Runner) checkRoot(ctx context.Context, s *session, root string, saved map[string]fileState, baseline bool, now time.Time, cp *store.Checkpoint) (map[string]fileState, error) {
-	if _, err := os.Stat(root); err != nil {
+	// Every file is read through rt, which refuses a path that leaves root through a
+	// symlink or "..": a tracked path below a link to ~/.ssh is never copied.
+	rt, err := openDirRoot(root)
+	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return saved, nil // a folder that is gone is checked again when it is back
+			return saved, nil
 		}
 		return nil, err
 	}
+	defer func() { _ = rt.Close() }()
 	top, isGit := s.top(ctx, r.git, root)
 	mode := "scan"
 	tracked := map[string]bool{}
@@ -175,8 +218,15 @@ func (r *Runner) checkRoot(ctx context.Context, s *session, root string, saved m
 		}
 		abs := filepath.Join(root, rel)
 		prev, seen := saved[rel]
-		fi, err := os.Lstat(abs)
-		if err != nil || !fi.Mode().IsRegular() {
+		fi, err := rt.Lstat(rel)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			if _, plain := os.Lstat(abs); plain == nil {
+				// The path exists but leaves root through a symlink: it is not a regular
+				// file here, like a symlink at the path itself.
+				fi, err = nil, nil
+			}
+		}
+		if err != nil || fi == nil || !fi.Mode().IsRegular() {
 			if err != nil && !errors.Is(err, fs.ErrNotExist) {
 				continue // unreadable now; checked again next time
 			}
@@ -210,8 +260,13 @@ func (r *Runner) checkRoot(ctx context.Context, s *session, root string, saved m
 		if seen && prev.size == size && prev.mtimeNS == mtime {
 			continue
 		}
-		hash, data, err := r.readFile(abs, size)
+		hash, data, err := r.readFile(ctx, rt, rel, size)
 		if err != nil {
+			if ctx.Err() != nil {
+				// Stopped mid-file: end the checkpoint unsaved so every file, this one
+				// included, is judged again against the old rows next time.
+				return nil, ctx.Err()
+			}
 			continue // unreadable now; checked again next time
 		}
 		st := fileState{size: size, mtimeNS: mtime, hash: hash}
@@ -245,15 +300,32 @@ func (r *Runner) checkRoot(ctx context.Context, s *session, root string, saved m
 	return out, nil
 }
 
-// readFile hashes the file at path. A text file (no NUL in its head) no larger than the
+// readFile hashes the file rel in rt. It is opened without blocking (a FIFO swapped in
+// after the Lstat must not hang the open) and must still be a regular file. A text file (no NUL in its head) no larger than the
 // copy limit is read whole and returned as its copy; anything else is hashed as a stream
-// and has no copy (E3).
-func (r *Runner) readFile(path string, size int64) (string, []byte, error) {
-	f, err := os.Open(path)
+// and has no copy (E3). The stream is hashed in chunks that stop when ctx ends (the ctx
+// error is returned); a file that grows or shrinks while it is read is an error too, and
+// both are tried again at the next checkpoint.
+func (r *Runner) readFile(ctx context.Context, rt *os.Root, rel string, size int64) (string, []byte, error) {
+	f, err := rt.OpenFile(rel, os.O_RDONLY|oNonblock, 0)
 	if err != nil {
 		return "", nil, err
 	}
 	defer func() { _ = f.Close() }()
+	st, err := f.Stat()
+	if err != nil || !st.Mode().IsRegular() {
+		return "", nil, errors.New("not a regular file")
+	}
+	// stream hashes the rest of f, given how many bytes were already read from it.
+	stream := func(h hash.Hash, done int64) error {
+		if !hashChunks(ctx, h, f, st.Size()-done) {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return errors.New("file changed while it was read")
+		}
+		return nil
+	}
 	head := make([]byte, headBytes)
 	n, err := io.ReadFull(f, head)
 	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
@@ -272,14 +344,14 @@ func (r *Runner) readFile(path string, size int64) (string, []byte, error) {
 		}
 		h := sha256.New()
 		_, _ = h.Write(data)
-		if _, err := io.Copy(h, f); err != nil {
+		if err := stream(h, int64(len(data))); err != nil {
 			return "", nil, err
 		}
 		return hex.EncodeToString(h.Sum(nil)), nil, nil
 	}
 	h := sha256.New()
 	_, _ = h.Write(head)
-	if _, err := io.Copy(h, f); err != nil {
+	if err := stream(h, int64(len(head))); err != nil {
 		return "", nil, err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil, nil
@@ -292,7 +364,7 @@ func (r *Runner) headVersion(ctx context.Context, top, root, rel string, cp *sto
 	if err != nil {
 		return ""
 	}
-	data, ok := r.git.show(ctx, top, fromTop)
+	data, ok := r.git.show(ctx, top, fromTop, r.maxCopy)
 	if !ok || int64(len(data)) > r.maxCopy || bytes.Contains(data[:min(len(data), headBytes)], []byte{0}) {
 		return ""
 	}
