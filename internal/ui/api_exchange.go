@@ -35,7 +35,8 @@ type exchangeJSON struct {
 	SessionID string `json:"session_id,omitempty"`
 	// StatusWord is the status in words; SessionTitle and CallN name the session and the
 	// call's #n in it, for the full exchange page's title and breadcrumb (017 AC12). Both
-	// are left out for an exchange no session claims, or one its session's view lacks.
+	// are left out for an exchange no session claims, or when no view of its session is
+	// cached at the session's current version; CallN also needs that view to hold the call.
 	StatusWord   string `json:"status_word"`
 	SessionTitle string `json:"session_title,omitempty"`
 	CallN        int    `json:"call_n,omitempty"`
@@ -98,16 +99,28 @@ func (d Deps) getExchange(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
-// placeInSession names the exchange's session and its #n from the session's cached view.
-// The page still works without them, so a view that cannot be built leaves both out.
+// placeInSession names the exchange's session and its #n from the session's view as the
+// view cache holds it now. It never builds, waits for a build or asks the timeline cache:
+// after a restart nothing is cached and a first call's details must not wait on a whole
+// session build for a title. Whatever is not known is left out; the page works without it.
+//
+// The title and the #n come only from a view built at the session's current version
+// (one cheap grouped version query), never from an older one. Both can change as a
+// session grows: a generated title or an earlier-starting call that commits late changes
+// the title, and calls are numbered in start order, so such a call shifts every number
+// after it.
 func (d Deps) placeInSession(ctx context.Context, ex store.ExchangeRow, out *exchangeJSON) {
-	who := sessIdent{ex.PrincipalID, ex.Client, ex.SessionKey}
-	v, err := d.cachedView(ctx, who, false)
-	if err == nil && !timeline.HasCall(v, ex.RequestID) {
-		v, err = d.cachedView(ctx, who, true) // the call is newer than the view served so far
-	}
-	if err != nil {
+	if d.Views == nil {
 		return
+	}
+	ident := store.SessionIdent{Principal: ex.PrincipalID, Client: ex.Client, Key: ex.SessionKey}
+	v, ok := d.Views.peek(ident)
+	if !ok {
+		return
+	}
+	vers, err := d.Reader.WithContext(ctx).SessionVersions([]store.SessionIdent{ident})
+	if err != nil || !strings.HasPrefix(v.Version, buildKey(vers[ident])) {
+		return // the view is older than the store: its title and numbering may have moved
 	}
 	out.SessionTitle = v.Overview.Title
 	if n, ok := timeline.CallNumber(v, ex.RequestID); ok {
