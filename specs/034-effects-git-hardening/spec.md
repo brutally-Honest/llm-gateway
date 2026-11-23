@@ -3,6 +3,7 @@ feature: 034-effects-git-hardening
 kind: fix
 created: 2026-11-22
 branch: fix/034-effects-git-hardening
+status: done
 ---
 
 ## Problem

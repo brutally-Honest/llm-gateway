@@ -268,3 +268,113 @@ with a fixed seed, absurd v4 strip varints, and a long-path regression seed. `ma
   The property was 4× in run 1 and was loosened to the budget.
 - **D39** (2026-11-22) The fuzz test has its own small git helper: the repo helpers take
   `*testing.T` and the fuzz body has `*testing.F`.
+
+## Review round 3 (opus, fresh context, 2026-11-23)
+
+Covers the `.git/index` reader, the Go replacement for `git status`, the round-2 fixes
+(512 MiB regular-file rule, FIFO, sparse checkout, hash timeout), 0d58b37 and 30b50c1.
+Corrects D28: rounds 3 and 4 were run. Checked sound: `indexVarint` cannot overflow,
+`strip` is bounds-checked, v2/v3 padding matches git, the extension loop always advances,
+the non-blocking index open rejects a FIFO, `/dev/zero` and size-0 `/proc` files, `os.Root`
+refuses links out of the root, and the racy, size, executable-bit and symlink comparisons
+match git.
+
+| # | Pri | Finding | Action |
+|---|---|---|---|
+| T1 | P1 | v4 path budget of 64× the index allowed up to 32 GiB of paths; each path built twice; budget checked after allocating | fixed 8246391 (D40) |
+| T2 | P1 | `run` buffered all of git's stdout: a refused crafted index made `ls-files` print ~1 GB, a 44 KB repo made `ls-tree -r` print 1.2 GB (also on main), `show` buffered a whole blob | fixed bfc2392 (D41) |
+| T3 | P2 | a present skip-worktree file was compared without sparse checkout; `git status` is silent | fixed 2b667b0 (D42) |
+| T4 | P2 | one 10 s deadline for git and hashing, and the hash cache stored only after a full pass: a slow repo was skipped at every checkpoint | fixed 39f88d4 (D44) |
+| T5 | P2 | `os.OpenRoot` blocked forever on a FIFO in place of the watched root (from 0d58b37) | fixed 65ef68a (D43) |
+| T6 | P3 | a 512 MiB index could cost 2-3 GB parsed; `io.ReadAll` grows to 2× | fixed 1a51779 (D45) |
+| T7 | P3 | the runner's `readFile` hashed with `io.Copy` and never checked ctx (on main) | fixed 4dbf067 (D46) |
+| T8 | P4 | entry-flag name length and index checksum not checked: a crafted index can parse unlike git | accepted: `safeRelPath` and `os.Root` stop any escape; only a hostile repo's own candidates are wrong |
+| T9 | P4 | gitindex.go comment claimed a 4096-byte path limit the code did not enforce | fixed with T1 |
+
+Allocation check: every allocation in `readIndex` sized by a number from the file is bounded
+by the bytes left in the file except the v4 paths (T1). After T1, round 4 re-checked the
+table: the read buffer is at most 128 MiB (regular file only), `out` is `count × 72 B` with
+`count ≤ len/(43+hashLen)` checked before allocating, each oid is a fixed `2×hashLen`, a v2/v3
+path is at most 4096 bytes and a substring of the file, a v4 path is at most 4096 bytes and all
+v4 paths at most `min(4×len, 64 MiB)`, both checked before the append; the varint and the
+extensions allocate nothing.
+
+- **D40** (2026-11-23) T1: a path over 4096 bytes (git's PATH_MAX), in any version, and v4
+  paths over `min(4×len(index), 64 MiB)` in total are `errIndexUnsupported`, checked before
+  anything is allocated; v4 paths are built in one reused buffer with a single `string` copy.
+  A real v4 index expands about 0.52× (GOROOT). Corrects D38's 64× budget. Flip: a legitimate
+  repo of very few very deep paths can pass 4× and uses the slower `ls-files` fallback.
+- **D41** (2026-11-23) T2: each git call's stdout is capped; past the cap git is cancelled and
+  the call fails with `errGitOutputTooLarge`, so the folder is skipped for this checkpoint like
+  any other git failure. `show` holds at most `maxCopy+1` bytes, and an over-limit blob means no
+  before-version. The cap was 256 MiB here and is 64 MiB after D48. The added regression test
+  passes before the context reorder too: os/exec closes the pipe and git dies of SIGPIPE.
+- **D42** (2026-11-23) T3, corrects D26: a present skip-worktree file is compared only when
+  `core.sparseCheckout` is true and `sparse.expectFilesOutsideOfPatterns` is not, as git's
+  `clear_skip_worktree_from_present_files`. A non-boolean `core.sparseCheckout` fails
+  `candidates` (D31); git status exits 128 on it too. The spec edge case is corrected.
+  Antithesis: reporting edits hidden by `--skip-worktree` is more observability; rejected,
+  since the spec promises `git status` answers.
+- **D43** (2026-11-23) T5: `openDirRoot` refuses a watched root or work tree that is not a
+  directory before `os.OpenRoot` (the not-exist branch: rows kept, checked again later). Go
+  1.25 cannot build an `os.Root` from an fd, so a FIFO swapped in between the check and the
+  open can still block. Accepted as P4: the window is microseconds and needs a hand-timed swap.
+- **D44** (2026-11-23) T4: git calls keep their own timeout each; the Go comparison has a
+  separate hashing budget (`hashTimeout`, default the same 10 s, no new config field). When it
+  runs out, `keepProgress` stores the matches already proven under D21's rules plus the old
+  cache entries the pass did not reach, and the call still fails; a repo too big for one pass
+  warms its cache across checkpoints.
+- **D45** (2026-11-23) T6, corrects D25's size: the index cap is 128 MiB, not 512 MiB; real
+  non-split indexes are tens of MB. The file is read into one fstat-sized buffer with
+  `io.ReadFull` and a one-byte growth check. Oids stay hex strings (out of scope).
+- **D46** (2026-11-23) T7: `readFile` hashes streams with the shared ctx-aware `hashChunks`. The
+  checkpoint ctx is the runner's lifetime, so this only lets shutdown stop a long hash; a
+  cancelled checkpoint ends unsaved and every file is judged again next time. A file whose size
+  changes while it is hashed is skipped and retried next checkpoint.
+
+## Review round 4 (opus, fresh context, 2026-11-23)
+
+Covers the round-3 fixes (8246391..4dbf067). Checked sound: no cache poisoning by
+`keepProgress` (only hash-proven or exact-oid matches enter `seen`; carried entries are keyed
+on size, mtime ns, ctime ns, inode and oid, and ctime cannot be set back on Linux or macOS);
+no race in `capWriter` and partial output is never returned; skip-worktree answers checked
+against git 2.53 with sparse checkout on and off; `readExactly` makes one capped allocation.
+
+| # | Pri | Finding | Action |
+|---|---|---|---|
+| F1 | P1 | a watched root swapped for a symlink to an outside folder was opened through it (`Stat` and `OpenRoot` follow links): scan mode stored outside files, secret in `gateway.db-wal` (old hole, kept by 65ef68a) | fixed 51d8a98 (D47) |
+| F2 | P2 | the stdout cap was multiplied ~9× by parsing (buffer doubling, `string(out)`, `Split`, maps): ~2.3 GiB peak per `candidates` from an 84 KB git bomb | fixed 074a0bd (D48) |
+| F3 | P2 | a sparse tracked file of 2^35+5 bytes passes the size check (git stores size mod 2^32) and burns the hash budget: the folder fails at every checkpoint | fixed f6999f0 (D49) |
+| F4 | P3 | round 3 not recorded here; code cited a missing "D-P2b"; D25 still said 512 MiB | fixed: this section, D44, D45 |
+| F5 | P3 | the hash budget started before the `configBools` git call, and the first file was not always tried, so a call could make no progress | fixed b86e3f6 (D50) |
+| F6 | P4 | git's stderr goes into an unbounded buffer | accepted: stderr scales with git's own messages, not with repo data a listing prints |
+| F7 | P4 | `show` with `limit+1` bypassed the cap for a huge `max_copy_bytes`, and overflowed at MaxInt64 | fixed with F2 |
+| F8 | P4 | a skip-worktree path under a symlinked folder counts as unchanged | accepted (D31) |
+| F9 | P4 | while timeouts repeat, `keepProgress` keeps old entries for paths gone from the index | accepted: never larger than the previous cache, and the first full pass drops them |
+
+- **D47** (2026-11-23) F1: roots are `EvalSymlinks`-resolved when added (`roots.go resolve`) and
+  git reports `top` resolved, so a link there is always a later swap. `openDirRoot` `Lstat`s
+  the path (a link or non-directory is gone) and after `os.OpenRoot` requires `rt.Stat(".")` to
+  be `os.SameFile` with it, which also catches a directory swapped in between. The FIFO window
+  of D43 remains.
+- **D48** (2026-11-23) F2: the git output cap is 64 MiB (about 600k files at ~100 B a record) and
+  both listing parsers stop at 2M records; they walk the `[]byte` output and copy only the
+  fields kept, so the buffer is freed after parsing. Antithesis: stream records from
+  `StdoutPipe` and keep 256 MiB, so larger monorepos are watched; rejected for now as a bigger
+  change. Flip: if a watched repo over ~600k files must be supported, stream.
+- **D49** (2026-11-23) F3: a stat-dirty tracked file of 4 GiB or more is hashed after all other
+  files, on its own hashing budget; if it is not proven equal in time it is listed as a tracked
+  candidate and not cached. The runner then re-reads its content, so a false "maybe changed"
+  gives no effect, only a slow read. Rejected: always listing such files unhashed, which also
+  reports unchanged ones and breaks `TestCandidates_HashingStopsWithContext`.
+- **D50** (2026-11-23) F5: the hashing budget starts after `configBools`, the last git call
+  before hashing. The first file that needs a hash is hashed whole under the caller's ctx (a
+  spent budget would stop `hashChunks` at byte 0), and the call fails after the loop only when
+  a hash was actually cut off, so a spent budget still proves one file per call and then
+  succeeds. A file of 4 GiB or more never gets this free hash (D49).
+- **D51** (2026-11-23) D24 (one parallel `Lstat` loop, and one `candidates` per repo rather than
+  per watched folder, S13) stays a follow-up for a later spec; not in 034.
+- **D52** (2026-11-23) D22 needs nothing: v1 supports only Linux and macOS, which
+  `stat_linux.go` and `stat_bsd.go` cover; other systems only build.
+- **D53** (2026-11-23) The round-4 fixes (D47-D50) were not reviewed by a fifth round: the
+  build allows a fourth round only on a round-3 P1.
