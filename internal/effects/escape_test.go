@@ -120,6 +120,32 @@ func TestEscape_SymlinkedFolderToOutside(t *testing.T) {
 	})
 }
 
+// A watched root swapped for a symlink to an outside folder is gone, not followed: the
+// outside file of the same name is never stored.
+func TestEscape_RootSwappedForSymlink(t *testing.T) {
+	modes(t, func(t *testing.T, dir string, commit func()) {
+		out := outsideDir(t)
+		write(t, filepath.Join(out, "keep.txt"), secretMark+" same name\n")
+		write(t, filepath.Join(dir, "keep.txt"), "mine\n")
+		write(t, filepath.Join(dir, "id_key"), "mine\n")
+		commit()
+		ts := openStore(t)
+		r := newTestRunner(t, ts.st)
+		checkpointIn(t, r, dir)
+
+		moved := dir + ".moved"
+		if err := os.Rename(dir, moved); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(moved) })
+		symlink(t, out, dir)
+		checkpointIn(t, r, dir)
+		noSecretStored(t, ts)
+		notModifiedOrCreated(t, ts, filepath.Join(dir, "keep.txt"))
+		notModifiedOrCreated(t, ts, filepath.Join(dir, "id_key"))
+	})
+}
+
 // A chain a -> b -> outside, both links inside the root, leads outside all the same.
 func TestEscape_SymlinkChain(t *testing.T) {
 	modes(t, func(t *testing.T, dir string, commit func()) {

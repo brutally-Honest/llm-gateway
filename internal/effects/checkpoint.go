@@ -115,16 +115,30 @@ func (r *Runner) checkpoint(ctx context.Context, s *session) error {
 // openDirRoot opens dir as a root. Anything that is not a directory is reported as
 // fs.ErrNotExist: os.OpenRoot opens without O_NONBLOCK, so a FIFO swapped in for the
 // folder (`mv proj x; mkfifo proj`) would block it forever. A FIFO swapped in between
-// the Stat and the OpenRoot can still block (research D37).
+// the Lstat and the OpenRoot can still block (research D37).
+//
+// Roots are symlink-free paths (resolve), so a symlink at dir means the folder was
+// swapped for a link (`mv proj x; ln -s ~/.ssh proj`): it is reported as gone, never
+// followed. After the open, the root must be the very directory Lstat saw.
 func openDirRoot(dir string) (*os.Root, error) {
-	fi, err := os.Stat(dir)
+	gone := &fs.PathError{Op: "open", Path: dir, Err: fs.ErrNotExist}
+	fi, err := os.Lstat(dir)
 	if err != nil {
 		return nil, err
 	}
 	if !fi.IsDir() {
-		return nil, &fs.PathError{Op: "open", Path: dir, Err: fs.ErrNotExist}
+		return nil, gone
 	}
-	return os.OpenRoot(dir)
+	rt, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	opened, err := rt.Stat(".")
+	if err != nil || !os.SameFile(fi, opened) {
+		_ = rt.Close()
+		return nil, gone
+	}
+	return rt, nil
 }
 
 // checkRoot checks one watched folder against its saved rows and returns its rows after
