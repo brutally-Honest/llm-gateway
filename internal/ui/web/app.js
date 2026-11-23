@@ -288,17 +288,35 @@ let todayDirty = false; // an event arrived that no fetch started since has cove
 // runToday fetches the totals and holds the next fetch back for TODAY_SPACING_MS.
 async function runToday() {
   todayDirty = false;
-  todayBusy = true;
   todayTimer = setTimeout(() => {
     todayTimer = null;
     if (todayDirty && !todayBusy) runToday();
   }, TODAY_SPACING_MS);
+  await fetchToday();
+}
+
+// fetchToday is the one place that fetches the totals: it marks the fetch in flight, so no
+// other starts beside it, and when it ends starts the one an event during it asked for.
+async function fetchToday() {
+  todayBusy = true;
   try {
     await loadToday();
   } finally {
     todayBusy = false;
     if (todayDirty && !todayTimer) runToday();
   }
+}
+
+// loadTodayNow is the fetch made when the list is shown. It starts no spacing window, so
+// the first event after it is still fetched at once, but it counts as in flight: an event
+// during it (or a list shown again before it ends) is fetched when it ends, never beside it.
+function loadTodayNow() {
+  if (todayBusy) {
+    todayDirty = true;
+    return;
+  }
+  todayDirty = false;
+  fetchToday();
 }
 
 // scheduleToday refetches the totals for a session event: at once when none was fetched
@@ -618,7 +636,7 @@ function showSessions() {
     loadPage(r.page, true);
   }
   loadUngroupedHead();
-  loadToday();
+  loadTodayNow();
 }
 
 function route() {

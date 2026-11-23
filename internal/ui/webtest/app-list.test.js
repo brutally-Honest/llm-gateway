@@ -49,6 +49,9 @@ const other = { "/api/today": {}, "/api/ungrouped": { items: [], next_after: nul
 const replies = {};
 const todayReqs = []; // every /api/today request
 const todayAt = []; // the virtual time of each, ms since the test's start
+let todayInFlight = 0; // /api/today requests asked and not yet answered
+let todayMaxInFlight = 0;
+let todayServe = null; // (n) => body for the n-th /api/today request (1-based), awaited; else the stub
 let virtualMs = 0;
 const holds = {}; // path -> promise to wait for before answering
 let hash = "#/";
@@ -94,8 +97,17 @@ Object.assign(globalThis, {
     if (path === "/api/today") {
       todayReqs.push(String(url));
       todayAt.push(virtualMs);
-    }
-    if (holds[path]) await holds[path];
+      todayMaxInFlight = Math.max(todayMaxInFlight, ++todayInFlight);
+      try {
+        if (todayServe) {
+          const served = await todayServe(todayReqs.length);
+          return { ok: true, status: 200, statusText: "", json: async () => served };
+        }
+        if (holds[path]) await holds[path];
+      } finally {
+        todayInFlight--;
+      }
+    } else if (holds[path]) await holds[path];
     const body = replies[path] === undefined ? other[path] : replies[path];
     if (body && body.__status) return { ok: false, status: body.__status, statusText: "nope", json: async () => ({ error: { message: body.message } }) };
     return { ok: Boolean(body), status: body ? 200 : 404, statusText: "not stubbed", json: async () => body };
@@ -1052,4 +1064,32 @@ test("anEventInsideTheWindowWaitsForTheWindowToEnd", async (t) => {
   t.mock.timers.tick(1);
   await settle();
   assert.equal(todayReqs.length, 2);
+});
+
+test("thePageLoadFetchAndAnEventNeverOverlapAndTheNewestAnswerWins", async (t) => {
+  t.after(() => {
+    todayServe = null;
+  });
+  const first = deferred();
+  todayInFlight = 0;
+  todayMaxInFlight = 0;
+  todayReqs.length = 0;
+  // the page-load fetch is held and, when it ends, carries the older totals
+  todayServe = (n) => (n === 1 ? first.promise : { sessions: 7 });
+  await fresh(t);
+  await settle();
+  assert.equal(todayReqs.length, 1, "the page load fetches the totals");
+  emitSession(1); // the first stream event right after the page load
+  await settle();
+  t.mock.timers.tick(SPACING * 2);
+  await settle();
+  assert.equal(todayMaxInFlight, 1, `never two /api/today in flight: ${todayReqs.length} requests`);
+  first.resolve({ sessions: 3 });
+  await settle();
+  t.mock.timers.tick(SPACING * 3);
+  await settle();
+  assert.equal(todayMaxInFlight, 1, "still never two in flight");
+  assert.equal(todayReqs.length, 2, "the event is covered by a fetch that starts after the page load fetch ends");
+  assert.match(textOf(withClass(page(), "today")[0]), /\b7\b/, "the newest answer is shown");
+  assert.doesNotMatch(textOf(withClass(page(), "today")[0]), /\b3\b/);
 });
