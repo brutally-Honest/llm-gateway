@@ -99,6 +99,9 @@ func (l signalListener) Accept() (net.Conn, error) {
 
 func startGateway(t *testing.T, o options) *gateway {
 	t.Helper()
+	// First, so its cleanup is registered first and runs last: a hang in any later
+	// cleanup, such as waiting for run to return, is covered too.
+	watchdog(t, defaultWatchdog)
 	ctx, cancel := context.WithCancel(context.Background())
 	g := &gateway{t: t, stdout: &syncBuffer{}, cancel: cancel, code: make(chan int, 1)}
 	env := withTempDataDir(t, o.env)

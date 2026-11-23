@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -330,9 +331,18 @@ func TestRun_Upstream429PassedThroughVerbatim(t *testing.T) {
 }
 
 // E1: a client that leaves mid-stream still has the usage seen so far counted.
+// Only the first call is held open; any later call ends at once with no usage, so
+// the probe cannot block or add tokens. The probe waits for the first call's access
+// line, which is written after its tokens are recorded (spec 036, D5).
 func TestRun_ClientDisconnectMidStreamRecordsSeenTokens(t *testing.T) {
 	done := make(chan struct{})
+	var calls atomic.Int32
 	up := newFakeUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) > 1 {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{}`)
+			return
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":100,\"output_tokens\":1}}}\n\n")
 		w.(http.Flusher).Flush()
@@ -342,7 +352,7 @@ func TestRun_ClientDisconnectMidStreamRecordsSeenTokens(t *testing.T) {
 		}
 	})
 	t.Cleanup(func() { close(done) })
-	_, url := rlGateway(t, rlConfig(0, 50), up.Server, nil)
+	g, url := rlGateway(t, rlConfig(0, 50), up.Server, nil)
 
 	req, _ := http.NewRequest(http.MethodPost, url+rlPath, strings.NewReader(`{}`))
 	req.Header.Set("X-Gateway-Key", rlKey)
@@ -361,5 +371,23 @@ func TestRun_ClientDisconnectMidStreamRecordsSeenTokens(t *testing.T) {
 		}
 	}
 	_ = res.Body.Close()
-	waitLimited(t, url)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for len(g.requestLines(rlPath)) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("no access line for the disconnected call\n%s", g.stdout.String())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if l := g.requestLines(rlPath); len(l) != 1 || l[0]["client_disconnected"] != true {
+		t.Fatalf("lines = %v, want one with client_disconnected true", l)
+	}
+
+	probe, _ := rlPost(t, url, rlKey, nil)
+	if probe.StatusCode != http.StatusTooManyRequests || probe.Header.Get("X-Gateway-Ratelimit") != "tokens" {
+		t.Errorf("probe status %d, X-Gateway-Ratelimit %q, want 429 tokens", probe.StatusCode, probe.Header.Get("X-Gateway-Ratelimit"))
+	}
+	if n := len(up.seen()); n != 1 {
+		t.Errorf("upstream saw %d calls, want 1", n)
+	}
 }
