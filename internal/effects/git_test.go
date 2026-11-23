@@ -836,6 +836,26 @@ func TestReadIndexFile_TooLarge(t *testing.T) {
 	}
 }
 
+// The read takes exactly the fstat size: a file that shrank or grew is an error.
+func TestReadExactly(t *testing.T) {
+	got, err := readExactly(strings.NewReader("abcd"), 4)
+	if err != nil || string(got) != "abcd" {
+		t.Fatalf("exact: %q, %v", got, err)
+	}
+	if got, err := readExactly(strings.NewReader(""), 0); err != nil || len(got) != 0 {
+		t.Fatalf("empty: %q, %v", got, err)
+	}
+	if _, err := readExactly(strings.NewReader("abc"), 4); err == nil {
+		t.Error("a file shorter than its fstat size was accepted")
+	}
+	if _, err := readExactly(strings.NewReader(""), 4); err == nil {
+		t.Error("an empty read of a 4-byte file was accepted")
+	}
+	if _, err := readExactly(strings.NewReader("abcde"), 4); err == nil {
+		t.Error("a file that grew was accepted")
+	}
+}
+
 // Since git 2.37 a skip-worktree file that exists in the work tree is a modification;
 // an absent one is not. sparse.expectFilesOutsideOfPatterns turns the first off.
 func TestCandidates_SkipWorktree(t *testing.T) {

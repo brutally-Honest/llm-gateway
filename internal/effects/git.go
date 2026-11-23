@@ -44,7 +44,9 @@ const cacheIdle = time.Hour
 
 // maxIndexBytes is the largest index file the Go reader takes in; a bigger one (or one
 // that is not a regular file) goes to `git ls-files` instead of being read into memory.
-const maxIndexBytes = 512 << 20
+// 128 MiB: real non-split indexes are tens of MB, and the parsed entries, the oid
+// strings and the lookup map cost several times the file size in memory.
+const maxIndexBytes = 128 << 20
 
 // hashedFile is a work-tree file the last candidates call hashed and found equal to its
 // index entry. Its stat identifies the content the next call may skip hashing.
@@ -424,14 +426,33 @@ func readIndexFile(p string) ([]byte, time.Time, error) {
 	if !st.Mode().IsRegular() || st.Size() > maxIndexBytes {
 		return nil, time.Time{}, errors.New("index: not a regular file or too large")
 	}
-	data, err := io.ReadAll(io.LimitReader(f, st.Size()+1))
+	data, err := readExactly(f, st.Size())
 	if err != nil {
 		return nil, time.Time{}, err
 	}
-	if int64(len(data)) != st.Size() {
-		return nil, time.Time{}, errors.New("index: size changed while reading")
-	}
 	return data, st.ModTime(), nil
+}
+
+// readExactly reads exactly size bytes from r into one allocation of that size (no
+// doubling growth) and fails if r is shorter or has more left, i.e. the file changed
+// size after the fstat.
+func readExactly(r io.Reader, size int64) ([]byte, error) {
+	errChanged := errors.New("index: size changed while reading")
+	data := make([]byte, size)
+	if _, err := io.ReadFull(r, data); err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, errChanged
+		}
+		return nil, err
+	}
+	var extra [1]byte
+	if n, err := r.Read(extra[:]); n > 0 || (err != nil && err != io.EOF) {
+		if n > 0 {
+			return nil, errChanged
+		}
+		return nil, err
+	}
+	return data, nil
 }
 
 // oldGitWithoutOption reports a git too old to know `rev-parse --show-object-format`:
