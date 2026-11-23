@@ -24,8 +24,21 @@ const (
 // call, or an adapter that cannot tell, passes untouched. A model call needs a listed
 // gateway key (403 otherwise) and room in its window (429 otherwise); neither is
 // forwarded. An admitted call reports its tokens back to l when it settles.
-func Middleware(l Limiter, a core.Adapter, log *zap.Logger) func(http.Handler) http.Handler {
-	return middleware(l, a, log, time.Now)
+func Middleware(l Limiter, a core.Adapter, log *zap.Logger, opts ...Option) func(http.Handler) http.Handler {
+	clock := time.Now
+	for _, o := range opts {
+		o(&clock)
+	}
+	return middleware(l, a, log, clock)
+}
+
+// Option changes how Middleware is built. Production passes none.
+type Option func(clock *func() time.Time)
+
+// WithClock makes Middleware read time from f instead of time.Now. Only tests use it,
+// to keep a window from rolling over mid-test.
+func WithClock(f func() time.Time) Option {
+	return func(clock *func() time.Time) { *clock = f }
 }
 
 func middleware(l Limiter, a core.Adapter, log *zap.Logger, clock func() time.Time) func(http.Handler) http.Handler {

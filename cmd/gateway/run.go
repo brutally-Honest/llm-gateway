@@ -57,6 +57,9 @@ type deps struct {
 	getpid func() int
 	now    func() time.Time
 	sleep  func(ctx context.Context, d time.Duration)
+	// rateClock is the rate limiter's clock; nil means time.Now. Only tests set it, so a
+	// window cannot roll over mid-test. Not the backoff's now above.
+	rateClock func() time.Time
 }
 
 // registered is every protocol adapter and client profile the gateway runs with, in
@@ -266,8 +269,12 @@ func serve(ctx context.Context, d deps) int {
 			log.Error("invalid config", zap.String("key", "ratelimit.strategy"), zap.String("reason", reasonInvalidValue))
 			return exitConfig
 		}
+		var rlOpts []ratelimit.Option
+		if d.rateClock != nil {
+			rlOpts = append(rlOpts, ratelimit.WithClock(d.rateClock))
+		}
 		opts = append(opts, core.WithGuard(func(a core.Adapter) func(http.Handler) http.Handler {
-			return ratelimit.Middleware(limiter, a, log)
+			return ratelimit.Middleware(limiter, a, log, rlOpts...)
 		}))
 	}
 	// The UI binds before anything serves, so a taken port stops the proxy too (E17).

@@ -28,8 +28,19 @@ func rlConfig(rpm, tpm int) string {
 	return fmt.Sprintf("ratelimit:\n  enabled: true\n  keys:\n    %s:\n      rpm: %d\n      tpm: %d\n", rlKey, rpm, tpm)
 }
 
-// rlGateway starts run on a real listener with config as the config file.
+// rlFixed is the instant every rate-limit run test sees unless it picks another: mid
+// window, so no wall-clock minute boundary can split a Record from the next Admit.
+var rlFixed = time.Date(2001, 2, 3, 4, 5, 30, 0, time.UTC)
+
+// rlGateway starts run on a real listener with config as the config file and a fixed
+// rate-limit clock.
 func rlGateway(t *testing.T, config string, up *httptest.Server, env map[string]string) (*gateway, string) {
+	t.Helper()
+	return rlGatewayAt(t, config, up, env, func() time.Time { return rlFixed })
+}
+
+// rlGatewayAt is rlGateway with the rate limiter reading clock.
+func rlGatewayAt(t *testing.T, config string, up *httptest.Server, env map[string]string, clock func() time.Time) (*gateway, string) {
 	t.Helper()
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -45,7 +56,7 @@ func rlGateway(t *testing.T, config string, up *httptest.Server, env map[string]
 	for k, v := range env {
 		all[k] = v
 	}
-	g := startGateway(t, options{args: []string{"-config", path}, env: all, realListen: true})
+	g := startGateway(t, options{args: []string{"-config", path}, env: all, realListen: true, rateClock: clock})
 	addr, _ := g.waitLine("gateway started")["addr"].(string)
 	return g, "http://" + addr
 }
@@ -210,6 +221,22 @@ func TestRun_TokensRecordedFromStream(t *testing.T) {
 	}
 	if n := len(up.seen()); n != 1 {
 		t.Errorf("upstream saw %d calls, want 1", n)
+	}
+}
+
+// The limiter's window is the fixed clock's minute: a call recorded 1 ms before a boundary
+// still limits the next one, and the reset header is that fixed boundary, not the real one.
+func TestRun_RateLimitFixedClockAtMinuteBoundary(t *testing.T) {
+	total := fixtureTokens(t)
+	up := sseUpstream(t, "stream.sse", "")
+	at := time.Date(2001, 2, 3, 4, 5, 59, int(999*time.Millisecond), time.UTC)
+	_, url := rlGatewayAt(t, rlConfig(0, int(total)), up.Server, nil, func() time.Time { return at })
+	if res, _ := rlPost(t, url, rlKey, nil); res.StatusCode != http.StatusOK {
+		t.Fatalf("first call status %d, want 200", res.StatusCode)
+	}
+	res := waitLimited(t, url)
+	if got, want := res.Header.Get("X-Gateway-Ratelimit-Reset"), "2001-02-03T04:06:00Z"; got != want {
+		t.Errorf("X-Gateway-Ratelimit-Reset = %q, want %q", got, want)
 	}
 }
 
