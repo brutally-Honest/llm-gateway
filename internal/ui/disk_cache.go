@@ -165,7 +165,7 @@ type DiskCache struct {
 // OpenDiskCache opens the cache of this build under dir (capture.dir) and starts its
 // writer, which stops with ctx. The build identity is the cache format, version, a hash of
 // the running executable, the attribution skew, the home folder and the local time zone's
-// name. Before anything is read, the store's largest ids are compared with the build
+// name and rules. Before anything is read, the store's largest ids are compared with the build
 // folder's high-water file: if the store is behind it, the store was replaced by an older
 // copy and the folder is deleted (AC8). An error means the caller runs without the cache.
 func OpenDiskCache(ctx context.Context, dir, version string, skew time.Duration, r *store.Reader, log *zap.Logger, m *observability.Metrics) (*DiskCache, error) {
@@ -177,9 +177,7 @@ func OpenDiskCache(ctx context.Context, dir, version string, skew time.Duration,
 		return nil, err
 	}
 	home, _ := os.UserHomeDir()
-	h := sha256.New()
-	_, _ = fmt.Fprintf(h, "%d\x00%s\x00%x\x00%d\x00%s\x00%s", diskFormat, version, exe, int64(skew), home, time.Local.String())
-	build := hex.EncodeToString(h.Sum(nil))[:16]
+	build := buildIdentity(version, exe, skew, home, time.Local)
 	base := filepath.Join(dir, diskDirName)
 	c := &DiskCache{
 		build: build, root: filepath.Join(base, build), ctx: ctx, r: r, log: log, m: m,
@@ -200,6 +198,27 @@ func OpenDiskCache(ctx context.Context, dir, version string, skew time.Duration,
 	}
 	logging.Go(log, "ui_cache_writer", func() error { c.writer(); return nil })
 	return c, nil
+}
+
+// buildIdentity hashes the inputs a cached view depends on into the 16-character build id.
+func buildIdentity(version string, exe [sha256.Size]byte, skew time.Duration, home string, zone *time.Location) string {
+	h := sha256.New()
+	_, _ = fmt.Fprintf(h, "%d\x00%s\x00%x\x00%d\x00%s\x00%s\x00%s", diskFormat, version, exe, int64(skew), home, zone.String(), zoneFingerprint(zone))
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+// zoneFingerprint describes a zone by its rules, not its name: the abbreviation and offset
+// at midnight UTC on Jan 1 and Jul 1 of 1990-2040. With TZ unset Go names the system zone
+// "Local" whatever /etc/localtime holds, so the name alone cannot tell two zones apart.
+func zoneFingerprint(loc *time.Location) string {
+	var b strings.Builder
+	for y := 1990; y <= 2040; y++ {
+		for _, m := range []time.Month{time.January, time.July} {
+			b.WriteString(time.Date(y, m, 1, 0, 0, 0, 0, time.UTC).In(loc).Format("MST -0700"))
+			b.WriteByte(';')
+		}
+	}
+	return b.String()
 }
 
 // checkHighWater deletes the build folder when the store's largest ids are below the ones

@@ -1102,3 +1102,42 @@ func TestViewJSON_RoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestZoneFingerprint(t *testing.T) {
+	load := func(name string) *time.Location {
+		l, err := time.LoadLocation(name)
+		if err != nil {
+			t.Skipf("no tz database: %v", err)
+		}
+		return l
+	}
+	kolkata, tokyo, ny := zoneFingerprint(load("Asia/Kolkata")), zoneFingerprint(load("Asia/Tokyo")), zoneFingerprint(load("America/New_York"))
+	if kolkata == tokyo || kolkata == ny || tokyo == ny {
+		t.Error("different zones share a fingerprint")
+	}
+	if zoneFingerprint(load("Asia/Kolkata")) != kolkata {
+		t.Error("one zone gave two fingerprints")
+	}
+	// The bug case: the same name ("Local") with different rules.
+	a, b := time.FixedZone("Local", 19800), time.FixedZone("Local", 32400)
+	if a.String() != b.String() {
+		t.Fatal("test setup: the names must match")
+	}
+	if zoneFingerprint(a) == zoneFingerprint(b) {
+		t.Error("same-named zones with different offsets share a fingerprint")
+	}
+}
+
+func TestBuildIdentity_HomeAndZone(t *testing.T) {
+	exe := [sha256.Size]byte{1}
+	base := buildIdentity("v", exe, 0, "/home/a", time.FixedZone("Local", 19800))
+	if buildIdentity("v", exe, 0, "/home/a", time.FixedZone("Local", 19800)) != base {
+		t.Error("the same inputs gave two builds")
+	}
+	if buildIdentity("v", exe, 0, "/home/b", time.FixedZone("Local", 19800)) == base {
+		t.Error("home does not change the build")
+	}
+	if buildIdentity("v", exe, 0, "/home/a", time.FixedZone("Local", 32400)) == base {
+		t.Error("zone does not change the build")
+	}
+}
