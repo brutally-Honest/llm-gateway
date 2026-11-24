@@ -296,11 +296,15 @@ func (d Deps) digestCompute(row store.SessionRow, ver store.Version) func(contex
 				return m, nil
 			}
 		}
-		m, err := computeMemo(c, vd, row)
+		m, err := computeMemoFn(c, vd, row)
 		m.eff = eff
 		return m, err
 	}
 }
+
+// computeMemoFn is how digestCompute computes a memo. It is a test hook: tests replace it
+// to act after the data has been read.
+var computeMemoFn = computeMemo
 
 // memoSource is what a memo compute reads. *store.CtxReader satisfies it.
 type memoSource interface {

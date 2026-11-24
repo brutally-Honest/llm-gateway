@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -1024,6 +1025,183 @@ func TestDiskCache_FullQueueDropsRequestWrites(t *testing.T) {
 
 // memo DTO: decode(encode(m)) equals m, for memos of seeded sessions and for one with
 // every field set, cost totals included.
+// unassigned stores a connection that belongs to no session, after the session's effects.
+func (e *diskEnv) unassigned(host string) {
+	e.t.Helper()
+	c := core.Effect{Kind: core.EffectNetConn, At: baseTime.Add(1500 * time.Millisecond), Principal: core.PrincipalLocal,
+		Client: "cc", Host: host, Port: 443, Via: "connect", EndedAt: baseTime.Add(2 * time.Second), Outcome: core.NetOK}
+	if err := e.s.SaveEffects(e.t.Context(), []core.Effect{c}, nil); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+// A view's header rests on unassigned_max, the global effect maximum, which is above the
+// session's own effect maximum when unassigned connections follow it. The high-water mark
+// covers it, so an older backup that still has the session's effects is caught (P2-3).
+func TestHighWater_ViewCoversUnassignedMax(t *testing.T) {
+	e := newDiskEnv(t)
+	e.seed()
+	e.effect("a")
+	e.unassigned("one.example.com")
+	e.unassigned("two.example.com")
+	e.mustGet("/api/sessions/" + sid() + "/view")
+	e.flush()
+	if len(e.files("v")) == 0 {
+		t.Fatal("no view was written")
+	}
+	c := e.dep.Reader.WithContext(t.Context())
+	un, err := c.MaxEffectID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := store.SessionIdent{Principal: core.PrincipalLocal, Client: "cc", Key: "k"}
+	effs, _ := c.EffectVersions([]store.SessionIdent{id})
+	if effs[id].MaxID >= un {
+		t.Fatalf("setup: session effect max %d is not below the global %d", effs[id].MaxID, un)
+	}
+	if hw, _ := e.disk.readHighWater(); hw.EffectID < un {
+		t.Errorf("high-water effect id = %d, want at least unassigned_max %d", hw.EffectID, un)
+	}
+
+	// restore a backup that has the session's effects and not the later connections
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(e.dir, store.DBName)+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.Exec(`DELETE FROM effects WHERE id > ?`, effs[id].MaxID); err != nil {
+		t.Fatal(err)
+	}
+	e.restart("v1")
+	if n := len(e.files("v")); n != 0 {
+		t.Errorf("%d view files survived a store that went back", n)
+	}
+	if e.logs.FilterMessageSnippet("store is behind").Len() != 1 {
+		t.Errorf("no single warning: %v", e.logs.All())
+	}
+}
+
+// The mark is raised before the entry is written (AC8): an entry whose write fails leaves
+// the mark covering it.
+func TestHighWater_RaisedBeforeTheEntryIsWritten(t *testing.T) {
+	e := newDiskEnv(t)
+	e.seed()
+	e.effect("a")
+	e.unassigned("one.example.com")
+	// a regular file where the view folder goes: every view write fails
+	vdir := filepath.Join(e.disk.root, diskViewDir)
+	if err := os.RemoveAll(vdir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(vdir, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e.mustGet("/api/sessions/" + sid() + "/view")
+	e.flush()
+	if e.disk.written.Load() != 0 {
+		t.Fatalf("written = %d, the entry write was meant to fail", e.disk.written.Load())
+	}
+	un, err := e.dep.Reader.WithContext(t.Context()).MaxEffectID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hw, ok := e.disk.readHighWater()
+	if !ok || hw.ExchangeRow == 0 || hw.EffectID < un {
+		t.Errorf("high-water = %+v %v after a failed entry write, want it covering effect id %d", hw, ok, un)
+	}
+}
+
+// An effect that lands after the memo's data was read must not let the memo be written:
+// its key was made from the effect version read before the data, which is now behind (AC5).
+func TestDiskCache_EffectAfterDataReadMemoNotWritten(t *testing.T) {
+	e := newDiskEnv(t)
+	e.seed()
+	real := computeMemoFn
+	var once atomic.Bool
+	computeMemoFn = func(src memoSource, vd viewDeps, row store.SessionRow) (digestMemo, error) {
+		m, err := real(src, vd, row)
+		if row.SessionKey == "k" && once.CompareAndSwap(false, true) {
+			e.effect("late") // lands after the data was read
+		}
+		return m, err
+	}
+	t.Cleanup(func() { computeMemoFn = real })
+
+	e.mustGet("/api/sessions/" + sid())
+	e.flush()
+	if !once.Load() {
+		t.Fatal("the compute hook never ran")
+	}
+	if _, err := os.Stat(e.fileOf("m", "k")); err == nil {
+		t.Error("a memo read before an effect landed was written under the older key")
+	}
+	if e.disk.skipped.Load() == 0 {
+		t.Error("the stale write was not counted as skipped")
+	}
+	e.restart("v1")
+	before := e.computes()
+	e.mustGet("/api/sessions/" + sid())
+	e.flush()
+	if e.computes() == before {
+		t.Error("the later read did not rebuild")
+	}
+	if _, err := os.Stat(e.fileOf("m", "k")); err != nil {
+		t.Errorf("the rebuilt memo was not written: %v", err)
+	}
+}
+
+// A request that joins a compute already in flight still gets the disk hit: the lookup is
+// inside the compute (D24), so the joined compute finds the entry and nothing is computed.
+func TestDiskCache_JoiningRequestGetsTheDiskHit(t *testing.T) {
+	e := newDiskEnv(t)
+	e.seed()
+	e.mustGet("/api/sessions/" + sid())
+	e.flush()
+	if len(e.files("m")) == 0 {
+		t.Fatal("no memo on disk")
+	}
+	e.restart("v1")
+
+	row := store.SessionRow{PrincipalID: core.PrincipalLocal, Client: "cc", SessionKey: "k"}
+	id := sessionIdent(row)
+	vers, err := e.dep.Reader.WithContext(t.Context()).SessionVersions([]store.SessionIdent{id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, gate := make(chan struct{}), make(chan struct{})
+	held := func(ctx context.Context) (digestMemo, error) {
+		close(started)
+		<-gate // before the disk lookup
+		return e.dep.digestCompute(row, vers[id])(ctx)
+	}
+	never := func(context.Context) (digestMemo, error) {
+		t.Error("a joining request ran its own compute")
+		return digestMemo{}, errors.New("unexpected")
+	}
+	type res struct {
+		h   digestHit
+		err error
+	}
+	out := make(chan res, 2)
+	go func() { h, err := e.dep.Digests.get(t.Context(), id, vers[id], held); out <- res{h, err} }()
+	<-started
+	go func() { h, err := e.dep.Digests.get(t.Context(), id, vers[id], never); out <- res{h, err} }()
+	time.Sleep(50 * time.Millisecond) // let the second request join
+	close(gate)
+	for range 2 {
+		r := <-out
+		if r.err != nil {
+			t.Fatal(r.err)
+		}
+		if !r.h.memo.fromDisk {
+			t.Errorf("a caller got a memo not read from disk: %+v", r.h)
+		}
+	}
+	if n := e.computes(); n != 0 {
+		t.Errorf("computes = %d, want 0 (served from disk)", n)
+	}
+}
+
 func TestMemoDTO_RoundTrip(t *testing.T) {
 	e := newDiskEnv(t)
 	e.seed()

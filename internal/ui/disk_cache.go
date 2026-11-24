@@ -629,6 +629,11 @@ func (c *DiskCache) raiseHighWater(r diskReq) error {
 	next.ExchangeRow = max(next.ExchangeRow, r.ver.ExMaxRow)
 	next.HookID = max(next.HookID, r.ver.HookMaxID)
 	next.EffectID = max(next.EffectID, r.eff.MaxID)
+	if r.op == opView {
+		// A view's header also rests on unassigned_max, the global effect maximum read
+		// before the build; unassigned connections belong to no session's own maximum.
+		next.EffectID = max(next.EffectID, r.view.unMax)
+	}
 	path := filepath.Join(c.root, diskHighWat)
 	if _, err := os.Stat(path); err == nil && next == c.hw {
 		return nil
