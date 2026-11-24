@@ -677,3 +677,93 @@ test("unknownCostLineIsLeftOut", () => {
   const cost = withClass(byTag(p.row("s1"), "td")[6], "cost")[0];
   assert.equal(cost.hidden, true);
 });
+
+// spec 042 AC3: a live update touches only what changed. fiveRows are s1..s5, newest first.
+const fiveRows = () => [1, 2, 3, 4, 5].map((n) => session({ id: `s${n}`, title: `row ${n}`, last_at: `2026-01-01T00:0${9 - n}:00Z` }));
+
+// spy counts the calls that would re-insert rows on the table body
+function spyBody(p) {
+  const body = byTag(p.page.el, "tbody")[0];
+  const calls = { insertBefore: 0, replaceChildren: 0, append: 0, prepend: 0 };
+  for (const name of Object.keys(calls)) {
+    const orig = body[name].bind(body);
+    body[name] = (...args) => {
+      calls[name]++;
+      return orig(...args);
+    };
+  }
+  return { body, calls };
+}
+
+test("aLiveUpdateOfOneRowLeavesTheOtherRowsInPlace", () => {
+  const rows = fiveRows();
+  const p = livePage(rows);
+  const before = ["s1", "s2", "s3", "s4", "s5"].map((id) => p.row(id));
+  const { body, calls } = spyBody(p);
+  // the old code also rewrote every row's attributes on each update
+  let writes = 0;
+  for (const tr of before) {
+    for (const name of ["setAttribute", "removeAttribute"]) {
+      const orig = tr[name].bind(tr);
+      tr[name] = (...args) => {
+        writes++;
+        return orig(...args);
+      };
+    }
+  }
+  p.page.update({ items: rows.map((s) => (s.id === "s3" ? { ...s, title: "row 3 changed" } : s)) });
+  assert.equal(writes, 0, "no row attribute is written again");
+  assert.deepEqual(calls, { insertBefore: 0, replaceChildren: 0, append: 0, prepend: 0 }, "no row is re-inserted");
+  assert.deepEqual(body.children, before, "the same row nodes, in the same places");
+  assert.equal(p.link("s3").textContent, "row 3 changed");
+});
+
+test("aRowMovedToTheTopIsTheOnlyRowMoved", () => {
+  const rows = fiveRows();
+  const p = livePage(rows);
+  const { body, calls } = spyBody(p);
+  const a = p.link("s4");
+  a.focus();
+  p.page.update({ items: [rows[3], rows[0], rows[1], rows[2], rows[4]] });
+  assert.equal(calls.insertBefore, 1, "exactly one move");
+  assert.equal(calls.replaceChildren, 0);
+  assert.deepEqual(body.children.map((r) => r.dataset.id), ["s4", "s1", "s2", "s3", "s5"]);
+  assert.equal(document.activeElement, a, "the moved row's link keeps its focus (E5)");
+});
+
+test("anUnchangedSessionIsNotRefilled", () => {
+  const rows = fiveRows();
+  const p = livePage(rows);
+  const title = p.link("s2");
+  title.textContent = "sentinel";
+  p.page.update({ items: [...rows] });
+  assert.equal(title.textContent, "sentinel", "the same session object is not written again");
+  p.page.update({ items: rows.map((s) => (s.id === "s2" ? { ...s } : s)) });
+  assert.equal(title.textContent, "row 2", "a changed object is filled again");
+});
+
+test("todayTilesAreKeptWhenTheTotalsDidNotChange", () => {
+  const rows = fiveRows();
+  const p = livePage(rows);
+  const day = { sessions: 2, calls: 5, changed: 7, sites: 1, input: counter(3707), output: counter(null) };
+  p.page.update({ today: day });
+  const tile = withClass(withClass(p.page.el, "today")[0], "stat")[0];
+  p.page.update({ items: [...rows].reverse(), today: day });
+  assert.equal(withClass(withClass(p.page.el, "today")[0], "stat")[0], tile, "same totals, same tile");
+  p.page.update({ today: { ...day, sessions: 3 } });
+  const now = withClass(withClass(p.page.el, "today")[0], "stat")[0];
+  assert.notEqual(now, tile, "new totals, new tile");
+  assert.match(textOf(now), /3\s+sessions/);
+});
+
+test("theErrorBoxIsKeptAcrossRedrawsWithTheSameError", () => {
+  const p = livePage(fiveRows());
+  p.page.update({ error: "boom", total: 100, page: 2, loaded: true, kind: "all", q: "" });
+  const retry = retryOf(p);
+  assert.ok(retry);
+  p.page.update({ today: { sessions: 1 } });
+  assert.equal(retryOf(p), retry, "same error, same Retry");
+  p.page.update({ error: "other" });
+  assert.notEqual(retryOf(p), retry, "a new error text builds the box again");
+  assert.match(textOf(withClass(p.page.el, "sp-list")[0]), /other/);
+});
