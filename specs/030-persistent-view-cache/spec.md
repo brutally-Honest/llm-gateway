@@ -91,6 +91,10 @@ per-session results that can always be rebuilt from the store.
   page 2 and page 5 under 100 ms each; `gateway_ui_warmup_seconds` under 1 s; cold filters
   and search under 300 ms; cold `/view` of the largest session under 500 ms. On a 3x
   store: the same pages under 100 ms and no 504 on any filter or search.
+  Status 2026-11-24 (D29, D30, D32): met on the copy; on the 3x store no 504 on any filter or
+  search, but pages take 109-211 ms after a restart (the list query's floor); and with an
+  empty cache (first start after an upgrade) a page can still time out. Both are left open
+  for the human, not reworded away.
 
 ## Edge cases
 - First start after an upgrade or a format change: every entry misses; pages build on

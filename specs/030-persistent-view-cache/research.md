@@ -14,6 +14,9 @@ feature: 030-persistent-view-cache
 - 2026-11-24 Step 4 Haiku 4 (page-1 error), 3ccc10a: pager always shown on an error, Next on for an unfiltered unknown total; 244 web tests pass; make verify green.
 - 2026-11-24 Step 4 Haiku 5 (docs), 1dbed32: install.md view-cache section and listeners paragraph, observability metrics row, roadmap (030 done, 040 next).
 - 2026-11-24 Step 5 (measure, UI check): targets met on the copy; on 3x every page and filter answers with no 504, pages 109-211 ms (the list query's floor, D29); empty-cache page 2 still times out (D27, D30); folder deletion and a restored older store both rebuild; 16 screenshots pixel-identical to main.
+- 2026-11-24 Step 6 review round 1 (fresh opus): 1 P1 (AC13, not code: D32), 2 P2, 1 P3, 7 P4; P2-2 fixed in 2786bbc (zone rules in the build id), P2-3 and P3-4 in 98d2727 (high-water covers a view's unassigned max; four tests).
+- 2026-11-24 Step 6 review round 2 (fresh opus, last round): no P1 or P2; P3-1 (store-going-back check only at cache open) plus P4-1 and P4-3 handed to a fix.
+- 2026-11-24 Step 6 round-2 fixes (resumed session; the killed subagent's work kept after review): P3-1 (D33) in af6769b, P4-1 in 6c9cbd4, P4-2 and P4-3 in 07f9d57; the identity test fails when the open-time identity check is disabled (go test -overlay probe); touched tests pass -race -count=20; make verify green.
 
 ## Measurement setup
 - Store copy, taken 2026-11-24 19:05 +05:30: `sqlite3 ... ".backup ~/.cache/llm-gateway-030/gateway.db"`
@@ -369,3 +372,37 @@ coalesces with any request building the same session). It then enforces the size
   stays at the screen's 2,560 px; the UI refuses to be framed), so all widths ran in a
   headless Chrome with a throwaway profile driven over the DevTools protocol on 127.0.0.1:9333,
   the fallback the brief allows; the extension tab covered the restart-to-page-2 check.
+
+### Code review round 1 (step 6, fresh opus)
+
+| # | Finding | Done |
+|---|---|---|
+| P1-1 | AC13 not met on 3x pages and with an empty cache; D30 undecided | Not a code fix: AC13 carries a dated status line and stays open for the human (D32) |
+| P2-2 | `time.Local.String()` is "Local" when TZ is unset, so a time-zone change keeps the build id and old-zone times are served | Fixed: zone rules fingerprint in the build id (see Progress) |
+| P2-3 | The high-water mark leaves out a view's `unassigned_max` (global effect max), so a restore that drops trailing unassigned connections is not detected | Fixed: the mark takes the view's `unassigned_max` too (see Progress) |
+| P3-4 | Tests missing: effect landing between the effect-version read and the data reads; a joined compute getting the disk hit; mark raised before the entry; home and zone in the build id | Added (see Progress) |
+| P4-5 | A memo hit skips decoding a later corrupt payload with the same hash | Accepted (D3): hash and payload are written in one transaction; a corrupt payload under a good hash is store damage, out of scope |
+| P4-6..11 | Damage count can wait for the next damage; temp files in the build root not cleaned; no fsync; rebuild gauge set with no disk cache; `textMemoOff` package var; a flipped JS assertion | Accepted as they are; the JS flip is stated in its commit note (D28) |
+
+- **D32** (2026-11-24) AC13 is reported as partly unmet instead of being reworded: the
+  copy meets every number; on 3x the pages miss 100 ms by the list query's floor (D29), and an
+  empty cache can still time out a page (D30). Both need a choice that is the human's
+  (a store-side session summary, or stale or fact-less rows). The PR says so.
+
+### Code review round 2 (step 6, fresh opus, last round)
+
+No P1 or P2. Both round-1 fixes judged correct and complete; their five tests pass `-race -count=10`.
+
+| # | Finding | Done |
+|---|---|---|
+| P3-1 | AC8 runs only when the cache opens: a restored store, then a run with the UI off, can push the maxima back above the mark with reused rowids/ids | Fixed: the high-water file records the identity of the row at each maximum and the open checks it (D33) |
+| P4-1 | The zone fingerprint misses zones that differ only in transition hours (Asia/Beirut vs Europe/Sofia) | Fixed: `$TZ` and the sha256 of `/etc/localtime` join the build id |
+| P4-2 | The joining-request test relied on a sleep to join | Fixed: it waits until the second caller has joined |
+| P4-3 | The `computeMemoFn` restore could race background computes at test cleanup | Fixed: restore registered first, so it runs last |
+
+- **D33** (2026-11-24) Store going back, closing D20's gap: besides the largest exchange rowid,
+  hook id and effect id, the high-water file keeps the identity of the row at each (its
+  `request_id`, `received_at`, `at`). At open, each recorded row must still exist with the
+  same identity, else the build folder is dropped. A store restored and then written to with
+  the cache never opened reuses those ids for other rows, and is caught. An old-format mark
+  is dropped like damage.
