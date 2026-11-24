@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"go.uber.org/zap"
 
 	"github.com/brutally-honest/llm-gateway/internal/cost"
 	"github.com/brutally-honest/llm-gateway/internal/store"
@@ -274,12 +275,36 @@ func sessionIdent(row store.SessionRow) store.SessionIdent {
 
 // digestCompute computes a session's memo on bctx through the server's reader, so it
 // still lands in the cache when the request that asked for it has timed out.
-func (d Deps) digestCompute(row store.SessionRow) func(context.Context) (digestMemo, error) {
+//
+// With a disk cache it first reads the session's effect version, before any data, and
+// looks for the memo on disk at (ver, that effect version); a hit is returned as it is.
+// ver is the store version the caller asked for.
+func (d Deps) digestCompute(row store.SessionRow, ver store.Version) func(context.Context) (digestMemo, error) {
 	vd := d.viewDeps()
 	return func(bctx context.Context) (digestMemo, error) {
-		return computeMemo(d.Reader.WithContext(bctx), vd, row)
+		c := d.Reader.WithContext(bctx)
+		var eff store.EffectVersion
+		if d.Disk != nil {
+			id := sessionIdent(row)
+			evs, err := c.EffectVersions([]store.SessionIdent{id})
+			if err != nil {
+				return digestMemo{}, err
+			}
+			eff = evs[id]
+			if m, ok := d.Disk.GetMemo(id, viewKeyOf(ver, eff)); ok {
+				m.eff, m.fromDisk = eff, true
+				return m, nil
+			}
+		}
+		m, err := computeMemoFn(c, vd, row)
+		m.eff = eff
+		return m, err
 	}
 }
+
+// computeMemoFn is how digestCompute computes a memo. It is a test hook: tests replace it
+// to act after the data has been read.
+var computeMemoFn = computeMemo
 
 // memoSource is what a memo compute reads. *store.CtxReader satisfies it.
 type memoSource interface {
@@ -316,11 +341,11 @@ func computeMemo(src memoSource, vd viewDeps, row store.SessionRow) (digestMemo,
 		return digestMemo{}, err
 	}
 	// the facts read here do not depend on the active flag
-	v, err := vd.sessionView(src, who, bs, hooks, false, "")
+	v, degraded, err := vd.sessionViewChecked(src, who, bs, hooks, false, "")
 	if err != nil {
 		return digestMemo{}, err
 	}
-	return digestMemo{digest: dg, stats: st, row: rowFactsOf(v)}, nil
+	return digestMemo{digest: dg, stats: st, row: rowFactsOf(v), degraded: degraded}, nil
 }
 
 // summarizeRows builds the summaries of rows (ids[i] is rows[i]'s id). The versions of
@@ -347,7 +372,7 @@ func (d Deps) summarizeRows(ctx context.Context, c *store.CtxReader, ids []strin
 		ver := vers[idents[i]]
 		var memo digestMemo
 		if d.Digests != nil && d.Reader != nil {
-			hit, err := d.Digests.latest(ctx, idents[i], ver, d.digestCompute(row))
+			hit, err := d.Digests.latest(ctx, idents[i], ver, d.digestCompute(row, ver))
 			if err != nil {
 				return nil, nil, err
 			}
@@ -410,25 +435,101 @@ func mountSessions(api chi.Router, d Deps) {
 	api.Get("/sessions/{id}", d.getSession)
 }
 
-// Warm builds the sessions list's first page into d's caches (spec 019). The gateway runs
-// it once at start, before the UI accepts connections: cold, that page can take longer
-// than one request's store timeout, which made the first page load after a restart
-// fail. ctx bounds it; on an error the caches keep what was built so far.
-func Warm(ctx context.Context, d Deps) error {
+// prefillBatch is how many sessions the background pass reads versions for at once.
+const prefillBatch = 50
+
+// Prefill is the background pass over the sessions list (spec 030 AC7): after the UI
+// serves, it walks every session in list order, one at a time, and builds the memo and
+// the view the on-disk cache lacks, through the normal paths, so they coalesce with the
+// requests that want them and are written. It then trims the cache to its size cap and
+// records how long it took. Without a disk cache it only warms the first page's memos.
+// It stops when ctx ends and never fails: a session that cannot be built is left to its
+// first request.
+func Prefill(ctx context.Context, d Deps) {
 	if d.Reader == nil {
-		return nil
+		return
 	}
-	c := d.Reader.WithContext(ctx)
-	rows, err := c.SessionPage(nil, defaultListLimit+1)
+	start := time.Now()
+	d.Disk.Cleanup()
+	var after *store.SessionAfter
+	for ctx.Err() == nil {
+		rows, vers, effs, err := d.prefillBatchOf(ctx, after)
+		if err != nil {
+			if ctx.Err() == nil {
+				d.logger().Warn("ui background pass: cannot read sessions", zap.Error(err))
+			}
+			return
+		}
+		now := d.now()
+		for _, row := range rows {
+			if ctx.Err() != nil {
+				return
+			}
+			id := sessionIdent(row)
+			d.prefillOne(ctx, row, vers[id], effs[id], now)
+			d.Disk.WaitRoom(ctx)
+		}
+		if len(rows) < prefillBatch || d.Disk == nil {
+			break
+		}
+		after = afterOfRow(rows[len(rows)-1])
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	d.Disk.Trim(ctx)
+	d.Metrics.CacheRebuild(time.Since(start))
+}
+
+func (d Deps) logger() *zap.Logger {
+	if d.Log == nil {
+		return zap.NewNop()
+	}
+	return d.Log
+}
+
+// prefillBatchOf reads one batch of sessions after the given position and their versions.
+func (d Deps) prefillBatchOf(ctx context.Context, after *store.SessionAfter) ([]store.SessionRow, map[store.SessionIdent]store.Version, map[store.SessionIdent]store.EffectVersion, error) {
+	rctx, cancel := context.WithTimeout(ctx, storeTimeout)
+	defer cancel()
+	c := d.Reader.WithContext(rctx)
+	rows, err := c.SessionPage(after, prefillBatch)
 	if err != nil {
-		return err
+		return nil, nil, nil, err
 	}
-	ids := make([]string, len(rows))
-	for i, row := range rows {
-		ids[i] = sessionID(row)
+	idents := make([]store.SessionIdent, len(rows))
+	for i, r := range rows {
+		idents[i] = sessionIdent(r)
 	}
-	_, _, err = d.summarizeRows(ctx, c, ids, rows, d.now())
-	return err
+	vers, err := c.SessionVersions(idents)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	effs, err := c.EffectVersions(idents)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return rows, vers, effs, nil
+}
+
+// prefillOne builds one session's memo and view if they are not on disk. Errors are left
+// to the session's first request.
+func (d Deps) prefillOne(ctx context.Context, row store.SessionRow, ver store.Version, eff store.EffectVersion, now time.Time) {
+	sctx, cancel := context.WithTimeout(ctx, buildTimeout)
+	defer cancel()
+	id := sessionIdent(row)
+	if d.Digests != nil {
+		if _, err := d.Digests.get(sctx, id, ver, d.digestCompute(row, ver)); err != nil && ctx.Err() == nil {
+			d.logger().Debug("ui background pass: memo not built", zap.Error(err))
+		}
+	}
+	// the view of an active session is not written (D18), so it is not built for the cache
+	if d.Disk == nil || d.Timelines == nil || isActive(row.Last, row.EndOnly, now) || d.Disk.HasView(sctx, id, viewKeyOf(ver, eff), now) {
+		return
+	}
+	if _, err := d.cachedView(sctx, sessIdent{row.PrincipalID, row.Client, row.SessionKey}, true); err != nil && ctx.Err() == nil {
+		d.logger().Debug("ui background pass: view not built", zap.Error(err))
+	}
 }
 
 // sessionMatches tests a built summary against the list filter and search text; q is

@@ -28,6 +28,8 @@ func TestNilMetricsIsOff(t *testing.T) {
 	m.StoreWrite(StoreOpExchange, true, time.Millisecond)
 	m.ViewBuild(true, time.Millisecond)
 	m.Warmup(time.Second)
+	m.ViewCacheRead(CacheKindView, CacheHit)
+	m.CacheRebuild(time.Second)
 	m.GaugeFunc("g", "h", func() float64 { return 1 })
 	m.LastShutdown(LastShutdown{})
 	rec := httptest.NewRecorder()
@@ -54,6 +56,10 @@ func TestMetricsRecordWithLabels(t *testing.T) {
 	m.StoreWrite(StoreOpParse, false, time.Millisecond)
 	m.ViewBuild(false, time.Millisecond)
 	m.Warmup(2 * time.Second)
+	m.ViewCacheRead(CacheKindMemo, CacheDamaged)
+	m.ViewCacheRead(CacheKindView, CacheHit)
+	m.ViewCacheRead(CacheKindView, CacheHit)
+	m.CacheRebuild(3 * time.Second)
 	h := RequestMetrics(m, ListenerUI)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
 	}))
@@ -68,6 +74,10 @@ func TestMetricsRecordWithLabels(t *testing.T) {
 		`gateway_store_write_seconds_count{op="parse",outcome="error"} 1`,
 		`gateway_ui_view_build_seconds_count{cache="cold"} 1`,
 		`gateway_ui_warmup_seconds 2`,
+		`gateway_ui_cache_rebuild_seconds 3`,
+		`gateway_ui_view_cache_reads_total{kind="memo",result="damaged"} 1`,
+		`gateway_ui_view_cache_reads_total{kind="view",result="hit"} 2`,
+		`gateway_ui_view_cache_reads_total{kind="view",result="miss"} 0`,
 		`gateway_build_info{go_version="`,
 	} {
 		if !strings.Contains(text, want) {

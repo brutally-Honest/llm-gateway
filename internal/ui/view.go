@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"errors"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/brutally-honest/llm-gateway/internal/core"
@@ -32,14 +34,27 @@ type viewReader interface {
 }
 
 func (vd viewDeps) sessionView(c viewReader, who sessIdent, bs builtSession, hooks []store.HookRow, active bool, version string) (timeline.View, error) {
+	v, _, err := vd.sessionViewChecked(c, who, bs, hooks, active, version)
+	return v, err
+}
+
+// sessionViewChecked is sessionView that also reports degraded: some content read failed
+// for a reason other than not-found (a passed deadline, an I/O error), so the view was
+// built with less than the store holds. The view is served as it is, but no cache may keep
+// it (spec 030 D16).
+func (vd viewDeps) sessionViewChecked(c viewReader, who sessIdent, bs builtSession, hooks []store.HookRow, active bool, version string) (_ timeline.View, degraded bool, _ error) {
 	ident := store.SessionIdent{Principal: who.principal, Client: who.client, Key: who.name}
 	rows, err := c.SessionEffects(ident)
 	if err != nil {
-		return timeline.View{}, err
+		return timeline.View{}, false, err
 	}
+	var failed atomic.Bool
 	content := func(hash string) []byte {
 		b, err := c.Content(hash)
 		if err != nil {
+			if !errors.Is(err, store.ErrNotFound) {
+				failed.Store(true)
+			}
 			return nil
 		}
 		return b
@@ -76,7 +91,7 @@ func (vd viewDeps) sessionView(c viewReader, who sessIdent, bs builtSession, hoo
 	if from, to := activityRange(bs, hooks); from > 0 {
 		un, err := c.UnassignedConnsBetween(from, to, maxUnassignedNoted)
 		if err != nil {
-			return timeline.View{}, err
+			return timeline.View{}, false, err
 		}
 		lookup := vd.harnessLookup()
 		for _, e := range un {
@@ -84,7 +99,7 @@ func (vd viewDeps) sessionView(c viewReader, who sessIdent, bs builtSession, hoo
 				Label: toLabel(effects.Unassigned(e, lookup))})
 		}
 	}
-	return timeline.BuildView(in), nil
+	return timeline.BuildView(in), failed.Load(), nil
 }
 
 // harnessLookup asks every client's attribution rules, by name, whether a host is its

@@ -250,6 +250,9 @@ func TestRun_MetricsAfterRequest(t *testing.T) {
 		{"gateway_proxy_tunnels_open", nil},
 		{"gateway_ui_streams_open", nil},
 		{"gateway_ui_warmup_seconds", nil},
+		{"gateway_ui_cache_rebuild_seconds", nil},
+		{"gateway_ui_view_cache_reads_total", map[string]string{"kind": "memo", "result": "hit"}},
+		{"gateway_ui_view_cache_reads_total", map[string]string{"kind": "view", "result": "damaged"}},
 		{"gateway_build_info", map[string]string{"version": version}},
 		{"go_goroutines", nil},
 		{"process_resident_memory_bytes", nil},
@@ -257,7 +260,8 @@ func TestRun_MetricsAfterRequest(t *testing.T) {
 		// The drop counters stay at 0: present is enough. Everything else must have
 		// recorded this call.
 		check := observed
-		if w.name == "gateway_capture_dropped_total" {
+		if w.name == "gateway_capture_dropped_total" || w.name == "gateway_ui_cache_rebuild_seconds" ||
+			w.name == "gateway_ui_view_cache_reads_total" {
 			check = hasSeries
 		}
 		if !check(fams, w.name, w.labels) {

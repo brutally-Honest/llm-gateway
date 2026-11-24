@@ -159,6 +159,7 @@ func BuildWithUsage(src Source, session store.SessionRow, opts Options) ([]Entry
 		calls   []CallUsage
 		seen    [][]store.EventRow
 		threads int // conversation threads started so far
+		in      = interner{}
 	)
 	for _, ex := range exchanges {
 		evs, err := loadEvents(src, ex)
@@ -166,7 +167,7 @@ func BuildWithUsage(src Source, session store.SessionRow, opts Options) ([]Entry
 			return nil, Summary{}, err
 		}
 		seen = append(seen, evs)
-		hashes := messageHashes(evs)
+		hashes := messageHashes(evs, in)
 		if len(hashes) == 0 || foldedParse(ex.Parse) {
 			fe := folded(ex)
 			// A folded-parse exchange may still be a model call; its events are
@@ -238,9 +239,22 @@ func loadEvents(src Source, ex store.ExchangeRow) ([]store.EventRow, error) {
 	return evs, nil
 }
 
-// messageHashes are the content hashes of the message events in seq order. A message
-// without a hash gets a value no other message can equal.
-func messageHashes(evs []store.EventRow) []string {
+// interner gives equal hash strings one shared copy per pass, so lcp compares equal
+// hashes by pointer (memequal returns early on equal pointers).
+type interner map[string]string
+
+func (in interner) intern(h string) string {
+	if c, ok := in[h]; ok {
+		return c
+	}
+	in[h] = h
+	return h
+}
+
+// messageHashes are the content hashes of the message events in seq order, interned
+// through in when it is not nil. A message without a hash gets a value no other message
+// can equal.
+func messageHashes(evs []store.EventRow, in interner) []string {
 	var out []string
 	for _, e := range evs {
 		if e.Kind != "message" {
@@ -249,6 +263,8 @@ func messageHashes(evs []store.EventRow) []string {
 		h := e.ContentHash
 		if h == "" {
 			h = fmt.Sprintf("\x00%s/%d", e.RequestID, e.Seq)
+		} else if in != nil {
+			h = in.intern(h)
 		}
 		out = append(out, h)
 	}

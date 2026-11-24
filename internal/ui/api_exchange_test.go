@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brutally-honest/llm-gateway/internal/core"
 )
@@ -108,5 +109,41 @@ func TestCallFacts_NewCountFromTimeline(t *testing.T) {
 		if got := f[id]["new"]; got != want {
 			t.Errorf("%s call.new = %v, want %v", id, got, want)
 		}
+	}
+}
+
+// Spec 030 AC11: a cached view serves the title and #n only at the session's whole current
+// key. A new effect moves only the effect version (the store version is the same), and the
+// fallback title's start comes from a range that includes effects, so that view is stale.
+// An unchanged effect version still serves them (TestExchange_CachedCurrentViewGivesTitleAndNumber
+// covers the no-effect key; here the effect-bearing key is checked before the change).
+func TestExchange_ViewAtOlderEffectVersionGivesNoTitleOrNumber(t *testing.T) {
+	e, d := viewEnv(t)
+	d.callWith("a", 1, false, nil, "user:fix the retry")
+	d.callWith("b", 2, false, nil, "user:fix the retry", "assistant:Fixed.")
+	saveEffect := func(path string, at int) {
+		t.Helper()
+		ef := core.Effect{Kind: core.EffectFileChange, At: baseTime.Add(time.Duration(at) * time.Second),
+			Principal: core.PrincipalLocal, Client: "cc", SessionKey: "k", Root: "/w", Path: path,
+			Change: core.FileCreated, Mode: "git"}
+		if err := e.s.SaveEffects(t.Context(), []core.Effect{ef}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	saveEffect("/w/a.txt", 1)
+	if code, _ := fetch(t, e, "/api/sessions/"+sid()+"/view"); code != 200 {
+		t.Fatalf("view = %d", code)
+	}
+	m := exchangeFields(t, e, "b")
+	if m["session_title"] != "fix the retry" || m["call_n"] != 2.0 {
+		t.Fatalf("unchanged effect version: title %v, n %v, want the title and 2", m["session_title"], m["call_n"])
+	}
+	saveEffect("/w/b.txt", 2) // only the effect version moves
+	m = exchangeFields(t, e, "b")
+	if _, ok := m["session_title"]; ok {
+		t.Errorf("session_title = %v from a view at an older effect version, want none", m["session_title"])
+	}
+	if _, ok := m["call_n"]; ok {
+		t.Errorf("call_n = %v from a view at an older effect version, want none", m["call_n"])
 	}
 }

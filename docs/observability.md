@@ -20,7 +20,7 @@ listeners. There is no key to turn it on or off.
 | Upstream | `gateway_upstream_ttfb_seconds`, `gateway_upstream_duration_seconds` (`protocol`, `stream`), `gateway_upstream_errors_total` (`protocol`, `kind`: timeout, unreachable, aborted, rate_limited, status_5xx), `gateway_proxy_overhead_seconds` (time in the gateway before a call goes upstream) |
 | Capture | `gateway_capture_queue_depth`, `gateway_capture_queue_capacity`, `gateway_capture_dropped_total` (`reason`: queue_full, memory), `gateway_store_write_seconds` (`op`: exchange, parse; `outcome`) |
 | Live connections | `gateway_proxy_tunnels_open`, `gateway_ui_streams_open` |
-| UI | `gateway_ui_view_build_seconds` (`cache`: cold, cached), `gateway_ui_warmup_seconds` |
+| UI | `gateway_ui_view_build_seconds` (`cache`: cold, cached), `gateway_ui_warmup_seconds` (time from start until the UI serves), `gateway_ui_cache_rebuild_seconds` (duration of the last background pass), `gateway_ui_view_cache_reads_total` (`kind`: memo, view; `result`: hit, miss, damaged) |
 | Lifecycle | `gateway_last_shutdown_duration_seconds`, `gateway_last_shutdown_calls_cut`, `gateway_last_shutdown_tunnels_cut`, `gateway_last_shutdown_timestamp_seconds`, `gateway_build_info{version,go_version}`, `go_*`, `process_*` |
 
 A stop cannot be scraped from the process that is exiting, so each stop writes

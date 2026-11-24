@@ -312,7 +312,8 @@ test("aFailedDeepLinkWithNoTotalSaysPageNNotPageNOfOne", () => {
   p.page.update({ loaded: false, total: 0, page: 3, kind: "all", q: "", error: "boom" });
   assert.equal(pagerLabel(p).textContent, "Page 3");
   assert.equal(pagerBtnOf(p, "‹ Previous").disabled, false);
-  assert.equal(pagerBtnOf(p, "Next ›").disabled, true);
+  // spec 030 AC12: an unfiltered error with no total turns Next on (loadPage corrects a page past the end)
+  assert.equal(pagerBtnOf(p, "Next ›").disabled, false);
 });
 
 test("aFilteredPageErrorDisablesNext", () => {
@@ -321,6 +322,34 @@ test("aFilteredPageErrorDisablesNext", () => {
   assert.equal(pagerOf(p).hidden, false);
   assert.equal(pagerBtnOf(p, "‹ Previous").disabled, false);
   assert.equal(pagerBtnOf(p, "Next ›").disabled, true, "where page 3 starts is unknown");
+});
+
+// spec 030 AC12: a failed first load of page 1 (total unknown) keeps the pager, so Retry is
+// never a dead end; unfiltered Next is on, since the app corrects a page past the end
+test("aFirstPageErrorWithNoTotalKeepsThePagerAndNextOn", () => {
+  const p = livePage([session()]);
+  p.page.update({ loaded: false, kind: "all", q: "", total: 0, page: 1, error: "the store did not answer in time" });
+  assert.match(textOf(withClass(p.page.el, "sp-list")[0]), /the store did not answer in time/);
+  assert.ok(retryOf(p), "Retry is in the box");
+  assert.equal(pagerOf(p).hidden, false, "the pager is shown on a first-page error");
+  assert.equal(pagerLabel(p).textContent, "Page 1");
+  assert.equal(pagerBtnOf(p, "‹ Previous").disabled, true);
+  assert.equal(pagerBtnOf(p, "Next ›").disabled, false);
+});
+
+test("aFilteredFirstPageErrorWithNoTotalDisablesBothArrows", () => {
+  const p = livePage([session()]);
+  p.page.update({ loaded: false, kind: "look", q: "", total: 0, page: 1, error: "boom" });
+  assert.equal(pagerOf(p).hidden, false);
+  assert.equal(pagerLabel(p).textContent, "Page 1");
+  assert.equal(pagerBtnOf(p, "‹ Previous").disabled, true);
+  assert.equal(pagerBtnOf(p, "Next ›").disabled, true, "where page 2 starts is unknown");
+});
+
+test("aOnePageUnfilteredListWithNoErrorHasNoPager", () => {
+  const p = livePage([session()]);
+  p.page.update({ loaded: true, kind: "all", q: "", total: 30, page: 1, error: "" });
+  assert.equal(pagerOf(p).hidden, true);
 });
 
 test("retryFocusMovesToTheListBoxWhenTheSkeletonReplacesIt", () => {

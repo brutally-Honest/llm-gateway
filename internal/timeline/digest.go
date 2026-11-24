@@ -53,7 +53,7 @@ func SessionDigest(src Source, session store.SessionRow, rules DigestRules) (Dig
 		if err != nil {
 			return Digest{}, err
 		}
-		if len(messageHashes(evs)) == 0 || foldedParse(ex.Parse) {
+		if len(messageHashes(evs, nil)) == 0 || foldedParse(ex.Parse) {
 			continue // SessionStats counts nothing from these either
 		}
 		var userTexts []string
@@ -126,10 +126,41 @@ func SessionDigest(src Source, session store.SessionRow, rules DigestRules) (Dig
 	return d, nil
 }
 
-// textOf joins the text blocks of a message; ok is false when it has none stored.
+// TextMemo is an optional extension of a Source: a per-build memo of message texts.
+// A message's content hash covers its role and each block's type and hash (see
+// message() in internal/core/canonical.go), so the text of a role is a function of the
+// hash alone. A request resends the whole history, so the same hash recurs in every
+// later request; the memo spares decoding and reading it again. An implementation is
+// used by one build at a time.
+type TextMemo interface {
+	// MemoText returns the text memoised for hash read as role; found is false when
+	// there is none.
+	MemoText(hash, role string) (text string, ok, found bool)
+	// PutText memoises the text of hash read as role.
+	PutText(hash, role, text string, ok bool)
+}
+
+// textOf joins the text blocks of a message; ok is false when it has none stored. When
+// src is a TextMemo, a message with a content hash is read once per hash and role. A
+// payload that does not decode and a content read that fails are never memoised.
 func textOf(src Source, e store.EventRow, role string) (string, bool, error) {
+	memo, _ := src.(TextMemo)
+	if e.Kind != "message" || e.ContentHash == "" {
+		memo = nil
+	}
+	if memo != nil {
+		if text, ok, found := memo.MemoText(e.ContentHash, role); found {
+			return text, ok, nil
+		}
+	}
 	var p messagePayload
-	if err := json.Unmarshal(e.Payload, &p); err != nil || p.Role != role {
+	if err := json.Unmarshal(e.Payload, &p); err != nil {
+		return "", false, nil
+	}
+	if p.Role != role {
+		if memo != nil {
+			memo.PutText(e.ContentHash, role, "", false)
+		}
 		return "", false, nil
 	}
 	var parts []string
@@ -146,7 +177,11 @@ func textOf(src Source, e store.EventRow, role string) (string, bool, error) {
 		}
 		parts = append(parts, blockText(raw))
 	}
-	return strings.Join(parts, "\n"), len(parts) > 0, nil
+	text, ok := strings.Join(parts, "\n"), len(parts) > 0
+	if memo != nil {
+		memo.PutText(e.ContentHash, role, text, ok)
+	}
+	return text, ok, nil
 }
 
 func userText(src Source, e store.EventRow) (string, bool, error) { return textOf(src, e, "user") }

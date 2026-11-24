@@ -280,18 +280,17 @@ func settle(t *testing.T, c *DigestCache) {
 	}
 }
 
-// Spec 019 AC5: Warm builds the sessions list's rows into the shared cache, so the first
-// list request after start is served from it, not built cold under the store timeout.
-func TestWarm_FillsTheListFromTheCache(t *testing.T) {
+// Spec 019 AC5, kept by 030: the background pass builds the sessions list's rows into the
+// shared cache, so a list request after it is served from it, not built cold under the
+// store timeout.
+func TestPrefill_FillsTheListFromTheCache(t *testing.T) {
 	e := newCacheEnv(t, 8)
 	e.call("a", 1, 0, 0, "user:hello")
 	e.call("b", 2, 0, 0, "user:there")
-	if err := Warm(context.Background(), e.d); err != nil {
-		t.Fatal(err)
-	}
+	Prefill(context.Background(), e.d)
 	warmed := e.computes()
 	if warmed == 0 {
-		t.Fatal("Warm built no row")
+		t.Fatal("Prefill built no row")
 	}
 	rec := httptest.NewRecorder()
 	e.h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://"+addr+"/api/sessions", nil))
@@ -299,6 +298,6 @@ func TestWarm_FillsTheListFromTheCache(t *testing.T) {
 		t.Fatalf("/api/sessions = %d %s", rec.Code, rec.Body)
 	}
 	if got := e.computes(); got != warmed {
-		t.Errorf("computes after the first list = %d, want %d: the list built rows Warm had built", got, warmed)
+		t.Errorf("computes after the first list = %d, want %d: the list built rows Prefill had built", got, warmed)
 	}
 }

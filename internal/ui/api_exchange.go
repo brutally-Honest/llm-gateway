@@ -105,7 +105,9 @@ func (d Deps) getExchange(w http.ResponseWriter, r *http.Request) {
 // session build for a title. Whatever is not known is left out; the page works without it.
 //
 // The title and the #n come only from a view built at the session's current version
-// (one cheap grouped version query), never from an older one. Both can change as a
+// (two cheap grouped version queries), never from an older one. The whole view key is
+// compared, the effect version included: the fallback title takes its start from a range
+// that includes effects, so a view built at an older effect version can name a stale start. Both can change as a
 // session grows: a generated title or an earlier-starting call that commits late changes
 // the title, and calls are numbered in start order, so such a call shifts every number
 // after it.
@@ -118,8 +120,13 @@ func (d Deps) placeInSession(ctx context.Context, ex store.ExchangeRow, out *exc
 	if !ok {
 		return
 	}
-	vers, err := d.Reader.WithContext(ctx).SessionVersions([]store.SessionIdent{ident})
-	if err != nil || !strings.HasPrefix(v.Version, buildKey(vers[ident])) {
+	c := d.Reader.WithContext(ctx)
+	vers, err := c.SessionVersions([]store.SessionIdent{ident})
+	if err != nil {
+		return
+	}
+	evs, err := c.EffectVersions([]store.SessionIdent{ident})
+	if err != nil || v.Version != viewKeyOf(vers[ident], evs[ident]) {
 		return // the view is older than the store: its title and numbering may have moved
 	}
 	out.SessionTitle = v.Overview.Title

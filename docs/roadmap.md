@@ -7,17 +7,15 @@ v1 is complete (PLAN §7: every phase in the v1 order is done) apart from the La
 below and AC44, the API-key smoke test of Phase 1.
 
 ## Next
-1. **Persistent view cache** (first after v1): the UI's start-up warm-up keeps growing
-   with the store, 17.7 s after 019 (warm_ms 17670) and 23.4 s on 2026-11-15 (warm_ms
-   23429, 021's real-gateway check; `gateway_ui_warmup_seconds` now tracks it). The UI
-   waits that long after every start. Likely fix: a sessions-list and view cache that
-   persists across restarts. The 500-session benchmark (~210 ms) misses it by shape, not
-   size: it seeds 500 sessions × 20 calls × 4 events (~40k events), while the real store
-   had 14 sessions, 2,337 calls (up to 661 in one) and ~510 events per call (each call
-   re-sends the conversation), 1.18M events, at 019; seeding that shape takes minutes a
-   run, so the benchmark was left as it is (`internal/ui/timeline_bench_test.go`).
+1. **Incremental live updates** (040, spec 030 D4): a live update of the largest session
+   still rebuilds it whole, about 2.6 s after 030's skip. Make it incremental, and share
+   one load between the memo and the view.
 
 ## Done
+- **030 persistent view cache** (`specs/030-persistent-view-cache/`, feat): the UI serves
+  as soon as it binds; per-session list rows and views live in a disposable on-disk cache
+  (`<capture.dir>/view-cache/`), rebuilt from the store, with a background pass after start.
+  Resent message text is decoded once per build.
 - **032 kit removal ADR** (`specs/032-kit-removal-adr/`, chore): ADR 0021 records why the
   agent-loop kit was removed (slow, and it blocked too often); ADR 0011, `AGENTS.md` and
   this file point to it.

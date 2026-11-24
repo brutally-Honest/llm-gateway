@@ -592,10 +592,14 @@ export function createSessionsPage(handlers) {
     const last = filtering ? null : pageCount(state.total);
     // On an error the held next_after belongs to an older page, so a filtered Next stays off:
     // where page n+1 starts is unknown (spec 042 E4). Unfiltered, the last good total still counts.
-    const more = filtering ? Boolean(state.next_after) && !state.error : !unknownTotal && page < last;
+    // spec 030 AC12: an unfiltered error with an unknown total (a failed first load) turns Next on,
+    // since loadPage corrects a page past the last one to the last page, so trying it is safe.
+    const more = filtering
+      ? Boolean(state.next_after) && !state.error
+      : (Boolean(state.error) && unknownTotal) || (!unknownTotal && page < last);
     const single = page <= 1 && !more;
-    // an error keeps the pager, so a failed page is never a dead end (spec 042 AC2)
-    const show = !single;
+    // an error keeps the pager, so a failed page is never a dead end (spec 042 AC2, spec 030 AC12)
+    const show = !single || Boolean(state.error);
     pager.hidden = !show;
     if (!show) return;
     const was = document.activeElement;

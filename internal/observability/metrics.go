@@ -56,6 +56,8 @@ type Metrics struct {
 	storeWrite    *prometheus.HistogramVec
 	viewBuild     *prometheus.HistogramVec
 	warmup        prometheus.Gauge
+	cacheRebuild  prometheus.Gauge
+	cacheReads    *prometheus.CounterVec
 }
 
 // NewMetrics registers every metric, build info for version and the Go runtime and
@@ -105,8 +107,16 @@ func NewMetrics(version string, protocols ...string) *Metrics {
 		}, []string{"cache"}),
 		warmup: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "gateway_ui_warmup_seconds",
-			Help: "How long this start's UI warm-up (the sessions list's first page) took.",
+			Help: "How long this start took until the UI served: from start to the UI's listener accepting.",
 		}),
+		cacheRebuild: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "gateway_ui_cache_rebuild_seconds",
+			Help: "How long the last background pass over the on-disk view cache took.",
+		}),
+		cacheReads: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "gateway_ui_view_cache_reads_total",
+			Help: "Reads of the on-disk view cache, by kind (memo, view) and result (hit, miss, damaged).",
+		}, []string{"kind", "result"}),
 	}
 	buildInfo := prometheus.NewGauge(prometheus.GaugeOpts{
 		Name:        "gateway_build_info",
@@ -115,7 +125,7 @@ func NewMetrics(version string, protocols ...string) *Metrics {
 	})
 	buildInfo.Set(1)
 	reg.MustRegister(m.requests, m.requestTime, m.overhead, m.upstreamTTFB, m.upstreamTotal,
-		m.upstreamErrs, m.storeWrite, m.viewBuild, m.warmup, buildInfo,
+		m.upstreamErrs, m.storeWrite, m.viewBuild, m.warmup, m.cacheRebuild, m.cacheReads, buildInfo,
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
@@ -153,6 +163,11 @@ func (m *Metrics) initSeries(protocols []string) {
 	}
 	for _, c := range []string{"cold", "cached"} {
 		m.viewBuild.WithLabelValues(c)
+	}
+	for _, k := range []string{CacheKindMemo, CacheKindView} {
+		for _, r := range []string{CacheHit, CacheMiss, CacheDamaged} {
+			m.cacheReads.WithLabelValues(k, r)
+		}
 	}
 }
 
@@ -250,7 +265,32 @@ func (m *Metrics) ViewBuild(cached bool, d time.Duration) {
 	m.viewBuild.WithLabelValues(cache).Observe(d.Seconds())
 }
 
-// Warmup records this start's UI warm-up time.
+// The kinds and results of an on-disk view cache read (spec 030 AC10).
+const (
+	CacheKindMemo = "memo"
+	CacheKindView = "view"
+	CacheHit      = "hit"
+	CacheMiss     = "miss"
+	CacheDamaged  = "damaged"
+)
+
+// ViewCacheRead counts one read of the on-disk view cache.
+func (m *Metrics) ViewCacheRead(kind, result string) {
+	if m == nil {
+		return
+	}
+	m.cacheReads.WithLabelValues(kind, result).Inc()
+}
+
+// CacheRebuild records how long the last background pass over the view cache took.
+func (m *Metrics) CacheRebuild(d time.Duration) {
+	if m == nil {
+		return
+	}
+	m.cacheRebuild.Set(d.Seconds())
+}
+
+// Warmup records how long this start took until the UI served.
 func (m *Metrics) Warmup(d time.Duration) {
 	if m == nil {
 		return
