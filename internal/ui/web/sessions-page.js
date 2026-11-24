@@ -512,7 +512,7 @@ function loader() {
 // ungrouped: { items, next_after }, unassigned, unassignedItems }; page is the page shown (or
 // being loaded). Until the
 // page has loaded the box shows a loader. The rows are shown as given: the server filtered them.
-// handlers = { onPage(n), onKind(kind), onQuery(text, now) }.
+// handlers = { onPage(n), onKind(kind), onQuery(text, now), onRetry() }.
 export function createSessionsPage(handlers) {
   const el = document.createElement("section");
   el.className = "sessions-page";
@@ -587,17 +587,19 @@ export function createSessionsPage(handlers) {
   function drawPager() {
     const filtering = kind !== "all" || (state.q || "") !== "";
     const page = state.page || 1;
+    // an unknown total (a failed cold load) reads "Page N", not "Page N of 1" (spec 042)
+    const unknownTotal = !filtering && !(state.total > 0);
     const last = filtering ? null : pageCount(state.total);
     // On an error the held next_after belongs to an older page, so a filtered Next stays off:
     // where page n+1 starts is unknown (spec 042 E4). Unfiltered, the last good total still counts.
-    const more = filtering ? Boolean(state.next_after) && !state.error : page < last;
+    const more = filtering ? Boolean(state.next_after) && !state.error : !unknownTotal && page < last;
     const single = page <= 1 && !more;
     // an error keeps the pager, so a failed page is never a dead end (spec 042 AC2)
     const show = !single;
     pager.hidden = !show;
     if (!show) return;
     const was = document.activeElement;
-    const text = filtering ? `Page ${page}` : `Page ${page} of ${last}`;
+    const text = filtering || unknownTotal ? `Page ${page}` : `Page ${page} of ${last}`;
     if (pageLabel.textContent !== text) pageLabel.textContent = text;
     prevBtn.disabled = page <= 1;
     nextBtn.disabled = !more;
@@ -661,8 +663,9 @@ export function createSessionsPage(handlers) {
   }
 
   // What the tiles, the footer, the unassigned section and the error box were last built from:
-  // each is rebuilt only when its input changed by reference (spec 042 AC3), so a live
-  // session event does not replace nodes it does not change.
+  // the tiles are rebuilt when their totals changed (compared by value); the footer, the
+  // unassigned section and the error box when their input changed (by reference), so a live
+  // session event does not replace nodes it does not change (spec 042 AC3).
   const NONE = Symbol("none");
   let builtToday = NONE;
   let builtUngrouped = NONE;
@@ -673,8 +676,10 @@ export function createSessionsPage(handlers) {
   const pressed = new Map(); // the aria-pressed value last written to each kind button
 
   function drawToday() {
-    if (state.today === builtToday) return;
-    builtToday = state.today;
+    // compared by value: a refetch returns a new object with equal totals (spec 042)
+    const key = JSON.stringify(state.today ?? null);
+    if (key === builtToday) return;
+    builtToday = key;
     const t = todayCells(state.today);
     today.replaceChildren();
     const stat = (value, label, exact, spark) => {

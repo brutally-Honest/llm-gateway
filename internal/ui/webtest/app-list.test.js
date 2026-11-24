@@ -408,6 +408,24 @@ test("anErrorOnPageTwoKeepsThePagerAndShowsRetryInTheBox", async (t) => {
   assert.equal(hash, "#/?page=2", "the URL still names page 2");
 });
 
+// spec 042 F1: a live event must not turn a page error into a skeleton with no Retry
+test("aLiveEventDuringAPageErrorKeepsTheErrorAndRetry", async (t) => {
+  await toFailedPageTwo(t);
+  sessionReqs.length = 0;
+  streams.at(-1).emit("session", sess("n", "brand new", "2026-01-01T02:00:00Z"));
+  t.mock.timers.tick(6000);
+  await settle();
+  assert.match(textOf(box()), /the store did not answer in time/, "the error stays in the box");
+  assert.ok(retryBtn(), "Retry stays in the box");
+  assert.doesNotMatch(textOf(box()), /Loading sessions…/, "no skeleton");
+  assert.equal(sessionReqs.length, 0, "no request was sent for the event");
+  failPageTwo = false;
+  retryBtn().fire("click");
+  await settle();
+  assert.equal(ids()[0], "r50", "Retry loads page 2");
+  assert.equal(retryBtn(), undefined);
+});
+
 test("retryReRequestsTheSamePage", async (t) => {
   await toFailedPageTwo(t);
   failPageTwo = false;

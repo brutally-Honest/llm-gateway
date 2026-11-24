@@ -175,6 +175,12 @@ function noteHeadFloor(p) {
   headFloor = times.length ? Math.min(...times) : null;
 }
 
+// listFailedOrLoading: a refetch scheduled before an error or a reload must not clear it (spec 042).
+function listFailedOrLoading() {
+  const s = store.get();
+  return Boolean(s.sessionsError) || !s.sessionsLoaded;
+}
+
 // refetchHead reads the page on screen again after live events. A filtered page 1 takes the
 // answer's rows (which also renews where page 2 starts); an unfiltered list only takes the
 // new total, since its rows were already updated in place or inserted.
@@ -185,12 +191,12 @@ async function refetchHead() {
     if (!filtering()) {
       // only the total is wanted: one row is enough to get it
       const t = await getJSON("sessions", { ...sessionParams(n), limit: 1 });
-      if (gen !== listGen) return;
+      if (gen !== listGen || listFailedOrLoading()) return;
       store.set({ sessionsTotal: t.total || 0, sessionsError: "" });
       return;
     }
     const p = await getJSON("sessions", sessionParams(n, starts[n - 1]));
-    if (gen !== listGen) return;
+    if (gen !== listGen || listFailedOrLoading()) return;
     noteHeadFloor(p);
     noteNext(1, p.next_after);
     scannedAt[0] = p.scanned || 0;
@@ -218,6 +224,8 @@ function applyList(kind, q, n = 1) {
 // but only for its total (and so its page count).
 function onSession(row) {
   const s = store.get();
+  // a list that is loading or failed gets its rows and total from its own load or Retry (spec 042)
+  if (s.sessionsError || !s.sessionsLoaded) return;
   if (s.sessions.some((x) => x.id === row.id)) {
     // only an unfiltered page 1 re-sorts; elsewhere the row keeps its place under the reader
     if (!filtering() && curPage === 1) store.set({ sessions: upsertSession(s.sessions, row) });

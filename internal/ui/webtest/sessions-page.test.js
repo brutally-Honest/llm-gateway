@@ -306,6 +306,15 @@ test("aPageErrorKeepsThePagerAndRetryCallsOnRetry", () => {
   assert.equal(retried, 1);
 });
 
+// spec 042 F3: a failed cold load of a deep link has no total, so no "of M"
+test("aFailedDeepLinkWithNoTotalSaysPageNNotPageNOfOne", () => {
+  const p = livePage([session()]);
+  p.page.update({ loaded: false, total: 0, page: 3, kind: "all", q: "", error: "boom" });
+  assert.equal(pagerLabel(p).textContent, "Page 3");
+  assert.equal(pagerBtnOf(p, "‹ Previous").disabled, false);
+  assert.equal(pagerBtnOf(p, "Next ›").disabled, true);
+});
+
 test("aFilteredPageErrorDisablesNext", () => {
   const p = livePage([session()]);
   p.page.update({ loaded: true, kind: "active", q: "", next_after: "t", page: 2, error: "boom" });
@@ -724,6 +733,13 @@ test("aRowMovedToTheTopIsTheOnlyRowMoved", () => {
   const { body, calls } = spyBody(p);
   const a = p.link("s4");
   a.focus();
+  // Chrome blurs a focused node that is moved; the stub does not, so do it here (spec 042 E5)
+  const contains = (n, x) => n === x || n.children.some((c) => contains(c, x));
+  const moveOrig = body.insertBefore;
+  body.insertBefore = (node, ref) => {
+    if (contains(node, document.activeElement)) document.activeElement = null;
+    return moveOrig(node, ref);
+  };
   p.page.update({ items: [rows[3], rows[0], rows[1], rows[2], rows[4]] });
   assert.equal(calls.insertBefore, 1, "exactly one move");
   assert.equal(calls.replaceChildren, 0);
@@ -748,7 +764,8 @@ test("todayTilesAreKeptWhenTheTotalsDidNotChange", () => {
   const day = { sessions: 2, calls: 5, changed: 7, sites: 1, input: counter(3707), output: counter(null) };
   p.page.update({ today: day });
   const tile = withClass(withClass(p.page.el, "today")[0], "stat")[0];
-  p.page.update({ items: [...rows].reverse(), today: day });
+  // a refetch brings a new object with equal totals (spec 042)
+  p.page.update({ items: [...rows].reverse(), today: structuredClone(day) });
   assert.equal(withClass(withClass(p.page.el, "today")[0], "stat")[0], tile, "same totals, same tile");
   p.page.update({ today: { ...day, sessions: 3 } });
   const now = withClass(withClass(p.page.el, "today")[0], "stat")[0];
