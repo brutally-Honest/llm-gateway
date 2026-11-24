@@ -149,6 +149,9 @@ async function loadPage(n, keep = false) {
     const un = p.unassigned_connections || 0;
     if (k === 1 || un !== unassignedSeen) loadUnassigned(un);
     unassignedSeen = un;
+    // an event during the load may be newer than its answer; refetch once (spec 042 AC2).
+    // A filtered refetch reads page 1 only.
+    if (headDirty && !headTimer && !headCool && (!filtering() || curPage === 1)) headTimer = setTimeout(fireHead, HEAD_MS);
   } catch (e) {
     if (stale()) return;
     store.set({ sessionsError: e.message });
@@ -224,8 +227,13 @@ function applyList(kind, q, n = 1) {
 // but only for its total (and so its page count).
 function onSession(row) {
   const s = store.get();
-  // a list that is loading or failed gets its rows and total from its own load or Retry (spec 042)
-  if (s.sessionsError || !s.sessionsLoaded) return;
+  // a failed page keeps its error and Retry (spec 042 AC3)
+  if (s.sessionsError) return;
+  // a load in flight may predate this event: note it, and loadPage refetches after it (spec 042 AC2)
+  if (!s.sessionsLoaded) {
+    headDirty = true;
+    return;
+  }
   if (s.sessions.some((x) => x.id === row.id)) {
     // only an unfiltered page 1 re-sorts; elsewhere the row keeps its place under the reader
     if (!filtering() && curPage === 1) store.set({ sessions: upsertSession(s.sessions, row) });

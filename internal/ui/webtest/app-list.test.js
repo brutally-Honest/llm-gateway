@@ -426,6 +426,104 @@ test("aLiveEventDuringAPageErrorKeepsTheErrorAndRetry", async (t) => {
   assert.equal(retryBtn(), undefined);
 });
 
+// spec 042 AC2: a session event during a load may be newer than the load's answer, so the
+// page is read again once the load is done
+test("anEventDuringAFilteredPageOneLoadIsRefetchedAfterIt", async (t) => {
+  const rowA = sess("a", "alpha", stamp(5), { active: true });
+  const rowB = sess("b", "beta", stamp(4), { active: true });
+  const rowC = sess("c", "gamma new", stamp(9), { active: true });
+  await fresh(t, "#/", () => ({ items: [], next_after: null, total: 0, scanned: 0 }));
+  const gate = deferred();
+  serve = async () => {
+    await gate.promise;
+    return { items: [rowA, rowB], next_after: "t1", total: 9, scanned: 9 };
+  };
+  await go("#/?kind=active");
+  sessionReqs.length = 0;
+  streams.at(-1).emit("session", rowC);
+  t.mock.timers.tick(100);
+  await settle();
+  gate.resolve(); // the answer is a snapshot from before the event
+  await settle();
+  assert.deepEqual(ids(), ["a", "b"]);
+  serve = () => ({ items: [rowC, rowA, rowB], next_after: "t1", total: 10, scanned: 9 });
+  t.mock.timers.tick(600);
+  await settle();
+  assert.equal(sessionReqs.length, 1, "one refetch after the load");
+  assert.deepEqual(reqObj(lastReq()), { kind: "active" }, "page 1 again");
+  assert.deepEqual(ids(), ["c", "a", "b"]);
+});
+
+test("anEventDuringAnUnfilteredLoadRefreshesTheTotal", async (t) => {
+  await fresh(t, "#/?kind=active", () => ({ items: [], next_after: null, total: 0, scanned: 0 }));
+  const gate = deferred();
+  serve = async () => {
+    await gate.promise;
+    return { items: rows(0, 50), next_after: "x", total: 100, scanned: 50 };
+  };
+  await go("#/");
+  sessionReqs.length = 0;
+  streams.at(-1).emit("session", sess("n", "brand new", "2026-01-01T02:00:00Z"));
+  t.mock.timers.tick(100);
+  await settle();
+  gate.resolve();
+  await settle();
+  assert.equal(pagerLabel(), "Page 1 of 2");
+  serve = () => ({ items: rows(0, 1), next_after: "x", total: 120, scanned: 1 });
+  t.mock.timers.tick(600);
+  await settle();
+  assert.equal(sessionReqs.length, 1, "one request for the total");
+  assert.deepEqual(reqObj(lastReq()), { limit: "1" });
+  assert.equal(pagerLabel(), "Page 1 of 3");
+});
+
+test("anEventDuringAFilteredLaterPageLoadDoesNotRefetch", async (t) => {
+  const rowA = sess("a", "alpha", stamp(5), { active: true });
+  await fresh(t, "#/?kind=active", () => ({ items: [rowA], next_after: "t1", total: 9, scanned: 9 }));
+  const gate = deferred();
+  serve = async () => {
+    await gate.promise;
+    return { items: [sess("old", "older page", stamp(1), { active: true })], next_after: null, total: 9, scanned: 9 };
+  };
+  pagerBtn(NEXT).fire("click");
+  await settle();
+  streams.at(-1).emit("session", sess("z", "unseen", stamp(10), { active: true }));
+  gate.resolve();
+  await settle();
+  assert.deepEqual(ids(), ["old"]);
+  sessionReqs.length = 0;
+  t.mock.timers.tick(10000);
+  await settle();
+  assert.equal(sessionReqs.length, 0, "page 1 is not read again from a later page");
+});
+
+// a reload that fails must not be cleared by a head refetch that was already on its way
+test("aKeepReloadThatFailsIsNotClearedByAPendingHeadRefetch", async (t) => {
+  await fresh(t, "#/", () => ({ items: rows(0, 50), next_after: "x", total: 100, scanned: 50 }));
+  const reload = deferred();
+  const head = deferred();
+  serve = async (p) => {
+    if (p.get("limit") === "1") {
+      await head.promise;
+      return { items: rows(0, 1), next_after: "x", total: 101, scanned: 1 };
+    }
+    await reload.promise;
+    return timeout504;
+  };
+  await go("#/ungrouped");
+  await go("#/"); // back on the same page: the rows stay while it is read again
+  streams.at(-1).emit("session", sess("n", "brand new", "2026-01-01T02:00:00Z"));
+  t.mock.timers.tick(600);
+  await settle();
+  reload.resolve();
+  await settle();
+  assert.ok(retryBtn(), "the reload failed");
+  head.resolve();
+  await settle();
+  assert.match(textOf(box()), /the store did not answer in time/, "the error stays");
+  assert.ok(retryBtn(), "Retry stays");
+});
+
 test("retryReRequestsTheSamePage", async (t) => {
   await toFailedPageTwo(t);
   failPageTwo = false;
