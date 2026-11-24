@@ -81,3 +81,39 @@ func TestSessionVersions_QueryPlansUseSessionIndex(t *testing.T) {
 		}
 	}
 }
+
+// The unassigned-connection check walks the effects primary key from the given id on.
+func TestUnassignedConnAfter_PlanUsesPrimaryKey(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	r, err := OpenReader(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	rows, err := r.db.Query(`EXPLAIN QUERY PLAN SELECT EXISTS (SELECT 1 FROM effects
+		WHERE id > ? AND session_key IS NULL AND kind = 'net_conn' AND at >= ? AND at <= ?)`, 1, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	found := false
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		t.Log(detail)
+		if strings.Contains(detail, "SEARCH effects USING INTEGER PRIMARY KEY (rowid>?)") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the check does not search the effects primary key by id > ?")
+	}
+}

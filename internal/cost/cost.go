@@ -185,6 +185,18 @@ type Total struct {
 	sources       int
 }
 
+// Seen reports whether a priced call set Source; with Source "" it means several providers.
+// It and SetSeen let a stored total come back exactly as it was.
+func (t Total) Seen() bool { return t.sources > 0 }
+
+// SetSeen restores what Seen reported.
+func (t *Total) SetSeen(seen bool) {
+	t.sources = 0
+	if seen {
+		t.sources = 1
+	}
+}
+
 // Add counts one call into the total.
 func (t *Total) Add(c Call) {
 	switch c.Status {

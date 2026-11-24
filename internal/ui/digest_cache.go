@@ -26,6 +26,16 @@ type digestMemo struct {
 	stats  timeline.Stats
 	// row is what the sessions list shows from the session's view (017 AC1, AC2).
 	row rowFacts
+
+	// eff is the effect version the compute read before it read any data: with the store
+	// version it was asked for, the key of the memo's on-disk entry (spec 030).
+	eff store.EffectVersion
+	// degraded: a content read failed for a reason other than not-found, so the memo is
+	// served to those waiting on it but kept nowhere (spec 030 D16).
+	degraded bool
+	// fromDisk: the memo came from the on-disk cache, so it is neither a compute nor
+	// written again.
+	fromDisk bool
 }
 
 // rowFacts are the counts and words a sessions-list row takes from the session's view, in
@@ -94,6 +104,8 @@ type DigestCache struct {
 
 	base context.Context
 	log  *zap.Logger
+	// disk is where computed memos are also written; nil is none. Set before use.
+	disk *DiskCache
 	// fmu guards active. Lock order: fmu, then mu.
 	fmu    sync.Mutex
 	active map[store.SessionIdent]*digestRuns
@@ -120,6 +132,13 @@ func newDigestCacheCtx(base context.Context, log *zap.Logger, max int) *DigestCa
 	}
 	return &DigestCache{max: max, ll: list.New(), items: map[store.SessionIdent]*list.Element{},
 		base: base, log: log, active: map[store.SessionIdent]*digestRuns{}}
+}
+
+// WithDisk makes the cache write each memo it computes to disk. It returns c; call it
+// before the cache is used.
+func (c *DigestCache) WithDisk(d *DiskCache) *DigestCache {
+	c.disk = d
+	return c
 }
 
 func cloneDigest(d timeline.Digest) timeline.Digest {
@@ -269,6 +288,9 @@ func (c *DigestCache) run(id store.SessionIdent, r *digestRun) {
 		}
 		c.computes.Add(1)
 		m, err := r.compute(ctx)
+		if err == nil && m.fromDisk {
+			c.computes.Add(-1) // read from disk, not computed
+		}
 		if err != nil {
 			// A recompute behind a stale read has nobody waiting, so this is its only trace.
 			// A cancel at shutdown, or a compute past buildTimeout, is not a failure of the
@@ -282,8 +304,14 @@ func (c *DigestCache) run(id store.SessionIdent, r *digestRun) {
 			return
 		}
 		e := &digestEntry{id: id, ver: r.ver, memo: cloneMemo(m)}
-		c.store(e)
 		r.res = e
+		if m.degraded {
+			return
+		}
+		c.store(e)
+		if !m.fromDisk {
+			c.disk.PutMemo(id, r.ver, m.eff, m)
+		}
 	}()
 	c.fmu.Lock()
 	rs := c.active[id]

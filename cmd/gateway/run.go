@@ -184,6 +184,7 @@ func run(ctx context.Context, d deps) int {
 // serve starts the gateway and serves until ctx is cancelled. It calls d.started, if
 // set, once every listener serves; a return before that is a failed start.
 func serve(ctx context.Context, d deps) int {
+	started := time.Now()
 	boot := logging.Bootstrap(d.stdout)
 	fs := flag.NewFlagSet("gateway", flag.ContinueOnError)
 	fs.SetOutput(io.Discard) // the flag package never prints usage text
@@ -358,17 +359,13 @@ func serve(ctx context.Context, d deps) int {
 			ReadHeaderTimeout: 10 * time.Second,
 		}
 		srvUI := uiSrv
-		// Spec 019: the sessions list is built before the UI accepts, so the first page
-		// load after a restart answers instead of timing out on a cold build; a page that
-		// connects meanwhile waits in the listen queue. The proxy serves from the start.
+		// Spec 030: the UI serves as soon as it binds. Its sessions and views come from the
+		// on-disk cache or are built on demand; a background pass builds what is missing.
 		uiErr = logging.Go(log, "ui_serve", func() error {
-			start := time.Now()
-			if err := ui.Warm(ctx, deps); err != nil && ctx.Err() == nil {
-				log.Warn("ui warm-up failed; the list builds on first use", zap.Error(err))
-			}
-			warm := time.Since(start)
+			warm := time.Since(started)
 			metrics.Warmup(warm)
 			log.Info("ui ready", zap.Int64("warm_ms", warm.Milliseconds()))
+			logging.Go(log, "ui_prefill", func() error { ui.Prefill(ctx, deps); return nil })
 			return srvUI.Serve(uiLn)
 		})
 		log.Info("ui started", zap.String("addr", uiLn.Addr().String()))
@@ -526,6 +523,8 @@ type captureRun struct {
 	views     *ui.ViewCache
 	// digests is the one digest cache they share, for the same reason.
 	digests *ui.DigestCache
+	// disk is the on-disk view cache; nil when it is off for this run.
+	disk *ui.DiskCache
 	// effects is the effect sensors; nil when effects are off (spec 014, E15).
 	effects *effectsRun
 	// skew is effects.attribution.skew, for labelling effects in the UI (spec 015).
@@ -568,7 +567,7 @@ func (c *captureRun) hasUI() bool { return c != nil && c.hub != nil }
 func (c *captureRun) uiDeps(ctx context.Context, addr string, log *zap.Logger) ui.Deps {
 	return ui.Deps{
 		Addr: addr, Log: log, Reader: c.reader, Hub: c.hub,
-		Rules: uiRules(), Ctx: ctx, Timelines: c.timelines, Digests: c.digests, Views: c.views,
+		Rules: uiRules(), Ctx: ctx, Timelines: c.timelines, Digests: c.digests, Views: c.views, Disk: c.disk,
 		AttributionSkew: c.skew, Metrics: c.metrics,
 	}
 }
@@ -605,6 +604,7 @@ func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, wit
 	var timelines *ui.TimelineCache
 	var digests *ui.DigestCache
 	var views *ui.ViewCache
+	var disk *ui.DiskCache
 	if withUI {
 		// The store exists now (E2), so the read-only view can open on it.
 		if reader, err = store.OpenReader(dir); err != nil {
@@ -615,11 +615,17 @@ func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, wit
 				zap.String("reason", storeOpenReason(err)))
 			return nil, exitRuntime
 		}
+		// The persistent cache hashes the executable (tens of ms) before the UI serves; if
+		// that or the store check fails, the UI runs from memory alone.
+		if disk, err = ui.OpenDiskCache(ctx, dir, version, e.Attribution.Skew, reader, log, m); err != nil {
+			log.Warn("ui view cache is off for this run", zap.Error(err))
+			disk = nil
+		}
 		timelines = ui.NewTimelineCache(ctx, log)
-		digests = ui.NewDigestCache(ctx, log)
+		digests = ui.NewDigestCache(ctx, log).WithDisk(disk)
 		views = ui.NewViewCache()
 		hub = ui.NewHub(ui.Deps{Log: log, Reader: reader, Rules: uiRules(), Timelines: timelines, Digests: digests,
-			Views: views, AttributionSkew: e.Attribution.Skew, Metrics: m})
+			Views: views, Disk: disk, AttributionSkew: e.Attribution.Skew, Metrics: m})
 		cfg.OnCommit = hub.Publish
 	}
 	sink := capture.NewSink(cfg, st, log)
@@ -645,7 +651,7 @@ func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, wit
 	}
 	return &captureRun{
 		store: st, sink: sink, hooks: hookSink, budget: core.NewBudget(c.MemoryLimit), maxBodyBytes: c.MaxBodyBytes,
-		reader: reader, hub: hub, timelines: timelines, views: views, digests: digests, effects: eff,
+		reader: reader, hub: hub, timelines: timelines, views: views, digests: digests, disk: disk, effects: eff,
 		skew: e.Attribution.Skew, dir: dir, metrics: m,
 	}, exitOK
 }

@@ -36,6 +36,10 @@ type viewEntry struct {
 	// endOnly is the session's end-only fact (B12) that active was decided with.
 	endOnly bool
 	view    timeline.View
+	// from and to are the activity range the view read unassigned connections over, and
+	// unMax the largest effect id stored before the build read them: a connection with no
+	// session stored after it, inside the range, makes the entry a miss (spec 030 D15).
+	from, to, unMax int64
 }
 
 // NewViewCache returns an empty view memo; the server passes one to Handler and NewHub.
@@ -43,19 +47,21 @@ func NewViewCache() *ViewCache {
 	return &ViewCache{ll: list.New(), items: map[store.SessionIdent]*list.Element{}}
 }
 
-func (c *ViewCache) get(id store.SessionIdent, key string, now time.Time) (timeline.View, bool) {
+// getEntry returns the session's entry when it is at key and its active flag at now is the
+// one it was built with. The caller runs the checks that need the store.
+func (c *ViewCache) getEntry(id store.SessionIdent, key string, now time.Time) (*viewEntry, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	el, ok := c.items[id]
 	if !ok {
-		return timeline.View{}, false
+		return nil, false
 	}
 	e := el.Value.(*viewEntry)
 	if e.key != key || isActive(e.last, e.endOnly, now) != e.active {
-		return timeline.View{}, false
+		return nil, false
 	}
 	c.ll.MoveToFront(el)
-	return e.view, true
+	return e, true
 }
 
 // peek returns the session's last view whatever its version, without building anything and
@@ -194,6 +200,27 @@ func buildKey(b store.Version) string {
 	return fmt.Sprintf("%d.%d.%d.%d.%d/", b.ExCount, b.ExMaxRow, b.Parsed, b.HookCount, b.HookMaxID)
 }
 
+// viewHit looks for a view at exactly key: first in memory, then (when disk is true) on disk. Either way no
+// unassigned connection may have been stored since the view was built inside its range.
+func (d Deps) viewHit(ctx context.Context, c *store.CtxReader, ident store.SessionIdent, key string, now time.Time, disk bool) (timeline.View, bool) {
+	if d.Views != nil {
+		if e, ok := d.Views.getEntry(ident, key, now); ok {
+			if quiet, err := unassignedQuiet(c, e.from, e.to, e.unMax); err == nil && quiet {
+				return e.view, true
+			}
+		}
+	}
+	if disk && d.Disk != nil {
+		if e, ok := d.Disk.GetView(ctx, ident, key, now); ok {
+			if d.Views != nil {
+				d.Views.put(e)
+			}
+			return e.view, true
+		}
+	}
+	return timeline.View{}, false
+}
+
 // buildView is cachedView without the timing; cached is true for a view cache hit.
 func (d Deps) buildView(ctx context.Context, who sessIdent, fresh bool) (_ timeline.View, cached bool, _ error) {
 	c := d.Reader.WithContext(ctx)
@@ -210,6 +237,17 @@ func (d Deps) buildView(ctx context.Context, who sessIdent, fresh bool) (_ timel
 	if err != nil {
 		return timeline.View{}, false, err
 	}
+	// read before the build reads the effects, so a connection stored later has a larger id
+	unMax, err := c.MaxEffectID()
+	if err != nil {
+		return timeline.View{}, false, err
+	}
+	ev := evs[ident]
+	now := d.now()
+	// a view at exactly the current version, from memory or disk, needs no build at all
+	if v, ok := d.viewHit(ctx, c, ident, viewKeyOf(ver, ev), now, true); ok {
+		return v, true, nil
+	}
 	get := d.Timelines.latest
 	if fresh {
 		get = d.Timelines.get
@@ -218,13 +256,9 @@ func (d Deps) buildView(ctx context.Context, who sessIdent, fresh bool) (_ timel
 	if err != nil {
 		return timeline.View{}, false, err
 	}
-	ev := evs[ident]
-	b := built.ver
-	key := buildKey(b) + fmt.Sprintf("%d.%d", ev.Count, ev.MaxID)
-	now := d.now()
-	views := d.Views
-	if views != nil {
-		if v, ok := views.get(ident, key, now); ok {
+	key := viewKeyOf(built.ver, ev)
+	if built.ver != ver { // an older build the timeline cache holds: its own view may be cached
+		if v, ok := d.viewHit(ctx, c, ident, key, now, false); ok {
 			return v, true, nil
 		}
 	}
@@ -235,12 +269,22 @@ func (d Deps) buildView(ctx context.Context, who sessIdent, fresh bool) (_ timel
 	last := lastActivity(built.bs, hooks)
 	endOnly := endOnlyHooks(built.bs, hooks)
 	active := isActive(last, endOnly, now)
-	v, err := d.viewDeps().sessionView(c, who, built.bs, hooks, active, key)
+	v, degraded, err := d.viewDeps().sessionViewChecked(c, who, built.bs, hooks, active, key)
 	if err != nil {
 		return timeline.View{}, false, err
 	}
-	if views != nil {
-		views.put(&viewEntry{id: ident, key: key, last: last, active: active, endOnly: endOnly, view: v})
+	if degraded {
+		return v, false, nil // served, kept nowhere (D16)
+	}
+	from, to := activityRange(built.bs, hooks)
+	e := &viewEntry{id: ident, key: key, last: last, active: active, endOnly: endOnly, view: v,
+		from: from, to: to, unMax: unMax}
+	if d.Views != nil {
+		d.Views.put(e)
+	}
+	// only a view at the version this request read, of a session that is not active (D18)
+	if built.ver == ver && !active {
+		d.Disk.PutView(e, ver, ev)
 	}
 	return v, false, nil
 }

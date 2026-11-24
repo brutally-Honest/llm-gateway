@@ -53,6 +53,9 @@ type Deps struct {
 	// Ctx is the server's lifetime: digest and timeline builds started by a request run
 	// on it, so they finish after the request times out. Nil is context.Background.
 	Ctx context.Context
+	// Disk is the on-disk view cache (spec 030); nil is none: every entry is built on
+	// demand and kept in memory only. The server passes one instance to Handler and NewHub.
+	Disk *DiskCache
 	// Metrics is the gateway's own metrics (spec 021): /metrics, the UI's request counts
 	// and view build times. Nil is metrics off.
 	Metrics *observability.Metrics
@@ -97,7 +100,7 @@ func allowedHosts(addr string) map[string]bool {
 // newRouter builds the router; extra mounts are for tests and later routes.
 func newRouter(d Deps, extra ...func(chi.Router)) chi.Router {
 	if d.Digests == nil {
-		d.Digests = newDigestCacheCtx(d.Ctx, d.Log, digestCacheSize)
+		d.Digests = newDigestCacheCtx(d.Ctx, d.Log, digestCacheSize).WithDisk(d.Disk)
 	}
 	if d.Timelines == nil {
 		d.Timelines = newTimelineCache(d.Ctx, d.Log, timelineCacheSessions, timelineCacheBytes)

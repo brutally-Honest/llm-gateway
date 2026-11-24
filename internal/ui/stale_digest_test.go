@@ -134,7 +134,7 @@ func heldCompute(t *testing.T, d Deps, c *DigestCache) (release func()) {
 	held := func(ctx context.Context) (digestMemo, error) {
 		close(started)
 		<-gate
-		return d.digestCompute(row)(ctx)
+		return d.digestCompute(row, vers[id])(ctx)
 	}
 	if _, err := c.latest(t.Context(), id, vers[id], held); err != nil {
 		t.Fatal(err)

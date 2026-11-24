@@ -171,7 +171,7 @@ func (h *Hub) Digests() *DigestCache { return h.digests }
 func newHub(d Deps, queue int) *Hub {
 	ctx, cancel := context.WithCancel(context.Background())
 	if d.Digests == nil {
-		d.Digests = newDigestCacheCtx(ctx, d.Log, digestCacheSize)
+		d.Digests = newDigestCacheCtx(ctx, d.Log, digestCacheSize).WithDisk(d.Disk)
 	}
 	if d.Timelines == nil {
 		d.Timelines = newTimelineCache(ctx, d.Log, timelineCacheSessions, timelineCacheBytes)
@@ -660,7 +660,7 @@ func waitFresh(ctx context.Context, d Deps, who sessIdent, entries bool) error {
 		if err != nil {
 			return err
 		}
-		if _, err := d.Digests.get(ctx, ident, vers[ident], d.digestCompute(row)); err != nil {
+		if _, err := d.Digests.get(ctx, ident, vers[ident], d.digestCompute(row, vers[ident])); err != nil {
 			return err
 		}
 	}
