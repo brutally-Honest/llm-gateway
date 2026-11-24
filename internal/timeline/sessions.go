@@ -37,6 +37,7 @@ func SessionStats(src Source, session store.SessionRow) (Stats, error) {
 		st      Stats
 		earlier []thread
 		calls   []CallUsage
+		in      = interner{}
 	)
 	for _, ex := range exchanges {
 		evs, err := src.Events(ex.RequestID)
@@ -46,7 +47,7 @@ func SessionStats(src Source, session store.SessionRow) (Stats, error) {
 		if c, ok := callUsage(ex, evs); ok {
 			calls = append(calls, c)
 		}
-		hashes := messageHashes(evs)
+		hashes := messageHashes(evs, in)
 		if len(hashes) == 0 || foldedParse(ex.Parse) {
 			continue
 		}
