@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/brutally-honest/llm-gateway/internal/core"
@@ -303,6 +305,40 @@ func panicLogged(t *testing.T, logs *observer.ObservedLogs, msg string) {
 	}
 	if ty, _ := got[0].ContextMap()["panic_type"].(string); ty != "string" {
 		t.Fatalf("panic_type = %q in %+v", ty, got[0].ContextMap())
+	}
+}
+
+// A failed build logs at a level that follows its cause: a cancel or deadline is
+// Debug, anything else is Warn.
+func TestTimelineCache_BuildFailureLevelFollowsCause(t *testing.T) {
+	cases := []struct {
+		name  string
+		err   error
+		want  zapcore.Level
+		other zapcore.Level
+	}{
+		{"canceled", context.Canceled, zapcore.DebugLevel, zapcore.WarnLevel},
+		{"wrapped deadline", fmt.Errorf("x: %w", context.DeadlineExceeded), zapcore.DebugLevel, zapcore.WarnLevel},
+		{"other error", errors.New("boom"), zapcore.WarnLevel, zapcore.DebugLevel},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			obs, logs := observer.New(zap.DebugLevel)
+			c := newTimelineCache(t.Context(), zap.New(obs), 2, 1<<30)
+			_, err := c.get(t.Context(), ident("k"), store.Version{ExCount: 1}, func(context.Context) (builtSession, error) {
+				return builtSession{}, tc.err
+			})
+			if !errors.Is(err, tc.err) {
+				t.Fatalf("err = %v, want %v", err, tc.err)
+			}
+			got := logs.FilterMessage("ui timeline build failed").All()
+			if len(got) != 1 || got[0].Level != tc.want {
+				t.Fatalf("log lines = %+v, want one %v entry", logs.All(), tc.want)
+			}
+			if n := logs.FilterLevelExact(tc.other).FilterMessage("ui timeline build failed").Len(); n != 0 {
+				t.Fatalf("%d entries at %v, want none", n, tc.other)
+			}
+		})
 	}
 }
 
