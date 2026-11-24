@@ -92,6 +92,8 @@ Object.assign(globalThis, {
       const params = new URLSearchParams(qs || "");
       sessionReqs.push(params);
       const body = await serve(params);
+      // { __status, message } answers with that status and an error message (a 504, say)
+      if (body && body.__status) return { ok: false, status: body.__status, statusText: "nope", json: async () => ({ error: { message: body.message } }) };
       return { ok: body !== null, status: body ? 200 : 500, statusText: "boom", json: async () => (body || { error: { message: "store boom" } }) };
     }
     if (path === "/api/today") {
@@ -382,6 +384,172 @@ test("unfilteredNextAndPreviousSendOffsetsAndTheLabelFollows", async (t) => {
   assert.equal(hash, "#/", "page 1 leaves the page out of the URL");
   assert.equal(pagerLabel(), "Page 1 of 9");
   assert.equal(ids()[0], "r0");
+});
+
+// spec 042 AC2, E2-E4: a page that fails keeps the pager, and the box offers Retry
+const timeout504 = { __status: 504, message: "the store did not answer in time" };
+const failingPageTwo = (p) => (p.get("offset") === "50" && failPageTwo ? timeout504 : { items: rows(Number(p.get("offset") || 0), 50), next_after: "x", total: 100, scanned: 50 });
+let failPageTwo = true;
+const retryBtn = () => byTag(box(), "button").find((b) => b.textContent === "Retry");
+async function toFailedPageTwo(t) {
+  failPageTwo = true;
+  await fresh(t, "#/", failingPageTwo);
+  pagerBtn(NEXT).fire("click");
+  await settle();
+}
+
+test("anErrorOnPageTwoKeepsThePagerAndShowsRetryInTheBox", async (t) => {
+  await toFailedPageTwo(t);
+  assert.match(textOf(box()), /the store did not answer in time/, "the error is inside the box");
+  assert.ok(retryBtn(), "Retry is inside the box");
+  assert.equal(pagerEl().hidden, false);
+  assert.equal(pagerLabel(), "Page 2 of 2");
+  assert.equal(pagerBtn(PREV).disabled, false);
+  assert.equal(hash, "#/?page=2", "the URL still names page 2");
+});
+
+// spec 042 F1: a live event must not turn a page error into a skeleton with no Retry
+test("aLiveEventDuringAPageErrorKeepsTheErrorAndRetry", async (t) => {
+  await toFailedPageTwo(t);
+  sessionReqs.length = 0;
+  streams.at(-1).emit("session", sess("n", "brand new", "2026-01-01T02:00:00Z"));
+  t.mock.timers.tick(6000);
+  await settle();
+  assert.match(textOf(box()), /the store did not answer in time/, "the error stays in the box");
+  assert.ok(retryBtn(), "Retry stays in the box");
+  assert.doesNotMatch(textOf(box()), /Loading sessions…/, "no skeleton");
+  assert.equal(sessionReqs.length, 0, "no request was sent for the event");
+  failPageTwo = false;
+  retryBtn().fire("click");
+  await settle();
+  assert.equal(ids()[0], "r50", "Retry loads page 2");
+  assert.equal(retryBtn(), undefined);
+});
+
+// spec 042 AC2: a session event during a load may be newer than the load's answer, so the
+// page is read again once the load is done
+test("anEventDuringAFilteredPageOneLoadIsRefetchedAfterIt", async (t) => {
+  const rowA = sess("a", "alpha", stamp(5), { active: true });
+  const rowB = sess("b", "beta", stamp(4), { active: true });
+  const rowC = sess("c", "gamma new", stamp(9), { active: true });
+  await fresh(t, "#/", () => ({ items: [], next_after: null, total: 0, scanned: 0 }));
+  const gate = deferred();
+  serve = async () => {
+    await gate.promise;
+    return { items: [rowA, rowB], next_after: "t1", total: 9, scanned: 9 };
+  };
+  await go("#/?kind=active");
+  sessionReqs.length = 0;
+  streams.at(-1).emit("session", rowC);
+  t.mock.timers.tick(100);
+  await settle();
+  gate.resolve(); // the answer is a snapshot from before the event
+  await settle();
+  assert.deepEqual(ids(), ["a", "b"]);
+  serve = () => ({ items: [rowC, rowA, rowB], next_after: "t1", total: 10, scanned: 9 });
+  t.mock.timers.tick(600);
+  await settle();
+  assert.equal(sessionReqs.length, 1, "one refetch after the load");
+  assert.deepEqual(reqObj(lastReq()), { kind: "active" }, "page 1 again");
+  assert.deepEqual(ids(), ["c", "a", "b"]);
+});
+
+test("anEventDuringAnUnfilteredLoadRefreshesTheTotal", async (t) => {
+  await fresh(t, "#/?kind=active", () => ({ items: [], next_after: null, total: 0, scanned: 0 }));
+  const gate = deferred();
+  serve = async () => {
+    await gate.promise;
+    return { items: rows(0, 50), next_after: "x", total: 100, scanned: 50 };
+  };
+  await go("#/");
+  sessionReqs.length = 0;
+  streams.at(-1).emit("session", sess("n", "brand new", "2026-01-01T02:00:00Z"));
+  t.mock.timers.tick(100);
+  await settle();
+  gate.resolve();
+  await settle();
+  assert.equal(pagerLabel(), "Page 1 of 2");
+  serve = () => ({ items: rows(0, 1), next_after: "x", total: 120, scanned: 1 });
+  t.mock.timers.tick(600);
+  await settle();
+  assert.equal(sessionReqs.length, 1, "one request for the total");
+  assert.deepEqual(reqObj(lastReq()), { limit: "1" });
+  assert.equal(pagerLabel(), "Page 1 of 3");
+});
+
+test("anEventDuringAFilteredLaterPageLoadDoesNotRefetch", async (t) => {
+  const rowA = sess("a", "alpha", stamp(5), { active: true });
+  await fresh(t, "#/?kind=active", () => ({ items: [rowA], next_after: "t1", total: 9, scanned: 9 }));
+  const gate = deferred();
+  serve = async () => {
+    await gate.promise;
+    return { items: [sess("old", "older page", stamp(1), { active: true })], next_after: null, total: 9, scanned: 9 };
+  };
+  pagerBtn(NEXT).fire("click");
+  await settle();
+  streams.at(-1).emit("session", sess("z", "unseen", stamp(10), { active: true }));
+  gate.resolve();
+  await settle();
+  assert.deepEqual(ids(), ["old"]);
+  sessionReqs.length = 0;
+  t.mock.timers.tick(10000);
+  await settle();
+  assert.equal(sessionReqs.length, 0, "page 1 is not read again from a later page");
+});
+
+// a reload that fails must not be cleared by a head refetch that was already on its way
+test("aKeepReloadThatFailsIsNotClearedByAPendingHeadRefetch", async (t) => {
+  await fresh(t, "#/", () => ({ items: rows(0, 50), next_after: "x", total: 100, scanned: 50 }));
+  const reload = deferred();
+  const head = deferred();
+  serve = async (p) => {
+    if (p.get("limit") === "1") {
+      await head.promise;
+      return { items: rows(0, 1), next_after: "x", total: 101, scanned: 1 };
+    }
+    await reload.promise;
+    return timeout504;
+  };
+  await go("#/ungrouped");
+  await go("#/"); // back on the same page: the rows stay while it is read again
+  streams.at(-1).emit("session", sess("n", "brand new", "2026-01-01T02:00:00Z"));
+  t.mock.timers.tick(600);
+  await settle();
+  reload.resolve();
+  await settle();
+  assert.ok(retryBtn(), "the reload failed");
+  head.resolve();
+  await settle();
+  assert.match(textOf(box()), /the store did not answer in time/, "the error stays");
+  assert.ok(retryBtn(), "Retry stays");
+});
+
+test("retryReRequestsTheSamePage", async (t) => {
+  await toFailedPageTwo(t);
+  failPageTwo = false;
+  sessionReqs.length = 0;
+  retryBtn().fire("click");
+  await settle();
+  assert.equal(sessionReqs.length, 1, "exactly one new request");
+  assert.deepEqual(reqObj(lastReq()), { offset: "50" });
+  assert.equal(ids()[0], "r50");
+  assert.equal(retryBtn(), undefined);
+  assert.doesNotMatch(textOf(box()), /did not answer/);
+  assert.equal(hash, "#/?page=2");
+});
+
+test("previousAfterAPageErrorGoesBackToPageOne", async (t) => {
+  await toFailedPageTwo(t);
+  // the user must be able to see and use Previous on the failed page (spec 042 AC2)
+  assert.equal(pagerEl().hidden, false, "the pager stays on a failed page");
+  assert.equal(pagerBtn(PREV).disabled, false, "Previous is enabled on a failed page 2");
+  sessionReqs.length = 0;
+  pagerBtn(PREV).fire("click");
+  await settle();
+  assert.equal(hash, "#/", "page 1 leaves the page out of the URL");
+  assert.deepEqual(reqObj(lastReq()), {}, "no offset");
+  assert.equal(ids()[0], "r0");
+  assert.equal(pagerLabel(), "Page 1 of 2");
 });
 
 test("nextIsDisabledOnTheLastPage", async (t) => {

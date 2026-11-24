@@ -149,6 +149,9 @@ async function loadPage(n, keep = false) {
     const un = p.unassigned_connections || 0;
     if (k === 1 || un !== unassignedSeen) loadUnassigned(un);
     unassignedSeen = un;
+    // an event during the load may be newer than its answer; refetch once (spec 042 AC2).
+    // A filtered refetch reads page 1 only.
+    if (headDirty && !headTimer && !headCool && (!filtering() || curPage === 1)) headTimer = setTimeout(fireHead, HEAD_MS);
   } catch (e) {
     if (stale()) return;
     store.set({ sessionsError: e.message });
@@ -175,6 +178,12 @@ function noteHeadFloor(p) {
   headFloor = times.length ? Math.min(...times) : null;
 }
 
+// listFailedOrLoading: a refetch scheduled before an error or a reload must not clear it (spec 042).
+function listFailedOrLoading() {
+  const s = store.get();
+  return Boolean(s.sessionsError) || !s.sessionsLoaded;
+}
+
 // refetchHead reads the page on screen again after live events. A filtered page 1 takes the
 // answer's rows (which also renews where page 2 starts); an unfiltered list only takes the
 // new total, since its rows were already updated in place or inserted.
@@ -185,12 +194,12 @@ async function refetchHead() {
     if (!filtering()) {
       // only the total is wanted: one row is enough to get it
       const t = await getJSON("sessions", { ...sessionParams(n), limit: 1 });
-      if (gen !== listGen) return;
+      if (gen !== listGen || listFailedOrLoading()) return;
       store.set({ sessionsTotal: t.total || 0, sessionsError: "" });
       return;
     }
     const p = await getJSON("sessions", sessionParams(n, starts[n - 1]));
-    if (gen !== listGen) return;
+    if (gen !== listGen || listFailedOrLoading()) return;
     noteHeadFloor(p);
     noteNext(1, p.next_after);
     scannedAt[0] = p.scanned || 0;
@@ -218,6 +227,13 @@ function applyList(kind, q, n = 1) {
 // but only for its total (and so its page count).
 function onSession(row) {
   const s = store.get();
+  // a failed page keeps its error and Retry (spec 042 AC3)
+  if (s.sessionsError) return;
+  // a load in flight may predate this event: note it, and loadPage refetches after it (spec 042 AC2)
+  if (!s.sessionsLoaded) {
+    headDirty = true;
+    return;
+  }
   if (s.sessions.some((x) => x.id === row.id)) {
     // only an unfiltered page 1 re-sorts; elsewhere the row keeps its place under the reader
     if (!filtering() && curPage === 1) store.set({ sessions: upsertSession(s.sessions, row) });
@@ -570,6 +586,8 @@ function showSessions() {
       cancelTyping();
       location.hash = buildRoute({ name: "sessions", kind: list.kind, q: list.q, page: n });
     },
+    // Retry asks for the same page again; the URL stays, and listGen drops an older answer (spec 042 AC2, E3)
+    onRetry: () => loadPage(curPage),
     // a filter click is a history entry; the hashchange loads it (see listSync). It goes
     // back to page 1
     onKind: (kind) => {

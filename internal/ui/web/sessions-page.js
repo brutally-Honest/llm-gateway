@@ -357,19 +357,34 @@ export function setTokenBar(parts, counts) {
   parts.barSegs.forEach((seg, i) => {
     const n = counts[i];
     const has = typeof n === "number" && Number.isFinite(n) && n > 0;
-    seg.hidden = !has;
-    seg.style.flexGrow = has ? String(n) : "";
+    // each write only on a change: an attribute write dirties layout (spec 042 AC3)
+    if (seg.hidden !== !has) seg.hidden = !has;
+    const grow = has ? String(n) : "";
+    if (seg.style.flexGrow !== grow) seg.style.flexGrow = grow;
     any = any || has;
   });
-  parts.bar.hidden = !any;
+  if (parts.bar.hidden !== !any) parts.bar.hidden = !any;
+}
+
+// setHidden writes the hidden flag only when it changed (spec 042 AC3).
+function setHidden(e, hidden) {
+  if (e.hidden !== hidden) e.hidden = hidden;
 }
 
 function fillRow(parts, s, selected) {
+  // the same session object and the same selection: nothing to write (spec 042 AC3)
+  if (parts.lastS === s && parts.lastSel === selected) return;
+  parts.lastS = s;
+  parts.lastSel = selected;
   const c = rowCells(s);
   const { tr, cells, a, place, look, key } = parts;
-  tr.className = selected ? "selected" : "";
-  if (selected) tr.setAttribute("aria-selected", "true");
-  else tr.removeAttribute("aria-selected");
+  // the selection marks are written only when the row's selected state changed
+  if (parts.marked !== selected) {
+    parts.marked = selected;
+    tr.className = selected ? "selected" : "";
+    if (selected) tr.setAttribute("aria-selected", "true");
+    else tr.removeAttribute("aria-selected");
+  }
   if (key.start !== c.start) {
     key.start = c.start;
     const t = timeElement(c.start);
@@ -407,9 +422,9 @@ function fillRow(parts, s, selected) {
     setToken(parts.tokens[1], c.output, "out");
     setToken(parts.tokens[2], c.cacheRead, "cache read");
   }
-  for (const e of [parts.tokens[1], parts.tokens[2], ...parts.seps]) e.hidden = c.hooksOnly;
+  for (const e of [parts.tokens[1], parts.tokens[2], ...parts.seps]) setHidden(e, c.hooksOnly);
   // an unknown cost says nothing once its label is gone, so it is left out (027 C7b)
-  parts.cost.hidden = c.hooksOnly || c.cost.text === DASH;
+  setHidden(parts.cost, c.hooksOnly || c.cost.text === DASH);
   const u = s.usage || {};
   setTokenBar(parts, c.hooksOnly ? [] : [u.input, u.output, u.cache_read].map((x) => x && x.value));
   // the Tokens header already says the figure is API-equivalent, so the row does not repeat it
@@ -497,7 +512,7 @@ function loader() {
 // ungrouped: { items, next_after }, unassigned, unassignedItems }; page is the page shown (or
 // being loaded). Until the
 // page has loaded the box shows a loader. The rows are shown as given: the server filtered them.
-// handlers = { onPage(n), onKind(kind), onQuery(text, now) }.
+// handlers = { onPage(n), onKind(kind), onQuery(text, now), onRetry() }.
 export function createSessionsPage(handlers) {
   const el = document.createElement("section");
   el.className = "sessions-page";
@@ -572,14 +587,19 @@ export function createSessionsPage(handlers) {
   function drawPager() {
     const filtering = kind !== "all" || (state.q || "") !== "";
     const page = state.page || 1;
+    // an unknown total (a failed cold load) reads "Page N", not "Page N of 1" (spec 042)
+    const unknownTotal = !filtering && !(state.total > 0);
     const last = filtering ? null : pageCount(state.total);
-    const more = filtering ? Boolean(state.next_after) : page < last;
+    // On an error the held next_after belongs to an older page, so a filtered Next stays off:
+    // where page n+1 starts is unknown (spec 042 E4). Unfiltered, the last good total still counts.
+    const more = filtering ? Boolean(state.next_after) && !state.error : !unknownTotal && page < last;
     const single = page <= 1 && !more;
-    const show = !state.error && !single;
+    // an error keeps the pager, so a failed page is never a dead end (spec 042 AC2)
+    const show = !single;
     pager.hidden = !show;
     if (!show) return;
     const was = document.activeElement;
-    const text = filtering ? `Page ${page}` : `Page ${page} of ${last}`;
+    const text = filtering || unknownTotal ? `Page ${page}` : `Page ${page} of ${last}`;
     if (pageLabel.textContent !== text) pageLabel.textContent = text;
     prevBtn.disabled = page <= 1;
     nextBtn.disabled = !more;
@@ -590,6 +610,7 @@ export function createSessionsPage(handlers) {
   }
   let selected = "";
   let shown = [];
+  let retryBtn = null; // the Retry button now in the box, if any
   // The server searches: the page only reports the text (the app waits for typing to settle).
   // Esc clears the box and reports at once, in every browser; Chrome clears a search box on
   // Esc by itself and fires `search`, not `input`, so that is handled too (F4).
@@ -623,16 +644,42 @@ export function createSessionsPage(handlers) {
       keep.add(s.id);
     }
     for (const id of [...rows.keys()]) if (!keep.has(id)) rows.delete(id);
-    const have = Array.from(body.children);
-    if (have.length !== want.length || have.some((tr, i) => tr !== want[i])) {
-      body.replaceChildren(...want);
+    // move only the rows that are out of place, so an unchanged row is never re-inserted and
+    // a live update does not force a full table layout (spec 042 AC3)
+    let moved = false;
+    want.forEach((tr, i) => {
+      if (body.children[i] === tr) return;
+      body.insertBefore(tr, body.children[i] || null);
+      moved = true;
+    });
+    while (body.children.length > want.length) {
+      body.children[body.children.length - 1].remove();
+      moved = true;
+    }
+    if (moved) {
       const back = [...rows.values()].find((p) => p.a === focused);
       if (back && document.activeElement !== focused) focused.focus({ preventScroll: true });
     }
   }
 
-  function redraw() {
-    for (const [k, b] of kinds) b.setAttribute("aria-pressed", String(k === kind));
+  // What the tiles, the footer, the unassigned section and the error box were last built from:
+  // the tiles are rebuilt when their totals changed (compared by value); the footer, the
+  // unassigned section and the error box when their input changed (by reference), so a live
+  // session event does not replace nodes it does not change (spec 042 AC3).
+  const NONE = Symbol("none");
+  let builtToday = NONE;
+  let builtUngrouped = NONE;
+  let builtUnassigned = NONE;
+  let builtUnassignedItems = NONE;
+  let builtError = null;
+  let errorBox = null;
+  const pressed = new Map(); // the aria-pressed value last written to each kind button
+
+  function drawToday() {
+    // compared by value: a refetch returns a new object with equal totals (spec 042)
+    const key = JSON.stringify(state.today ?? null);
+    if (key === builtToday) return;
+    builtToday = key;
     const t = todayCells(state.today);
     today.replaceChildren();
     const stat = (value, label, exact, spark) => {
@@ -654,23 +701,59 @@ export function createSessionsPage(handlers) {
     stat(compact(t.input), "input", t.input);
     stat(compact(t.output), "output", t.output);
     stat(t.cost.text, `${LABEL} cost`, t.cost.title);
-    foot.replaceChildren();
+  }
+
+  function redraw() {
+    for (const [k, b] of kinds) {
+      const on = String(k === kind);
+      if (pressed.get(k) === on) continue;
+      pressed.set(k, on);
+      b.setAttribute("aria-pressed", on);
+    }
+    drawToday();
     // a page change starts at the top of the box
     if ((state.page || 1) !== lastPage) {
       lastPage = state.page || 1;
       list.scrollTop = 0;
     }
     drawPager();
+    // a Retry that is replaced (the reload shows the skeleton) cannot keep focus: the box takes it
+    const retryHadFocus = Boolean(retryBtn) && document.activeElement === retryBtn;
+    if (!state.error && retryHadFocus) list.focus({ preventScroll: true });
     if (state.error) {
       shown = [];
       selected = "";
-      list.replaceChildren(note("error", state.error));
+      // the error and a Retry sit in the box; the pager stays usable (spec 042 AC2). The box
+      // is built when the error is new or changed, else left in place (spec 042 AC3).
+      if (builtError !== state.error || list.children[0] !== errorBox) {
+        const box = document.createElement("div");
+        box.className = "sp-error";
+        const retry = document.createElement("button");
+        retry.type = "button";
+        retry.className = "btn sm";
+        retry.textContent = "Retry";
+        retry.addEventListener("click", () => handlers.onRetry && handlers.onRetry());
+        box.append(note("error", state.error), retry);
+        list.replaceChildren(box);
+        // as before, an error shows no ungrouped link; it is built again when the list returns
+        foot.replaceChildren();
+        builtUngrouped = NONE;
+        builtError = state.error;
+        errorBox = box;
+        retryBtn = retry;
+        if (retryHadFocus) retry.focus({ preventScroll: true });
+      }
       return;
     }
+    builtError = null;
+    errorBox = null;
     if (!state.loaded) {
       shown = [];
       selected = "";
+      // the loader replaces the list on each call, so the footer clears with it, as before
       list.replaceChildren(loader());
+      foot.replaceChildren();
+      builtUngrouped = NONE;
       return;
     }
     // the server has filtered and searched: every row held is a row shown
@@ -685,19 +768,27 @@ export function createSessionsPage(handlers) {
     } else {
       drawRows();
     }
-    const ug = ungroupedText(state.ungrouped.items, state.ungrouped.next_after);
-    if (ug) {
-      const a = document.createElement("a");
-      a.className = "quiet";
-      a.href = "#/ungrouped";
-      a.textContent = `${ug} →`;
-      const p = document.createElement("p");
-      p.append(a);
-      foot.append(p);
+    if (state.ungrouped !== builtUngrouped) {
+      builtUngrouped = state.ungrouped;
+      foot.replaceChildren();
+      const ug = ungroupedText(state.ungrouped.items, state.ungrouped.next_after);
+      if (ug) {
+        const a = document.createElement("a");
+        a.className = "quiet";
+        a.href = "#/ungrouped";
+        a.textContent = `${ug} →`;
+        const p = document.createElement("p");
+        p.append(a);
+        foot.append(p);
+      }
     }
-    const ua = unassignedSection(state.unassigned, state.unassignedItems);
-    if (ua) unassigned.replaceChildren(ua);
-    else unassigned.replaceChildren();
+    if (state.unassigned !== builtUnassigned || state.unassignedItems !== builtUnassignedItems) {
+      builtUnassigned = state.unassigned;
+      builtUnassignedItems = state.unassignedItems;
+      const ua = unassignedSection(state.unassigned, state.unassignedItems);
+      if (ua) unassigned.replaceChildren(ua);
+      else unassigned.replaceChildren();
+    }
   }
 
   redraw();
