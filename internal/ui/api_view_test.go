@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -370,6 +371,9 @@ func TestExchange_SessionTitleCallNumberAndStatusWord(t *testing.T) {
 	e, d := viewEnv(t)
 	d.callWith("a", 1, false, nil, "user:fix the retry")
 	d.callWith("b", 2, false, nil, "user:fix the retry", "assistant:Fixed.")
+	if code, _ := fetch(t, e, "/api/sessions/"+sid()+"/view"); code != 200 { // the title and #n come from the cached view
+		t.Fatalf("view = %d", code)
+	}
 	_, body := fetch(t, e, "/api/exchanges/b")
 	var m map[string]any
 	if err := json.Unmarshal(body, &m); err != nil {
@@ -397,5 +401,106 @@ func TestExchange_SessionTitleCallNumberAndStatusWord(t *testing.T) {
 	}
 	if m["status_word"] != "500 Internal Server Error" {
 		t.Errorf("status word = %v", m["status_word"])
+	}
+}
+
+// countBuilds counts every session build until the test ends.
+func countBuilds(t *testing.T) *atomic.Int32 {
+	t.Helper()
+	var n atomic.Int32
+	real := buildSessionFn
+	buildSessionFn = func(c sessionSource, who sessIdent, rules ClientRules, cut int) (builtSession, error) {
+		n.Add(1)
+		return real(c, who, rules, cut)
+	}
+	t.Cleanup(func() { buildSessionFn = real })
+	return &n
+}
+
+func exchangeFields(t *testing.T, e *streamEnv, id string) map[string]any {
+	t.Helper()
+	code, body := fetch(t, e, "/api/exchanges/"+id)
+	if code != 200 {
+		t.Fatalf("GET /api/exchanges/%s = %d", id, code)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+// The call details never build a session to name it: with nothing cached (a fresh
+// restart) the answer carries neither the title nor the #n, and no build runs.
+func TestExchange_NothingCachedAnswersWithoutBuilding(t *testing.T) {
+	e, d := viewEnv(t)
+	d.callWith("a", 1, false, nil, "user:fix the retry")
+	builds := countBuilds(t)
+	m := exchangeFields(t, e, "a")
+	if _, ok := m["session_title"]; ok {
+		t.Errorf("session_title = %v with no cached view", m["session_title"])
+	}
+	if _, ok := m["call_n"]; ok {
+		t.Errorf("call_n = %v with no cached view", m["call_n"])
+	}
+	if m["session_id"] == nil || m["status_word"] != "200 OK" {
+		t.Errorf("the rest of the answer is missing: %v", m)
+	}
+	if n := builds.Load(); n != 0 {
+		t.Errorf("%d session builds ran for an exchange request, want 0", n)
+	}
+}
+
+// With the session's current view cached and holding the call, the title and #n are served
+// from it, again without a build.
+func TestExchange_CachedCurrentViewGivesTitleAndNumber(t *testing.T) {
+	e, d := viewEnv(t)
+	d.callWith("a", 1, false, nil, "user:fix the retry")
+	d.callWith("b", 2, false, nil, "user:fix the retry", "assistant:Fixed.")
+	if code, _ := fetch(t, e, "/api/sessions/"+sid()+"/view"); code != 200 {
+		t.Fatalf("view = %d", code)
+	}
+	builds := countBuilds(t)
+	m := exchangeFields(t, e, "b")
+	if m["session_title"] != "fix the retry" || m["call_n"] != 2.0 {
+		t.Errorf("exchange b = title %v, n %v, want the title and 2", m["session_title"], m["call_n"])
+	}
+	if n := builds.Load(); n != 0 {
+		t.Errorf("%d session builds ran, want 0", n)
+	}
+}
+
+// A cached view older than the store gives neither a title nor a #n: a call committed after
+// it is not in it, and a call it holds may have moved if an earlier-starting call landed
+// late. The title can change with the session too, so the older view's title is not served
+// either. No build is started or waited for.
+func TestExchange_OlderCachedViewGivesNoTitleOrNumber(t *testing.T) {
+	e, d := viewEnv(t)
+	d.callWith("a", 1, false, nil, "user:fix the retry")
+	d.callWith("b", 3, false, nil, "user:fix the retry", "assistant:Fixed.")
+	if code, _ := fetch(t, e, "/api/sessions/"+sid()+"/view"); code != 200 {
+		t.Fatalf("view = %d", code)
+	}
+	d.callWith("c", 5, false, nil, "user:fix the retry", "assistant:Fixed.", "user:more")
+	// starts before b, so b's number in a fresh build is 3 and the cached view says 2
+	d.callWith("x", 2, false, nil, "user:fix the retry")
+	release := gateBuilds(t)
+	defer release()
+	builds := countBuilds(t)
+	for _, id := range []string{"b", "c"} {
+		start := time.Now()
+		m := exchangeFields(t, e, id)
+		if took := time.Since(start); took > time.Second {
+			t.Errorf("exchange %s took %v with a rebuild held, want an answer at once", id, took)
+		}
+		if _, ok := m["call_n"]; ok {
+			t.Errorf("exchange %s call_n = %v from an older view, want none", id, m["call_n"])
+		}
+		if _, ok := m["session_title"]; ok {
+			t.Errorf("exchange %s session_title = %v from an older view, want none: the title of an older view must not be served", id, m["session_title"])
+		}
+	}
+	if n := builds.Load(); n != 0 {
+		t.Errorf("%d session builds ran, want 0", n)
 	}
 }

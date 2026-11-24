@@ -3,6 +3,7 @@ package ui
 import (
 	"container/list"
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -270,7 +271,13 @@ func (c *DigestCache) run(id store.SessionIdent, r *digestRun) {
 		m, err := r.compute(ctx)
 		if err != nil {
 			// A recompute behind a stale read has nobody waiting, so this is its only trace.
-			c.log.Warn("ui digest compute failed", zap.Error(err))
+			// A cancel at shutdown, or a compute past buildTimeout, is not a failure of the
+			// compute, so it logs at Debug.
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				c.log.Debug("ui digest compute failed", zap.Error(err))
+			} else {
+				c.log.Warn("ui digest compute failed", zap.Error(err))
+			}
 			r.err = err
 			return
 		}

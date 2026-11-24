@@ -2,6 +2,7 @@ package ui
 
 import (
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -45,7 +46,7 @@ type hourlyJSON struct {
 	PeakSessions int    `json:"peak_sessions"`
 }
 
-func (d Deps) hourlyBuckets(c *store.CtxReader, since time.Time, exs []store.ExchangeRow) (hourlyJSON, error) {
+func (d Deps) hourlyBuckets(c *store.CtxReader, since time.Time, exs []store.ExchangeStub) (hourlyJSON, error) {
 	n := 0
 	if now := d.now(); !now.Before(since) {
 		n = min(int(now.Sub(since)/time.Hour)+1, maxHourlyBuckets)
@@ -89,15 +90,59 @@ func (d Deps) hourlyBuckets(c *store.CtxReader, since time.Time, exs []store.Exc
 	return h, nil
 }
 
-// sinceSource presents a fixed set of exchanges as one session, so SessionStats can
-// total their usage whatever session they belong to. Side calls count like any call.
-type sinceSource struct {
-	*store.CtxReader
-	exs []store.ExchangeRow
+// callMemoMax bounds the memoised calls; past it the memo starts over, which only costs
+// one slow request.
+const callMemoMax = 50000
+
+// CallMemo remembers, per request id, what a parsed call contributes to the totals (nil:
+// the exchange is not a model call). A parse lands once, in one transaction with its
+// events, and the price tables are fixed, so a parsed call's contribution never changes
+// and is read from the store once. It is keyed by the call, not by the time the totals
+// start from, so a new day reuses every call it shares with the old one. Safe for
+// concurrent use.
+type CallMemo struct {
+	mu sync.Mutex
+	m  map[string]*timeline.CallUsage
 }
 
-func (s sinceSource) SessionExchanges(string, string, string) ([]store.ExchangeRow, error) {
-	return s.exs, nil
+// NewCallMemo returns an empty memo.
+func NewCallMemo() *CallMemo { return &CallMemo{m: map[string]*timeline.CallUsage{}} }
+
+func (c *CallMemo) get(id string) (*timeline.CallUsage, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	u, ok := c.m[id]
+	return u, ok
+}
+
+func (c *CallMemo) put(id string, u *timeline.CallUsage) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.m) >= callMemoMax {
+		c.m = map[string]*timeline.CallUsage{}
+	}
+	c.m[id] = u
+}
+
+// callUsageOf is the usage of one exchange as the session totals read it: from its
+// request and usage events. An unparsed exchange has no events and is not memoised, since
+// its parse may still land.
+func (d Deps) callUsageOf(c *store.CtxReader, s store.ExchangeStub) (*timeline.CallUsage, error) {
+	if s.Parsed {
+		if u, ok := d.Calls.get(s.RequestID); ok {
+			return u, nil
+		}
+	}
+	evs, err := c.CallEvents(s.RequestID)
+	if err != nil {
+		return nil, err
+	}
+	u := timeline.CallOf(store.ExchangeRow{Protocol: s.Protocol, StartedAt: s.StartedAt,
+		TTFBNS: s.TTFBNS, Status: s.Status}, evs)
+	if s.Parsed {
+		d.Calls.put(s.RequestID, u)
+	}
+	return u, nil
 }
 
 func mountToday(api chi.Router, d Deps) { api.Get("/today", d.getToday) }
@@ -111,17 +156,23 @@ func (d Deps) getToday(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := storeCtx(r)
 	defer cancel()
 	c := d.Reader.WithContext(ctx)
-	exs, err := c.ExchangesSince(since.UnixNano())
+	exs, err := c.ExchangeStubsSince(since.UnixNano())
 	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
-	st, err := timeline.SessionStats(sinceSource{c, exs}, store.SessionRow{})
-	if err != nil {
-		writeStoreErr(w, err)
-		return
+	calls := make([]timeline.CallUsage, 0, len(exs))
+	for _, ex := range exs {
+		u, err := d.callUsageOf(c, ex)
+		if err != nil {
+			writeStoreErr(w, err)
+			return
+		}
+		if u != nil {
+			calls = append(calls, *u)
+		}
 	}
-	u := usageToJSON(timeline.Summary{Total: st.Usage.Total})
+	u := usageToJSON(timeline.Summary{Total: timeline.Summarize(calls).Total})
 	seen := map[[3]string]bool{}
 	for _, ex := range exs {
 		if ex.SessionKey != "" {
@@ -148,7 +199,7 @@ func (d Deps) getToday(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, todayJSON{
-		Sessions: len(seen), Calls: st.ModelCalls, Changed: changed, Sites: sites, Hourly: hourly,
+		Sessions: len(seen), Calls: len(calls), Changed: changed, Sites: sites, Hourly: hourly,
 		Input: u.Input, Output: u.Output, CacheWrite: u.CacheWrite, CacheRead: u.CacheRead, Cost: u.Cost,
 	})
 }

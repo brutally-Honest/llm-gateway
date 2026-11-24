@@ -152,9 +152,6 @@ below and AC44, the API-key smoke test of Phase 1.
     (`specs/017-sessions-list-and-call-details/research.md`, Notes).
   - The today query scans the effects table, which has no index on time (017 D25).
   - These two may share one fix (a time index, or running totals); neither is chosen.
-- Rate-limit tests depend on the wall-clock minute; give the limiter a test clock. A
-  `Record` and the next call that straddle a minute boundary land in different windows,
-  so the call is not limited (`specs/036-macos-stream-test-hang/research.md`, D8).
 
 ## Not now
 - Remote access with auth: a gateway token on every route, then listeners off loopback.

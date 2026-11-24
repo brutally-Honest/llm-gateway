@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -254,7 +255,13 @@ func (c *TimelineCache) run(id store.SessionIdent, r *buildRun) {
 		bs, err := r.build(ctx)
 		if err != nil {
 			// A rebuild behind a stale read has nobody waiting, so this is its only trace.
-			c.log.Warn("ui timeline build failed", zap.Error(err))
+			// A cancel at shutdown, or a build past buildTimeout, is not a failure of the
+			// build, so it logs at Debug (as the digest cache does).
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				c.log.Debug("ui timeline build failed", zap.Error(err))
+			} else {
+				c.log.Warn("ui timeline build failed", zap.Error(err))
+			}
 			r.err = err
 			return
 		}

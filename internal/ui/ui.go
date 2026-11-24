@@ -44,6 +44,9 @@ type Deps struct {
 	// Views memoises session views (spec 016); nil gets a fresh memo from Handler and
 	// NewHub. The server passes one instance to both.
 	Views *ViewCache
+	// Calls memoises what each parsed call adds to the day's totals; nil gets a fresh memo
+	// from Handler.
+	Calls *CallMemo
 	// AttributionSkew widens each tool call's span when effects are labelled
 	// (effects.attribution.skew, spec 015).
 	AttributionSkew time.Duration
@@ -101,6 +104,9 @@ func newRouter(d Deps, extra ...func(chi.Router)) chi.Router {
 	}
 	if d.Views == nil {
 		d.Views = NewViewCache()
+	}
+	if d.Calls == nil {
+		d.Calls = NewCallMemo()
 	}
 	log := d.Log
 	if log == nil {

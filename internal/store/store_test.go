@@ -130,8 +130,6 @@ func TestStore_MigratesFromEmpty(t *testing.T) {
 		"exchanges_started_at": "index",
 		"exchanges_principal":  "index",
 		"events_content":       "index",
-		"events_tool_call":     "index",
-		"events_principal":     "index",
 		"exchanges_session":    "index",
 	}
 	for name, typ := range want {
@@ -143,6 +141,14 @@ func TestStore_MigratesFromEmpty(t *testing.T) {
 		}
 		if got != typ {
 			t.Errorf("%s is a %s, want %s", name, got, typ)
+		}
+	}
+	// Dropped by migration 6 (spec 041 S3): no query reads them.
+	for _, name := range []string{"events_tool_call", "events_principal"} {
+		var got string
+		err := db.QueryRow("SELECT type FROM sqlite_schema WHERE name = ?", name).Scan(&got)
+		if err == nil {
+			t.Errorf("%s is still in sqlite_schema as a %s, want it dropped", name, got)
 		}
 	}
 	for _, col := range []string{"request_incomplete", "truncated", "parse"} {

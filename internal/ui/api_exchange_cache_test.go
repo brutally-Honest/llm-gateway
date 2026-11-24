@@ -84,28 +84,19 @@ func TestAPI_ExchangeDetailAnswersFromCachedBuildWithoutWaiting(t *testing.T) {
 		t.Fatalf("detail of b from the cached build = %v, want %v as an up-to-date build gives", got, want)
 	}
 
-	// c is newer than the cached build: its thread facts are not there, so it waits for
-	// the build, and gets them once that lands.
-	done := make(chan map[string]any, 1)
-	go func() {
-		code, d := getDetail(t, e.ts.URL, "c", 10*time.Second)
-		if code != 200 {
-			t.Errorf("detail of c = %d after the build landed", code)
-		}
-		done <- d
-	}()
-	select {
-	case <-done:
-		t.Fatal("detail of c answered before a build held it")
-	case <-time.After(300 * time.Millisecond):
+	// c is newer than the cached build. Its detail no longer waits for one (S1): the title
+	// and #n come only from cached views, so while the rebuild is held it answers at once,
+	// without a #n, and a build that lands later changes nothing about that answer.
+	start = time.Now()
+	code, d := getDetail(t, e.ts.URL, "c", 2*time.Second)
+	if code != 200 || d["id"] != "c" {
+		t.Fatalf("detail of c = %d %v while a rebuild is held, want 200", code, d)
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Fatalf("detail of c took %v while a rebuild is held, want an answer at once", took)
+	}
+	if _, ok := d["call_n"]; ok {
+		t.Fatalf("detail of c has call_n %v from a view older than c", d["call_n"])
 	}
 	release()
-	select {
-	case d := <-done:
-		if d["id"] != "c" {
-			t.Fatalf("detail of c = %v", d)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("detail of c did not answer once the build landed")
-	}
 }

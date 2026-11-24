@@ -58,6 +58,18 @@ func (c *ViewCache) get(id store.SessionIdent, key string, now time.Time) (timel
 	return e.view, true
 }
 
+// peek returns the session's last view whatever its version, without building anything and
+// without moving the entry in the LRU order.
+func (c *ViewCache) peek(id store.SessionIdent) (timeline.View, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	el, ok := c.items[id]
+	if !ok {
+		return timeline.View{}, false
+	}
+	return el.Value.(*viewEntry).view, true
+}
+
 func (c *ViewCache) put(e *viewEntry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -176,6 +188,12 @@ func (d Deps) cachedView(ctx context.Context, who sessIdent, fresh bool) (timeli
 	return v, err
 }
 
+// buildKey is the part of a view's key that names its timeline build version, up to and
+// including the "/" before the effect version.
+func buildKey(b store.Version) string {
+	return fmt.Sprintf("%d.%d.%d.%d.%d/", b.ExCount, b.ExMaxRow, b.Parsed, b.HookCount, b.HookMaxID)
+}
+
 // buildView is cachedView without the timing; cached is true for a view cache hit.
 func (d Deps) buildView(ctx context.Context, who sessIdent, fresh bool) (_ timeline.View, cached bool, _ error) {
 	c := d.Reader.WithContext(ctx)
@@ -202,7 +220,7 @@ func (d Deps) buildView(ctx context.Context, who sessIdent, fresh bool) (_ timel
 	}
 	ev := evs[ident]
 	b := built.ver
-	key := fmt.Sprintf("%d.%d.%d.%d.%d/%d.%d", b.ExCount, b.ExMaxRow, b.Parsed, b.HookCount, b.HookMaxID, ev.Count, ev.MaxID)
+	key := buildKey(b) + fmt.Sprintf("%d.%d", ev.Count, ev.MaxID)
 	now := d.now()
 	views := d.Views
 	if views != nil {

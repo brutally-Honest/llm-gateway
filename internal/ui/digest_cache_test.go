@@ -3,6 +3,8 @@ package ui
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +13,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/brutally-honest/llm-gateway/internal/core"
 	"github.com/brutally-honest/llm-gateway/internal/store"
@@ -43,6 +47,40 @@ func newCacheEnv(t *testing.T, size int) *cacheEnv {
 }
 
 func (e *cacheEnv) computes() int64 { return e.cache.computes.Load() }
+
+// A compute that ends by cancel or timeout (shutdown, or past buildTimeout) logs at Debug;
+// any other failure still logs at Warn.
+func TestDigestCache_ComputeFailureLevelFollowsCause(t *testing.T) {
+	cases := []struct {
+		name  string
+		err   error
+		want  zapcore.Level
+		other zapcore.Level
+	}{
+		{"canceled", context.Canceled, zapcore.DebugLevel, zapcore.WarnLevel},
+		{"wrapped deadline", fmt.Errorf("x: %w", context.DeadlineExceeded), zapcore.DebugLevel, zapcore.WarnLevel},
+		{"other error", errors.New("boom"), zapcore.WarnLevel, zapcore.DebugLevel},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			obs, logs := observer.New(zap.DebugLevel)
+			c := newDigestCacheCtx(t.Context(), zap.New(obs), 8)
+			_, err := c.get(t.Context(), ident("k"), store.Version{ExCount: 1}, func(context.Context) (digestMemo, error) {
+				return digestMemo{}, tc.err
+			})
+			if !errors.Is(err, tc.err) {
+				t.Fatalf("err = %v, want %v", err, tc.err)
+			}
+			got := logs.FilterMessage("ui digest compute failed").All()
+			if len(got) != 1 || got[0].Level != tc.want {
+				t.Fatalf("log lines = %+v, want one %v entry", logs.All(), tc.want)
+			}
+			if n := logs.FilterLevelExact(tc.other).FilterMessage("ui digest compute failed").Len(); n != 0 {
+				t.Fatalf("%d entries at %v, want none", n, tc.other)
+			}
+		})
+	}
+}
 
 func TestDigestCache_UnchangedSessionNotRecomputed(t *testing.T) {
 	e := newCacheEnv(t, 8)

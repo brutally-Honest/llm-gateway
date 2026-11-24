@@ -132,6 +132,13 @@ ALTER TABLE effects ADD COLUMN window_from INTEGER;
 ALTER TABLE effects ADD COLUMN window_to INTEGER;
 ALTER TABLE hook_events ADD COLUMN work_dir TEXT;
 `,
+	// 6: drop events_tool_call and events_principal (spec 041 S3): no query reads them, and
+	// they take most of the events indexes' size. events_content stays until garbage
+	// collection exists.
+	`
+DROP INDEX IF EXISTS events_tool_call;
+DROP INDEX IF EXISTS events_principal;
+`,
 }
 
 // migrate brings the database to len(migrations) inside one BEGIN IMMEDIATE, so

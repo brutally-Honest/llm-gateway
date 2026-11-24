@@ -67,6 +67,8 @@ type options struct {
 	// now and sleep, if set, replace the crash-loop backoff's clock and wait (spec 025).
 	now   func() time.Time
 	sleep func(ctx context.Context, d time.Duration)
+	// rateClock, if set, replaces the rate limiter's clock.
+	rateClock func() time.Time
 	// bound, if set, gets every listener run binds, keyed by the address run asked for.
 	bound func(addr string, ln net.Listener)
 }
@@ -116,6 +118,7 @@ func startGateway(t *testing.T, o options) *gateway {
 		openStore: o.openStore,
 		now:       o.now,
 		sleep:     o.sleep,
+		rateClock: o.rateClock,
 		listen: func(network, addr string) (net.Listener, error) {
 			g.mu.Lock()
 			g.listen = append(g.listen, addr)
