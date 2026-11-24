@@ -177,7 +177,7 @@ func OpenDiskCache(ctx context.Context, dir, version string, skew time.Duration,
 		return nil, err
 	}
 	home, _ := os.UserHomeDir()
-	build := buildIdentity(version, exe, skew, home, time.Local)
+	build := buildIdentity(version, exe, skew, home, time.Local, os.Getenv("TZ"), localtimeHash())
 	base := filepath.Join(dir, diskDirName)
 	c := &DiskCache{
 		build: build, root: filepath.Join(base, build), ctx: ctx, r: r, log: log, m: m,
@@ -201,10 +201,23 @@ func OpenDiskCache(ctx context.Context, dir, version string, skew time.Duration,
 }
 
 // buildIdentity hashes the inputs a cached view depends on into the 16-character build id.
-func buildIdentity(version string, exe [sha256.Size]byte, skew time.Duration, home string, zone *time.Location) string {
+// tz is the TZ environment variable and localtime the hex sha256 of /etc/localtime ("" when
+// unreadable): the fingerprint samples two dates a year, so zones that differ only in
+// their transition hours (Asia/Beirut and Europe/Sofia) need these to tell them apart.
+func buildIdentity(version string, exe [sha256.Size]byte, skew time.Duration, home string, zone *time.Location, tz, localtime string) string {
 	h := sha256.New()
-	_, _ = fmt.Fprintf(h, "%d\x00%s\x00%x\x00%d\x00%s\x00%s\x00%s", diskFormat, version, exe, int64(skew), home, zone.String(), zoneFingerprint(zone))
+	_, _ = fmt.Fprintf(h, "%d\x00%s\x00%x\x00%d\x00%s\x00%s\x00%s\x00%s\x00%s", diskFormat, version, exe, int64(skew), home, zone.String(), zoneFingerprint(zone), tz, localtime)
 	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+// localtimeHash is the hex sha256 of the bytes of /etc/localtime, "" when it cannot be read.
+var localtimeHash = func() string {
+	b, err := os.ReadFile("/etc/localtime")
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }
 
 // zoneFingerprint describes a zone by its rules, not its name: the abbreviation and offset

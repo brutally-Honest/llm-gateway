@@ -1308,14 +1308,21 @@ func TestZoneFingerprint(t *testing.T) {
 
 func TestBuildIdentity_HomeAndZone(t *testing.T) {
 	exe := [sha256.Size]byte{1}
-	base := buildIdentity("v", exe, 0, "/home/a", time.FixedZone("Local", 19800))
-	if buildIdentity("v", exe, 0, "/home/a", time.FixedZone("Local", 19800)) != base {
+	z := time.FixedZone("Local", 19800)
+	base := buildIdentity("v", exe, 0, "/home/a", z, "", "aa")
+	if buildIdentity("v", exe, 0, "/home/a", time.FixedZone("Local", 19800), "", "aa") != base {
 		t.Error("the same inputs gave two builds")
 	}
-	if buildIdentity("v", exe, 0, "/home/b", time.FixedZone("Local", 19800)) == base {
+	if buildIdentity("v", exe, 0, "/home/b", z, "", "aa") == base {
 		t.Error("home does not change the build")
 	}
-	if buildIdentity("v", exe, 0, "/home/a", time.FixedZone("Local", 32400)) == base {
+	if buildIdentity("v", exe, 0, "/home/a", time.FixedZone("Local", 32400), "", "aa") == base {
 		t.Error("zone does not change the build")
+	}
+	if buildIdentity("v", exe, 0, "/home/a", z, "", "bb") == base {
+		t.Error("a different /etc/localtime hash does not change the build")
+	}
+	if buildIdentity("v", exe, 0, "/home/a", z, "Asia/Beirut", "aa") == base {
+		t.Error("TZ does not change the build")
 	}
 }
