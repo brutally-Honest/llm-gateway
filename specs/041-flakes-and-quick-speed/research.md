@@ -3,6 +3,12 @@ feature: 041-flakes-and-quick-speed
 ---
 # Research & decisions — 041-flakes-and-quick-speed
 
+## Progress
+- 2026-11-24 Review round 1 matched to commits: P1 and both F3 P3s in e747de2, the S2 P3 in
+  583fa60, the timeline S4 P3 uncommitted. The P4 S1 row said "fixed" but was not (D15).
+- 2026-11-24 Timeline S4 P3 checked: the test fails without the change (canceled and
+  wrapped deadline log at warn) and passes 20/20 with it; committed.
+
 ## Measurement setup
 
 - Store copy: `sqlite3 ~/.local/share/llm-gateway/gateway.db ".backup ~/.cache/llm-gateway-041/gateway.db"`
@@ -279,6 +285,25 @@ Database size on the copy (`stat -c %s` after `PRAGMA wal_checkpoint(TRUNCATE)`)
 | after migration 6 (user_version 6) | 1,589,620,736 | 47,570 free pages (≈195 MB) are reused by new writes; the file does not shrink |
 | after a manual `VACUUM` (14.9 s) | 1,304,141,824 | −285.5 MB (−18 %): the two indexes plus the defragmentation VACUUM does |
 
+## Review (round 1, a fresh opus subagent on `git diff main...HEAD` at 2564c22)
+
+Tests the reviewer ran: store, ratelimit and ui with -race, the cmd/gateway rate-limit
+tests, F1 and the S2 equivalence test with -count=5, and the web tests (220/220). All
+pass. Points 1-3, 5, 6 and 9 found nothing: the F1 allowance is exactly AC24/E18, no
+test can reach the wall clock, no assertion is weakened, the memo is exact, no SQL needs
+the dropped indexes, and no rules are broken. On a synthetic 1.65 M-row WAL database,
+step 6 held the write lock for 0.66 s.
+
+| # | Finding | Action |
+|---|---|---|
+| P1 | F3: a test timeout (or a crash while a test runs) prints only `FAIL <pkg>`. test2json gives the timeout panic to the running test, which never gets a terminal action, so neither block printed it. | fixed in e747de2 (`go-test-ci`: tests with `run` and no pass/fail/skip in a failed package) |
+| P3 | F3: a jq failure exits before printing anything | fixed in e747de2 (raw JSON printed, non-zero exit) |
+| P3 | F3: the jq program in a heredoc inside `$( … )` may mis-parse on bash 3.2 | fixed in e747de2 (moved to `go-test-ci.jq`, run with `jq -f`) |
+| P3 | S2: the page-load `loadToday()` does not set `todayBusy`, so it can overlap the first throttled fetch, and a late answer can overwrite newer totals | fixed in 583fa60 (`loadTodayNow` counts as in flight; node test `thePageLoadFetchAndAnEventNeverOverlapAndTheNewestAnswerWins` fails on the old app.js) |
+| P3 | S4: `ui timeline build failed` (`timeline_cache.go:257`) warns on a shutdown cancel too | fixed (same rule as the digest; `TestTimelineCache_BuildFailureLevelFollowsCause`) |
+| P4 | S4/D14: `DeadlineExceeded` at debug hides a real build timeout; `c.base.Err() != nil` would catch shutdown only | kept as the brief asks (D14) |
+| P4 | S1: the fallback title "No prompt · client · start" takes its start from a range that includes effects, which are outside `buildKey`, so an older effect version can show an old start time | 2026-11-24: **open**. The row first said "fixed (full view key compared)", but `placeInSession` still compares only the `buildKey` prefix (D15) |
+
 ## Decisions
 - **D1** (2026-11-23) Number 041 as the brief says; 035 was planned for the speed fixes and
   is folded in here (spec header), so no 035 folder is created.
@@ -339,3 +364,9 @@ Database size on the copy (`stat -c %s` after `PRAGMA wal_checkpoint(TRUNCATE)`)
 - **D14** (2026-11-23) S4 logs a `DeadlineExceeded` (a compute past `buildTimeout`) at
   debug too, as the brief says. A slow build that times out while the gateway is not
   shutting down is then quiet at info level; its waiters still get the error.
+- **D15** (2026-11-24) The resumed session found the review's P4 S1 fix missing:
+  `placeInSession` checks `strings.HasPrefix(v.Version, buildKey(...))`, not the full view
+  key with the effect count and max id. The resume brief asks for P1 to P3 to be closed, so
+  this P4 stays open and is reported to the human rather than fixed here. Its effect is
+  limited to the start time in the "No prompt" fallback title when effects changed since
+  the view was built; the #n is not affected.
