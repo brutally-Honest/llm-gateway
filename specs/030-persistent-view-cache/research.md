@@ -7,6 +7,13 @@ feature: 030-persistent-view-cache
 - 2026-11-24 Step 1 (baseline and skip prototype), scratch bbcd2e9 (local, never pushed): the skip makes builds ~1.8x faster with byte-identical output for all 70 sessions, but a cold build of the largest session stays ~1.7-2.3 s and a live update 2.6 s, so the cache carries the rest and live updates go to 040 (D4).
 - 2026-11-24 Step 2 (design): spec.md and the design below; D5-D14. 3x store seeded and its baseline taken.
 - 2026-11-24 Step 3 (design review, fresh opus): 3 P1, 4 P2, 4 P3, 4 P4; every P1-P3 folded into the spec and design except the labelled stale fallback (D17); D15-D22.
+- 2026-11-24 Spec committed, 91ff92b: spec.md and research.md with steps 1-3; make verify green.
+- 2026-11-24 Step 4 Sonnet 1 (skip), ecf1a1b: text memo by (hash, role) and per-pass hash interning; equivalence test fails when the key ignores role; store-copy dump of all 70 sessions byte-identical to main; make verify green.
+- 2026-11-24 Step 4 Sonnet 2 (cache), c8638cb: disk cache, serve at once, background pass, new metrics; make verify green; smoke test on the copy: after a restart page 1 63 ms, page 2 51 ms, pass 0.10 s, warm-up metric 0.027 s; disk-served row, /view and /timeline of all 70 sessions byte-identical to main. With an empty cache page 2 still timed out (D27).
+- 2026-11-24 Step 4 Sonnet 3 (041 D15), e93b938: placeInSession compares the full view key; the new test fails on the old prefix check; make verify green.
+- 2026-11-24 Step 4 Haiku 4 (page-1 error), 3ccc10a: pager always shown on an error, Next on for an unfiltered unknown total; 244 web tests pass; make verify green.
+- 2026-11-24 Step 4 Haiku 5 (docs), 1dbed32: install.md view-cache section and listeners paragraph, observability metrics row, roadmap (030 done, 040 next).
+- 2026-11-24 Step 5 (measure, UI check): targets met on the copy; on 3x every page and filter answers with no 504, pages 109-211 ms (the list query's floor, D29); empty-cache page 2 still times out (D27, D30); folder deletion and a restored older store both rebuild; 16 screenshots pixel-identical to main.
 
 ## Measurement setup
 - Store copy, taken 2026-11-24 19:05 +05:30: `sqlite3 ... ".backup ~/.cache/llm-gateway-030/gateway.db"`
@@ -98,6 +105,47 @@ hard-linked). Baseline binary:
 | `kind=look`, `active`, `hooks`, `q=gateway`, cold | 504 (look after 11,506 ms) |
 | `q=zzzznomatch`, cold | 3,300 ms |
 | All five filters and search, warm | **504** |
+
+## Step 5: after
+
+Same harness, final build (HEAD after the docs commit), `NEWGW=1` waits for the background
+pass (`gateway_ui_cache_rebuild_seconds` set) instead of the old `ui ready` line.
+
+| Target | Store copy, before | Store copy, after | 3x, before | 3x, after |
+|---|---|---|---|---|
+| Page 1 after restart (< 100 ms) | 5,483 ms | **64 ms** | 7,855 ms | 151 ms |
+| Page 2 after restart (< 100 ms) | 504 | **55 ms** | 504 | 211 ms |
+| Page 5 after restart (< 100 ms) | (none) | (none; 27 ms empty) | 504 | 153 ms |
+| `gateway_ui_warmup_seconds` (< 1 s) | 4.85-5.76 | **0.026-0.032** | 6.51-7.74 | **0.032-0.034** |
+| Background pass, warm cache | — | 0.10-0.14 s | — | 0.47-0.56 s |
+| Background pass, empty cache | — | 12.9-16.9 s | — | 74.9 s |
+| Cold filters and search (< 300 ms copy; no 504 on 3x) | 89 ms to 504 | **79-108 ms** | 504 (4 of 5) | **274-445 ms, no 504** |
+| Cold `/view` largest (< 500 ms) | 8,249-9,303 ms | **44-52 ms** | — | **46 ms** |
+| Cold `/calls/{eid}` largest (D19, not a target) | — | 1,806-2,600 ms | — | 2,363 ms |
+| Live update (040) | 4,057-4,612 ms | 2,540-2,662 ms (one run 2,885-4,527) | — | — |
+| Page 1 / page 2, empty cache (first start after an upgrade) | — | 2,952-3,880 ms / **504** | — | 504 / 504 (`limit=20&offset=80` 4,865 ms) |
+
+On the 3x store the same pages warm in memory take 102-132 ms, and main's warm page 1
+there took 124 ms: the floor is each request's full-store session list (D29).
+
+Checks on the copy:
+- Folder deleted while running: pages kept answering from memory (43-50 ms); the largest
+  view rebuilt in 2.0 s and recreated `view-cache/<build>/v/`; the next start's pass rebuilt
+  all 70 memos and 70 views.
+- Restored older store: after live calls the high-water mark was exchange row 3,922;
+  starting on the pristine copy (max row 3,919) logged "the store is behind the cache (an
+  older copy was restored?); the cache of this build was deleted" and rebuilt. An earlier
+  attempt, where no entry had been built on the three new rows, kept the cache, correctly.
+- Disk: 15 MB (copy, 70 sessions), 44 MB (3x, 210 sessions).
+- Old build folders stayed while younger than 10 minutes (D22).
+
+UI check (`docs/manual-checks/030-persistent-view-cache.md`): the Claude in Chrome tab was
+opened 0.24 s after the UI port bound; page 1 data arrived 132 ms after navigation; Next
+showed page 2 of 2 in 11 ms, no error. The extension's window would not resize below
+2,560 px, so the 1,440 and 2,560 px cases ran in a headless Chrome with a throwaway profile
+over the DevTools protocol (D31): list page 1 and the largest session page, Lean and Stark,
+light and dark, 16 screenshots from this build and 16 from main on the same store, all
+pixel-identical (`compare -metric AE` = 0), and the page text identical at both widths.
 
 ## Design
 
@@ -274,3 +322,50 @@ coalesces with any request building the same session). It then enforces the size
 - **D22** (2026-11-24) One gateway per data folder is assumed (nothing enforces it). To stay
   correct if two run, the build id is in both the path and every header, and the start-up
   clean-up deletes only other build folders and temp files untouched for 10 minutes.
+- **D23** (2026-11-24) `unassigned_max` is the global `MAX(id)` of `effects`, not of unassigned
+  `net_conn` effects only: any connection stored later has a larger id either way, and the
+  global maximum is an O(1) primary-key read. The check stays `id > unassigned_max AND
+  session_key IS NULL AND kind = 'net_conn' AND at BETWEEN from AND to`.
+- **D24** (2026-11-24) The memo's disk lookup sits inside the compute closure only, not also
+  before the join: a request after a restart costs one goroutine hop more, and a request
+  that joins an early compute still gets the disk hit. `latest` keeps serving an older
+  in-memory memo while that compute (usually a disk hit) runs, as before 030; disk entries
+  are only ever read at the exact key.
+- **D25** (2026-11-24) A blob file missing from disk (`os.ErrNotExist`, unlike a content row
+  that is not stored, `store.ErrNotFound`) counts as a content-read error, so a view or memo
+  that met one is served but never cached. Missing-blob handling is a non-goal; this only
+  keeps such a result from being frozen. The copy has none: all 70 views were written.
+- **D26** (2026-11-24) The background pass waits between sessions until the writer queue is
+  under half full (`WaitRoom`) instead of a blocking enqueue: its writes come from the
+  compute and build goroutines, not from the pass itself. A cache-folder with entries but no
+  high-water file is treated as damaged and deleted with a warning; an empty one is not.
+  The end of the pass is visible in `gateway_ui_cache_rebuild_seconds`; no log line.
+- **D27** (2026-11-24) With an empty cache (a first start after an upgrade), page 2 of the copy,
+  requested while page 1 and the background pass build, still timed out at 5 s in the smoke
+  test: its 20 memos each start their own compute next to the pass's. This is D17's flip
+  case; step 5 measures it on the copy and the 3x store and decides.
+- **D28** (2026-11-24) Page-1 error (AC12): the error box already carries Retry on every page;
+  what page 1 lacked was the pager, hidden because an unknown total made it a "single"
+  page. On an error the pager now always shows, and unfiltered with an unknown total its
+  Next stays enabled (the app corrects a page past the last to the last), so a failing
+  page 1 is not a dead end. A filtered list keeps Next off on an error (where page 2 starts
+  is unknown, 042 E4).
+- **D29** (2026-11-24) AC13's 100 ms for pages is met on the copy (55-64 ms) but not on the
+  3x store (109-211 ms after a restart). Every list request runs the session list query
+  (a GROUP BY over all exchanges and hook events, 22 ms in the sqlite3 CLI on 3x against 7 ms
+  on the copy, slower through modernc) plus the version and effect-count reads; warm, from
+  memory, the same pages take 102-132 ms, and main's warm page 1 took 124 ms. So the floor
+  grows with the store, not the cache. Cutting it means a session summary kept by the store
+  or an in-memory session list kept in step with writes: a store change (non-goal) or a new
+  invalidation path. Left for a later PR and reported to the human.
+- **D30** (2026-11-24) D17's flip case happened: with an empty cache (first start after an
+  upgrade, or after deleting the folder) page 2 of the copy, and pages 1, 2 and 5 of the 3x
+  store, still time out at 5 s while the pass and other requests build; page 1 of the copy
+  builds in about 3-4 s. It no longer waits behind a warm-up, and every later restart
+  answers at once. Making a cold page never time out needs either the labelled stale
+  fallback D17 rejected under the human's "never stale" rule or rows that show without
+  their facts until built; both are the human's call, so it is reported rather than decided.
+- **D31** (2026-11-24) The 1,440 px cases could not run in the extension's Chrome (the window
+  stays at the screen's 2,560 px; the UI refuses to be framed), so all widths ran in a
+  headless Chrome with a throwaway profile driven over the DevTools protocol on 127.0.0.1:9333,
+  the fallback the brief allows; the extension tab covered the restart-to-page-2 check.
