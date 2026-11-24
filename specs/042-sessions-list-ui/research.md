@@ -4,7 +4,10 @@ feature: 042-sessions-list-ui
 # Research & decisions — 042-sessions-list-ui
 
 ## Progress
-- 2026-11-24 Step 1 (reproduce and profile): all three reproduced on the store copy; P3 profile blames live-event redraws (full table layout), not the nested scroller.
+- 2026-11-24 Step 1 (reproduce and profile), 546fd7f: all three reproduced on the store copy; P3 profile blames live-event redraws (full table layout), not the nested scroller.
+- 2026-11-24 Step 2 (P1), 9c682a0: header z-index 2 on `--card-solid` (Lean: `--panel` over it), box-shadow line; the header is on top in all 8 style × theme × width cases; sticky-header test fails 3/3 on the old CSS.
+- 2026-11-24 Step 3 (P2), 63abd3d: pager kept on error, error plus Retry in the box; cold page-2 504 in Chrome is now recoverable (Retry, Previous); 6 new tests, all failing on the old code.
+- 2026-11-24 Step 4 (P3), 4514898: only changed rows, attributes and sections are redrawn; live traffic at CPU 4×: long tasks 43–44 → 0 per list scroll, ~97 → ~140 fps, dropped frames ~556 → 55–87.
 
 ## Measurement setup
 - Store copy: `sqlite3 ~/.local/share/llm-gateway/gateway.db ".backup ~/.cache/llm-gateway-042/gateway.db"`
@@ -138,6 +141,36 @@ pinned header, DOM size. Lean's glass (D5) roughly doubles GPU and compositor ti
 (GPU main 1,057 ms vs 454 ms in Stark for the 2,560 list run; Layerize 170 vs 9 ms; Paint 39
 vs 0.7 ms) but adds no long task and no dropped frames on its own.
 
+## Step 4: P3 after (4514898)
+The same driver, store copy and live traffic, on a build of 4514898 (Lean and Stark, dark).
+
+CPU 4×, live traffic, 1,440 (the AC3 case):
+
+| Run | fps before → after | max frame | long tasks before → after | main busy | dropped before → after |
+|---|---|---|---|---|---|
+| Lean list | 96.9 → 141.0 | 138.9 → 41.7 | 44 (max 101.7 ms) → **0** | 56.6% → 29.9% | 556 → 55 |
+| Stark list | 98.0 → 139.7 | 111.5 → 27.7 | 43 (max 76.8 ms) → **0** | 46.8% → 18.0% | 558 → 87 |
+| Lean page | 95.6 → 141.5 | 118.1 → 14.2 | 19 (max 86.9 ms) → **0** | 56.9% → 29.9% | 252 → 22 |
+| Stark page | 98.9 → 140.2 | 90.3 → 21.2 | 20 (max 66.2 ms) → **0** | 45.9% → 17.5% | 246 → 32 |
+
+Per run in Stark list at CPU 4× with live traffic: Layout 1,373 → 151 ms (largest 44 → 6.2 ms), style 648 → 106 ms, script 1,373 → 368 ms.
+
+Live traffic, unthrottled:
+
+| Run | fps before → after | max frame | main busy | dropped before → after |
+|---|---|---|---|---|
+| Lean 1,440 list | 139.9 → 143.9 | 27.8 → 7.4 | 17.5% → 10.1% | 70 → 2 |
+| Lean 2,560 list | 140.0 → 143.9 | 20.8 → 7.5 | 18.6% → 10.0% | 51 → 6 |
+| Stark 1,440 list | 137.2 → 143.2 | 28.1 → 55.5 (one frame) | 14.4% → 6.5% | 119 → 35 |
+| Stark 2,560 list | 137.1 → 143.9 | 34.8 → 7.4 | 15.0% → 6.5% | 85 → 18 |
+| Lean 1,440 page | 140.1 → 143.9 | 20.8 → 7.5 | 18.9% → 9.9% | 31 → 1 |
+| Stark 1,440 page | 137.2 → 143.9 | 27.8 → 7.5 | 14.7% → 6.5% | 50 → 8 |
+
+MutationObserver over 10 s of live traffic, after: sessions `tbody` 38 rows moved (one per
+event, since the traffic rotates three sessions to the top) and 0 attribute writes (was
+1,900 re-inserted and 6,240 writes); the today tiles were rebuilt once, when the totals
+changed (14 nodes, was 546).
+
 ## Decisions
 - **D1** 2026-11-24: The Claude in Chrome extension was not connected (two tries). Rather than
   stop, Chrome is driven over the DevTools protocol by a scratch script, in a headed window
@@ -158,3 +191,20 @@ vs 0.7 ms) but adds no long task and no dropped frames on its own.
   frames on its own; it is a look 027 chose and is left alone here (non-goal).
 - **D6** 2026-11-24: P2's 504 is the server's 5 s store timeout on a cold offset query. Making
   it fast is 030; this change only makes the error recoverable in the UI.
+- **D7** 2026-11-24: In the browser after a cold restart, page 2 504s at 5.1 s; Retry sends a
+  new request each time. Retries 1 and 2 (10 s apart) also 504, and retry 3 shows the 23 rows
+  in 0.5 s. After warm-up, `curl ?offset=50` answers in 50 ms. The UI neither retries by itself
+  nor shortens the wait: the time to warm up is the server's (030), and an automatic retry
+  would hide it. A failed page's Next is disabled when it is the last page or the list is
+  filtered (E4); Previous always works from page 2 on.
+- **D8** 2026-11-24: `previousAfterAPageErrorGoesBackToPageOne` passed on the old code at
+  first, because the DOM stub lets a hidden button be clicked. It now asserts first that
+  the pager is shown and Previous is enabled. All six new P2 tests fail on the old product
+  files and pass on the new ones.
+- **D9** 2026-11-24: After 4514898, the largest layout per event is 6–9 ms at CPU 4×, so no CSS
+  containment (`contain`) was added: the profile no longer blames layout, and containment
+  would change how the box paints for nothing measured. One 55.5 ms frame in the unthrottled
+  Stark list run is a single frame, not a long task (no task over 50 ms in its trace).
+- **D10** 2026-11-24: A row is refilled only when its session object changed (`===`). This
+  holds on the live path: `upsertSession` and the in-place `map` keep the other objects. A
+  page load or refetch brings new objects from JSON and refills every row, as before.
