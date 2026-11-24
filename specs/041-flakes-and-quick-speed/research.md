@@ -8,6 +8,9 @@ feature: 041-flakes-and-quick-speed
   583fa60, the timeline S4 P3 uncommitted. The P4 S1 row said "fixed" but was not (D15).
 - 2026-11-24 Timeline S4 P3 checked: the test fails without the change (canceled and
   wrapped deadline log at warn) and passes 20/20 with it; committed.
+- 2026-11-24 Review round 2 (fresh opus, diff at c99a95b): no P1 to P3; three P4s left
+  open (see Review round 2). This was the last review round.
+- 2026-11-24 F1 contract check: 009 AC23 and AC24 allow the live resend (see F1 contract).
 
 ## Measurement setup
 
@@ -101,6 +104,28 @@ Rates (`ui.test` built with `go test -race -c`, each run inside
 The race was never lost on Linux without the sleep, so "before" means with the sleep:
 20/20 before, 0/300 after. The sleep and the trace prints were removed;
 `git diff --stat -- internal` showed only `internal/ui/stream_test.go`.
+
+### F1 contract (2026-11-24 check of 75a8ca5)
+
+75a8ca5 changed the test's expectation, so the spec 009 contract it relies on is quoted in
+full here (`specs/009-web-ui/spec.md`):
+
+> **AC24** — […] The snapshot is taken after the stream is subscribed, so no exchange
+> committed around the open is missed; one sent both in the snapshot and live is replaced,
+> never duplicated.
+
+The live resend arrives as an `entries` event, not an `exchange` event. AC23 makes the two
+equivalent:
+
+> **AC23** — When `GET /api/sessions/{id}/stream` is open and the session gains a committed
+> exchange, the system shall send one SSE event `entries` carrying that one exchange's full
+> timeline entry list […]. The page applies it like an `exchange` event: it replaces every
+> entry it holds for that exchange id.
+
+The changelog for v2 adds: "The page applies exchange events as replace-by-exchange-id
+and never ignores an id it already holds." So c01, sent in the snapshot and then once live
+as `entries`, is allowed: the page replaces it and does not show it twice. The test still
+fails on a second c01 event or on an `entries` event for any other exchange.
 
 ## F2: the rate-limit wall clock
 
@@ -304,6 +329,24 @@ step 6 held the write lock for 0.66 s.
 | P4 | S4/D14: `DeadlineExceeded` at debug hides a real build timeout; `c.base.Err() != nil` would catch shutdown only | kept as the brief asks (D14) |
 | P4 | S1: the fallback title "No prompt · client · start" takes its start from a range that includes effects, which are outside `buildKey`, so an older effect version can show an old start time | 2026-11-24: **open**. The row first said "fixed (full view key compared)", but `placeInSession` still compares only the `buildKey` prefix (D15) |
 
+## Review (round 2, a fresh opus subagent on `git diff main...HEAD` at c99a95b)
+
+No P1, P2 or P3. The reviewer confirmed that the round 1 fixes (e747de2, 583fa60, b1c7a05) are correct.
+To check that each test proves its claim, the reviewer broke the code on a `git archive` copy and ran the test:
+- The old F1 test failed 4/4 with a 60 ms dispatch sleep; the new one passed 18/18 with that sleep and 18/18 with a late catch-up sleep.
+- The S1 test failed with the version gate disabled.
+- The S2 equivalence test failed when unparsed calls were memoised.
+- The new 583fa60 node test failed on the old app.js.
+- The timeline log test failed on main's code.
+- The CI script printed the timeout, panic and build-error demos in full.
+- The S3 migration steps 1-5 are byte-identical to main.
+
+| # | Finding | Action |
+|---|---|---|
+| P4 | `go-test-ci.jq`: `$done` is keyed by package and test, so with a hand-passed `-count=N` a test that passes once and then hangs gets no "did not finish" block. CI never passes `-count`. | open (not reachable in CI) |
+| P4 | `store_test.go:146-152`: the index-absence check treats any query error as "dropped". `migrate_041_test.go` uses `count(*)` and is sound. | open |
+| P4 | AC5: since 11-15, the cold first request after a restart is 0.49-0.57 s, so D2 reads as if both ranges met 100 ms | recorded as D16 |
+
 ## Decisions
 - **D1** (2026-11-23) Number 041 as the brief says; 035 was planned for the speed fixes and
   is folded in here (spec header), so no 035 folder is created.
@@ -370,3 +413,8 @@ step 6 held the write lock for 0.66 s.
   this P4 stays open and is reported to the human rather than fixed here. Its effect is
   limited to the start time in the "No prompt" fallback title when effects changed since
   the view was built; the #n is not affected.
+- **D16** (2026-11-24) Correction to D2: AC5's 100 ms is met for since today (cold
+  0.074 s, warm 0.011 s) and for since 11-15 once warm (0.021-0.023 s). The since-11-15
+  cold first request after a restart, a range wider than any one day, takes 0.49-0.57 s
+  (down from 2.88-3.42 s). Here the memo is filled once, for about 2,200 calls. This is
+  accepted because AC5's real case is one day, and the 030 warm-up is out of scope here.
