@@ -573,9 +573,12 @@ export function createSessionsPage(handlers) {
     const filtering = kind !== "all" || (state.q || "") !== "";
     const page = state.page || 1;
     const last = filtering ? null : pageCount(state.total);
-    const more = filtering ? Boolean(state.next_after) : page < last;
+    // On an error the held next_after belongs to an older page, so a filtered Next stays off:
+    // where page n+1 starts is unknown (spec 042 E4). Unfiltered, the last good total still counts.
+    const more = filtering ? Boolean(state.next_after) && !state.error : page < last;
     const single = page <= 1 && !more;
-    const show = !state.error && !single;
+    // an error keeps the pager, so a failed page is never a dead end (spec 042 AC2)
+    const show = !single;
     pager.hidden = !show;
     if (!show) return;
     const was = document.activeElement;
@@ -590,6 +593,7 @@ export function createSessionsPage(handlers) {
   }
   let selected = "";
   let shown = [];
+  let retryBtn = null; // the Retry button now in the box, if any
   // The server searches: the page only reports the text (the app waits for typing to settle).
   // Esc clears the box and reports at once, in every browser; Chrome clears a search box on
   // Esc by itself and fires `search`, not `input`, so that is handled too (F4).
@@ -661,10 +665,24 @@ export function createSessionsPage(handlers) {
       list.scrollTop = 0;
     }
     drawPager();
+    // a Retry that is replaced (the reload shows the skeleton) cannot keep focus: the box takes it
+    const retryHadFocus = Boolean(retryBtn) && document.activeElement === retryBtn;
+    if (!state.error && retryHadFocus) list.focus({ preventScroll: true });
     if (state.error) {
       shown = [];
       selected = "";
-      list.replaceChildren(note("error", state.error));
+      // the error and a Retry sit in the box; the pager stays usable (spec 042 AC2)
+      const box = document.createElement("div");
+      box.className = "sp-error";
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "btn sm";
+      retry.textContent = "Retry";
+      retry.addEventListener("click", () => handlers.onRetry && handlers.onRetry());
+      box.append(note("error", state.error), retry);
+      list.replaceChildren(box);
+      retryBtn = retry;
+      if (retryHadFocus) retry.focus({ preventScroll: true });
       return;
     }
     if (!state.loaded) {

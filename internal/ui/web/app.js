@@ -570,6 +570,8 @@ function showSessions() {
       cancelTyping();
       location.hash = buildRoute({ name: "sessions", kind: list.kind, q: list.q, page: n });
     },
+    // Retry asks for the same page again; the URL stays, and listGen drops an older answer (spec 042 AC2, E3)
+    onRetry: () => loadPage(curPage),
     // a filter click is a history entry; the hashchange loads it (see listSync). It goes
     // back to page 1
     onKind: (kind) => {

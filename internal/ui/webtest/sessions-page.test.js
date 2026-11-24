@@ -290,6 +290,38 @@ test("pagerHasTwoButtonsInEveryState", () => {
   }
 });
 
+// spec 042 AC2, E4: a failed page keeps the pager; Retry sits in the box
+const retryOf = (p) => byTag(withClass(p.page.el, "sp-list")[0], "button").find((b) => b.textContent === "Retry");
+
+test("aPageErrorKeepsThePagerAndRetryCallsOnRetry", () => {
+  let retried = 0;
+  const p = livePage([session()], { onRetry: () => retried++ });
+  p.page.update({ loaded: true, kind: "all", q: "", total: 100, page: 2, error: "boom" });
+  assert.equal(pagerOf(p).hidden, false);
+  assert.equal(pagerBtnOf(p, "‹ Previous").disabled, false);
+  assert.equal(pagerBtnOf(p, "Next ›").disabled, true, "page 2 of 2");
+  assert.match(textOf(withClass(p.page.el, "sp-list")[0]), /boom/);
+  assert.ok(retryOf(p), "Retry is in the box");
+  retryOf(p).fire("click");
+  assert.equal(retried, 1);
+});
+
+test("aFilteredPageErrorDisablesNext", () => {
+  const p = livePage([session()]);
+  p.page.update({ loaded: true, kind: "active", q: "", next_after: "t", page: 2, error: "boom" });
+  assert.equal(pagerOf(p).hidden, false);
+  assert.equal(pagerBtnOf(p, "‹ Previous").disabled, false);
+  assert.equal(pagerBtnOf(p, "Next ›").disabled, true, "where page 3 starts is unknown");
+});
+
+test("retryFocusMovesToTheListBoxWhenTheSkeletonReplacesIt", () => {
+  const p = livePage([session()]);
+  p.page.update({ loaded: true, kind: "all", q: "", total: 100, page: 2, error: "boom" });
+  retryOf(p).focus();
+  p.page.update({ error: "", loaded: false });
+  assert.equal(document.activeElement, withClass(p.page.el, "sp-list")[0]);
+});
+
 test("focusMovesToTheOtherArrowWhenTheFocusedOneBecomesDisabled", () => {
   const p = livePage([session()]);
   p.page.update({ loaded: true, kind: "all", q: "", total: 100, page: 1 });

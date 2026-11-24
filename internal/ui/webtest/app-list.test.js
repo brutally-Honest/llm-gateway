@@ -92,6 +92,8 @@ Object.assign(globalThis, {
       const params = new URLSearchParams(qs || "");
       sessionReqs.push(params);
       const body = await serve(params);
+      // { __status, message } answers with that status and an error message (a 504, say)
+      if (body && body.__status) return { ok: false, status: body.__status, statusText: "nope", json: async () => ({ error: { message: body.message } }) };
       return { ok: body !== null, status: body ? 200 : 500, statusText: "boom", json: async () => (body || { error: { message: "store boom" } }) };
     }
     if (path === "/api/today") {
@@ -382,6 +384,56 @@ test("unfilteredNextAndPreviousSendOffsetsAndTheLabelFollows", async (t) => {
   assert.equal(hash, "#/", "page 1 leaves the page out of the URL");
   assert.equal(pagerLabel(), "Page 1 of 9");
   assert.equal(ids()[0], "r0");
+});
+
+// spec 042 AC2, E2-E4: a page that fails keeps the pager, and the box offers Retry
+const timeout504 = { __status: 504, message: "the store did not answer in time" };
+const failingPageTwo = (p) => (p.get("offset") === "50" && failPageTwo ? timeout504 : { items: rows(Number(p.get("offset") || 0), 50), next_after: "x", total: 100, scanned: 50 });
+let failPageTwo = true;
+const retryBtn = () => byTag(box(), "button").find((b) => b.textContent === "Retry");
+async function toFailedPageTwo(t) {
+  failPageTwo = true;
+  await fresh(t, "#/", failingPageTwo);
+  pagerBtn(NEXT).fire("click");
+  await settle();
+}
+
+test("anErrorOnPageTwoKeepsThePagerAndShowsRetryInTheBox", async (t) => {
+  await toFailedPageTwo(t);
+  assert.match(textOf(box()), /the store did not answer in time/, "the error is inside the box");
+  assert.ok(retryBtn(), "Retry is inside the box");
+  assert.equal(pagerEl().hidden, false);
+  assert.equal(pagerLabel(), "Page 2 of 2");
+  assert.equal(pagerBtn(PREV).disabled, false);
+  assert.equal(hash, "#/?page=2", "the URL still names page 2");
+});
+
+test("retryReRequestsTheSamePage", async (t) => {
+  await toFailedPageTwo(t);
+  failPageTwo = false;
+  sessionReqs.length = 0;
+  retryBtn().fire("click");
+  await settle();
+  assert.equal(sessionReqs.length, 1, "exactly one new request");
+  assert.deepEqual(reqObj(lastReq()), { offset: "50" });
+  assert.equal(ids()[0], "r50");
+  assert.equal(retryBtn(), undefined);
+  assert.doesNotMatch(textOf(box()), /did not answer/);
+  assert.equal(hash, "#/?page=2");
+});
+
+test("previousAfterAPageErrorGoesBackToPageOne", async (t) => {
+  await toFailedPageTwo(t);
+  // the user must be able to see and use Previous on the failed page (spec 042 AC2)
+  assert.equal(pagerEl().hidden, false, "the pager stays on a failed page");
+  assert.equal(pagerBtn(PREV).disabled, false, "Previous is enabled on a failed page 2");
+  sessionReqs.length = 0;
+  pagerBtn(PREV).fire("click");
+  await settle();
+  assert.equal(hash, "#/", "page 1 leaves the page out of the URL");
+  assert.deepEqual(reqObj(lastReq()), {}, "no offset");
+  assert.equal(ids()[0], "r0");
+  assert.equal(pagerLabel(), "Page 1 of 2");
 });
 
 test("nextIsDisabledOnTheLastPage", async (t) => {
