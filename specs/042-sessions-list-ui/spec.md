@@ -3,6 +3,7 @@ feature: 042-sessions-list-ui
 kind: fix
 created: 2026-11-24
 branch: fix/042-sessions-list-ui
+status: done
 ---
 
 ## Problem
