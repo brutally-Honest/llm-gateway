@@ -870,6 +870,13 @@ func TestDiskCache_StoreGoingBackDeletesTheBuild(t *testing.T) {
 	}
 }
 
+// joinedCount is how many callers have joined an in-flight run.
+func (c *DigestCache) joinedCount() int {
+	c.fmu.Lock()
+	defer c.fmu.Unlock()
+	return c.joined
+}
+
 // A folder that was opened and never written to is no reason for a warning at the next open.
 func TestDiskCache_EmptyFolderReopensQuietly(t *testing.T) {
 	e := newDiskEnv(t)
@@ -1114,9 +1121,12 @@ func TestHighWater_RaisedBeforeTheEntryIsWritten(t *testing.T) {
 // An effect that lands after the memo's data was read must not let the memo be written:
 // its key was made from the effect version read before the data, which is now behind (AC5).
 func TestDiskCache_EffectAfterDataReadMemoNotWritten(t *testing.T) {
+	// Registered before newDiskEnv, so it runs after the env's shutdown cleanups: no
+	// background compute can still read computeMemoFn while it is written back.
+	real := computeMemoFn
+	t.Cleanup(func() { computeMemoFn = real })
 	e := newDiskEnv(t)
 	e.seed()
-	real := computeMemoFn
 	var once atomic.Bool
 	computeMemoFn = func(src memoSource, vd viewDeps, row store.SessionRow) (digestMemo, error) {
 		m, err := real(src, vd, row)
@@ -1125,7 +1135,6 @@ func TestDiskCache_EffectAfterDataReadMemoNotWritten(t *testing.T) {
 		}
 		return m, err
 	}
-	t.Cleanup(func() { computeMemoFn = real })
 
 	e.mustGet("/api/sessions/" + sid())
 	e.flush()
@@ -1186,7 +1195,13 @@ func TestDiskCache_JoiningRequestGetsTheDiskHit(t *testing.T) {
 	go func() { h, err := e.dep.Digests.get(t.Context(), id, vers[id], held); out <- res{h, err} }()
 	<-started
 	go func() { h, err := e.dep.Digests.get(t.Context(), id, vers[id], never); out <- res{h, err} }()
-	time.Sleep(50 * time.Millisecond) // let the second request join
+	deadline := time.Now().Add(5 * time.Second)
+	for e.dep.Digests.joinedCount() == 0 { // the second request has joined the run
+		if time.Now().After(deadline) {
+			t.Fatal("the second request never joined the in-flight run")
+		}
+		time.Sleep(time.Millisecond)
+	}
 	close(gate)
 	for range 2 {
 		r := <-out

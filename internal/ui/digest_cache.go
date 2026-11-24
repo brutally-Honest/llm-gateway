@@ -109,6 +109,9 @@ type DigestCache struct {
 	// fmu guards active. Lock order: fmu, then mu.
 	fmu    sync.Mutex
 	active map[store.SessionIdent]*digestRuns
+	// joined counts callers that joined a run already in flight at their version; tests
+	// wait on it. Guarded by fmu.
+	joined int
 }
 
 // NewDigestCache returns an empty cache holding at most 512 sessions, whose computes run
@@ -257,6 +260,7 @@ func (c *DigestCache) joinLocked(id store.SessionIdent, ver store.Version,
 		return r
 	}
 	if rs.cur.ver == ver {
+		c.joined++
 		return rs.cur
 	}
 	if rs.next == nil {
