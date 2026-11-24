@@ -17,6 +17,8 @@ feature: 030-persistent-view-cache
 - 2026-11-24 Step 6 review round 1 (fresh opus): 1 P1 (AC13, not code: D32), 2 P2, 1 P3, 7 P4; P2-2 fixed in 2786bbc (zone rules in the build id), P2-3 and P3-4 in 98d2727 (high-water covers a view's unassigned max; four tests).
 - 2026-11-24 Step 6 review round 2 (fresh opus, last round): no P1 or P2; P3-1 (store-going-back check only at cache open) plus P4-1 and P4-3 handed to a fix.
 - 2026-11-24 Step 6 round-2 fixes (resumed session; the killed subagent's work kept after review): P3-1 (D33) in af6769b, P4-1 in 6c9cbd4, P4-2 and P4-3 in 07f9d57; the identity test fails when the open-time identity check is disabled (go test -overlay probe); touched tests pass -race -count=20; make verify green.
+- 2026-11-24 Step 6 re-measure (copy, after the key and high-water changes): page 1 57-61 ms, page 2 53-58 ms, page 5 27-28 ms, kind=look 75-81 ms, cold /view largest 34-36 ms, warm-up 0.025-0.026 s; empty cache unchanged (page 2 504, D30); table under Step 5.
+- 2026-11-24 Step 7 (finish): spec status done; make verify green twice; throwaway gateway stopped, store copy and scratch/030-skip-proto deleted.
 
 ## Measurement setup
 - Store copy, taken 2026-11-24 19:05 +05:30: `sqlite3 ... ".backup ~/.cache/llm-gateway-030/gateway.db"`
@@ -127,6 +129,25 @@ pass (`gateway_ui_cache_rebuild_seconds` set) instead of the old `ui ready` line
 | Cold `/calls/{eid}` largest (D19, not a target) | — | 1,806-2,600 ms | — | 2,363 ms |
 | Live update (040) | 4,057-4,612 ms | 2,540-2,662 ms (one run 2,885-4,527) | — | — |
 | Page 1 / page 2, empty cache (first start after an upgrade) | — | 2,952-3,880 ms / **504** | — | 504 / 504 (`limit=20&offset=80` 4,865 ms) |
+
+Re-measured 2026-11-24 after the step-6 fixes (build af6769b, which changed the cache key and
+the high-water check), copy only, three restarts with a warm cache. The probe of step 5 was
+lost with its scratch folder, so this is curl's `time_total` sent right after the UI port
+binds; no live calls were sent. The 3x store was not re-measured.
+
+| Target | Step 5, copy | After review fixes, copy |
+|---|---|---|
+| Page 1 after restart | 64 ms | **57-61 ms** |
+| Page 2 after restart | 55 ms | **53-58 ms** |
+| Page 5 after restart | 27 ms (empty) | **27-28 ms** (empty) |
+| Filter `kind=look`, cold | 79-108 ms (all filters) | **75-81 ms** |
+| Cold `/view` largest | 44-52 ms | **34-36 ms** |
+| `gateway_ui_warmup_seconds` | 0.026-0.032 | **0.025-0.026** |
+| Background pass, warm cache | 0.10-0.14 s | 0.108-0.112 s |
+| First start (new build id, empty cache): page 1 / page 2 / `kind=look` | 2,952-3,880 ms / 504 | 3,305 ms / 504 / 3,203 ms |
+
+No "store is behind" or high-water warning on any restart: the identity check keeps an
+unchanged store's cache.
 
 On the 3x store the same pages warm in memory take 102-132 ms, and main's warm page 1
 there took 124 ms: the floor is each request's full-store session list (D29).

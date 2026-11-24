@@ -1,6 +1,7 @@
 ---
 feature: 030-persistent-view-cache
 kind: feat
+status: done
 created: 2026-11-24
 branch: feat/030-persistent-view-cache
 ---
