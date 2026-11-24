@@ -1,6 +1,10 @@
 package store
 
-import "fmt"
+import (
+	"database/sql"
+	"errors"
+	"fmt"
+)
 
 // Maxima are the largest row ids the store holds: the exchange rowid, the hook event id
 // and the effect id. Ids only grow (v1 deletes nothing), so a lower value than one seen
@@ -51,4 +55,48 @@ func (c *CtxReader) UnassignedConnAfter(afterID, from, to int64) (bool, error) {
 		return false, fmt.Errorf("store %s: unassigned connections after: %w", c.r.path, err)
 	}
 	return one == 1, nil
+}
+
+// RowIdentities are the values that name the row at one recorded maximum: the exchange's
+// request id at a rowid, the hook event's received_at at an id and the effect's at at an
+// id. A restored older store can reuse a rowid or id for a different row, so the number
+// alone does not say it is the same history. A field is zero when its id was 0 or when
+// the row is missing; the Missing flags tell the two apart.
+type RowIdentities struct {
+	ExchangeRequestID string
+	HookReceivedAt    int64
+	EffectAt          int64
+
+	ExchangeMissing bool
+	HookMissing     bool
+	EffectMissing   bool
+}
+
+// RowIdentities reads the identity of the row at each nonzero id: one primary-key lookup
+// each. An id of 0 is skipped and reported as present.
+func (c *CtxReader) RowIdentities(exRow, hookID, effectID int64) (RowIdentities, error) {
+	var out RowIdentities
+	for _, q := range []struct {
+		id      int64
+		sql     string
+		scan    func() any
+		missing *bool
+	}{
+		{exRow, `SELECT request_id FROM exchanges WHERE rowid = ?`, func() any { return &out.ExchangeRequestID }, &out.ExchangeMissing},
+		{hookID, `SELECT received_at FROM hook_events WHERE id = ?`, func() any { return &out.HookReceivedAt }, &out.HookMissing},
+		{effectID, `SELECT at FROM effects WHERE id = ?`, func() any { return &out.EffectAt }, &out.EffectMissing},
+	} {
+		if q.id == 0 {
+			continue
+		}
+		err := c.r.db.QueryRowContext(c.ctx, q.sql, q.id).Scan(q.scan())
+		if errors.Is(err, sql.ErrNoRows) {
+			*q.missing = true
+			continue
+		}
+		if err != nil {
+			return RowIdentities{}, fmt.Errorf("store %s: row identities: %w", c.r.path, err)
+		}
+	}
+	return out, nil
 }

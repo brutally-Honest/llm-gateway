@@ -877,6 +877,91 @@ func (c *DigestCache) joinedCount() int {
 	return c.joined
 }
 
+// A run that captured with the cache never opened can push the store's maxima back above
+// the mark after a restore, and SQLite then reuses the rowids and ids the restore lost. The
+// mark also names the row at each maximum, so a different row there drops the folder (P3).
+func TestHighWater_RowIdentityMismatchDeletesTheBuild(t *testing.T) {
+	e := newDiskEnv(t)
+	e.seed()
+	e.effect("a")
+	hookSeq++
+	rec := &store.HookRecord{PrincipalID: core.PrincipalLocal, Client: "cc", Seq: hookSeq, ReceivedAt: baseTime,
+		Payload: []byte(`{"n":1}`), Event: core.HarnessEvent{Phase: core.PhasePostTool, ToolCallID: "t1", ToolName: "bash", SessionKey: "k"}}
+	if err := e.s.SaveHook(t.Context(), rec); err != nil {
+		t.Fatal(err)
+	}
+	fill := func() highWater {
+		t.Helper()
+		e.mustGet("/api/sessions/" + sid())
+		e.mustGet("/api/sessions/" + sid() + "/view")
+		e.flush()
+		hw, ok := e.disk.readHighWater()
+		if !ok || hw.ExchangeRow == 0 || hw.HookID == 0 || hw.EffectID == 0 ||
+			hw.ExchangeReqID == "" || hw.HookAt == 0 || hw.EffectAt == 0 {
+			t.Fatalf("high-water = %+v %v, want all three ids and identities", hw, ok)
+		}
+		if len(e.files("m")) == 0 {
+			t.Fatal("no memo on disk")
+		}
+		return hw
+	}
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(e.dir, store.DBName)+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	// (c) an unchanged store keeps the folder and says nothing
+	fill()
+	e.restart("v1")
+	if len(e.files("m")) == 0 {
+		t.Error("an unchanged store deleted the entries")
+	}
+	if n := e.logs.FilterLevelExact(zap.WarnLevel).Len(); n != 0 {
+		t.Errorf("%d warnings on an unchanged store: %v", n, e.logs.All())
+	}
+
+	// (a), (b) a different row at a recorded maximum, the maximum itself unchanged
+	for name, stmt := range map[string]string{
+		"exchange": `UPDATE exchanges SET request_id = 'other-history' WHERE rowid = ?`,
+		"hook":     `UPDATE hook_events SET received_at = received_at + 1 WHERE id = ?`,
+		"effect":   `UPDATE effects SET at = at + 1 WHERE id = ?`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			hw := fill()
+			id := map[string]int64{"exchange": hw.ExchangeRow, "hook": hw.HookID, "effect": hw.EffectID}[name]
+			if _, err := db.Exec(stmt, id); err != nil {
+				t.Fatal(err)
+			}
+			cur, err := e.d.Reader.WithContext(t.Context()).Maxima()
+			if err != nil || cur.ExchangeRow < hw.ExchangeRow || cur.HookID < hw.HookID || cur.EffectID < hw.EffectID {
+				t.Fatalf("setup: maxima %+v %v are not at or above the mark %+v", cur, err, hw)
+			}
+			e.restart("v1")
+			if n := len(e.files("m")) + len(e.files("v")); n != 0 {
+				t.Errorf("%d entries survived a different row at the %s maximum", n, name)
+			}
+			if e.logs.FilterMessageSnippet("store is behind").Len() != 1 {
+				t.Errorf("no single warning: %v", e.logs.All())
+			}
+		})
+	}
+
+	// (d) a file from before identities were recorded cannot be checked
+	hw := fill()
+	old, _ := json.Marshal(map[string]int64{"exchange_row": hw.ExchangeRow, "hook_id": hw.HookID, "effect_id": hw.EffectID})
+	if err := os.WriteFile(filepath.Join(e.disk.root, diskHighWat), old, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e.restart("v1")
+	if n := len(e.files("m")) + len(e.files("v")); n != 0 {
+		t.Errorf("%d entries survived an old-format high-water file", n)
+	}
+	if e.logs.FilterLevelExact(zap.WarnLevel).Len() != 1 {
+		t.Errorf("no single warning: %v", e.logs.All())
+	}
+}
+
 // A folder that was opened and never written to is no reason for a warning at the next open.
 func TestDiskCache_EmptyFolderReopensQuietly(t *testing.T) {
 	e := newDiskEnv(t)

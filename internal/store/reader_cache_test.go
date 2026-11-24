@@ -71,3 +71,35 @@ func TestUnassignedConnAfter(t *testing.T) {
 	check("newer, after range", base, 0, 149, false)
 	check("range ends are inclusive", base, 150, 150, true)
 }
+
+// RowIdentities names the row at each id, skips id 0 and flags an id with no row.
+func TestRowIdentities(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := open(t, dir)
+	r := openReader(t, dir).WithContext(t.Context())
+	if got, err := r.RowIdentities(0, 0, 0); err != nil || got != (store.RowIdentities{}) {
+		t.Fatalf("zero ids: %+v %v", got, err)
+	}
+	saveEx(t, s, "e1", "local", "cc", "k", 1)
+	saveHookFor(t, s, "local", "cc", "k", 2)
+	saveConn(t, s, "k", 3)
+	m, err := r.Maxima()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.RowIdentities(m.ExchangeRow, m.HookID, m.EffectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ExchangeRequestID != "e1" || got.HookReceivedAt == 0 || got.EffectAt == 0 ||
+		got.ExchangeMissing || got.HookMissing || got.EffectMissing {
+		t.Errorf("RowIdentities = %+v", got)
+	}
+	gone, err := r.RowIdentities(m.ExchangeRow+1, m.HookID+1, m.EffectID+1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gone.ExchangeMissing || !gone.HookMissing || !gone.EffectMissing {
+		t.Errorf("ids past the maxima = %+v, want all missing", gone)
+	}
+}

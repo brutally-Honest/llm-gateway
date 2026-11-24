@@ -105,11 +105,22 @@ type diskHeader struct {
 	UnassignedMax int64 `json:"unassigned_max,omitempty"`
 }
 
-// highWater is the high-water file: the largest ids any written entry was built on.
+// highWaterFormat marks a high-water file that records row identities; a file without it
+// (written before they were) cannot be checked and is treated as damaged.
+const highWaterFormat = 2
+
+// highWater is the high-water file: the largest ids any written entry was built on, and
+// the identity of the row at each: the exchange's request id, the hook event's received_at
+// and the effect's at (empty or zero when the id is 0). A restored older store can reuse an
+// id for a different row, so the id alone does not say it is the same history.
 type highWater struct {
-	ExchangeRow int64 `json:"exchange_row"`
-	HookID      int64 `json:"hook_id"`
-	EffectID    int64 `json:"effect_id"`
+	Format        int    `json:"format"`
+	ExchangeRow   int64  `json:"exchange_row"`
+	HookID        int64  `json:"hook_id"`
+	EffectID      int64  `json:"effect_id"`
+	ExchangeReqID string `json:"exchange_request_id"`
+	HookAt        int64  `json:"hook_received_at"`
+	EffectAt      int64  `json:"effect_at"`
 }
 
 type diskOp byte
@@ -251,9 +262,20 @@ func (c *DiskCache) checkHighWater(ctx context.Context) error {
 		return nil // opened and closed without a write: nothing to check
 	case !ok:
 		c.log.Warn("ui view cache: high-water file missing or unreadable; the cache of this build was deleted")
+	case hw.Format != highWaterFormat:
+		c.log.Warn("ui view cache: high-water file missing or unreadable; the cache of this build was deleted")
 	case cur.ExchangeRow < hw.ExchangeRow || cur.HookID < hw.HookID || cur.EffectID < hw.EffectID:
 		c.log.Warn("ui view cache: the store is behind the cache (an older copy was restored?); the cache of this build was deleted")
 	default:
+		ids, err := c.r.WithContext(ctx).RowIdentities(hw.ExchangeRow, hw.HookID, hw.EffectID)
+		if err != nil {
+			return err
+		}
+		if ids.ExchangeMissing || ids.HookMissing || ids.EffectMissing ||
+			ids.ExchangeRequestID != hw.ExchangeReqID || ids.HookReceivedAt != hw.HookAt || ids.EffectAt != hw.EffectAt {
+			c.log.Warn("ui view cache: the store is behind the cache (an older copy was restored?); the cache of this build was deleted")
+			break
+		}
 		c.hw = hw
 		return nil
 	}
@@ -650,6 +672,19 @@ func (c *DiskCache) raiseHighWater(r diskReq) error {
 	path := filepath.Join(c.root, diskHighWat)
 	if _, err := os.Stat(path); err == nil && next == c.hw {
 		return nil
+	}
+	next.Format = highWaterFormat
+	if c.r != nil && (next.ExchangeRow != c.hw.ExchangeRow || next.HookID != c.hw.HookID || next.EffectID != c.hw.EffectID) {
+		ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+		defer cancel()
+		ids, err := c.r.WithContext(ctx).RowIdentities(next.ExchangeRow, next.HookID, next.EffectID)
+		if err != nil {
+			return err
+		}
+		if ids.ExchangeMissing || ids.HookMissing || ids.EffectMissing {
+			return errors.New("ui view cache: a high-water row is missing from the store")
+		}
+		next.ExchangeReqID, next.HookAt, next.EffectAt = ids.ExchangeRequestID, ids.HookReceivedAt, ids.EffectAt
 	}
 	b, err := json.Marshal(next)
 	if err != nil {
