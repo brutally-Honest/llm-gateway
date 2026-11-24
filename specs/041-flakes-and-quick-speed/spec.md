@@ -3,6 +3,7 @@ feature: 041-flakes-and-quick-speed
 kind: fix
 created: 2026-11-23
 branch: fix/041-flakes-and-quick-speed
+status: done
 ---
 
 This spec absorbs the planned 035 quick speed fixes (S1 to S4); there is no separate

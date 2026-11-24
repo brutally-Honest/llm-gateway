@@ -11,6 +11,8 @@ feature: 041-flakes-and-quick-speed
 - 2026-11-24 Review round 2 (fresh opus, diff at c99a95b): no P1 to P3; three P4s left
   open (see Review round 2). This was the last review round.
 - 2026-11-24 F1 contract check: 009 AC23 and AC24 allow the live resend (see F1 contract).
+- 2026-11-24 Finished: spec marked done; `make verify` green twice (5.9 s each, Go test
+  cache warm); no throwaway gateway on 17195-17199; `~/.cache/llm-gateway-041` deleted.
 
 ## Measurement setup
 
