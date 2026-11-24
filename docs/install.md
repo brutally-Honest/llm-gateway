@@ -250,10 +250,19 @@ succeeds. Run by hand, outside the service, a failed start exits at once.
 Each listener answers on loopback: the API (`/healthz`), the UI (`/api/health`), the HTTP
 and SOCKS proxies (a TCP connect). **Fix:** start the gateway; if it runs, check the ports
 in the config and whether another process holds one (`ss -ltnp` or `lsof -iTCP -sTCP:LISTEN`).
-The UI accepts connections only after its start-up warm-up, up to about 30 s on a large
-store. While the API answers and the gateway started under 2 minutes ago, a silent UI is a
-**warn**, "warming up, about N s since the gateway started" (from the API's `/metrics`);
-after that it is a **fail**.
+The UI answers as soon as the gateway starts. While the API answers and the gateway started
+under 2 minutes ago, a silent UI is a **warn**, "warming up, about N s since the gateway
+started" (from the API's `/metrics`); after that it is a **fail**.
+
+### The UI's view cache
+The UI keeps a per-session cache of list rows and session views in `<capture.dir>/view-cache/`
+(by default `~/.local/share/llm-gateway/view-cache/`). It holds only results built from the
+store, so it is disposable: delete the folder at any time, even while the gateway runs. It is
+rebuilt in the background after a start. `gateway uninstall --purge` removes it with the rest
+of the data folder. Restoring an older `gateway.db` from a backup is detected, and that
+build's cache is dropped; deleting `view-cache/` when you restore is the simple rule. A view
+over 32 MiB is not cached, and the folder is kept under 1 GiB (the oldest views go first).
+Folders are 0700 and files 0600. There is no config key for it.
 
 ### Check: settings
 `~/.config/llm-gateway/claude-settings.json` exists and points at this gateway (its
