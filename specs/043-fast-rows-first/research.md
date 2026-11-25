@@ -7,7 +7,8 @@ feature: 043-fast-rows-first
 - 2026-11-25 Step 1 (measure, decide), f71b54e: empty cache on main: copy page 1 4.33 s, page 2 504, filters 2.9-3.0 s; 3x page 1 4.57 s, page 2 504; row split, filter and fill-in decisions D1-D9.
 - 2026-11-25 Step 2 (design review), aabed28: 2 P1, 6 P2, P3s and P4s; P1 and P2 fixed in the design (D10-D15, spec AC1-AC7, E1, E7).
 - 2026-11-25 Step 3a (server, sonnet), 5d28904: /api/sessions and the stream snapshot never wait for a build; pending rows, row_version, checking, build gate with list priority; 16 new tests; two cmd/gateway tests now wait for filled rows; make verify green.
-- 2026-11-25 Step 3b (browser, sonnet), (this commit): pending rows render with fixed-width placeholders, merge rule by row_version and version, follow-up fetch with back-off and a two-minute stop, "N sessions still being checked"; 29 new web tests (273); make verify green. Quick probe on the copy before it: page 1 66 ms (filled 2.0 s), page 2 88 ms (4.1 s), kind=look 108 ms (4.8 s).
+- 2026-11-25 Step 3b (browser, sonnet), 61a1aae: pending rows render with fixed-width placeholders, merge rule by row_version and version, follow-up fetch with back-off and a two-minute stop, "N sessions still being checked"; 29 new web tests (273); make verify green. Quick probe on the copy before it: page 1 66 ms (filled 2.0 s), page 2 88 ms (4.1 s), kind=look 108 ms (4.8 s).
+- 2026-11-25 Step 3c (docs, haiku), (this commit): docs/install.md says the list fills in its details over a few seconds after an install.
 
 ## Measurement setup
 - Store copy, taken 2026-11-25 05:51 +05:30: `sqlite3 ~/.local/share/llm-gateway/gateway.db
