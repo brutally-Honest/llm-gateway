@@ -155,7 +155,11 @@ func buildSessionRows(c sessionSource, who sessIdent, rows []store.RowExchange, 
 	}
 	src := &eventsOnce{Source: c, exs: exs, events: map[string][]store.EventRow{}}
 	session := store.SessionRow{PrincipalID: who.principal, Client: who.client, SessionKey: who.name}
-	entries, _, st, err := timeline.BuildWithState(src, session, timeline.Options{Cut: cut}, timeline.NewMemo())
+	memo := timeline.NewMemo()
+	if textMemoOff {
+		memo = timeline.NewMemoWithoutText()
+	}
+	entries, _, st, err := timeline.BuildWithState(src, session, timeline.Options{Cut: cut}, memo)
 	if err != nil {
 		return builtSession{}, err
 	}

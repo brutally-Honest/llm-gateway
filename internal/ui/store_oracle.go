@@ -44,6 +44,10 @@ type StoreOracleReport struct {
 	Largest int
 }
 
+// maxFallbackPercent is the share of builds that may be full for a reason other than a
+// session's first (no_state) before the replay counts as failed.
+const maxFallbackPercent = 5
+
 const (
 	// oracleEveryInput is the largest session (in exchanges) compared in full after every input.
 	oracleEveryInput = 150
@@ -253,6 +257,16 @@ func RunStoreOracle(dir string, rules map[string]ClientRules, logf func(string, 
 		if err := replaySession(c, vd, who, rs, &rep, logf, si, len(sessions)); err != nil {
 			return rep, fmt.Errorf("session %s: %w", sr.SessionKey, err)
 		}
+	}
+	// A replay that fell back to full builds proves little about the incremental path: each
+	// session's first build is a legitimate no_state, anything else counts against it.
+	all := 0
+	for _, n := range rep.Builds {
+		all += n
+	}
+	if fallbacks := all - rep.Builds["incremental"] - rep.Builds["full:no_state"]; all > 0 && fallbacks*100 > all*maxFallbackPercent {
+		return rep, fmt.Errorf("fallback rate too high: %d of %d builds were full for a reason other than no_state (limit %d%%): %v",
+			fallbacks, all, maxFallbackPercent, rep.Builds)
 	}
 	return rep, nil
 }

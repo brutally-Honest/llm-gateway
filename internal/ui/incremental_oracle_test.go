@@ -393,6 +393,14 @@ func checkOracle(t *testing.T, steps []oracleStep) {
 		prev = &inc
 	}
 	t.Logf("%d steps; builds: %v", len(steps), counts)
+	// The comparison above proves nothing about the incremental path when every update fell
+	// back to a full build, so require that it ran. Only the first build (no_state) and a
+	// few large_delta builds on tiny states are expected to be full: at least 80% of the steps
+	// of a scenario of 10+ steps, and half of a shorter one, must be incremental.
+	n := len(steps)
+	if inc := counts["incremental"]; (n >= 10 && 5*inc < 4*n) || (n < 10 && 2*inc < n) {
+		t.Errorf("incremental path ran in only %d of %d steps; builds: %v", inc, n, counts)
+	}
 }
 
 // oracleLinear: 12 calls in one thread, each with a tool call whose result is in the next

@@ -469,22 +469,37 @@ type inputDiffs struct {
 // the cut. Both are functions of content hashes, so a value never goes stale. A Memo is
 // used by one build at a time and has no lock. Its size counts in the state's estimate.
 type Memo struct {
-	texts map[textKey]memoText
-	cmp   map[cmpKey]inputDiffs
-	size  int64
+	texts  map[textKey]memoText
+	cmp    map[cmpKey]inputDiffs
+	size   int64
+	noText bool // the text memo is bypassed (the equivalence test's reference build)
 }
 
 // NewMemo returns an empty memo.
 func NewMemo() *Memo { return &Memo{texts: map[textKey]memoText{}, cmp: map[cmpKey]inputDiffs{}} }
 
+// NewMemoWithoutText returns a memo whose text memo is bypassed: it never finds and never
+// stores a text. The equivalence test builds its memo-free reference with it.
+func NewMemoWithoutText() *Memo {
+	m := NewMemo()
+	m.noText = true
+	return m
+}
+
 // MemoText implements TextMemo.
 func (m *Memo) MemoText(hash, role string) (string, bool, bool) {
+	if m.noText {
+		return "", false, false
+	}
 	t, found := m.texts[textKey{hash, role}]
 	return t.text, t.ok, found
 }
 
 // PutText implements TextMemo.
 func (m *Memo) PutText(hash, role, text string, ok bool) {
+	if m.noText {
+		return
+	}
 	k := textKey{hash, role}
 	if _, have := m.texts[k]; have {
 		return

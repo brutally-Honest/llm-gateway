@@ -14,7 +14,9 @@ feature: 040-incremental-live-updates
 - 2026-11-25 Step 4.3 (persistent cache, sonnet 3): not run (D6); the measured restart case is main's.
 - 2026-11-25 Step 4.4 (docs, haiku), 4d1e3a0: README live-updates bullet (about a third of a second, full rebuild on first open, eviction or a large burst); roadmap moves 040 to Done.
 - 2026-11-25 Step 5a (measure, HEAD 4d1e3a0, no commit of its own; recorded here): call stored to view 303-341 ms, 0.25-0.35 CPU-s over the control, RSS ~210-270 MB with a rise of 51-117 MB; hook 299-301 ms, 0.21-0.26 CPU-s; effect 247-249 ms; all AC4 targets met (table under Step 5).
-- 2026-11-25 Step 5b (UI check, haiku doc), (this commit): Chrome extension not connected, so a headed Chrome with a throwaway profile over DevTools (port 9333); 8 cases (Lean/Stark, dark/light, 1,440/2,560), 25 inputs each (20 calls, 3 hooks, 2 effects): every input on the page 265-408 ms after being stored, 0 px movement of a mid-list turn, 0 layout shift, no turn re-created, page equal to a reload (2,879 lines); docs/manual-checks/040-incremental-live-updates.md.
+- 2026-11-25 Step 5b (UI check, haiku doc), 0097069: Chrome extension not connected, so a headed Chrome with a throwaway profile over DevTools (port 9333); 8 cases (Lean/Stark, dark/light, 1,440/2,560), 25 inputs each (20 calls, 3 hooks, 2 effects): every input on the page 265-408 ms after being stored, 0 px movement of a mid-list turn, 0 layout shift, no turn re-created, page equal to a reload (2,879 lines); docs/manual-checks/040-incremental-live-updates.md.
+- 2026-11-25 Step 6 review round 1 (fresh opus): 0 P1, 0 P2, 4 P3, 7 P4 (table under Review). One round only (no P1/P2).
+- 2026-11-25 Step 6 fix A (sonnet), (this commit): P3-1 `textMemoOff` bypasses the state memo again (a broken memo now fails TestTextMemo_OutputUnchanged); P3-3 the oracle fails when under 80 % of a scenario's steps were incremental (under half below 10 steps), the store oracle when fallbacks pass 5 %; P4-5 a text with a block not stored is not memoised.
 
 ## Measurement setup
 - Store copy, taken 2026-11-25 19:19 +05:30: `sqlite3 ~/.local/share/llm-gateway/gateway.db
@@ -240,3 +242,7 @@ counts from the store, D1). The first open is still a full build (non-goal).
   calls, and for larger ones every 20th input, each of the last 40 and the final state; every
   input goes through the incremental build. Unassigned connections pass through unfiltered,
   the same for both builds.
+- **D32** (2026-11-25, review fix A) `timeline.NewMemoWithoutText` is the memo the text-memo
+  equivalence test builds with when `textMemoOff` is set; a package var in timeline was the
+  alternative. `textOf` no longer memoises a text when a text block was not stored (D25's rule
+  applied to texts); output unchanged.

@@ -142,7 +142,7 @@ type TextMemo interface {
 
 // textOf joins the text blocks of a message; ok is false when it has none stored. When
 // src is a TextMemo, a message with a content hash is read once per hash and role. A
-// payload that does not decode and a content read that fails are never memoised.
+// payload that does not decode, a content read that fails and a text with a block not stored are never memoised.
 func textOf(src Source, e store.EventRow, role string) (string, bool, error) {
 	memo, _ := src.(TextMemo)
 	if e.Kind != "message" || e.ContentHash == "" {
@@ -164,6 +164,7 @@ func textOf(src Source, e store.EventRow, role string) (string, bool, error) {
 		return "", false, nil
 	}
 	var parts []string
+	missing := false
 	for _, b := range p.Blocks {
 		if b.Type != "text" {
 			continue
@@ -173,12 +174,13 @@ func textOf(src Source, e store.EventRow, role string) (string, bool, error) {
 			return "", false, err
 		}
 		if raw == nil {
+			missing = true
 			continue
 		}
 		parts = append(parts, blockText(raw))
 	}
 	text, ok := strings.Join(parts, "\n"), len(parts) > 0
-	if memo != nil {
+	if memo != nil && !missing { // a block not stored yet may land later (as D25)
 		memo.PutText(e.ContentHash, role, text, ok)
 	}
 	return text, ok, nil
