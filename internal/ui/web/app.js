@@ -42,6 +42,7 @@ let listGen = 0; // bumps on every query change and page request; an older respo
 let curPage = 1; // the page the list shows or is loading
 let starts = [undefined]; // filtered lists: starts[k-1] is the position (after) page k starts at
 let scannedAt = []; // filtered lists: the rows the server tested for page k, at index k-1
+let checkingAt = []; // filtered lists: the rows page k's answer left undecided, at index k-1
 let fetchSeq = 0; // bumps on every list fetch (page load, refetch, follow-up); only the latest answer is applied (spec 043 AC5)
 let pageLoading = false; // a loadPage is in flight; no other list fetch starts beside it
 let followTimer = null; // the next follow-up fetch of the page on screen (spec 043 AC5)
@@ -110,17 +111,19 @@ function fixURL(n) {
 async function walkFiltered(n, from, stale) {
   let k = Math.min(from, n, starts.length);
   let p;
-  let checking = 0;
   for (;;) {
     p = await getJSON("sessions", sessionParams(k, starts[k - 1]));
     if (stale()) return null;
     scannedAt[k - 1] = p.scanned || 0;
-    checking += p.checking || 0;
+    checkingAt[k - 1] = p.checking || 0;
     noteNext(k, p.next_after);
     if (k >= n || !p.next_after) break;
     k++;
   }
-  return { p, k, checking, scanned: scannedAt.slice(0, k).reduce((a, b) => a + b, 0) };
+  // one rule for the count, whichever page the walk began at: the rows still being checked
+  // on pages 1 to k, the same pages `scanned` adds up (spec 043 AC4, AC6)
+  const sum = (a) => a.slice(0, k).reduce((x, y) => x + (y || 0), 0);
+  return { p, k, checking: sum(checkingAt), scanned: sum(scannedAt) };
 }
 
 // loadPage shows page n of the list for the current kind and q: the rows are dropped (a
@@ -164,7 +167,9 @@ async function loadPage(n, keep = false) {
       }
       scanned = p.scanned || 0;
     } else {
-      const w = await walkFiltered(n, n, stale);
+      // an earlier page that was (or may still be) checking has a stale count: walk from page 1
+      const from = Array.from({ length: n - 1 }, (_, i) => checkingAt[i]).some((c) => c === undefined || c > 0) ? 1 : n;
+      const w = await walkFiltered(n, from, stale);
       if (!w) return;
       ({ p, k, checking, scanned } = w);
       if (k !== n && !checking) {
@@ -227,11 +232,14 @@ function pauseFollow() {
 // details are not available yet (E1).
 function armFollow() {
   const s = store.get();
-  if (!page || followTimer || pageLoading || !s.sessionsLoaded || s.sessionsError || s.sessionsStalled) return;
+  if (!page || followTimer || pageLoading || !s.sessionsLoaded || s.sessionsError) return;
   if (!outstanding()) {
+    // the last pending row may be filled in after the give-up (a stream event): the note goes
     cancelFollow();
+    if (s.sessionsStalled) store.set({ sessionsStalled: false });
     return;
   }
+  if (s.sessionsStalled) return;
   if (document.hidden) return;
   if (followWaited >= FOLLOW_GIVE_UP_MS) {
     store.set({ sessionsStalled: true });
@@ -354,6 +362,7 @@ async function refetchHead() {
     noteHeadFloor(p);
     noteNext(1, p.next_after);
     scannedAt[0] = p.scanned || 0;
+    checkingAt[0] = p.checking || 0;
     store.set({ sessions: mergeRows(store.get().sessions, p.items), sessionsNext: p.next_after, sessionsTotal: p.total || 0, sessionsChecking: p.checking || 0, sessionsError: "" });
     armFollow();
   } catch {
@@ -371,6 +380,7 @@ function applyList(kind, q, n = 1) {
   list = { kind, q };
   starts = [undefined];
   scannedAt = [];
+  checkingAt = [];
   store.set({ sessionsNext: null, sessionsScanned: 0, sessionsTotal: 0,sessionsKind: kind, sessionsQ: q });
   loadPage(n);
 }

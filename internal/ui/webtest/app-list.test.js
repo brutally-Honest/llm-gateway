@@ -1343,6 +1343,22 @@ test("followUpGivesUpAfterTwoMinutesAndRetryReloads", async (t) => {
   assert.equal(isPending("a"), false);
 });
 
+test("theStalledNoteGoesWhenAStreamEventFillsTheLastPendingRowAfterTheGiveUp", async (t) => {
+  await fresh(t, "#/", () => pageBody([pend("a", stamp(2))]));
+  for (let i = 0; i < 400 && !stalledNote(); i++) {
+    t.mock.timers.tick(1000);
+    await settle();
+  }
+  assert.ok(stalledNote(), "the note shows after the give-up");
+  streams.at(-1).emit("session", filled("a", "alpha", stamp(2)));
+  await settle();
+  assert.equal(isPending("a"), false, "the event filled the row in");
+  assert.equal(stalledNote(), false, "nothing is outstanding: no note");
+  const retry = byTag(statusBox(), "button").find((b) => b.textContent === "Retry");
+  assert.equal(retry.hidden, true, "and no Retry");
+  await go("#/ungrouped");
+});
+
 test("followUpEndsOnPageChangeFilterChangeAndLeavingTheList", async (t) => {
   const answers = () => pageBody([filled("a", "alpha", stamp(2))], { total: 120 });
   // a page change
@@ -1528,6 +1544,27 @@ test("aFilteredPageNotYetReachedKeepsItsUrlAndTheStatusLineNamesIt", async (t) =
   await settle();
   assert.doesNotMatch(text(), /still being checked|shows once/);
   assert.deepEqual(entries.at(-1), ["replace", "#/?kind=look&page=2"], "checked: the URL is corrected");
+  await go("#/ungrouped");
+});
+
+test("theCheckingCountIsTheSameAfterALoadAndAFollowUpWithUnchangedAnswers", async (t) => {
+  // review P3: every page answers 4 checking; the count is the sum over pages 1 to the one shown
+  const serveFiltered = (p) => {
+    const after = p.get("after");
+    if (!after) return pageBody([filled("a", "alpha", stamp(9))], { next_after: "t1", checking: 4 });
+    if (after === "t1") return pageBody([filled("b", "beta", stamp(8))], { next_after: "t2", checking: 4 });
+    return pageBody([filled("c", "gamma", stamp(7))], { next_after: "t3", checking: 4 });
+  };
+  await fresh(t, "#/?kind=look", serveFiltered);
+  await go("#/?kind=look&page=2");
+  await go("#/?kind=look&page=3");
+  const shown = text().match(/(\d+) sessions? still being checked/);
+  assert.ok(shown, "the count is shown");
+  t.mock.timers.tick(1000);
+  await settle();
+  const after = text().match(/(\d+) sessions? still being checked/);
+  assert.equal(after[1], shown[1], "a follow-up with unchanged answers keeps the count");
+  assert.equal(shown[1], "12", "pages 1 to 3");
   await go("#/ungrouped");
 });
 

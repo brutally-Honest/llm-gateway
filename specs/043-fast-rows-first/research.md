@@ -14,7 +14,8 @@ feature: 043-fast-rows-first
 - 2026-11-25 Step 4c (manual check doc, haiku), 1d3f671: docs/manual-checks/043-fast-rows-first.md with the 8-case results.
 - 2026-11-25 Step 5 review round 1 (fresh opus): 2 P1, 3 P2, 4 P3, 4 P4. Server fixes (sonnet), 7f0b508: P1-1 waiter retargets a queued run, P1-2 filtered scan reads facts only for returned rows (3x empty q=gateway 169-189 ms), P2-3 SQL folder on the waiting path, P3 hub comment, two P4s; 4 tests, each failing without its fix; make verify green.
 - 2026-11-25 Step 5 round 1 browser fixes (sonnet), 2870aa3: P2-1 ungrouped table rules restored outside the sessions table, P3 follow-up re-armed after a failed refetch, P3 layout test parses widths from style.css, P3 status line names the page still being reached; P2-2 is the AC6 status line (D22, 0e76997); 278 web tests; columns 0 px in 4 re-run UI cases; make verify green.
-- 2026-11-25 Step 5 review round 2 (fresh opus): 0 P1, 1 P2, 6 P3, 3 P4. Server fixes (sonnet, haiku for a comment, a file name and two lint fixes), (this commit): P2-1 waiters older than a queued run promote it, P3-2 retarget aims the follow-up too and no older memo overwrites a newer one, P3-3 rows and versions in one read transaction (D23), P3-4 degraded memo kept in memory (D24), P3-7 nothing read or queued past the stop row, P4-8 disk before queueing; 8 tests, each failing without its fix; 3x empty all 64-186 ms; make verify green.
+- 2026-11-25 Step 5 review round 2 (fresh opus): 0 P1, 1 P2, 6 P3, 3 P4. Server fixes (sonnet, haiku for a comment, a file name and two lint fixes), c3afc69: P2-1 waiters older than a queued run promote it, P3-2 retarget aims the follow-up too and no older memo overwrites a newer one, P3-3 rows and versions in one read transaction (D23), P3-4 degraded memo kept in memory (D24), P3-7 nothing read or queued past the stop row, P4-8 disk before queueing; 8 tests, each failing without its fix; 3x empty all 64-186 ms; make verify green.
+- 2026-11-25 Step 5 round 2 browser fixes (sonnet), (this commit): P3-5 the stalled note goes once nothing is outstanding, P3-6 one checking rule (sum over pages 1 to the page shown, D26); 280 web tests; filters UI case re-run (look 8 then 20, search 29); make verify green. Last review round.
 
 ## Measurement setup
 - Store copy, taken 2026-11-25 05:51 +05:30: `sqlite3 ~/.local/share/llm-gateway/gateway.db
@@ -259,3 +260,22 @@ checking is 0; first answer, then filled):
   than the page's last fetch, so on a reconnect page 1's rows rank above the page 2 on
   screen until the next follow-up fetch (at most a second later) ranks page 2 again. AC3
   allows it; noted, not changed.
+- **D26** (2026-11-25, review round 2 P3-6) "N sessions still being checked" is the sum of
+  `checking` over pages 1 to the page shown, the same rule `scanned` already follows, on a
+  page load and on every follow-up fetch; a load walks from page 1 when an earlier page's
+  count is unknown or above 0.
+
+### Code review round 2 (step 5, fresh opus, last round)
+
+| # | Finding | Done |
+|---|---|---|
+| P2-1 | A waiter older than a queued run still waited behind the gate | c3afc69: the queued run is promoted whatever its version |
+| P3-2 | Retarget left an older follow-up that rebuilt and overwrote the disk memo | c3afc69: the follow-up is retargeted; no older memo written over a newer one |
+| P3-3 | `row_version` could label newer data than the cheap fields | c3afc69: one read transaction (D23) |
+| P3-4 | A degraded memo left its row pending forever | c3afc69: kept in memory, never on disk (D24) |
+| P3-5 | The stalled note outlived the fill-in | browser: cleared when nothing is outstanding |
+| P3-6 | The checking count changed meaning between load and follow-up | browser: one rule (D26) |
+| P3-7 | Scan batches read and queued rows past the stop | c3afc69 |
+| P4-8 | Older memo in memory queued a build before checking disk | c3afc69 |
+| P4-9 | `listWork` O(queue) | noted (also round 1) |
+| P4-10 | Snapshot tick outranks the page on a reconnect | D25, noted |
