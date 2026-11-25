@@ -18,7 +18,8 @@ feature: 040-incremental-live-updates
 - 2026-11-25 Step 6 review round 1 (fresh opus): 0 P1, 0 P2, 4 P3, 7 P4 (table under Review). One round only (no P1/P2).
 - 2026-11-25 Step 6 fix A (sonnet), 0056ae0: P3-1 `textMemoOff` bypasses the state memo again (a broken memo now fails TestTextMemo_OutputUnchanged); P3-3 the oracle fails when under 80 % of a scenario's steps were incremental (under half below 10 steps), the store oracle when fallbacks pass 5 %; P4-5 a text with a block not stored is not memoised.
 - 2026-11-25 Step 6 fix B (sonnet), 545afd3: P3-2 the stateful full build reads events straight from the reader instead of caching all of them; largest session peak heap during a full build 670-734 MB to 103-107 MB, build 2.60-2.69 s to 2.35-2.42 s, output unchanged (oracle green).
-- 2026-11-25 Step 6 fix C (sonnet), (this commit): P3-4 an inactive session served from an incremental build gets its disk view from one background full build (one job at a time, one queued per session, never stored in the timeline cache); 4 tests, the main one fails without it.
+- 2026-11-25 Step 6 fix C (sonnet, then haiku for a bare go statement the conventions check caught; amended before push), 32e8f26: P3-4 an inactive session served from an incremental build gets its disk view from one background full build (one job at a time, one queued per session, never stored in the timeline cache); 4 tests, the main one fails without it.
+- 2026-11-25 Finished, (this commit): re-measure at 32e8f26: call stored to view 321-355 ms, 1.07-1.13 CPU-s (control 0.75-0.97), RSS ~210-250 MB with a rise up to 80 MB; hook 288-302 ms; effect 244 ms; throwaway gateways, fake upstream and Chrome stopped, nothing on 17195-17199 or 9333; `~/.cache/llm-gateway-040` deleted; spec marked done; `llm-gateway.service` never touched.
 
 ## Measurement setup
 - Store copy, taken 2026-11-25 19:19 +05:30: `sqlite3 ~/.local/share/llm-gateway/gateway.db

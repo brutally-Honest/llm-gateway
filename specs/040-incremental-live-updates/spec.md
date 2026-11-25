@@ -1,4 +1,5 @@
 ---
+status: done
 feature: 040-incremental-live-updates
 kind: feat
 created: 2026-11-25
