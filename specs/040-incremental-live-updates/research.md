@@ -1,0 +1,132 @@
+---
+feature: 040-incremental-live-updates
+---
+# Research & decisions — 040-incremental-live-updates
+
+## Progress
+- 2026-11-25 Step 1 (measure, design), (this commit): baseline on main: call to view 2,534-2,712 ms, 3.0-3.2 CPU-s per call (0.7-0.9 of it capture), RSS 116 to ~680 MB; hook 2,268-2,298 ms; effect 750-786 ms; full build 1.8 s, 940 MB allocated; rules per input and fallbacks F1-F6 in spec.md; D1-D11.
+
+## Measurement setup
+- Store copy, taken 2026-11-25 19:19 +05:30: `sqlite3 ~/.local/share/llm-gateway/gateway.db
+  ".backup ~/.cache/llm-gateway-040/gateway.db"` and `cp -a` of `blobs/`: 3,919 exchanges,
+  12,716 hook events, 6,971 effects, 1.3 GB database, 4.0 GB blobs. `pristine.db` beside it
+  is restored before every gateway run, so each run starts from the same state.
+- Largest session `local/claude-code/2fff4047-…`: 667 calls in the store (670 rows in the
+  build), 2,056 hook events, 4,146 timeline entries, at most 1,533 events per call.
+- Throwaway gateway: `systemd-run --user --scope -p MemoryMax=4G env -i HOME=~/.cache/llm-gateway-040/home
+  <bin> -config <scratch>/gw.yaml`; proxy 17197, UI 17199, HTTP proxy 17198, SOCKS 17195,
+  a fake upstream on 17196 answering a short streamed Anthropic reply; `capture.dir` is the
+  copy. `llm-gateway.service` and ports 7195-7199 are never touched.
+- Probe (scratch Go program): opens `/api/sessions/{id}/stream?view=1` on the largest
+  session, waits for the first `view` event, then sends one input at a time and times from
+  the end of the input (proxied response fully read, hook POST answered, proxied GET
+  answered) to the next `view` event. CPU is the gateway's utime+stime from `/proc` from the
+  input until 500 ms of quiet; memory is VmRSS sampled every 10 ms, the rise over the value
+  before the input. Inputs: `x` replays that session's last request (8.8 MB, 606 messages)
+  with its session header; `h` posts a PreToolUse hook for a new tool id with `cwd` under the
+  throwaway HOME; `e` sends a GET through the HTTP proxy 17198, which the effects runner
+  assigns to the one active session.
+- Control: the same inputs with no stream open (`-nostream`), to separate capture's own cost.
+- In-process profile (a `probe040`-tagged test kept in the scratch folder, never committed):
+  `buildSession` then `sessionView` of the largest session on the copy, three times.
+
+## Step 1: baseline (main at fd0a0f8)
+
+| Input | View after | CPU (process) | RSS before | RSS rise |
+|---|---|---|---|---|
+| open (first view, cold) | 1,952-1,982 ms | | | |
+| call 1 | 2,662 ms | 3.03 s | 116 MB | 516 MB |
+| calls 2-5 | 2,534-2,712 ms | 2.99-3.21 s | 631-683 MB | 0-133 MB |
+| hook 1-3 | 2,268-2,298 ms | 2.40-2.43 s | 665-672 MB | 2-32 MB |
+| effect 1-2 | 750-786 ms | 0.12-0.14 s | 639-670 MB | 31-45 MB |
+| control: call, no stream | | 0.69-0.87 s | 100-163 MB | 9-58 MB |
+| control: hook, no stream | | 0.00-0.01 s | | |
+
+So a call's view update costs about 2.3 CPU-seconds beyond its capture, and the first update
+leaves the process about 520 MB larger for good.
+
+In process (largest session): `buildSession` 1.76-1.87 s, 940 MB allocated per build,
+`sessionView` 72-86 ms (38 MB allocated), view JSON 1.9 MB in 5 ms. CPU profile of a build:
+58 % in `store.(*Reader).eventsCtx` (SQLite rows of 468k events), then GC and allocation;
+`timeline.bestMatch` 3 %. Other pieces: `SessionSnapshot` 35 ms (670 rows), `HookEvents`
+6.5 ms (2,056 rows), the last call's events 2.2 ms (1,207 rows), `estimateSize` 35 ms
+(marshals the whole build on every store into the cache).
+
+Fixed waits on the live path: a commit pokes view streams at once and the stream waits
+`viewDebounce` (150 ms); a hook pokes them after `hookRefreshEvery` (250 ms) plus the debounce;
+an effect after `effectsEvery` (500 ms) plus the debounce. The hook and effect waits alone
+are 400 and 650 ms (D7).
+
+The session page opens one stream only, the view stream (`app.js` `openStream(…,
+"sessions/<id>/stream?view=1")` after `stopStream`), so the hub reads no summary or digest
+for it; the digest work of the global stream is 043's and out of scope.
+
+## Decisions
+- **D1** (2026-11-25) CPU per update is the gateway process's CPU from the input to quiet,
+  minus the same input's CPU with no stream open (capture, parse and store of an 8.8 MB
+  request cost 0.7-0.9 s by themselves and are not the view's). Both numbers are recorded.
+- **D2** (2026-11-25) Only the timeline build is incremental; the view, effect attribution
+  (ADR 0015) and every list are rebuilt whole from the build on each update.
+  Thesis: the build is 1.8 s of the 1.9 s and is the part that re-reads history; the view is
+  72-86 ms on the largest session, so rebuilding it keeps late hooks and effects (which can
+  re-label any earlier turn) exact by construction, with no rule per effect kind.
+  Antithesis: an incremental view (append a turn, patch a label) would cut the 85 ms too and
+  scale to sessions ten times larger. Synthesis: not now; the view is a pure function of
+  in-memory inputs, its cost is a fifth of the budget, and per-effect re-attribution rules are
+  where drift would hide. Flip: a session whose view alone passes about 250 ms.
+- **D3** (2026-11-25) An update diffs a fresh snapshot of the session's exchange rows against
+  the state (by request id, row equality and order), instead of applying the hub's commit
+  messages. Thesis: commits arrive out of start order, two can share a dispatcher batch, a
+  build can run while another commit lands, and the hub drops all streams on overflow; a
+  snapshot diff is right whatever happened in between. Antithesis: applying known commit ids
+  skips the 35 ms snapshot read. Synthesis: the snapshot read is the only store read that
+  scales with the session's call count, and it is small next to the budget. Flip: sessions
+  with tens of thousands of calls, where the snapshot read itself would need a delta query.
+- **D4** (2026-11-25) The state lives in the timeline cache's entry for the session
+  (`cachedBuild`), immutable once stored like the rest of the entry: an update builds a new
+  state that shares the old one's per-exchange records and copies only slices and maps. It is
+  bounded by the cache's existing bounds (4 sessions, 512 MB estimated) and counted in the
+  entry's size, and capped per session at 128 MB estimated (F6: no state kept, every update a
+  full build). It is dropped when the entry is evicted or replaced by a full build without
+  state. Thesis: the cache already serialises builds per session, holds the latest build,
+  and is what the view reads; one owner means one eviction rule and no second LRU.
+  Antithesis: a hub-owned per-stream state would live exactly as long as an open stream and
+  never be evicted by an unrelated session's open. Synthesis: the cache; the 4-session LRU is
+  "open and recently viewed", and an eviction costs one full build (F1). Flip: users who keep
+  more than four live sessions open at once; then a pin for sessions with an open view
+  stream.
+- **D5** (2026-11-25) Content-addressed memos (text by content hash and role, the input
+  comparison of a hook against a tool call by the two input hashes) are shared by all states
+  of one session behind a mutex: a value keyed by a content hash never goes stale. Everything
+  else in the state is copy-on-write.
+- **D6** (2026-11-25) 030's persistent cache needs no change, so step 4's third subagent is
+  not run. It stores digests and views (views only of inactive sessions, 030 D18) under an
+  exact (store version, effect version) key and the build identity; it never stores a
+  timeline build. An incremental build equals a full build at the same version (AC1), so a
+  view built from it is a valid entry for its key. A restart after live updates starts with no
+  state, exactly like main: an active session has no view on disk either way (D18), and an
+  inactive one is warm from disk as before.
+- **D7** (2026-11-25) Hook events and effects poke the session's view streams at once, on the
+  leading edge, instead of after the 250 ms hook window or the 500 ms effects window; the
+  view stream's own 150 ms debounce still gathers a burst into one rebuild, and the windows
+  still pace the entries streams and global effects events. Thesis: with 400 and 650 ms of
+  fixed wait no hook or effect can show within the 500 ms the UI check asks. Antithesis: the
+  windows bound rebuild rate under hook bursts. Synthesis: the debounce bounds a view stream
+  to one rebuild per 150 ms, and an incremental rebuild is cheap enough for that. Flip: an
+  update cost that stays above about 150 ms of CPU, which would keep a core busy during
+  bursts.
+- **D8** (2026-11-25) The cache's size estimate of an entry must not marshal the whole build
+  on every store (35 ms, 31 MB on the largest session): it is computed from the state's own
+  running estimate in O(changed) or O(n) without encoding, under 5 ms on the largest session,
+  with the factor documented next to the old one.
+- **D9** (2026-11-25) Hook rows are re-read whole on every build (6.5 ms for 2,056 rows) and the
+  hook pass and call-facts pass run whole over the kept per-exchange data: a hook can change
+  any tool call's state and any thread's sub-agent flag, and a whole pass over in-memory data
+  is cheaper than tracking which.
+- **D10** (2026-11-25) The full build stays the production fallback and the oracle's
+  reference. Both paths share the per-exchange derivation, placement and hook pass as single
+  functions in `internal/timeline` (one home per rule); only the driver that decides what to
+  reuse differs, and that driver is what the oracle tests.
+- **D11** (2026-11-25) Only the `parse` column of an exchange row changes after insert
+  (`store.SaveParse`), and events are written in the same transaction. The diff still
+  compares whole rows, so any other change also re-derives that exchange.
