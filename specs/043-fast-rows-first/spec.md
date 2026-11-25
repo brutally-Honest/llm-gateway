@@ -3,6 +3,7 @@ feature: 043-fast-rows-first
 kind: fix
 created: 2026-11-25
 branch: fix/043-fast-rows-first
+status: done
 ---
 
 ## Problem

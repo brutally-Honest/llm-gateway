@@ -15,7 +15,8 @@ feature: 043-fast-rows-first
 - 2026-11-25 Step 5 review round 1 (fresh opus): 2 P1, 3 P2, 4 P3, 4 P4. Server fixes (sonnet), 7f0b508: P1-1 waiter retargets a queued run, P1-2 filtered scan reads facts only for returned rows (3x empty q=gateway 169-189 ms), P2-3 SQL folder on the waiting path, P3 hub comment, two P4s; 4 tests, each failing without its fix; make verify green.
 - 2026-11-25 Step 5 round 1 browser fixes (sonnet), 2870aa3: P2-1 ungrouped table rules restored outside the sessions table, P3 follow-up re-armed after a failed refetch, P3 layout test parses widths from style.css, P3 status line names the page still being reached; P2-2 is the AC6 status line (D22, 0e76997); 278 web tests; columns 0 px in 4 re-run UI cases; make verify green.
 - 2026-11-25 Step 5 review round 2 (fresh opus): 0 P1, 1 P2, 6 P3, 3 P4. Server fixes (sonnet, haiku for a comment, a file name and two lint fixes), c3afc69: P2-1 waiters older than a queued run promote it, P3-2 retarget aims the follow-up too and no older memo overwrites a newer one, P3-3 rows and versions in one read transaction (D23), P3-4 degraded memo kept in memory (D24), P3-7 nothing read or queued past the stop row, P4-8 disk before queueing; 8 tests, each failing without its fix; 3x empty all 64-186 ms; make verify green.
-- 2026-11-25 Step 5 round 2 browser fixes (sonnet), (this commit): P3-5 the stalled note goes once nothing is outstanding, P3-6 one checking rule (sum over pages 1 to the page shown, D26); 280 web tests; filters UI case re-run (look 8 then 20, search 29); make verify green. Last review round.
+- 2026-11-25 Step 5 round 2 browser fixes (sonnet), ebeac2f: P3-5 the stalled note goes once nothing is outstanding, P3-6 one checking rule (sum over pages 1 to the page shown, D26); 280 web tests; filters UI case re-run (look 8 then 20, search 29); make verify green. Last review round.
+- 2026-11-25 Finished, (this commit): final measure recorded (every empty-cache answer under 200 ms, no 504; copy fill 1.9-5.0 s); throwaway gateways and Chrome stopped, nothing on 17195-17199 or 9333; `~/.cache/llm-gateway-043` deleted; spec marked done; `llm-gateway.service` never touched.
 
 ## Measurement setup
 - Store copy, taken 2026-11-25 05:51 +05:30: `sqlite3 ~/.local/share/llm-gateway/gateway.db
@@ -279,3 +280,24 @@ checking is 0; first answer, then filled):
 | P4-8 | Older memo in memory queued a build before checking disk | c3afc69 |
 | P4-9 | `listWork` O(queue) | noted (also round 1) |
 | P4-10 | Snapshot tick outranks the page on a reconnect | D25, noted |
+
+## Final measure (HEAD after review round 2)
+
+Same probe, two runs each, ms from send to full body:
+
+| Request | Copy, empty | Copy, warm | 3x, empty | 3x, warm |
+|---|---|---|---|---|
+| Page 1 | 46-48 | 45-47 | 88-90 | 83-87 |
+| Page 2 | 53-57 | 51-52 | 108-123 | 109-110 |
+| Page 5 | 35-36 (empty page) | 32-33 | 82-88 | 69-71 |
+| `kind=look` | 26 (checking 70) | 75-76 | 67-68 (checking 210) | 205-209 |
+| `kind=active` | 21-22 | 20-21 | 61-62 | 59-61 |
+| `kind=hooks` | 23-24 | 20-21 | 74-76 | 65 |
+| `q=gateway` | 87 | 75-76 | 179-192 | 160-161 |
+
+Every answer 200, none 504; every empty-cache answer under 200 ms on both stores. Warm is
+below main everywhere (main warm: copy 34-104 ms, 3x 119-526 ms); 3x warm `kind=look` is
+205-209 ms against main's 415 ms. Fill-in on the copy (250 ms polling): page 1 1.9 s, page 2
+4.0 s, `kind=look` all 20 found at 4.95 s, `q=gateway` all 29 at 5.01 s — the last two need
+every session built, not only the page, and sit at the 5 s limit; 3x page 2 6.3 s (no
+target on 3x). Raising the gate slots (D19) is the lever if that margin matters.
