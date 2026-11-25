@@ -69,6 +69,9 @@ soon as they are built, the rows on the page being viewed first.
   a quiet placeholder of fixed width, so nothing moves when the facts arrive. A filtered list
   with `checking > 0` shows "N sessions still being checked" until it is 0. While
   `checking > 0` the URL's page is kept, not corrected to the last page found so far.
+  Status 2026-11-25 (D22): columns never move and a pending row is as tall as the common
+  filled row; a row whose facts add a line (a "needs a look" line, more wrapping) or that
+  fills shorter than the common row still changes height. Zero movement is left to the human.
 - **AC7** Measured on the store copy and the 3x store with an empty cache: every page and
   filter answers in under 200 ms and never 504; all facts of the viewed page fill in within
   5 s on the copy. Warm-cache numbers do not get worse.
