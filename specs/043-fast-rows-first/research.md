@@ -4,7 +4,8 @@ feature: 043-fast-rows-first
 # Research & decisions — 043-fast-rows-first
 
 ## Progress
-- 2026-11-25 Step 1 (measure, decide), (this commit): empty cache on main: copy page 1 4.33 s, page 2 504, filters 2.9-3.0 s; 3x page 1 4.57 s, page 2 504; row split, filter and fill-in decisions D1-D9.
+- 2026-11-25 Step 1 (measure, decide), f71b54e: empty cache on main: copy page 1 4.33 s, page 2 504, filters 2.9-3.0 s; 3x page 1 4.57 s, page 2 504; row split, filter and fill-in decisions D1-D9.
+- 2026-11-25 Step 2 (design review), (this commit): 2 P1, 6 P2, P3s and P4s; P1 and P2 fixed in the design (D10-D15, spec AC1-AC7, E1, E7).
 
 ## Measurement setup
 - Store copy, taken 2026-11-25 05:51 +05:30: `sqlite3 ~/.local/share/llm-gateway/gateway.db
@@ -92,3 +93,51 @@ events) 22 ms whatever its LIMIT; the folder of 50 sessions (first hook naming a
   start 50 builds together.
 - **D9** (2026-11-25) The live hub and the session endpoint keep waiting for their memo as
   today (their own timeouts); only the list endpoint stops waiting.
+- **D10** (2026-11-25, corrects D7 after review P1-1, P2-3) Two versions per row: `row_version`
+  (new, the store version the cheap fields were read at, on every row) and `version` (as
+  today, the version the facts were built at; absent on a pending row). `versionAfter` is
+  "not componentwise older", so equal versions are not "after": the browser merges per part
+  (spec AC5): cheap part unless the incoming `row_version` is strictly older; facts when the
+  incoming row has facts not strictly older; a pending incoming row keeps held facts (the
+  same rule as D4's older memo in memory, which the server also serves). A full page load
+  replaces rows without the rule (restored store, E7). The browser read no `version` before,
+  so nothing else changes meaning.
+- **D11** (2026-11-25, review P1-2) The stream's opening snapshot (`readSnapshot`) uses the
+  list's non-waiting path and ranks as list work; its pending rows reach `onSession` and go
+  through the D10 merge. Otherwise an empty cache still fails the snapshot (D30 again).
+- **D12** (2026-11-25, corrects D8 after review P2-4, P2-5, P2-8) Only list work (requests and
+  snapshot) and the background pass go through the gate; a compute some caller waits for
+  (session page, `readLive`, catch-up `waitFresh`) runs at once as today, and a waiter that
+  joins a run still queued in the gate promotes it to run at once. So waiters keep their
+  timeouts and busy live sessions cannot hold list slots. The pass is classed by caller,
+  ranks last, and its timeout starts at its slot. The gate is one dispatcher with a priority
+  queue, not a parked goroutine per run. Disk is checked before a run is queued. Slot count:
+  start at `max(2, GOMAXPROCS/4)` (3 here) and set from step 4's measurement.
+- **D13** (2026-11-25, review P2-6) Filtered paging: while `checking > 0` the browser does not
+  correct the URL's page; one list fetch is in flight at a time (a sequence number drops late
+  answers, `refetchHead` included); a follow-up fetch of filtered page n walks from page 1
+  (n requests, n is small). Server-side filtered offsets were considered (the list query
+  costs the same at any LIMIT) and left out: it changes the paging contract 042 tested.
+- **D14** (2026-11-25, review P2-7) Filtered scans read their rows in one list query (D5) but
+  look facts up row by row in batches of 51 (versions, effect counts, disk) and stop as soon
+  as the page is full and a next row is known to exist. The 2 s scan budget (030 D10) stays
+  as a guard; without builds it should not trigger.
+- **D15** (2026-11-25, review P3) Pending rows have their own JSON shape (heavy keys absent);
+  the browser decides "hooks only" from `hooks_only` for a pending row. The follow-up stops
+  after two minutes with a "details not available yet" note and Retry; it is cancelled on
+  page or filter change and when leaving the list, and paused while the tab is hidden.
+
+### Design review (step 2, fresh opus)
+
+| # | Finding | Done |
+|---|---|---|
+| P1-1 | Version guard drops the fill-in at equal versions, or wipes facts | D10 |
+| P1-2 | Stream snapshot still waits (504 on empty cache) or bypasses the merge | D11 |
+| P2-3 | One version for parts read at different versions | D10 (`row_version`) |
+| P2-4 | Gate makes waiters time out and drops streams; join does not promote | D12 |
+| P2-5 | Busy live sessions starve the list | D12 (waiters bypass the gate) |
+| P2-6 | Filtered paging: URL corrected while checking, racing refetches | D13 |
+| P2-7 | 500 rows and their disk memos read before the page fills | D14 |
+| P2-8 | 5 s fill at 2 slots unproven | D12 (measured in step 4) |
+| P3 | Pending shape, cheap folder wins, restored store, follow-up stop, goroutine per run, disk before gate, pass timeout | spec AC1, AC2, E1, E7; D12, D15 |
+| P4 | D5 hooks rule holds; versionAfter total in practice; no deadlock; look+q; scan budget | checked; AC4, D14 |
