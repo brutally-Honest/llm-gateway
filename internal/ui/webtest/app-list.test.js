@@ -1421,6 +1421,38 @@ test("aLateAnswerFromAnOlderListFetchIsDropped", async (t) => {
   assert.equal(isPending("a"), false);
 });
 
+test("aFollowUpSupersededByAFailingRefetchIsArmedAgain", async (t) => {
+  // review P3: the refetch of the head superseded the held follow-up, then failed; the timer must still come back
+  const slow = deferred();
+  let n = 0;
+  // page 2: an event the page does not hold only schedules the refetch (it inserts nothing and arms nothing itself)
+  await fresh(t, "#/?page=2", async () => {
+    n++;
+    if (n === 1) return pageBody([pend("a", stamp(2))], { total: 60 });
+    if (n === 2) {
+      await slow.promise; // the follow-up, held
+      return pageBody([filled("a", "alpha", stamp(2))], { total: 60 });
+    }
+    if (n === 3) throw new Error("boom"); // the refetch of the head
+    return pageBody([filled("a", "alpha", stamp(2))], { total: 60 });
+  });
+  t.mock.timers.tick(1000);
+  await settle();
+  assert.equal(sessionReqs.length, 2, "the follow-up is in flight");
+  streams.at(-1).emit("session", filled("z", "zed", stamp(9)));
+  t.mock.timers.tick(500);
+  await settle();
+  assert.equal(sessionReqs.length, 3, "the refetch started and failed");
+  slow.resolve();
+  await settle();
+  assert.equal(isPending("a"), true, "the superseded answer is dropped");
+  t.mock.timers.tick(4000);
+  await settle();
+  assert.ok(sessionReqs.length >= 4, "the follow-up timer was armed again");
+  assert.equal(isPending("a"), false, "a later fetch fills the row");
+  await go("#/ungrouped");
+});
+
 test("anEventWithFactsIsNotWipedByALaterPendingRowOfTheSameId", async (t) => {
   await fresh(t, "#/", () => pageBody([filled("a", "alpha", stamp(2))]));
   streams.at(-1).emit("session", pend("a", stamp(3), { row_version: rv(6) }));
@@ -1482,6 +1514,21 @@ test("filteredPageTwoKeepsItsUrlWhileRowsAreBeingCheckedAndFollowUpWalksFromPage
   assert.deepEqual(ids(), ["b"], "page 2 is shown, no row twice");
   assert.equal(pagerLabel(), "Page 2");
   assert.deepEqual(entries.filter((e) => e[0] === "replace"), []);
+});
+
+test("aFilteredPageNotYetReachedKeepsItsUrlAndTheStatusLineNamesIt", async (t) => {
+  // review P3: page 3 is requested; the walk ends at page 2 with 4 rows still being checked
+  let checking = 4;
+  await fresh(t, "#/?kind=look&page=3", (p) => (p.get("after") ? pageBody([filled("b", "beta", stamp(4))], { checking }) : pageBody([filled("a", "alpha", stamp(5))], { next_after: "t1" })));
+  assert.deepEqual(entries.filter((e) => e[0] === "replace"), [], "the URL stays at page 3");
+  assert.equal(pagerLabel(), "Page 2", "the pager says the page really shown");
+  assert.match(text(), /4 sessions still being checked — page 3 shows once they are/);
+  checking = 0;
+  t.mock.timers.tick(1000);
+  await settle();
+  assert.doesNotMatch(text(), /still being checked|shows once/);
+  assert.deepEqual(entries.at(-1), ["replace", "#/?kind=look&page=2"], "checked: the URL is corrected");
+  await go("#/ungrouped");
 });
 
 test("filteredWalkThatEndsEarlyCorrectsTheUrlOnceNothingIsBeingChecked", async (t) => {

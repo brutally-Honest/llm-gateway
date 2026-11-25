@@ -12,7 +12,8 @@ feature: 043-fast-rows-first
 - 2026-11-25 Step 4a (measure, then cut SQL, sonnet), 720320e: first 3x empty measure missed 200 ms (pages to 233, look 380); profile showed SQL (D18); total from the list query and deferred version reads for undecided rows bring 3x empty to pages 74-112 ms, look 68 ms, q 200-222 ms; make verify green.
 - 2026-11-25 Step 4b (UI check, layout fix, sonnet then haiku), 11a72e5: first UI pass found columns moving (up to 656 px) and pending rows the wrong height (D20); fixed table layout with main's widths and placeholders one line shorter: columns move 0 px in all 8 cases, at 1440 2 of 47 rows change height, at 2560 8-13 (a look line +14 px, short rows -7 px); filters end with main's rows (look 20, search 29).
 - 2026-11-25 Step 4c (manual check doc, haiku), 1d3f671: docs/manual-checks/043-fast-rows-first.md with the 8-case results.
-- 2026-11-25 Step 5 review round 1 (fresh opus): 2 P1, 3 P2, 4 P3, 4 P4. Server fixes (sonnet), (this commit): P1-1 waiter retargets a queued run, P1-2 filtered scan reads facts only for returned rows (3x empty q=gateway 169-189 ms), P2-3 SQL folder on the waiting path, P3 hub comment, two P4s; 4 tests, each failing without its fix; make verify green.
+- 2026-11-25 Step 5 review round 1 (fresh opus): 2 P1, 3 P2, 4 P3, 4 P4. Server fixes (sonnet), 7f0b508: P1-1 waiter retargets a queued run, P1-2 filtered scan reads facts only for returned rows (3x empty q=gateway 169-189 ms), P2-3 SQL folder on the waiting path, P3 hub comment, two P4s; 4 tests, each failing without its fix; make verify green.
+- 2026-11-25 Step 5 round 1 browser fixes (sonnet), (this commit): P2-1 ungrouped table rules restored outside the sessions table, P3 follow-up re-armed after a failed refetch, P3 layout test parses widths from style.css, P3 status line names the page still being reached; P2-2 is the AC6 status line (D22, 0e76997); 278 web tests; columns 0 px in 4 re-run UI cases; make verify green.
 
 ## Measurement setup
 - Store copy, taken 2026-11-25 05:51 +05:30: `sqlite3 ~/.local/share/llm-gateway/gateway.db
@@ -226,3 +227,18 @@ checking is 0; first answer, then filled):
   wrapping 042 tuned. Synthesis: keep content heights; the human decides whether zero
   movement is worth clamped rows. What would flip it: the list filling in often (not only
   after an install), e.g. a cache that is often cold.
+
+### Code review round 1 (step 5, fresh opus)
+
+| # | Finding | Done |
+|---|---|---|
+| P1-1 | A waited build at a newer version sat behind a queued list run | 7f0b508: the queued run is retargeted and started |
+| P1-2 | AC7 not met: 3x empty `q=gateway` 200-222 ms | 7f0b508: facts read only for returned rows; 169-189 ms |
+| P2-1 | Removing the title rule broke the ungrouped table | restored outside the sessions table |
+| P2-2 | AC6: rows still change height | D22, AC6 status line (0e76997) |
+| P2-3 | Live events carried the memo's folder | 7f0b508: SQL folder on the waiting path too |
+| P3 | Hub comment wrong | 7f0b508 |
+| P3 | Follow-up chain dies after a failed refetch | re-armed in refetchHead's catch |
+| P3 | Layout test checked a constant | parses widths from style.css |
+| P3 | Page shown and URL differ while checking | status line names the page (AC6 keeps the URL) |
+| P4 | Wasted build at an older version; sessionMatches test-only; disk test polls; listWork O(n) | first two fixed in 7f0b508; last two noted |

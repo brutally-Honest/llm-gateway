@@ -769,7 +769,9 @@ export function createSessionsPage(handlers) {
     const filtering = kind !== "all" || (state.q || "") !== "";
     const shownList = state.loaded && !state.error;
     const n = filtering && shownList ? state.checking || 0 : 0;
-    setText(checkingMsg, n ? `${n} ${n === 1 ? "session" : "sessions"} still being checked` : "");
+    // a requested page the walk has not reached keeps the URL (spec 043 AC6, D13): say so, so the pager's page and the URL's are not a silent mismatch
+    const want = n && state.want && state.want !== state.page ? state.want : 0;
+    setText(checkingMsg, n ? `${n} ${n === 1 ? "session" : "sessions"} still being checked${want ? ` — page ${want} shows once they are` : ""}` : "");
     setHidden(checkingMsg, !n);
     const stalled = Boolean(state.stalled) && shownList;
     setHidden(stalledMsg, !stalled);

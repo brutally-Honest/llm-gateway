@@ -152,7 +152,11 @@ test("theSessionsTableIsFixedWithExplicitWidthsAtBothBreakpoints", () => {
   assert.equal(px(ruleBody(".sessions-page > .sp-list th.dur"), "width"), 74);
   // below 1,600 px: Work, Changes and Tokens 175 px; Session (no width) takes the rest
   assert.equal(px(ruleBody(".sessions-page > .sp-list th.work, .sessions-page > .sp-list th.changes, .sessions-page > .sp-list th.tokens"), "width"), 175);
-  assert.doesNotMatch(css, /\.sp-list th\.title|\.sp-list td\.title/, "Session has no width of its own");
+  // the automatic layout's Session rule stays for other .sp-list tables (ungrouped exchanges); here it is off
+  const title = ruleBody(".sessions-page > .sp-list th.title, .sessions-page > .sp-list td.title");
+  assert.match(title, /width: auto/);
+  assert.match(title, /max-width: none/);
+  assert.match(title, /min-width: 0/);
   // from 1,600 px
   assert.equal(px(wideRule(".sessions-page > .sp-list th.work"), "width"), 330);
   assert.equal(px(wideRule(".sessions-page > .sp-list th.changes"), "width"), 267);
@@ -164,8 +168,10 @@ test("onlyTheSessionsTableIsFixedAndNoColumnHasAFloorAnyMore", () => {
   // the unassigned connections table sits under .sp-unassigned, not directly in .sessions-page
   assert.doesNotMatch(css, /sp-unassigned[^{]*table-layout/);
   assert.match(ruleBody(".sp-unassigned .sp-list table"), /min-width: 0/);
-  const pending = css.split("\n").filter((l) => /^\.sp-list (td|tr\.pending)|^\.sessions-page > \.sp-list [th]d\./.test(l)).join("\n");
-  assert.doesNotMatch(pending, /min-width: ?\d+(\.\d+)?rem/, "no min-width floors on the heavy columns");
+  // the sessions table has no floor on any column (other .sp-list tables keep main's 12.5rem on Work, Changes, Tokens)
+  const pending = css.split("\n").filter((l) => /^\.sp-list tr\.pending|^\.sessions-page > \.sp-list [th]d\./.test(l)).join("\n");
+  assert.doesNotMatch(pending, /min-width: ?[1-9]\d*(\.\d+)?rem/, "no min-width floors on the heavy columns");
+  assert.match(css, /\.sessions-page > \.sp-list td\.work, \.sessions-page > \.sp-list td\.changes, \.sessions-page > \.sp-list td\.tokens \{ min-width: 0; \}/);
 });
 
 test("heavyPlaceholdersReserveTheLinesTheFilledCellsTakeAtEachWidth", () => {

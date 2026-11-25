@@ -300,6 +300,7 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .sp-list tbody tr:hover td { background: var(--panel); }
 .sp-list tr.selected td { background: var(--accent-bg); }
 .sp-list td.time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.sp-list th.title, .sp-list td.title { width: 100%; max-width: 0; min-width: 20rem; }
 .sp-list .stitle { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--hi); font-weight: 500; text-decoration: none; }
 /* the whole row opens the session (027 C6a): the title is still the row's one real link
    (keyboard, screen readers, open in a new tab), and its ::after stretches over the row */
@@ -320,6 +321,8 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
    are 175 px and wrap at the dots; from 1,600 px they widen, and stay on one line. Only this
    table: the unassigned connections table below it keeps its own columns. */
 .sessions-page > .sp-list table { table-layout: fixed; }
+/* the fixed layout sets the widths: the automatic layout's Session rules (every other .sp-list table keeps them) are off here */
+.sessions-page > .sp-list th.title, .sessions-page > .sp-list td.title { width: auto; max-width: none; min-width: 0; }
 .sessions-page > .sp-list th.status { width: 23px; }
 .sessions-page > .sp-list th.time { width: 134px; }
 .sessions-page > .sp-list th.work, .sessions-page > .sp-list th.changes, .sessions-page > .sp-list th.tokens { width: 175px; }
@@ -345,7 +348,8 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .sp-list td .seg { white-space: nowrap; }
 /* 1599px must stay one below .sessions-page, .page { max-width: 1600px } */
 @media (max-width: 1599px) {
-.sp-list td.work, .sp-list td.changes, .sp-list td.tokens { white-space: normal; }
+.sp-list td.work, .sp-list td.changes, .sp-list td.tokens { white-space: normal; min-width: 12.5rem; }
+.sessions-page > .sp-list td.work, .sessions-page > .sp-list td.changes, .sessions-page > .sp-list td.tokens { min-width: 0; }
 }
 .sp-list td.work .bad { color: var(--bad); font-weight: 600; }
 .sp-list td.tokens .cost { display: block; white-space: nowrap; color: var(--muted); }

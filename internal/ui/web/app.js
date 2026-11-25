@@ -29,7 +29,7 @@ const shell = mountShell({
   theme: initTheme(storage, root),
   look: initStyle(storage, root),
 });
-const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "", sessionsKind: "all", sessionsQ: "", sessionsTotal: 0, sessionsScanned: 0, sessionsPage: 1, sessionsChecking: 0, sessionsStalled: false, ungrouped: [], ungroupedNext: null, ungroupedError: "", ungroupedHead: { items: [], next_after: null }, today: null, unassigned: 0, unassignedItems: [] });
+const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "", sessionsKind: "all", sessionsQ: "", sessionsTotal: 0, sessionsScanned: 0, sessionsPage: 1, sessionsChecking: 0, sessionsWant: 0, sessionsStalled: false, ungrouped: [], ungroupedNext: null, ungroupedError: "", ungroupedHead: { items: [], next_after: null }, today: null, unassigned: 0, unassignedItems: [] });
 let closeStream = null;
 let view = null;
 let page = null; // the Sessions page while it is shown
@@ -142,7 +142,7 @@ async function loadPage(n, keep = false) {
   clearHead();
   cancelFollow();
   pageLoading = true;
-  const head = { sessionsPage: n, sessionsChecking: 0, sessionsStalled: false };
+  const head = { sessionsPage: n, sessionsChecking: 0, sessionsWant: 0, sessionsStalled: false };
   store.set(keep ? head : { ...head, sessions: [], sessionsLoaded: false, sessionsError: "" });
   const stale = () => gen !== listGen || seq !== fetchSeq;
   try {
@@ -180,6 +180,7 @@ async function loadPage(n, keep = false) {
       sessionsTotal: p.total || 0,
       sessionsScanned: scanned,
       sessionsChecking: checking,
+      sessionsWant: checking && k !== n ? n : 0,
       sessionsPage: k,
       sessionsError: "",
       sessionsLoaded: true,
@@ -278,6 +279,7 @@ async function fireFollow() {
       sessionsTotal: p.total || 0,
       sessionsScanned: scanned,
       sessionsChecking: checking,
+      sessionsWant: checking && k !== n ? n : 0,
       sessionsPage: k,
       sessionsError: "",
     });
@@ -355,7 +357,10 @@ async function refetchHead() {
     store.set({ sessions: mergeRows(store.get().sessions, p.items), sessionsNext: p.next_after, sessionsTotal: p.total || 0, sessionsChecking: p.checking || 0, sessionsError: "" });
     armFollow();
   } catch {
-    // the rows shown stay; the next event tries again
+    // the rows shown stay; the next event tries again. This fetch superseded a follow-up
+    // (which returned without arming), so the follow-up timer is armed again unless a newer
+    // fetch took over (it arms itself), or the two-minute note never comes (spec 043 E1)
+    if (!stale()) armFollow();
   }
 }
 
@@ -791,6 +796,7 @@ function showSessions() {
       total: s.sessionsTotal,
       scanned: s.sessionsScanned,
       checking: s.sessionsChecking,
+      want: s.sessionsWant,
       stalled: s.sessionsStalled,
       page: s.sessionsPage,
       today: s.today,
