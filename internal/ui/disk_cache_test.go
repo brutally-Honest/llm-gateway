@@ -94,6 +94,23 @@ func (e *diskEnv) mustGet(path string) []byte {
 	return b
 }
 
+// mustGetReady is mustGet, asked again until no row is pending: the list answers at once
+// with the cheap fields (spec 043) and the facts follow.
+func (e *diskEnv) mustGetReady(path string) []byte {
+	e.t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		b := e.mustGet(path)
+		if !bytes.Contains(b, []byte(`"pending":true`)) {
+			return b
+		}
+		if time.Now().After(deadline) {
+			e.t.Fatalf("GET %s: rows still pending after 10 s", path)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func (e *diskEnv) flush() { e.disk.flush(context.Background()) }
 
 func (e *diskEnv) computes() int64 { return e.dep.Digests.computes.Load() }
@@ -144,7 +161,7 @@ func TestDiskCache_RestartServesFromDisk(t *testing.T) {
 	e.seed()
 	var lists, views [][]byte
 	for i := range 3 {
-		lists = append(lists, e.mustGet(listPath(i)))
+		lists = append(lists, e.mustGetReady(listPath(i)))
 	}
 	views = append(views, e.mustGet("/api/sessions/"+sid()+"/view"))
 	e.flush()
@@ -197,7 +214,7 @@ func scrapeMetrics(t *testing.T, m *observability.Metrics) string {
 func TestDiskCache_MissComputesThenWrites(t *testing.T) {
 	e := newDiskEnv(t)
 	e.seed()
-	e.mustGet(listPath(0))
+	e.mustGetReady(listPath(0))
 	if e.computes() == 0 {
 		t.Fatal("nothing computed on a miss")
 	}
@@ -700,7 +717,7 @@ func TestDiskCache_ActiveViewNotWritten(t *testing.T) {
 	e.seed()
 	e.now = baseTime.Add(100 * time.Second) // the sessions are 97-99 s old: active
 	e.mustGet("/api/sessions/" + sid() + "/view")
-	e.mustGet(listPath(0))
+	e.mustGetReady(listPath(0))
 	e.flush()
 	if len(e.files("v")) != 0 {
 		t.Errorf("an active session's view was written: %v", e.files("v"))

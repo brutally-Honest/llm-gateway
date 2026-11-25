@@ -118,7 +118,7 @@ func TestRun_TaskNotificationsStayWithTheirCalls(t *testing.T) {
 			} `json:"list"`
 		} `json:"items"`
 	}
-	getJSON(t, h, "/api/sessions", &page)
+	getSessionsReady(t, h, &page)
 	if len(page.Items) != 1 {
 		t.Fatalf("sessions = %d, want 1", len(page.Items))
 	}

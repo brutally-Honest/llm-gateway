@@ -858,7 +858,9 @@ func readSnapshot(ctx context.Context, d Deps, session string) (snapshot, error)
 	for i, row := range rows {
 		ids[i] = sessionID(row)
 	}
-	sums, stale, err := d.summarizeRows(ctx, c, ids, rows, d.now())
+	// the opening snapshot never waits for a build either: a row without facts goes out
+	// pending and its facts follow as a session event (spec 043 D11)
+	sums, stale, err := d.summarizeRowsNoWait(ctx, c, ids, rows, d.now(), d.newListRank())
 	if err != nil {
 		return snapshot{}, err
 	}

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 )
@@ -96,6 +97,47 @@ func (c *CtxReader) SessionVersions(ids []SessionIdent) (map[SessionIdent]Versio
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store %s: session versions: %w", c.r.path, err)
+	}
+	return out, nil
+}
+
+// folderSQL reads, for each requested session, the work_dir of its first hook event that
+// names one: the order of HookEvents (received_at, seq, id) and the folder rule of the
+// timeline view. The correlated subquery runs on hook_events_session.
+const folderSQL = versionPrefix + `%s) SELECT l.p, l.c, l.k, (
+	SELECT h.work_dir FROM hook_events h
+	WHERE h.principal_id = l.p AND h.client = l.c AND h.session_key = l.k
+		AND h.work_dir IS NOT NULL AND h.work_dir <> ''
+	ORDER BY h.received_at, h.seq, h.id LIMIT 1)
+FROM l`
+
+// SessionFolders reads the working folder of each requested session in one query: the
+// work_dir of its first hook event that names one. A session with none maps to "".
+func (c *CtxReader) SessionFolders(ids []SessionIdent) (map[SessionIdent]string, error) {
+	out := make(map[SessionIdent]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	args := make([]any, 0, 3*len(ids))
+	for _, id := range ids {
+		args = append(args, id.Principal, id.Client, id.Key)
+		out[id] = ""
+	}
+	rows, err := c.r.db.QueryContext(c.ctx, fmt.Sprintf(folderSQL, strings.TrimSuffix(strings.Repeat("(?,?,?),", len(ids)), ",")), args...)
+	if err != nil {
+		return nil, fmt.Errorf("store %s: session folders: %w", c.r.path, err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id SessionIdent
+		var dir sql.NullString
+		if err := rows.Scan(&id.Principal, &id.Client, &id.Key, &dir); err != nil {
+			return nil, fmt.Errorf("store %s: session folders: %w", c.r.path, err)
+		}
+		out[id] = dir.String
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store %s: session folders: %w", c.r.path, err)
 	}
 	return out, nil
 }
