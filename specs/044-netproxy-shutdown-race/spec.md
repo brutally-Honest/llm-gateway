@@ -3,6 +3,7 @@ feature: 044-netproxy-shutdown-race
 kind: fix
 created: 2026-11-25
 branch: fix/044-netproxy-shutdown-race
+status: done
 ---
 
 ## Problem
