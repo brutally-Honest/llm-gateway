@@ -531,7 +531,10 @@ func (d Deps) summarizeRowsNoWait(ctx context.Context, c *store.CtxReader, ids [
 		gp := gatePrio{class: classList, tick: rank.tick, pos: rank.at(i)}
 
 		memo, memoVer, ok := d.Digests.memoryMemo(id, ver)
-		if !ok && d.Disk != nil {
+		// disk is read at the row's current key when memory has no memo at this version
+		// (none, or an older one: AC2), so a restart does not queue a build for a memo
+		// that is on disk
+		if (!ok || memoVer != ver) && d.Disk != nil && (!ok || !versionAfter(memoVer, ver)) {
 			if effs == nil {
 				if effs, err = c.EffectVersions(idents); err != nil {
 					return nil, nil, err
@@ -544,8 +547,9 @@ func (d Deps) summarizeRowsNoWait(ctx context.Context, c *store.CtxReader, ids [
 			}
 		}
 		// a memo newer than the version just read needs no build at the older one: it
-		// would take a slot and its result be dropped
-		if ok && memoVer != ver && !versionAfter(memoVer, ver) {
+		// would take a slot and its result be dropped. A degraded memo is served but is
+		// no answer: it is rebuilt, once per request.
+		if ok && (memoVer != ver && !versionAfter(memoVer, ver) || memo.degraded) {
 			d.Digests.queue(id, ver, gp, d.digestCompute(row, ver))
 			if versionAfter(ver, memoVer) {
 				stale = append(stale, id)
@@ -906,14 +910,11 @@ type deferredRow struct {
 }
 
 // scanBatch is the summaries of one batch of a scan, in row order. A row that kind alone
-// rules out is not read for facts, and its summary is the cheap one, so nothing is queued
-// to build for it. Versions, effect counts and effect versions are read only for the rows
-// that need them (spec 043 D18): a memo in memory or a memo file on disk, or a match on the
-// cheap fields, which is any row the scan may return. room is how many more rows the page
-// takes: a cheap match always counts as returned, so the ones past the room-th are after the
-// scan's stop and are not read (AC7). Another row is undecided: its
-// summary is the cheap pending one, which the scan counts in checking and does not return,
-// and it is handed back to be queued after the answer.
+// rules out is not read for facts. Every row known to match counts against room: a cheap
+// match at once, a row with a memo in memory or on disk once its facts are read. Memo rows
+// are read in groups, only while the rows still to come could reach room (spec 043 D18).
+// Rows after the room-th match are neither read nor queued (AC7). Undecided rows are counted
+// in checking, and only those up to the scan's stop row are handed back to be queued.
 func (d Deps) scanBatch(ctx context.Context, c *store.CtxReader, batch []store.SessionRow, off int, kind, q string, now time.Time, rank listRank, room int) ([]sessionSummary, []deferredRow, error) {
 	out := make([]sessionSummary, len(batch))
 	var cand []int // the rows kind does not rule out
@@ -927,58 +928,106 @@ func (d Deps) scanBatch(ctx context.Context, c *store.CtxReader, batch []store.S
 	if len(cand) == 0 {
 		return out, nil, nil
 	}
-	var need []int
-	var und []deferredRow
-	if d.Digests == nil || d.Reader == nil {
-		need = cand
-	} else {
-		idents := make([]store.SessionIdent, len(cand))
-		for j, i := range cand {
-			idents[j] = sessionIdent(batch[i])
+	// read resolves the facts of the given rows of the batch, in one read
+	read := func(rows []int) error {
+		if len(rows) == 0 {
+			return nil
 		}
-		folders, err := c.SessionFolders(idents)
+		want := make([]store.SessionRow, len(rows))
+		wantIDs := make([]string, len(rows))
+		pos := make([]int, len(rows))
+		for j, i := range rows {
+			want[j], wantIDs[j], pos[j] = batch[i], sessionID(batch[i]), off+i
+		}
+		// the rank positions follow the request's row order, whichever rows are wanted
+		sums, _, err := d.summarizeRowsNoWait(ctx, c, wantIDs, want, now, listRank{tick: rank.tick, pos: pos})
 		if err != nil {
-			return nil, nil, err
+			return err
 		}
-		home, _ := os.UserHomeDir()
-		cheapYes := 0
-		for j, i := range cand {
-			id := idents[j]
-			cheap := pendingSummary(sessionID(batch[i]), batch[i], folders[id], home, nil, versionJSON{}, now)
-			isYes := sessionVerdict(cheap, kind, q) == verdictYes
-			if isYes {
-				// A cheap match is returned whatever its facts say, so the scan stops at the
-				// room-th one and no row after it is looked at: its facts are not read.
-				if cheapYes++; cheapYes > room {
-					out[i] = cheap
-					continue
-				}
-			}
-			_, inMem := d.Digests.peek(id)
-			if inMem || d.Disk.HasMemoFile(id) || isYes {
-				need = append(need, i)
-				continue
-			}
-			out[i] = cheap
-			und = append(und, deferredRow{row: batch[i], gp: gatePrio{class: classList, tick: rank.tick, pos: off + i}})
+		for j, i := range rows {
+			out[i] = sums[j]
 		}
+		return nil
 	}
-	if len(need) == 0 {
-		return out, und, nil
+	if d.Digests == nil || d.Reader == nil {
+		return out, nil, read(cand)
 	}
-	want := make([]store.SessionRow, len(need))
-	wantIDs := make([]string, len(need))
-	pos := make([]int, len(need))
-	for j, i := range need {
-		want[j], wantIDs[j], pos[j] = batch[i], sessionID(batch[i]), off+i
+	idents := make([]store.SessionIdent, len(cand))
+	for j, i := range cand {
+		idents[j] = sessionIdent(batch[i])
 	}
-	// the rank positions follow the request's row order, whichever rows are wanted
-	sums, _, err := d.summarizeRowsNoWait(ctx, c, wantIDs, want, now, listRank{tick: rank.tick, pos: pos})
+	folders, err := c.SessionFolders(idents)
 	if err != nil {
 		return nil, nil, err
 	}
-	for j, i := range need {
-		out[i] = sums[j]
+	home, _ := os.UserHomeDir()
+	// The rows are taken in order until the scan's stop row, the room-th row it returns.
+	// matched counts the rows known to be returned: a cheap match is returned whatever its
+	// facts say, a row with a memo only once its facts are read. Rows with a memo are read
+	// in groups, each as soon as the rows still to be read could reach the room, so a row
+	// is read only when fewer than room rows before it are known to match. A row after
+	// the stop is neither read nor queued (AC7).
+	var (
+		pending []int // rows to read, in order
+		unsure  []int // rows of pending whose verdict is not known before the read
+		matched int
+		undec   []int // undecided rows (batch indexes), queued if they are before the stop
+	)
+	flush := func() error {
+		if err := read(pending); err != nil {
+			return err
+		}
+		for _, i := range unsure {
+			if sessionVerdict(out[i], kind, q) == verdictYes {
+				matched++
+			}
+		}
+		pending, unsure = nil, nil
+		return nil
+	}
+	for j, i := range cand {
+		id := idents[j]
+		cheap := pendingSummary(sessionID(batch[i]), batch[i], folders[id], home, nil, versionJSON{}, now)
+		out[i] = cheap
+		if matched >= room {
+			continue // after the stop row
+		}
+		switch {
+		case sessionVerdict(cheap, kind, q) == verdictYes:
+			matched++
+			pending = append(pending, i)
+		default:
+			if _, inMem := d.Digests.peek(id); inMem || d.Disk.HasMemoFile(id) {
+				pending = append(pending, i)
+				unsure = append(unsure, i)
+			} else {
+				undec = append(undec, i)
+			}
+		}
+		if len(unsure) > 0 && matched+len(unsure) >= room {
+			if err := flush(); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+	if err := flush(); err != nil {
+		return nil, nil, err
+	}
+	// the stop row: the room-th row the scan returns; undecided rows after it are dropped
+	stop, n := len(batch), 0
+	for i := range batch {
+		if sessionVerdict(out[i], kind, q) == verdictYes {
+			if n++; n >= room {
+				stop = i
+				break
+			}
+		}
+	}
+	var und []deferredRow
+	for _, i := range undec {
+		if i < stop {
+			und = append(und, deferredRow{row: batch[i], gp: gatePrio{class: classList, tick: rank.tick, pos: off + i}})
+		}
 	}
 	return out, und, nil
 }
@@ -1057,7 +1106,14 @@ func (d Deps) listSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := storeCtx(r)
 	defer cancel()
-	c := d.Reader.WithContext(ctx)
+	// the rows and their versions are read in one snapshot, so a row's version is never
+	// newer than the cheap fields it labels (spec 043 review P3)
+	c, done, err := d.Reader.WithContext(ctx).Snapshot()
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	defer done()
 	page := sessionsPage{}
 	if kind == "all" && q == "" {
 		var rows []store.SessionRow
@@ -1162,7 +1218,12 @@ func (d Deps) getSession(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := storeCtx(r)
 	defer cancel()
-	c := d.Reader.WithContext(ctx)
+	c, done, err := d.Reader.WithContext(ctx).Snapshot()
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	defer done()
 	row, err := c.SessionByKey(principal, client, key)
 	if errors.Is(err, store.ErrNotFound) {
 		writeErr(w, http.StatusNotFound, "not_found", "no such session")

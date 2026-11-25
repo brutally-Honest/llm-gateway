@@ -66,7 +66,12 @@ func (r *Reader) SessionsByKey(key string) ([]SessionRow, error) {
 }
 
 func (r *Reader) sessions(ctx context.Context, q string, args ...any) ([]SessionRow, error) {
-	rows, err := r.db.QueryContext(ctx, q, args...)
+	return r.sessionsOn(r.db, ctx, q, args...)
+}
+
+// sessionsOn is sessions on db, a pool or a transaction.
+func (r *Reader) sessionsOn(db queryer, ctx context.Context, q string, args ...any) ([]SessionRow, error) {
+	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store %s: sessions: %w", r.path, err)
 	}

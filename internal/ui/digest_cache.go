@@ -32,7 +32,9 @@ type digestMemo struct {
 	// version it was asked for, the key of the memo's on-disk entry (spec 030).
 	eff store.EffectVersion
 	// degraded: a content read failed for a reason other than not-found, so the memo is
-	// served to those waiting on it but kept nowhere (spec 030 D16).
+	// never written to disk (spec 030 D16). In memory it is kept only so the list can
+	// serve its facts; lookup treats it as absent, so it is rebuilt on every request that
+	// needs the memo (spec 043).
 	degraded bool
 	// fromDisk: the memo came from the on-disk cache, so it is neither a compute nor
 	// written again.
@@ -183,7 +185,7 @@ func (c *DigestCache) lookup(id store.SessionIdent, ver store.Version) (*digestE
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	el, ok := c.items[id]
-	if !ok || el.Value.(*digestEntry).ver != ver {
+	if !ok || el.Value.(*digestEntry).ver != ver || el.Value.(*digestEntry).memo.degraded {
 		return nil, false
 	}
 	c.ll.MoveToFront(el)
@@ -202,12 +204,24 @@ func (c *DigestCache) peek(id store.SessionIdent) (*digestEntry, bool) {
 	return el.Value.(*digestEntry), true
 }
 
-// store keeps e unless the session's cached entry is at e's version or newer.
+// heldAfter reports whether memory holds an entry for the session that is newer than ver.
+func (c *DigestCache) heldAfter(id store.SessionIdent, ver store.Version) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	el, ok := c.items[id]
+	return ok && versionAfter(el.Value.(*digestEntry).ver, ver)
+}
+
+// store keeps e unless the session's cached entry is at e's version or newer. A degraded
+// entry (spec 043 review P3) is kept so the list serves its facts, but it counts as no
+// answer: lookup never returns it, so every request that needs the memo rebuilds it, and
+// a good entry at the same version replaces it.
 func (c *DigestCache) store(e *digestEntry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if el, ok := c.items[e.id]; ok {
-		if !versionAfter(e.ver, el.Value.(*digestEntry).ver) {
+		old := el.Value.(*digestEntry)
+		if !versionAfter(e.ver, old.ver) && (!old.memo.degraded || e.memo.degraded || e.ver != old.ver) {
 			return // a compute that started on older data finished last
 		}
 		c.ll.Remove(el)
@@ -288,18 +302,30 @@ func (c *DigestCache) joinLocked(id store.SessionIdent, ver store.Version, gp *g
 		c.rankLocked(id, rs.cur, gp)
 		return rs.cur
 	}
-	if gp == nil && rs.cur.queued && versionAfter(ver, rs.cur.ver) {
-		// A waiter wants a newer version than the run still queued in the gate. That run
-		// has not started, so it is retargeted to the newer version and promoted: the
-		// waiter must not sit behind the queue, and a follow-up would only start after
-		// the queued run had waited for a slot. Every caller already on it is a list
-		// caller (a waiter would have promoted it), and a list caller takes the memo at
-		// whatever version it gets (summarizeRows reads hit.ver).
+	if gp == nil && rs.cur.queued {
 		cur := rs.cur
-		cur.ver, cur.compute = ver, compute
-		c.joined++
+		if versionAfter(ver, cur.ver) {
+			// A waiter wants a newer version than the run still queued in the gate. That
+			// run has not started, so it is retargeted to the newer version and promoted:
+			// the waiter must not sit behind the queue, and a follow-up would only start
+			// after the queued run had waited for a slot. The callers already on it are
+			// list callers or a background pass (getBackground waits on its run), and
+			// each takes the memo at whatever version it gets (summarizeRows reads
+			// hit.ver). A follow-up not newer than the retarget is aimed at it too: its
+			// run then finds the memo and computes nothing, where it would compute an
+			// older memo and write it over the newer disk file.
+			cur.ver, cur.compute = ver, compute
+			if n := rs.next; n != nil && !versionAfter(n.ver, ver) {
+				n.ver, n.compute = ver, compute
+			}
+			c.joined++
+			c.rankLocked(id, cur, nil)
+			return cur
+		}
+		// Not newer: the waiter's version comes from the follow-up, which starts only
+		// after cur. cur is still queued behind all list work, so it is promoted too,
+		// or the waiter would wait for the queue after all (AC3).
 		c.rankLocked(id, cur, nil)
-		return cur
 	}
 	if rs.next == nil {
 		rs.next = newRun()
@@ -387,11 +413,10 @@ func (c *DigestCache) run(id store.SessionIdent, r *digestRun) {
 		}
 		e := &digestEntry{id: id, ver: r.ver, memo: cloneMemo(m)}
 		r.res = e
-		if m.degraded {
-			return
-		}
 		c.store(e)
-		if !m.fromDisk {
+		// a degraded memo is kept in memory only (store treats it as stale); the disk file
+		// is one per session, so a memo older than memory's must not overwrite a newer one
+		if !m.fromDisk && !m.degraded && !c.heldAfter(id, r.ver) {
 			c.disk.PutMemo(id, r.ver, m.eff, m)
 		}
 	}()

@@ -798,8 +798,15 @@ func TestDiskCache_ContentErrorIsCachedNowhere(t *testing.T) {
 	if _, ok := e.dep.Views.peek(id); ok {
 		t.Error("a degraded view is in the in-memory view cache")
 	}
-	if e.dep.Digests.len() != 0 {
-		t.Error("a degraded memo is in the in-memory digest cache")
+	// 043 review P3: a degraded memo may sit in memory so the list serves its facts, but
+	// it is never an answer (lookup misses it) and is never a good memo
+	if pe, ok := e.dep.Digests.peek(id); ok {
+		if !pe.memo.degraded {
+			t.Error("a good memo is in the in-memory digest cache for a degraded session")
+		}
+		if _, ok := e.dep.Digests.lookup(id, pe.ver); ok {
+			t.Error("a degraded memo answers a lookup")
+		}
 	}
 }
 

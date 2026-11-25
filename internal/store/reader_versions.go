@@ -54,11 +54,15 @@ func (c *CtxReader) SessionVersions(ids []SessionIdent) (map[SessionIdent]Versio
 		args = append(args, id.Principal, id.Client, id.Key)
 		out[id] = Version{}
 	}
-	tx, err := c.r.db.BeginTx(c.ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("store %s: session versions: %w", c.r.path, err)
+	var tx queryer = c.tx // a snapshot reads on its own transaction
+	if c.tx == nil {
+		own, err := c.r.db.BeginTx(c.ctx, nil)
+		if err != nil {
+			return nil, fmt.Errorf("store %s: session versions: %w", c.r.path, err)
+		}
+		defer func() { _ = own.Rollback() }()
+		tx = own
 	}
-	defer func() { _ = tx.Rollback() }()
 
 	rows, err := tx.QueryContext(c.ctx, versionSQL(exchangeVersionTail, len(ids)), args...)
 	if err != nil {

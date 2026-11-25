@@ -681,16 +681,28 @@ func readLive(ctx context.Context, d Deps, who sessIdent, ids []string, summary,
 	c := d.Reader.WithContext(ctx)
 	var m liveMsg
 	if summary {
-		// No stored row means no summary to send, not a failed read.
-		row, err := c.SessionByKey(who.principal, who.client, who.name)
-		switch {
-		case err == nil:
-			s, stale, err := d.summarize(ctx, c, who.id(), row, d.now())
+		err := func() error {
+			// the row and its version are read in one snapshot (spec 043 review P3)
+			c, done, err := c.Snapshot()
 			if err != nil {
-				return liveMsg{}, err
+				return err
 			}
-			m.Summary, m.StaleSummary = &s, stale
-		case !errors.Is(err, store.ErrNotFound):
+			defer done()
+			// No stored row means no summary to send, not a failed read.
+			row, err := c.SessionByKey(who.principal, who.client, who.name)
+			switch {
+			case err == nil:
+				s, stale, err := d.summarize(ctx, c, who.id(), row, d.now())
+				if err != nil {
+					return err
+				}
+				m.Summary, m.StaleSummary = &s, stale
+			case !errors.Is(err, store.ErrNotFound):
+				return err
+			}
+			return nil
+		}()
+		if err != nil {
 			return liveMsg{}, err
 		}
 	}
@@ -823,7 +835,11 @@ func readSnapshot(ctx context.Context, d Deps, session string) (snapshot, error)
 	if d.Reader == nil {
 		return snapshot{}, errors.New("ui: no reader")
 	}
-	c := d.Reader.WithContext(ctx)
+	c, done, err := d.Reader.WithContext(ctx).Snapshot()
+	if err != nil {
+		return snapshot{}, err
+	}
+	defer done()
 	if session != "" {
 		principal, client, key, _ := parseSessionID(session)
 		who := sessIdent{principal, client, key}

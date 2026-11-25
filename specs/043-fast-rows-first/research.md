@@ -13,7 +13,8 @@ feature: 043-fast-rows-first
 - 2026-11-25 Step 4b (UI check, layout fix, sonnet then haiku), 11a72e5: first UI pass found columns moving (up to 656 px) and pending rows the wrong height (D20); fixed table layout with main's widths and placeholders one line shorter: columns move 0 px in all 8 cases, at 1440 2 of 47 rows change height, at 2560 8-13 (a look line +14 px, short rows -7 px); filters end with main's rows (look 20, search 29).
 - 2026-11-25 Step 4c (manual check doc, haiku), 1d3f671: docs/manual-checks/043-fast-rows-first.md with the 8-case results.
 - 2026-11-25 Step 5 review round 1 (fresh opus): 2 P1, 3 P2, 4 P3, 4 P4. Server fixes (sonnet), 7f0b508: P1-1 waiter retargets a queued run, P1-2 filtered scan reads facts only for returned rows (3x empty q=gateway 169-189 ms), P2-3 SQL folder on the waiting path, P3 hub comment, two P4s; 4 tests, each failing without its fix; make verify green.
-- 2026-11-25 Step 5 round 1 browser fixes (sonnet), (this commit): P2-1 ungrouped table rules restored outside the sessions table, P3 follow-up re-armed after a failed refetch, P3 layout test parses widths from style.css, P3 status line names the page still being reached; P2-2 is the AC6 status line (D22, 0e76997); 278 web tests; columns 0 px in 4 re-run UI cases; make verify green.
+- 2026-11-25 Step 5 round 1 browser fixes (sonnet), 2870aa3: P2-1 ungrouped table rules restored outside the sessions table, P3 follow-up re-armed after a failed refetch, P3 layout test parses widths from style.css, P3 status line names the page still being reached; P2-2 is the AC6 status line (D22, 0e76997); 278 web tests; columns 0 px in 4 re-run UI cases; make verify green.
+- 2026-11-25 Step 5 review round 2 (fresh opus): 0 P1, 1 P2, 6 P3, 3 P4. Server fixes (sonnet, haiku for a comment, a file name and two lint fixes), (this commit): P2-1 waiters older than a queued run promote it, P3-2 retarget aims the follow-up too and no older memo overwrites a newer one, P3-3 rows and versions in one read transaction (D23), P3-4 degraded memo kept in memory (D24), P3-7 nothing read or queued past the stop row, P4-8 disk before queueing; 8 tests, each failing without its fix; 3x empty all 64-186 ms; make verify green.
 
 ## Measurement setup
 - Store copy, taken 2026-11-25 05:51 +05:30: `sqlite3 ~/.local/share/llm-gateway/gateway.db
@@ -242,3 +243,19 @@ checking is 0; first answer, then filled):
 | P3 | Layout test checked a constant | parses widths from style.css |
 | P3 | Page shown and URL differ while checking | status line names the page (AC6 keeps the URL) |
 | P4 | Wasted build at an older version; sessionMatches test-only; disk test polls; listWork O(n) | first two fixed in 7f0b508; last two noted |
+- **D23** (2026-11-25, review round 2 P3-3) The session list rows and their versions are read
+  in one read transaction (`CtxReader.Snapshot`), so `row_version` never labels newer data
+  than the cheap fields carry. Reading versions first was not possible: the rows are not
+  known before the list query. On the waiting paths (session page, live summary, stream
+  snapshot) the transaction stays open while the request waits for its build, at most the
+  5 s store timeout; a WAL checkpoint waits that long at worst.
+- **D24** (2026-11-25, review round 2 P3-4) A degraded memo (a content read failed for a reason
+  other than not-found) is now kept in memory, never on disk: the list serves its facts, as
+  main did, instead of a row pending forever. `lookup` never returns it, so a waiter rebuilds,
+  a list request queues one rebuild, and a good memo at the same version replaces it.
+  `TestDiskCache_ContentErrorIsCachedNowhere` now asserts that any entry in memory is
+  degraded and missed by `lookup`; its disk and view-cache assertions are unchanged.
+- **D25** (2026-11-25, review round 2 P4-10) The stream's snapshot takes a newer list tick
+  than the page's last fetch, so on a reconnect page 1's rows rank above the page 2 on
+  screen until the next follow-up fetch (at most a second later) ranks page 2 again. AC3
+  allows it; noted, not changed.
