@@ -11,7 +11,8 @@ feature: 043-fast-rows-first
 - 2026-11-25 Step 3c (docs, haiku), 1bad6a4: docs/install.md says the list fills in its details over a few seconds after an install.
 - 2026-11-25 Step 4a (measure, then cut SQL, sonnet), 720320e: first 3x empty measure missed 200 ms (pages to 233, look 380); profile showed SQL (D18); total from the list query and deferred version reads for undecided rows bring 3x empty to pages 74-112 ms, look 68 ms, q 200-222 ms; make verify green.
 - 2026-11-25 Step 4b (UI check, layout fix, sonnet then haiku), 11a72e5: first UI pass found columns moving (up to 656 px) and pending rows the wrong height (D20); fixed table layout with main's widths and placeholders one line shorter: columns move 0 px in all 8 cases, at 1440 2 of 47 rows change height, at 2560 8-13 (a look line +14 px, short rows -7 px); filters end with main's rows (look 20, search 29).
-- 2026-11-25 Step 4c (manual check doc, haiku), (this commit): docs/manual-checks/043-fast-rows-first.md with the 8-case results.
+- 2026-11-25 Step 4c (manual check doc, haiku), 1d3f671: docs/manual-checks/043-fast-rows-first.md with the 8-case results.
+- 2026-11-25 Step 5 review round 1 (fresh opus): 2 P1, 3 P2, 4 P3, 4 P4. Server fixes (sonnet), (this commit): P1-1 waiter retargets a queued run, P1-2 filtered scan reads facts only for returned rows (3x empty q=gateway 169-189 ms), P2-3 SQL folder on the waiting path, P3 hub comment, two P4s; 4 tests, each failing without its fix; make verify green.
 
 ## Measurement setup
 - Store copy, taken 2026-11-25 05:51 +05:30: `sqlite3 ~/.local/share/llm-gateway/gateway.db
@@ -216,3 +217,12 @@ checking is 0; first answer, then filled):
   guarantee expressed for fixed layout. Pending Tokens placeholders reserve 2 figure lines
   below 1600 px and 1 from 1600 px; measured in Chrome, a pending row is then as tall as the
   common filled row (88 px at 1440, 69 px at 2560) in Lean and Stark.
+- **D22** (2026-11-25, review P2-2) AC6's "nothing moves" is met for columns, not for every
+  row's height: measured, 2 of 47 rows at 1,440 px and 8-13 of 50 at 2,560 px change height
+  when filled (+14 px for a "needs a look" line, -7 to -26 px for rows shorter than the common
+  one). AC6 carries a dated status line. Thesis for fixed row heights: no movement at all.
+  Antithesis: clamping every cell to a fixed height hides text in every row, for good, to
+  avoid a one-time movement in the first seconds after an install; it also undoes the
+  wrapping 042 tuned. Synthesis: keep content heights; the human decides whether zero
+  movement is worth clamped rows. What would flip it: the list filling in often (not only
+  after an install), e.g. a cache that is often cold.

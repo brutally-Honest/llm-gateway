@@ -859,7 +859,8 @@ func readSnapshot(ctx context.Context, d Deps, session string) (snapshot, error)
 		ids[i] = sessionID(row)
 	}
 	// the opening snapshot never waits for a build either: a row without facts goes out
-	// pending and its facts follow as a session event (spec 043 D11)
+	// pending, and the page's follow-up fetch fills its facts in (spec 043 AC5, D6, D11);
+	// no session event follows for it, since a pending row is not in stale
 	sums, stale, err := d.summarizeRowsNoWait(ctx, c, ids, rows, d.now(), d.newListRank())
 	if err != nil {
 		return snapshot{}, err

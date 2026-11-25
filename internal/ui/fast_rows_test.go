@@ -820,3 +820,118 @@ func TestBuildGate_SessionComputesOnceAtATime(t *testing.T) {
 		t.Errorf("computes = %v, want one", order)
 	}
 }
+
+// Review P1: a waiter that asks for a newer version than a run still queued in the gate
+// must not wait for the queue. The queued run has not started, so it is retargeted to the
+// newer version and promoted: the waiter's compute starts at once, past the full slots.
+func TestBuildGate_WaitedGetAtNewerVersionPromotesQueuedRun(t *testing.T) {
+	c := gateCache(1)
+	var mu sync.Mutex
+	var order []string
+	hold, old, newer := newGateRun(), newGateRun(), newGateRun()
+	c.queue(ident("hold"), store.Version{ExCount: 1}, listPrio(1, 0), hold.compute(&order, &mu, "hold"))
+	<-hold.started
+	c.queue(ident("x"), store.Version{ExCount: 1}, listPrio(1, 1), old.compute(&order, &mu, "x-v1"))
+	type result struct {
+		h   digestHit
+		err error
+	}
+	got := make(chan result, 1)
+	go func() {
+		h, err := c.get(t.Context(), ident("x"), store.Version{ExCount: 2}, newer.compute(&order, &mu, "x-v2"))
+		got <- result{h, err}
+	}()
+	select {
+	case <-newer.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a waited get at a newer version sat behind the queued run")
+	}
+	close(newer.release)
+	if r := <-got; r.err != nil || r.h.ver.ExCount != 2 {
+		t.Errorf("hit version = %+v, err %v, want the waited version 2", r.h.ver, r.err)
+	}
+	close(hold.release)
+	settle(t, c)
+	select {
+	case <-old.started:
+		t.Error("the superseded v1 compute ran")
+	default:
+	}
+}
+
+// AC7: a filtered scan reads versions only for the rows it returns. With every row a cheap
+// match and a limit below the batch size, the request reads `limit` rows, not the batch.
+func TestFastRows_FilteredScanReadsOnlyReturnedRows(t *testing.T) {
+	e := newCacheEnv(t, 64)
+	stub := newBuildStub(t, e.cache)
+	stub.hold(true)
+	e.seedSessions(10)
+	spy := spyVersions(t)
+	var p sessPage
+	answersWithin(t, "q key with a small limit", func() { p = e.sessNow("?q=s0&limit=3") })
+	if fmt.Sprint(p.keys()) != "[s009 s008 s007]" || p.NextAfter == nil || p.Checking != 0 || p.Scanned != 3 {
+		t.Fatalf("page = %v next %v checking %d scanned %d", p.keys(), p.NextAfter, p.Checking, p.Scanned)
+	}
+	spy.mu.Lock()
+	defer spy.mu.Unlock()
+	if len(spy.request) != 1 || len(spy.request[0]) != 3 {
+		t.Errorf("version reads during the request = %v, want one read of the 3 returned rows", spy.request)
+	}
+}
+
+// AC1: the cheap folder wins on the waiting path too (the session page, live events).
+func TestFastRows_WaitingPathUsesTheSQLFolder(t *testing.T) {
+	e := newCacheEnv(t, 64)
+	stub := newBuildStub(t, e.cache)
+	stub.hold(false)
+	e.save("r0", "A", "cc", 1)
+	p := e.sess("") // the memo is built before any hook names a work dir
+	id := p.Items[0]["id"].(string)
+	e.hook("A", core.HarnessEvent{Phase: core.PhaseNotice, WorkDir: "/work/projx"}, 50)
+	rec := e.get("/api/sessions/" + id)
+	if rec.Code != 200 {
+		t.Fatalf("session = %d %s", rec.Code, rec.Body)
+	}
+	var s map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &s); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := s["list"].(map[string]any)
+	if list["folder_full"] != "/work/projx" {
+		t.Errorf("list = %v, want the SQL folder /work/projx", list)
+	}
+}
+
+// Review P4: a memo newer than the version just read is served as it is and no build is
+// queued at the older version.
+func TestFastRows_NewerMemoQueuesNoBuildAtTheOlderVersion(t *testing.T) {
+	e := newCacheEnv(t, 64)
+	stub := newBuildStub(t, e.cache)
+	stub.hold(false)
+	e.save("r0", "A", "cc", 1)
+	e.sess("")
+	settle(t, e.cache)
+	n := stub.count.Load()
+	ctx := t.Context()
+	c := e.d.Reader.WithContext(ctx)
+	rows, _, err := c.SessionPageTotal(nil, 5)
+	if err != nil || len(rows) != 1 {
+		t.Fatal(rows, err)
+	}
+	id := sessionIdent(rows[0])
+	vers, err := c.SessionVersions([]store.SessionIdent{id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the memo in memory moves ahead of the version the list reads
+	newer := vers[id]
+	newer.ExCount++
+	e.cache.store(&digestEntry{id: id, ver: newer, memo: digestMemo{}})
+	if _, _, err := e.d.summarizeRowsNoWait(ctx, c, []string{sessionID(rows[0])}, rows, e.now, e.d.newListRank()); err != nil {
+		t.Fatal(err)
+	}
+	settle(t, e.cache)
+	if got := stub.count.Load(); got != n {
+		t.Errorf("builds = %d, want %d: a build was queued at the older version", got, n)
+	}
+}

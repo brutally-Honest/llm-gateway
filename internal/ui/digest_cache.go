@@ -288,6 +288,19 @@ func (c *DigestCache) joinLocked(id store.SessionIdent, ver store.Version, gp *g
 		c.rankLocked(id, rs.cur, gp)
 		return rs.cur
 	}
+	if gp == nil && rs.cur.queued && versionAfter(ver, rs.cur.ver) {
+		// A waiter wants a newer version than the run still queued in the gate. That run
+		// has not started, so it is retargeted to the newer version and promoted: the
+		// waiter must not sit behind the queue, and a follow-up would only start after
+		// the queued run had waited for a slot. Every caller already on it is a list
+		// caller (a waiter would have promoted it), and a list caller takes the memo at
+		// whatever version it gets (summarizeRows reads hit.ver).
+		cur := rs.cur
+		cur.ver, cur.compute = ver, compute
+		c.joined++
+		c.rankLocked(id, cur, nil)
+		return cur
+	}
 	if rs.next == nil {
 		rs.next = newRun()
 	} else {

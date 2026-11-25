@@ -418,6 +418,12 @@ func (d Deps) summarizeRows(ctx context.Context, c *store.CtxReader, ids []strin
 	if err != nil {
 		return nil, nil, err
 	}
+	// the cheap folder, from the store, wins over the memo's (spec 043 AC1)
+	folders, err := c.SessionFolders(idents)
+	if err != nil {
+		return nil, nil, err
+	}
+	home, _ := os.UserHomeDir()
 	out := make([]sessionSummary, 0, len(rows))
 	var stale []store.SessionIdent
 	for i, row := range rows {
@@ -443,6 +449,8 @@ func (d Deps) summarizeRows(ctx context.Context, c *store.CtxReader, ids []strin
 			sum.Title = memo.row.title
 		}
 		sum.List = listToJSON(memo.row)
+		full := folders[idents[i]]
+		sum.List.FolderFull, sum.List.Folder = full, timeline.FolderDisplay(full, home)
 		vj, pj := versionToJSON(ver), positionOf(ver)
 		sum.Version, sum.EventPosition, sum.RowVersion = &vj, &pj, &rv
 		n := counts[idents[i]]
@@ -535,7 +543,9 @@ func (d Deps) summarizeRowsNoWait(ctx context.Context, c *store.CtxReader, ids [
 				memo, memoVer, ok = m, ver, true
 			}
 		}
-		if ok && memoVer != ver {
+		// a memo newer than the version just read needs no build at the older one: it
+		// would take a slot and its result be dropped
+		if ok && memoVer != ver && !versionAfter(memoVer, ver) {
 			d.Digests.queue(id, ver, gp, d.digestCompute(row, ver))
 			if versionAfter(ver, memoVer) {
 				stale = append(stale, id)
@@ -706,7 +716,8 @@ func (d Deps) prefillOne(ctx context.Context, row store.SessionRow, ver store.Ve
 	}
 }
 
-// sessionMatches tests a built summary against the list filter and search text; q is
+// sessionMatches is used by tests only; the scan decides with sessionVerdict.
+// It tests a built summary against the list filter and search text; q is
 // already lowercased and trimmed.
 func sessionMatches(s sessionSummary, kind, q string) bool {
 	return sessionVerdict(s, kind, q) == verdictYes
@@ -856,7 +867,7 @@ func (d Deps) scanSessions(ctx context.Context, c *store.CtxReader, after *store
 			return items, next, scanned, checking, total, nil
 		}
 		batch := rows[off:min(off+defaultListLimit+1, len(rows))]
-		sums, und, err := d.scanBatch(ctx, c, batch, off, kind, q, now, rank)
+		sums, und, err := d.scanBatch(ctx, c, batch, off, kind, q, now, rank, limit-len(items))
 		if err != nil {
 			return nil, nil, 0, 0, 0, err
 		}
@@ -898,10 +909,12 @@ type deferredRow struct {
 // rules out is not read for facts, and its summary is the cheap one, so nothing is queued
 // to build for it. Versions, effect counts and effect versions are read only for the rows
 // that need them (spec 043 D18): a memo in memory or a memo file on disk, or a match on the
-// cheap fields, which is any row the scan may return. Another row is undecided: its
+// cheap fields, which is any row the scan may return. room is how many more rows the page
+// takes: a cheap match always counts as returned, so the ones past the room-th are after the
+// scan's stop and are not read (AC7). Another row is undecided: its
 // summary is the cheap pending one, which the scan counts in checking and does not return,
 // and it is handed back to be queued after the answer.
-func (d Deps) scanBatch(ctx context.Context, c *store.CtxReader, batch []store.SessionRow, off int, kind, q string, now time.Time, rank listRank) ([]sessionSummary, []deferredRow, error) {
+func (d Deps) scanBatch(ctx context.Context, c *store.CtxReader, batch []store.SessionRow, off int, kind, q string, now time.Time, rank listRank, room int) ([]sessionSummary, []deferredRow, error) {
 	out := make([]sessionSummary, len(batch))
 	var cand []int // the rows kind does not rule out
 	for i, row := range batch {
@@ -928,11 +941,21 @@ func (d Deps) scanBatch(ctx context.Context, c *store.CtxReader, batch []store.S
 			return nil, nil, err
 		}
 		home, _ := os.UserHomeDir()
+		cheapYes := 0
 		for j, i := range cand {
 			id := idents[j]
 			cheap := pendingSummary(sessionID(batch[i]), batch[i], folders[id], home, nil, versionJSON{}, now)
+			isYes := sessionVerdict(cheap, kind, q) == verdictYes
+			if isYes {
+				// A cheap match is returned whatever its facts say, so the scan stops at the
+				// room-th one and no row after it is looked at: its facts are not read.
+				if cheapYes++; cheapYes > room {
+					out[i] = cheap
+					continue
+				}
+			}
 			_, inMem := d.Digests.peek(id)
-			if inMem || d.Disk.HasMemoFile(id) || sessionVerdict(cheap, kind, q) == verdictYes {
+			if inMem || d.Disk.HasMemoFile(id) || isYes {
 				need = append(need, i)
 				continue
 			}
