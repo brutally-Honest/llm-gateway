@@ -715,7 +715,7 @@ func (d Deps) prefillOne(ctx context.Context, row store.SessionRow, ver store.Ve
 	if d.Disk == nil || d.Timelines == nil || isActive(row.Last, row.EndOnly, now) || d.Disk.HasView(sctx, id, viewKeyOf(ver, eff), now) {
 		return
 	}
-	if _, err := d.cachedView(sctx, sessIdent{row.PrincipalID, row.Client, row.SessionKey}, true); err != nil && ctx.Err() == nil {
+	if _, err := d.cachedView(asBackground(sctx), sessIdent{row.PrincipalID, row.Client, row.SessionKey}, true); err != nil && ctx.Err() == nil {
 		d.logger().Debug("ui background pass: view not built", zap.Error(err))
 	}
 }

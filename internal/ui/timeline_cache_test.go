@@ -77,7 +77,7 @@ func ident(key string) store.SessionIdent {
 func TestTimelineCache_TimedOutBuildIsCachedAndRetryHits(t *testing.T) {
 	c := NewTimelineCache(context.Background(), nil)
 	release := make(chan struct{})
-	build := func(context.Context) (builtSession, error) {
+	build := func(context.Context, *cachedBuild) (builtSession, error) {
 		<-release
 		return builtSession{rows: 7}, nil
 	}
@@ -103,7 +103,7 @@ func TestTimelineCache_TimedOutBuildIsCachedAndRetryHits(t *testing.T) {
 func TestTimelineCache_FailedBuildIsNotCached(t *testing.T) {
 	c := NewTimelineCache(context.Background(), nil)
 	boom := errors.New("boom")
-	if _, err := c.get(t.Context(), ident("k"), store.Version{}, func(context.Context) (builtSession, error) {
+	if _, err := c.get(t.Context(), ident("k"), store.Version{}, func(context.Context, *cachedBuild) (builtSession, error) {
 		return builtSession{}, boom
 	}); !errors.Is(err, boom) {
 		t.Fatalf("err = %v", err)
@@ -111,7 +111,7 @@ func TestTimelineCache_FailedBuildIsNotCached(t *testing.T) {
 	if c.len() != 0 {
 		t.Fatal("failed build cached")
 	}
-	if _, err := c.get(t.Context(), ident("k"), store.Version{}, func(context.Context) (builtSession, error) {
+	if _, err := c.get(t.Context(), ident("k"), store.Version{}, func(context.Context, *cachedBuild) (builtSession, error) {
 		return builtSession{}, nil
 	}); err != nil || c.builds.Load() != 2 {
 		t.Fatalf("retry err = %v builds = %d", err, c.builds.Load())
@@ -122,7 +122,7 @@ func TestTimelineCache_ConcurrentRequestsOneBuild(t *testing.T) {
 	c := NewTimelineCache(context.Background(), nil)
 	started, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
-	build := func(context.Context) (builtSession, error) {
+	build := func(context.Context, *cachedBuild) (builtSession, error) {
 		once.Do(func() { close(started) })
 		<-release
 		return builtSession{rows: 1}, nil
@@ -144,7 +144,7 @@ func TestTimelineCache_ConcurrentRequestsOneBuild(t *testing.T) {
 }
 
 func fill(c *TimelineCache, key string, ver store.Version, bs builtSession) {
-	_, _ = c.get(context.Background(), ident(key), ver, func(context.Context) (builtSession, error) { return bs, nil })
+	_, _ = c.get(context.Background(), ident(key), ver, func(context.Context, *cachedBuild) (builtSession, error) { return bs, nil })
 }
 
 func TestTimelineCache_LRUEvictsOldestSession(t *testing.T) {
@@ -325,7 +325,7 @@ func TestTimelineCache_BuildFailureLevelFollowsCause(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			obs, logs := observer.New(zap.DebugLevel)
 			c := newTimelineCache(t.Context(), zap.New(obs), 2, 1<<30)
-			_, err := c.get(t.Context(), ident("k"), store.Version{ExCount: 1}, func(context.Context) (builtSession, error) {
+			_, err := c.get(t.Context(), ident("k"), store.Version{ExCount: 1}, func(context.Context, *cachedBuild) (builtSession, error) {
 				return builtSession{}, tc.err
 			})
 			if !errors.Is(err, tc.err) {
@@ -346,7 +346,7 @@ func TestTimelineCache_BuildFailureLevelFollowsCause(t *testing.T) {
 func TestTimelineCache_BuildPanicIsLoggedAndReturned(t *testing.T) {
 	obs, logs := observer.New(zap.ErrorLevel)
 	c := NewTimelineCache(t.Context(), zap.New(obs))
-	_, err := c.get(t.Context(), ident("k"), store.Version{ExCount: 1}, func(context.Context) (builtSession, error) {
+	_, err := c.get(t.Context(), ident("k"), store.Version{ExCount: 1}, func(context.Context, *cachedBuild) (builtSession, error) {
 		panic("boom")
 	})
 	if err == nil || !strings.Contains(err.Error(), "panicked") {
@@ -393,5 +393,94 @@ func TestHub_FallbackCachesLogToDepsLog(t *testing.T) {
 	log := zap.NewExample()
 	if got := newHub(Deps{Log: log}, 1).Timelines().log; got != log {
 		t.Fatalf("hub cache logger = %p, want %p", got, log)
+	}
+}
+
+func okBuild(rows int) buildFunc {
+	return func(context.Context, *cachedBuild) (builtSession, error) { return builtSession{rows: rows}, nil }
+}
+
+// A background build into a full cache is returned to its waiter but evicts nothing: the
+// live session's entry and its state survive (spec 040 D30).
+func TestTimelineCache_BackgroundBuildDoesNotEvict(t *testing.T) {
+	c := newTimelineCache(t.Context(), nil, 2, 1<<30)
+	v := store.Version{ExCount: 1}
+	st := &timeline.State{}
+	fill(c, "live", v, builtSession{state: st})
+	fill(c, "b", v, builtSession{})
+	got, err := c.getBackground(t.Context(), ident("bg"), v, okBuild(7))
+	if err != nil || got == nil || got.bs.rows != 7 {
+		t.Fatalf("waiter got %+v, %v; want the build", got, err)
+	}
+	if _, ok := c.lookup(ident("bg"), v); ok {
+		t.Fatal("background build was stored into a full cache")
+	}
+	live, ok := c.lookup(ident("live"), v)
+	if !ok || live.bs.state != st {
+		t.Fatalf("live entry or its state lost: %+v", live)
+	}
+	if _, ok := c.lookup(ident("b"), v); !ok || c.len() != 2 {
+		t.Fatalf("b evicted or len = %d", c.len())
+	}
+}
+
+// With room, or replacing the session's own entry, a background build is stored.
+func TestTimelineCache_BackgroundBuildStoredWithRoom(t *testing.T) {
+	c := newTimelineCache(t.Context(), nil, 2, 1<<30)
+	v1, v2 := store.Version{ExCount: 1}, store.Version{ExCount: 2}
+	fill(c, "live", v1, builtSession{})
+	if _, err := c.getBackground(t.Context(), ident("bg"), v1, okBuild(1)); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c.lookup(ident("bg"), v1); !ok {
+		t.Fatal("background build not stored with a free slot")
+	}
+	// the cache is full now; a newer build of bg's own session replaces its entry
+	if _, err := c.getBackground(t.Context(), ident("bg"), v2, okBuild(2)); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c.lookup(ident("bg"), v2); !ok {
+		t.Fatal("background build did not replace its own session's entry")
+	}
+	if _, ok := c.lookup(ident("live"), v1); !ok || c.len() != 2 {
+		t.Fatalf("live evicted or len = %d", c.len())
+	}
+}
+
+// A foreground caller joining a background run makes it storable as usual.
+func TestTimelineCache_ForegroundJoinMakesBackgroundRunStorable(t *testing.T) {
+	c := newTimelineCache(t.Context(), nil, 1, 1<<30)
+	v := store.Version{ExCount: 1}
+	fill(c, "live", v, builtSession{})
+	started, release := make(chan struct{}), make(chan struct{})
+	bgDone, fgDone := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(bgDone)
+		_, _ = c.getBackground(t.Context(), ident("k"), v, func(context.Context, *cachedBuild) (builtSession, error) {
+			close(started)
+			<-release
+			return builtSession{rows: 1}, nil
+		})
+	}()
+	<-started
+	go func() {
+		defer close(fgDone)
+		_, _ = c.get(t.Context(), ident("k"), v, okBuild(2))
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for { // wait until the foreground caller has joined the run
+		c.fmu.Lock()
+		bg := c.active[ident("k")].cur.bg
+		c.fmu.Unlock()
+		if !bg || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	close(release)
+	<-bgDone
+	<-fgDone
+	if _, ok := c.lookup(ident("k"), v); !ok {
+		t.Fatal("run a foreground caller joined was not stored")
 	}
 }

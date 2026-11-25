@@ -37,7 +37,7 @@ func SessionStats(src Source, session store.SessionRow) (Stats, error) {
 		st      Stats
 		earlier []thread
 		calls   []CallUsage
-		in      = interner{}
+		in      = newInterner()
 	)
 	for _, ex := range exchanges {
 		evs, err := src.Events(ex.RequestID)

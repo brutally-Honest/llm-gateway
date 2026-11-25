@@ -3,16 +3,18 @@ package ui
 import (
 	"container/list"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"sync"
 	"sync/atomic"
+	"unsafe"
 
 	"go.uber.org/zap"
 
 	"github.com/brutally-honest/llm-gateway/internal/logging"
 	"github.com/brutally-honest/llm-gateway/internal/store"
+	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
 
 const (
@@ -20,10 +22,12 @@ const (
 	timelineCacheSessions = 4
 	// timelineCacheBytes is the most estimated retained bytes it keeps (about 512 MB).
 	timelineCacheBytes = 512 << 20
-	// sizeFactor turns the marshalled size of a build into its retained size: Go
-	// strings, maps and slice headers weigh more than their JSON. It is a documented
-	// estimate, not a heap measurement; research.md Notes records the measured figure.
-	sizeFactor = 4
+	// sizeFactor turns the summed sizes of a build (structs plus string bytes, see
+	// buildSize) into its retained size: map buckets, allocator size classes and the slack
+	// the collector leaves are not in the sum. It is a documented estimate, not a heap
+	// measurement: on the largest session of the store copy (670 calls) the summed sizes
+	// are 34 MB and the retained heap after a full build was 49 MB (1.45 times).
+	sizeFactor = 1.5
 )
 
 // cachedBuild is one finished build and the store version it was asked for. It is
@@ -34,6 +38,11 @@ type cachedBuild struct {
 	ver  store.Version
 	size int64
 }
+
+// buildFunc builds a session for the cache; prev is the session's cached build whatever its
+// version, nil when none (spec 040 D12). Every caller passes the same kind of function, so
+// whether a run continues from prev never depends on which caller queued it.
+type buildFunc func(ctx context.Context, prev *cachedBuild) (builtSession, error)
 
 // eventPositionJSON is how far into the store a build reaches: the highest exchange row
 // id and hook event id of the version it was built for. A stream that resumes from it
@@ -72,6 +81,9 @@ type TimelineCache struct {
 	ll       *list.List // front is most recently used
 	items    map[store.SessionIdent]*list.Element
 	builds   atomic.Int64
+	// cmu guards counts: the builds made, "incremental" or "full:<reason>".
+	cmu    sync.Mutex
+	counts map[string]int
 
 	// base is the server's lifetime: builds run on it, not on a request's context.
 	base context.Context
@@ -84,10 +96,13 @@ type TimelineCache struct {
 // buildRun is one build and the callers waiting on it.
 type buildRun struct {
 	ver   store.Version
-	build func(context.Context) (builtSession, error)
-	done  chan struct{}
-	res   *cachedBuild
-	err   error
+	build buildFunc
+	// bg is true while every caller of the run is the background pass; it is guarded by
+	// the cache's fmu. A foreground caller joining the run clears it.
+	bg   bool
+	done chan struct{}
+	res  *cachedBuild
+	err  error
 }
 
 // sessionBuilds is a session's builds in flight: the one running and at most one
@@ -110,8 +125,8 @@ func newTimelineCache(base context.Context, log *zap.Logger, sessions int, bytes
 		log = zap.NewNop()
 	}
 	return &TimelineCache{maxSess: sessions, maxBytes: bytes, ll: list.New(),
-		items: map[store.SessionIdent]*list.Element{},
-		base:  base, log: log, active: map[store.SessionIdent]*sessionBuilds{}}
+		items: map[store.SessionIdent]*list.Element{}, counts: map[string]int{},
+		base: base, log: log, active: map[store.SessionIdent]*sessionBuilds{}}
 }
 
 func (c *TimelineCache) lookup(id store.SessionIdent, ver store.Version) (*cachedBuild, bool) {
@@ -135,11 +150,23 @@ func versionAfter(a, b store.Version) bool {
 	return !older
 }
 
-// store keeps b unless the session's cached build is at b's version or newer.
-func (c *TimelineCache) store(id store.SessionIdent, b *cachedBuild) {
+// store keeps b unless the session's cached build is at b's version or newer. A background
+// b (spec 040 D30) never evicts another session's entry: it is stored only when there is
+// room for it, or when it replaces the session's own entry within the byte budget.
+func (c *TimelineCache) store(id store.SessionIdent, b *cachedBuild, background bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if el, ok := c.items[id]; ok {
+	el, own := c.items[id]
+	if background {
+		n, bytes := c.ll.Len(), c.bytes+b.size
+		if own {
+			n, bytes = n-1, bytes-el.Value.(*cachedBuild).size
+		}
+		if n >= c.maxSess || bytes > c.maxBytes {
+			return
+		}
+	}
+	if own {
 		if !versionAfter(b.ver, el.Value.(*cachedBuild).ver) {
 			return // a build that started on older data finished last
 		}
@@ -172,12 +199,25 @@ func (c *TimelineCache) peek(id store.SessionIdent) (*cachedBuild, bool) {
 // even if every request waiting for it has timed out. A failed build is not stored and
 // is shared only by those waiting on it.
 func (c *TimelineCache) get(ctx context.Context, id store.SessionIdent, ver store.Version,
-	build func(context.Context) (builtSession, error)) (*cachedBuild, error) {
+	build buildFunc) (*cachedBuild, error) {
+	return c.getAs(ctx, id, ver, build, false)
+}
+
+// getBackground is get for the background pass (spec 040 D30): its build is not stored if
+// that would evict another session's entry. It is stored as usual once a foreground
+// caller has joined the run.
+func (c *TimelineCache) getBackground(ctx context.Context, id store.SessionIdent, ver store.Version,
+	build buildFunc) (*cachedBuild, error) {
+	return c.getAs(ctx, id, ver, build, true)
+}
+
+func (c *TimelineCache) getAs(ctx context.Context, id store.SessionIdent, ver store.Version,
+	build buildFunc, bg bool) (*cachedBuild, error) {
 	if b, ok := c.lookup(id, ver); ok {
 		return b, nil
 	}
 	c.fmu.Lock()
-	r := c.joinLocked(id, ver, build)
+	r := c.joinLocked(id, ver, build, bg)
 	c.fmu.Unlock()
 	return c.wait(ctx, r)
 }
@@ -186,12 +226,12 @@ func (c *TimelineCache) get(ctx context.Context, id store.SessionIdent, ver stor
 // session is cached it returns that one at once, and starts or queues a rebuild at ver if
 // it is not at ver. It waits only when nothing is cached.
 func (c *TimelineCache) latest(ctx context.Context, id store.SessionIdent, ver store.Version,
-	build func(context.Context) (builtSession, error)) (*cachedBuild, error) {
+	build buildFunc) (*cachedBuild, error) {
 	if b, ok := c.lookup(id, ver); ok {
 		return b, nil
 	}
 	c.fmu.Lock()
-	r := c.joinLocked(id, ver, build)
+	r := c.joinLocked(id, ver, build, false)
 	c.fmu.Unlock()
 	if old, ok := c.peek(id); ok {
 		return old, nil
@@ -212,8 +252,8 @@ func (c *TimelineCache) wait(ctx context.Context, r *buildRun) (*cachedBuild, er
 // is for ver, else the queued follow-up, created if absent and aimed at the newest ver
 // asked. With nothing running it starts one. fmu is held.
 func (c *TimelineCache) joinLocked(id store.SessionIdent, ver store.Version,
-	build func(context.Context) (builtSession, error)) *buildRun {
-	newRun := func() *buildRun { return &buildRun{ver: ver, build: build, done: make(chan struct{})} }
+	build buildFunc, bg bool) *buildRun {
+	newRun := func() *buildRun { return &buildRun{ver: ver, build: build, bg: bg, done: make(chan struct{})} }
 	sb := c.active[id]
 	if sb == nil {
 		r := newRun()
@@ -222,12 +262,16 @@ func (c *TimelineCache) joinLocked(id store.SessionIdent, ver store.Version,
 		return r
 	}
 	if sb.cur.ver == ver {
+		sb.cur.bg = sb.cur.bg && bg
 		return sb.cur
 	}
 	if sb.next == nil {
 		sb.next = newRun()
-	} else if versionAfter(ver, sb.next.ver) {
-		sb.next.ver, sb.next.build = ver, build
+	} else {
+		sb.next.bg = sb.next.bg && bg
+		if versionAfter(ver, sb.next.ver) {
+			sb.next.ver, sb.next.build = ver, build
+		}
 	}
 	return sb.next
 }
@@ -252,7 +296,8 @@ func (c *TimelineCache) run(id store.SessionIdent, r *buildRun) {
 			return
 		}
 		c.builds.Add(1)
-		bs, err := r.build(ctx)
+		prev, _ := c.peek(id)
+		bs, err := r.build(ctx, prev)
 		if err != nil {
 			// A rebuild behind a stale read has nobody waiting, so this is its only trace.
 			// A cancel at shutdown, or a build past buildTimeout, is not a failure of the
@@ -265,8 +310,12 @@ func (c *TimelineCache) run(id store.SessionIdent, r *buildRun) {
 			r.err = err
 			return
 		}
+		c.noteBuild(id, bs.how)
 		b := &cachedBuild{bs: bs, ver: r.ver, id: id, size: estimateSize(bs)}
-		c.store(id, b)
+		c.fmu.Lock()
+		bg := r.bg
+		c.fmu.Unlock()
+		c.store(id, b, bg)
 		r.res = b
 	}()
 	c.fmu.Lock()
@@ -287,12 +336,67 @@ func (c *TimelineCache) len() int {
 	return c.ll.Len()
 }
 
-// estimateSize is the marshalled size of a build times sizeFactor.
-func estimateSize(bs builtSession) int64 {
-	n := 0
-	for _, v := range []any{bs.entries, bs.facts, bs.byID, bs.rowID} {
-		b, _ := json.Marshal(v)
-		n += len(b)
+// noteBuild counts a finished build, and logs why it was not incremental unless the
+// session had nothing to continue from (spec 040).
+func (c *TimelineCache) noteBuild(id store.SessionIdent, how buildInfo) {
+	key := "incremental"
+	if !how.Incremental {
+		reason := how.Reason
+		if reason == "" {
+			reason = reasonNoState
+		}
+		key = "full:" + reason
+		switch reason {
+		case reasonNoState:
+		case reasonFailed:
+			c.log.Warn("ui incremental timeline build failed; built in full", zap.String("session", id.Key), zap.Error(how.Err))
+		default:
+			c.log.Debug("ui timeline build in full", zap.String("session", id.Key), zap.String("reason", reason))
+		}
 	}
-	return int64(n) * sizeFactor
+	c.cmu.Lock()
+	c.counts[key]++
+	c.cmu.Unlock()
 }
+
+// buildCounts is a copy of how many builds were made: "incremental", and "full:<reason>"
+// for each fallback reason (spec 040 AC6).
+func (c *TimelineCache) buildCounts() map[string]int {
+	c.cmu.Lock()
+	defer c.cmu.Unlock()
+	return maps.Clone(c.counts)
+}
+
+// estimateSize is the retained size of a build and its state, from the sizes of what it
+// holds; it never encodes the build (spec D8), so it costs O(entries) additions.
+func estimateSize(bs builtSession) int64 {
+	n := timeline.EntriesSize(bs.entries)
+	for id, f := range bs.facts {
+		n += int64(len(id)+len(f.PrevID)) + int64(unsafe.Sizeof(*f)) + mapEntryBytes
+	}
+	for id, f := range bs.calls {
+		n += int64(len(id)+len(f.PrevID)+len(f.Prompt)) + int64(unsafe.Sizeof(*f)) + int64(len(f.UserTexts))*16 + mapEntryBytes
+	}
+	for id, x := range bs.byID {
+		n += int64(len(id)) + int64(unsafe.Sizeof(x)) + mapEntryBytes // the headers are shared with the state's records
+	}
+	for id := range bs.rowID {
+		n += int64(len(id)) + 8 + mapEntryBytes
+	}
+	if bs.state != nil {
+		n += bs.state.Size()
+	}
+	return int64(float64(n) * sizeFactor)
+}
+
+// stateEstimate is the estimated retained bytes of an incremental state, on the same scale
+// as estimateSize, so the cap of one session and the cache's budget agree.
+func stateEstimate(st *timeline.State) int64 {
+	if st == nil {
+		return 0
+	}
+	return int64(float64(st.Size()) * sizeFactor)
+}
+
+// mapEntryBytes is the estimated overhead of one map entry beyond its key and value.
+const mapEntryBytes = 80

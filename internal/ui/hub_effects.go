@@ -33,6 +33,11 @@ func (h *Hub) PublishEffects(principal, client, sessionKey string) {
 	if sessionKey == "" {
 		who = sessIdent{}
 	}
+	if sessionKey != "" {
+		// A session's view streams are poked at once, outside h.mu (spec 040 D7); the
+		// unassigned effects poke none (D21).
+		h.pokeViews(who.id())
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	select {

@@ -41,6 +41,12 @@ type CallFact struct {
 // id or type, or its first prompt is the prompt of an agent tool call made in another
 // thread. evs holds the events already loaded for each request, so nothing is read twice.
 func CallFacts(src Source, built []Entry, rules FactRules, evs map[string][]store.EventRow) (map[string]*CallFact, error) {
+	return CallFactsWith(built, rules, func(id string) ([]string, error) { return UserTextsOf(src, evs[id]) })
+}
+
+// CallFactsWith is CallFacts that reads a request's user message texts from texts instead
+// of from loaded events.
+func CallFactsWith(built []Entry, rules FactRules, texts func(requestID string) ([]string, error)) (map[string]*CallFact, error) {
 	type call struct {
 		req    string
 		thread int
@@ -64,16 +70,16 @@ func CallFacts(src Source, built []Entry, rules FactRules, evs map[string][]stor
 			if e.Call == nil {
 				continue
 			}
-			texts, err := UserTextsOf(src, evs[e.RequestID])
+			userTexts, err := texts(e.RequestID)
 			if err != nil {
 				return nil, err
 			}
 			f := &CallFact{Thread: e.Thread, PrevID: e.PrevID, Carried: e.Carried,
-				New: NewMessages(e.RequestMessages, e.Carried), UserTexts: texts}
+				New: NewMessages(e.RequestMessages, e.Carried), UserTexts: userTexts}
 			if rules != nil {
-				f.SideCall = rules.IsSideCall(texts)
+				f.SideCall = rules.IsSideCall(userTexts)
 			}
-			for _, t := range texts {
+			for _, t := range userTexts {
 				if rules != nil {
 					t = rules.StripReminders(t)
 				}

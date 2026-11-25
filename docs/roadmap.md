@@ -7,11 +7,13 @@ v1 is complete (PLAN §7: every phase in the v1 order is done) apart from the La
 below and AC44, the API-key smoke test of Phase 1.
 
 ## Next
-1. **Incremental live updates** (040, spec 030 D4): a live update of the largest session
-   still rebuilds it whole, about 2.6 s after 030's skip. Make it incremental, and share
-   one load between the memo and the view.
+Nothing queued.
 
 ## Done
+- **040 incremental live updates** (`specs/040-incremental-live-updates/`, feat): a live
+  update of an open session re-reads only the calls that changed; on the largest session a
+  new call shows in about 0.3 s instead of 2.6 s. The first open and a few fallbacks still
+  build the session in full.
 - **030 persistent view cache** (`specs/030-persistent-view-cache/`, feat): the UI serves
   as soon as it binds; per-session list rows and views live in a disposable on-disk cache
   (`<capture.dir>/view-cache/`), rebuilt from the store, with a background pass after start.
