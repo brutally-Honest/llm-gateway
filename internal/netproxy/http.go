@@ -188,15 +188,17 @@ func (p *Proxy) pipe(t *tunnel, client net.Conn, pending *bufio.Reader, up net.C
 	p.mu.Lock()
 	closed := p.closed
 	t.conns = []net.Conn{client, up}
-	p.wg.Add(1)
+	if !closed {
+		p.wg.Add(1) // under mu, so never after Shutdown sets closed and starts Wait
+	}
 	p.mu.Unlock()
-	defer p.wg.Done()
 	if closed {
 		_ = client.Close()
 		_ = up.Close()
 		p.finish(t, core.NetClosedEarly)
 		return
 	}
+	defer p.wg.Done()
 	var src io.Reader = client
 	if pending != nil && pending.Buffered() > 0 {
 		src = io.MultiReader(io.LimitReader(pending, int64(pending.Buffered())), client)
