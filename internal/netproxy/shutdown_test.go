@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -64,9 +65,14 @@ func TestNetProxy_ShutdownRacesNewTunnels(t *testing.T) {
 	p.ListenHTTP(httpLn)
 	p.ListenSOCKS(socksLn)
 	target := echoServer(t)
-	host, portText, _ := net.SplitHostPort(target)
-	var port int
-	_, _ = fmt.Sscan(portText, &port)
+	host, portText, err := net.SplitHostPort(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	const n = 48
 	var opened atomic.Int64
@@ -124,9 +130,11 @@ func TestNetProxy_ShutdownRacesNewTunnels(t *testing.T) {
 			early++
 		}
 	}
-	// Every accepted tunnel stays open until the proxy cuts it, so each is recorded
-	// once as closed early; none is lost and none is recorded twice.
-	if early != int(opened.Load()) {
+	// Every accepted tunnel stays open until the proxy cuts it, so each is recorded as
+	// closed early. It is >= not ==: a CONNECT still dialing when ctx ends is swept as
+	// closed early and then cut before its 200, so it is recorded but never accepted.
+	t.Logf("accepted %d, closed early %d, recorded %d", opened.Load(), early, len(outs))
+	if early < int(opened.Load()) {
 		t.Errorf("closed early = %d, accepted tunnels = %d", early, opened.Load())
 	}
 	if len(outs) > n {

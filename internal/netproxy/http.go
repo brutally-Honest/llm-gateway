@@ -193,9 +193,9 @@ func (p *Proxy) pipe(t *tunnel, client net.Conn, pending *bufio.Reader, up net.C
 	}
 	p.mu.Unlock()
 	if closed {
+		p.finish(t, core.NetClosedEarly) // record before cutting, as the Shutdown sweep does
 		_ = client.Close()
 		_ = up.Close()
-		p.finish(t, core.NetClosedEarly)
 		return
 	}
 	defer p.wg.Done()
