@@ -17,9 +17,30 @@ type sessPage struct {
 	NextAfter *string          `json:"next_after"`
 	Total     int              `json:"total"`
 	Scanned   int              `json:"scanned"`
+	Checking  int              `json:"checking"`
 }
 
+// sess is the page once its rows' facts are built (see page); sessNow is the first answer.
 func (e *apiEnv) sess(query string) sessPage {
+	e.t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		p := e.sessNow(query)
+		pending := p.Checking > 0
+		for _, it := range p.Items {
+			pending = pending || it["pending"] == true
+		}
+		if !pending {
+			return p
+		}
+		if time.Now().After(deadline) {
+			e.t.Fatalf("%s: rows still pending after 10 s", query)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func (e *apiEnv) sessNow(query string) sessPage {
 	e.t.Helper()
 	rec := e.get("/api/sessions" + query)
 	if rec.Code != 200 {

@@ -13,11 +13,43 @@ import (
 type CtxReader struct {
 	r   *Reader
 	ctx context.Context
+	// tx, when set, is the read transaction of a Snapshot: the session list reads, the
+	// session lookup and the version reads run on it.
+	tx *sql.Tx
 }
 
 // WithContext returns a view of r whose queries run under ctx.
 func (r *Reader) WithContext(ctx context.Context) *CtxReader {
 	return &CtxReader{r: r, ctx: ctx}
+}
+
+// queryer is what *sql.DB and *sql.Tx share.
+type queryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// q is where the session list reads and the version reads run: the snapshot's
+// transaction, else the pool.
+func (c *CtxReader) q() queryer {
+	if c.tx != nil {
+		return c.tx
+	}
+	return c.r.db
+}
+
+// Snapshot returns a view whose session list reads (SessionPage and its variants,
+// SessionByKey, SessionCount) and SessionVersions all read one state of the store: the
+// one the first of them sees, so a version read after a list read never holds a write
+// the list did not see (spec 043 review P3: a row's version is a lower bound of what its
+// cheap fields show). Call done when finished; it ends the transaction. Other reads
+// through the view are unaffected.
+func (c *CtxReader) Snapshot() (snap *CtxReader, done func(), err error) {
+	tx, err := c.r.db.BeginTx(c.ctx, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("store %s: snapshot: %w", c.r.path, err)
+	}
+	return &CtxReader{r: c.r, ctx: c.ctx, tx: tx}, func() { _ = tx.Rollback() }, nil
 }
 
 // SessionExchanges is Reader.SessionExchanges under the view's context.
@@ -75,20 +107,72 @@ func (c *CtxReader) SessionPage(after *SessionAfter, limit int) ([]SessionRow, e
 	}
 	q += sessionOrder + ` LIMIT ?`
 	args = append(args, limit)
-	return c.r.sessions(c.ctx, q, args...)
+	return c.r.sessionsOn(c.q(), c.ctx, q, args...)
 }
 
 // SessionPageAt lists up to limit sessions in SessionRows order after skipping offset
 // rows, the same order SessionPage walks. offset must not be negative and limit must be
 // positive; an offset at or past the last row gives no rows.
 func (c *CtxReader) SessionPageAt(offset, limit int) ([]SessionRow, error) {
-	return c.r.sessions(c.ctx, sessionSelect+sessionOrder+` LIMIT ? OFFSET ?`, limit, offset)
+	return c.r.sessionsOn(c.q(), c.ctx, sessionSelect+sessionOrder+` LIMIT ? OFFSET ?`, limit, offset)
+}
+
+// sessionWindow wraps sessionSelect so every row also carries the count of all sessions,
+// computed over the aggregate before any later filter; the aggregate runs once.
+const sessionWindow = `SELECT principal_id, client, session_key, first, last, count, hooks_only, end_only, total FROM (
+	SELECT *, COUNT(*) OVER () AS total FROM (` + sessionSelect + `)
+) WHERE 1 = 1`
+
+// SessionPageTotal is SessionPage and the count of every session (after ignored) from one
+// list aggregate. An empty page has no row to carry the count, so the count is then read
+// on its own.
+func (c *CtxReader) SessionPageTotal(after *SessionAfter, limit int) ([]SessionRow, int, error) {
+	q, args := sessionWindow, []any{}
+	if after != nil {
+		q += ` AND (last < ? OR (last = ? AND (principal_id, client, session_key) > (?, ?, ?)))`
+		args = append(args, after.Last, after.Last, after.PrincipalID, after.Client, after.SessionKey)
+	}
+	q += sessionOrder + ` LIMIT ?`
+	args = append(args, limit)
+	return c.sessionsTotal(q, args...)
+}
+
+// SessionPageAtTotal is SessionPageAt and the count of every session from one list aggregate.
+func (c *CtxReader) SessionPageAtTotal(offset, limit int) ([]SessionRow, int, error) {
+	return c.sessionsTotal(sessionWindow+sessionOrder+` LIMIT ? OFFSET ?`, limit, offset)
+}
+
+func (c *CtxReader) sessionsTotal(q string, args ...any) ([]SessionRow, int, error) {
+	rows, err := c.q().QueryContext(c.ctx, q, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("store %s: sessions: %w", c.r.path, err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []SessionRow
+	total := 0
+	for rows.Next() {
+		var s SessionRow
+		if err := rows.Scan(&s.PrincipalID, &s.Client, &s.SessionKey, &s.First, &s.Last, &s.Count, &s.HooksOnly, &s.EndOnly, &total); err != nil {
+			return nil, 0, fmt.Errorf("store %s: sessions: %w", c.r.path, err)
+		}
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("store %s: sessions: %w", c.r.path, err)
+	}
+	if len(out) == 0 {
+		total, err = c.SessionCount()
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+	return out, total, nil
 }
 
 // SessionCount counts every session, the rows SessionPage lists.
 func (c *CtxReader) SessionCount() (int, error) {
 	var n int
-	err := c.r.db.QueryRowContext(c.ctx, `SELECT COUNT(*) FROM (`+sessionSelect+`)`).Scan(&n)
+	err := c.q().QueryRowContext(c.ctx, `SELECT COUNT(*) FROM (`+sessionSelect+`)`).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("store %s: session count: %w", c.r.path, err)
 	}
@@ -110,7 +194,7 @@ func (c *CtxReader) UngroupedPage(after *UngroupedAfter, limit int) ([]ExchangeR
 
 // SessionByKey reads the one session with this identity, or ErrNotFound.
 func (c *CtxReader) SessionByKey(principal, client, key string) (SessionRow, error) {
-	rows, err := c.r.sessions(c.ctx, sessionSelect+` AND principal_id = ? AND client = ? AND session_key = ?`+sessionOrder,
+	rows, err := c.r.sessionsOn(c.q(), c.ctx, sessionSelect+` AND principal_id = ? AND client = ? AND session_key = ?`+sessionOrder,
 		principal, client, key)
 	if err != nil {
 		return SessionRow{}, err

@@ -18,6 +18,31 @@ function rule(sel) {
   return out;
 }
 
+// fixedWidths sums the sessions table's fixed columns (every th but Session) in px, as
+// style.css sets them below 1,600 px, or with the min-width: 1600px overrides applied.
+function fixedWidths(src, wide = false) {
+  const cols = ["status", "time", "work", "changes", "dur", "tokens"];
+  const w = {};
+  const apply = (block) => {
+    for (const m of block.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+      const width = m[2].match(/(?:^|[;\s])width:\s*(\d+)px/);
+      if (!width) continue;
+      for (const sel of m[1].split(",")) {
+        const c = sel.trim().match(/^\.sessions-page > \.sp-list th\.(\w+)$/);
+        if (c) w[c[1]] = Number(width[1]);
+      }
+    }
+  };
+  const media = src.match(/@media \(min-width: 1600px\) \{\n((?:\.sessions-page[^\n]*\n)+)\}/);
+  apply(src.replace(/@media[^{]*\{[\s\S]*?\n\}\n/g, ""));
+  if (wide) {
+    assert.ok(media, "the 1,600 px widths are found");
+    apply(media[1]);
+  }
+  for (const c of cols) assert.ok(w[c] > 0, `a fixed width for th.${c}`);
+  return cols.reduce((a, c) => a + w[c], 0);
+}
+
 // The session page is one page that scrolls (spec 027 C4, replacing spec 016 AC3's three
 // scrolling columns with Karthik's OK, 2026-11-21): the turns as contents on the left stay
 // in view, the main column holds the overview and the tabs, the story first; the tab bar
@@ -156,12 +181,25 @@ test("exchangeHeaderTablesLineUp", () => {
 // line; the Tokens cell's cost stays a line of its own). Checked in the browser at 1,440
 // and 2,560.
 test("sessionColumnKeepsItsMinimumAt1440", () => {
-  assert.equal(rule(".sp-list th.title, .sp-list td.title")["min-width"], "20rem");
+  // fixed layout (spec 043 D16): Session has no width of its own and gets what the fixed
+  // columns leave of the table's 72rem floor; read from style.css at each breakpoint
+  assert.equal(rule(".sp-list table")["min-width"], "72rem");
+  const floor = 72 * 16;
+  const narrowSum = fixedWidths(css);
+  const wideSum = fixedWidths(css, true);
+  assert.ok(floor - narrowSum >= 20 * 16, `Session keeps 20rem below 1,600 px (has ${floor - narrowSum}px)`);
+  // from 1,600 px the table is as wide as the viewport less main#app's side padding and the
+  // stable scrollbar strips (17 px each side), never below its 72rem floor
+  const pad = Number(css.match(/main#app \{ padding: \d+px (\d+)px/)[1]);
+  const wideTable = Math.max(floor, 1600 - 2 * pad - 2 * 17);
+  assert.ok(wideTable - wideSum >= 20 * 16, `Session keeps 20rem at 1,600 px (has ${wideTable - wideSum}px)`);
   // below the page's 1,600 px width (1,440 included) Work, Changes and Tokens wrap, two lines wide
-  const narrow = css.match(/@media \(max-width: 1599px\) \{\n\.sp-list td\.work, \.sp-list td\.changes, \.sp-list td\.tokens \{([^}]*)\}/);
+  const narrow = css.match(/@media \(max-width: 1599px\) \{\n(\.sp-list td\.work, \.sp-list td\.changes, \.sp-list td\.tokens \{[^}]*\}\n\.sessions-page[^}]*\})/);
   assert.ok(narrow, "Work, Changes and Tokens wrap below 1,600 px");
   assert.match(narrow[1], /white-space: normal/);
-  assert.match(narrow[1], /min-width: 12\.5rem/, "wide enough for two lines, not more");
+  // the automatic layout's 12.5rem floor stays for the other .sp-list tables (ungrouped exchanges); the sessions table's fixed columns set its widths
+  assert.match(narrow[1], /\.sp-list td\.work, \.sp-list td\.changes, \.sp-list td\.tokens \{[^}]*min-width: 12\.5rem/);
+  assert.match(narrow[1], /\.sessions-page > \.sp-list td\.work, \.sessions-page > \.sp-list td\.changes, \.sessions-page > \.sp-list td\.tokens \{[^}]*min-width: 0/);
   assert.equal(rule(".sp-list td .seg")["white-space"], "nowrap", "they wrap only at the dots");
   assert.equal(rule(".sp-list td.tokens .cost")["display"], "block", "the cost is a line of its own");
   assert.equal(rule(".sp-list td.tokens .cost")["white-space"], "nowrap", "and never breaks inside");
@@ -207,4 +245,22 @@ test("turnListPinsWhereItStarts", () => {
   const mid = css.match(/@media \(max-width: 1080px\) \{([\s\S]*?)\n\}/)[1];
   const midPad = mid.match(/\.cols \{[^}]*padding: ([^;]+);/)[1];
   assert.match(mid, new RegExp(`\\.toc \\{ top: calc\\(var\\(--head-h\\) \\+ ${pad(midPad)}\\);`));
+});
+
+// spec 043 review P2: the ungrouped exchanges table (an automatic-layout .sp-list) keeps main's
+// rules, so a long title is cut with an ellipsis instead of widening the card; only the sessions
+// table, whose fixed columns set the widths, turns them off.
+test("ungroupedTableKeepsItsAutomaticLayoutTitleAndTokenRules", () => {
+  const title = rule(".sp-list th.title, .sp-list td.title");
+  assert.equal(title.width, "100%");
+  assert.equal(title["max-width"], "0");
+  assert.equal(title["min-width"], "20rem");
+  const narrow = css.match(/@media \(max-width: 1599px\) \{\n([\s\S]*?)\n\}\n/)[1];
+  assert.match(narrow, /^\.sp-list td\.work, \.sp-list td\.changes, \.sp-list td\.tokens \{[^}]*min-width: 12\.5rem/m);
+  // the sessions table is the one exception, and its override comes after (same or higher specificity wins)
+  const sess = rule(".sessions-page > .sp-list th.title, .sessions-page > .sp-list td.title");
+  assert.deepEqual([sess.width, sess["max-width"], sess["min-width"]], ["auto", "none", "0"]);
+  assert.ok(css.indexOf(".sessions-page > .sp-list th.title,") > css.indexOf(".sp-list th.title, .sp-list td.title {"), "the override follows the base rule");
+  assert.equal(rule(".sessions-page > .sp-list table")["table-layout"], "fixed");
+  assert.match(narrow, /^\.sessions-page > \.sp-list td\.work, [^{]*\{[^}]*min-width: 0/m);
 });

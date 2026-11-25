@@ -79,9 +79,37 @@ func (e *apiEnv) get(path string) *httptest.ResponseRecorder {
 type page struct {
 	Items     []map[string]any `json:"items"`
 	NextAfter *string          `json:"next_after"`
+	Checking  int              `json:"checking"`
 }
 
+// page is the answer to path once the facts of its rows are built. /api/sessions answers at
+// once with pending rows (spec 043), so a test that wants the facts asks again until none
+// is pending; pageNow is the first answer.
 func (e *apiEnv) page(path string) page {
+	e.t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		p := e.pageNow(path)
+		if !p.hasPending() || time.Now().After(deadline) {
+			if p.hasPending() {
+				e.t.Fatalf("%s: rows still pending after 10 s", path)
+			}
+			return p
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func (p page) hasPending() bool {
+	for _, it := range p.Items {
+		if it["pending"] == true {
+			return true
+		}
+	}
+	return p.Checking > 0
+}
+
+func (e *apiEnv) pageNow(path string) page {
 	e.t.Helper()
 	rec := e.get(path)
 	if rec.Code != 200 {
@@ -211,7 +239,7 @@ func TestAPI_EmptyStoreEmptyLists(t *testing.T) {
 	e := newAPIEnv(t)
 	// /api/sessions also carries total and scanned (spec 029); /api/ungrouped keeps its shape.
 	for p, want := range map[string]string{
-		"/api/sessions":  `{"items":[],"next_after":null,"total":0,"scanned":0}`,
+		"/api/sessions":  `{"items":[],"next_after":null,"total":0,"scanned":0,"checking":0}`,
 		"/api/ungrouped": `{"items":[],"next_after":null}`,
 	} {
 		rec := e.get(p)

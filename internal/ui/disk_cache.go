@@ -410,6 +410,16 @@ func (c *DiskCache) damage(dir, path, sum string, why error) {
 	}
 }
 
+// HasMemoFile reports whether a memo file exists for the session, whatever its key. A nil
+// cache has none. It stats the file and reads nothing.
+func (c *DiskCache) HasMemoFile(id store.SessionIdent) bool {
+	if c == nil {
+		return false
+	}
+	_, err := os.Stat(c.path(diskMemoDir, id))
+	return err == nil
+}
+
 // GetMemo returns the memo stored under key, which must equal the entry's key exactly.
 func (c *DiskCache) GetMemo(id store.SessionIdent, key string) (digestMemo, bool) {
 	if c == nil {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"slices"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/brutally-honest/llm-gateway/internal/store"
 	"github.com/brutally-honest/llm-gateway/internal/ui"
@@ -66,6 +68,31 @@ func getJSON(t *testing.T, h http.Handler, path string, into any) {
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), into); err != nil {
 		t.Fatalf("GET %s: %v", path, err)
+	}
+}
+
+// getSessionsReady is getJSON for /api/sessions, asked again until no row is pending: the
+// list answers at once with the cheap fields and the facts follow (spec 043).
+func getSessionsReady(t *testing.T, h http.Handler, into any) {
+	t.Helper()
+	const addr = "127.0.0.1:7199"
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://"+addr+"/api/sessions", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /api/sessions = %d %s", rec.Code, rec.Body)
+		}
+		if !bytes.Contains(rec.Body.Bytes(), []byte(`"pending":true`)) {
+			if err := json.Unmarshal(rec.Body.Bytes(), into); err != nil {
+				t.Fatalf("GET /api/sessions: %v", err)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("GET /api/sessions: rows still pending after 10 s: %s", rec.Body)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -136,7 +163,7 @@ func captureSideCallSession(t *testing.T) sideCallSession {
 	var page struct {
 		Items []json.RawMessage `json:"items"`
 	}
-	getJSON(t, s.handler, "/api/sessions", &page)
+	getSessionsReady(t, s.handler, &page)
 	if len(page.Items) != 1 {
 		t.Fatalf("sessions = %d, want 1", len(page.Items))
 	}

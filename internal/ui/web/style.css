@@ -313,7 +313,25 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 /* status as a glyph alone, in a narrow first column; the word is its hover and its
    accessible name (027 research D2); the glyph's shape, not its colour, tells them apart */
 .sp-list td.status { white-space: nowrap; }
-.sessions-page > .sp-list th.status, .sessions-page > .sp-list td.status { width: 1.75rem; padding-right: 0; text-align: center; }
+.sessions-page > .sp-list th.status, .sessions-page > .sp-list td.status { padding-right: 0; text-align: center; }
+/* The sessions table lays its columns out from the header alone (table-layout: fixed), so no
+   row's content, and no placeholder turning into facts, can move a column (spec 043 AC6, research
+   D17). Session takes what the others leave. The widths are those the automatic layout gave the
+   filled list on main (border-box, padding included): below 1,600 px Work, Changes and Tokens
+   are 175 px and wrap at the dots; from 1,600 px they widen, and stay on one line. Only this
+   table: the unassigned connections table below it keeps its own columns. */
+.sessions-page > .sp-list table { table-layout: fixed; }
+/* the fixed layout sets the widths: the automatic layout's Session rules (every other .sp-list table keeps them) are off here */
+.sessions-page > .sp-list th.title, .sessions-page > .sp-list td.title { width: auto; max-width: none; min-width: 0; }
+.sessions-page > .sp-list th.status { width: 23px; }
+.sessions-page > .sp-list th.time { width: 134px; }
+.sessions-page > .sp-list th.work, .sessions-page > .sp-list th.changes, .sessions-page > .sp-list th.tokens { width: 175px; }
+.sessions-page > .sp-list th.dur { width: 74px; }
+@media (min-width: 1600px) {
+.sessions-page > .sp-list th.work { width: 330px; }
+.sessions-page > .sp-list th.changes { width: 267px; }
+.sessions-page > .sp-list th.tokens { width: 231px; }
+}
 .sicon { display: inline-block; font-size: 13px; line-height: 1; color: var(--muted); }
 .sicon-active { color: var(--ok); }
 .sicon-hooks-only { color: var(--accent); }
@@ -331,9 +349,38 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 /* 1599px must stay one below .sessions-page, .page { max-width: 1600px } */
 @media (max-width: 1599px) {
 .sp-list td.work, .sp-list td.changes, .sp-list td.tokens { white-space: normal; min-width: 12.5rem; }
+.sessions-page > .sp-list td.work, .sessions-page > .sp-list td.changes, .sessions-page > .sp-list td.tokens { min-width: 0; }
 }
 .sp-list td.work .bad { color: var(--bad); font-weight: 600; }
 .sp-list td.tokens .cost { display: block; white-space: nowrap; color: var(--muted); }
+/* A row whose facts are not built yet (spec 043 AC6): the cheap cells are real, and each heavy
+   cell holds a quiet bar. The bars are drawn here, not in the DOM, so a row going from
+   pending to filled writes only its cells' text. Nothing may move when the facts arrive: the
+   columns are fixed (above), so the bars cannot change a width; the title link and the place
+   line keep the lines they have when filled (the link's text is transparent, so its height is
+   the real one); and each heavy cell reserves the lines its facts usually take at this width,
+   in line heights (lh), so the row is as tall as a common filled row at any font or style: below
+   1,600 px Work 3 lines, Changes 2, Tokens 3 of figures; from 1,600 px 1, 1 and 2. Tokens adds
+   its cost line and its bar (5 px gap, 4 px bar) as filled. A row that gains a third "needs a
+   look" line, or wraps more than usual, may still grow. No animation. */
+.sp-list { --pend-work: 3; --pend-changes: 2; --pend-figures: 2; }
+@media (min-width: 1600px) {
+.sp-list { --pend-work: 1; --pend-changes: 1; --pend-figures: 1; }
+}
+.sp-list tr.pending a.stitle { color: transparent; width: min(16rem, 70%); background: var(--panel2); border-radius: var(--radius-xs); user-select: none; }
+.sp-list tr.pending .splace { display: block; min-height: 1.3em; }
+.sp-list tr.pending .splace::after { content: ""; display: inline-block; width: 6rem; height: .8em; margin-left: .5rem; vertical-align: middle; background: var(--panel2); border-radius: var(--radius-xs); }
+.sp-list tr.pending .splace:empty::after { margin-left: 0; }
+.sp-list tr.pending td.work::before, .sp-list tr.pending td.changes::before, .sp-list tr.pending td.dur::before, .sp-list tr.pending td.tokens::before { content: ""; display: block; max-width: 100%; height: 1em; background: var(--panel2); border-radius: var(--radius-xs); }
+.sp-list tr.pending td.work::before { width: 9rem; margin-bottom: calc(var(--pend-work) * 1lh - 1em); }
+.sp-list tr.pending td.changes::before { width: 7rem; margin-bottom: calc(var(--pend-changes) * 1lh - 1em); }
+.sp-list tr.pending td.dur::before { width: 3rem; }
+.sp-list tr.pending td.tokens::before { width: 10rem; margin-bottom: calc(var(--pend-figures) * 1lh - 1em); }
+.sp-list tr.pending td.tokens::after { content: ""; display: block; width: 4rem; max-width: 100%; height: 1em; margin-bottom: calc(1lh - 1em + 9px); background: var(--panel2); border-radius: var(--radius-xs); }
+.sicon-pending { opacity: .45; }
+/* the list's status line: rows a filter is still checking, or the follow-up giving up */
+.sp-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 13px; }
+.sp-status > .muted { margin: 0; }
 .page .sp-list table { min-width: 0; }
 .page > .muted { margin: 0; font-size: 13px; }
 .page-sub { margin: 6px 0 0; font-size: 15px; font-weight: 700; color: var(--hi); }

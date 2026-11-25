@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"container/heap"
 	"container/list"
 	"context"
 	"errors"
@@ -31,7 +32,9 @@ type digestMemo struct {
 	// version it was asked for, the key of the memo's on-disk entry (spec 030).
 	eff store.EffectVersion
 	// degraded: a content read failed for a reason other than not-found, so the memo is
-	// served to those waiting on it but kept nowhere (spec 030 D16).
+	// never written to disk (spec 030 D16). In memory it is kept only so the list can
+	// serve its facts; lookup treats it as absent, so it is rebuilt on every request that
+	// needs the memo (spec 043).
 	degraded bool
 	// fromDisk: the memo came from the on-disk cache, so it is neither a compute nor
 	// written again.
@@ -80,11 +83,21 @@ type digestHit struct {
 
 // digestRun is one compute and the callers waiting on it.
 type digestRun struct {
+	id      store.SessionIdent
 	ver     store.Version
 	compute func(context.Context) (digestMemo, error)
 	done    chan struct{}
 	res     *digestEntry
 	err     error
+
+	// prio is where the run ranks in the build gate; nil means some caller waits for it,
+	// so it never enters the gate. Guarded by fmu.
+	prio *gatePrio
+	// queued: the run sits in the gate's queue (at index qi). inSlot: it holds a slot.
+	// Guarded by fmu.
+	queued bool
+	qi     int
+	inSlot bool
 }
 
 // digestRuns is a session's computes in flight: the one running and at most one queued,
@@ -112,6 +125,11 @@ type DigestCache struct {
 	// joined counts callers that joined a run already in flight at their version; tests
 	// wait on it. Guarded by fmu.
 	joined int
+
+	// The build gate (spec 043 D12). Guarded by fmu.
+	gate gateState
+	// ticks numbers list requests: a newer request ranks above every older one.
+	ticks atomic.Uint64
 }
 
 // NewDigestCache returns an empty cache holding at most 512 sessions, whose computes run
@@ -134,7 +152,8 @@ func newDigestCacheCtx(base context.Context, log *zap.Logger, max int) *DigestCa
 		log = zap.NewNop()
 	}
 	return &DigestCache{max: max, ll: list.New(), items: map[store.SessionIdent]*list.Element{},
-		base: base, log: log, active: map[store.SessionIdent]*digestRuns{}}
+		base: base, log: log, active: map[store.SessionIdent]*digestRuns{},
+		gate: gateState{slots: gateSlots, inSlot: map[*digestRun]struct{}{}, changed: make(chan struct{})}}
 }
 
 // WithDisk makes the cache write each memo it computes to disk. It returns c; call it
@@ -166,7 +185,7 @@ func (c *DigestCache) lookup(id store.SessionIdent, ver store.Version) (*digestE
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	el, ok := c.items[id]
-	if !ok || el.Value.(*digestEntry).ver != ver {
+	if !ok || el.Value.(*digestEntry).ver != ver || el.Value.(*digestEntry).memo.degraded {
 		return nil, false
 	}
 	c.ll.MoveToFront(el)
@@ -185,12 +204,24 @@ func (c *DigestCache) peek(id store.SessionIdent) (*digestEntry, bool) {
 	return el.Value.(*digestEntry), true
 }
 
-// store keeps e unless the session's cached entry is at e's version or newer.
+// heldAfter reports whether memory holds an entry for the session that is newer than ver.
+func (c *DigestCache) heldAfter(id store.SessionIdent, ver store.Version) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	el, ok := c.items[id]
+	return ok && versionAfter(el.Value.(*digestEntry).ver, ver)
+}
+
+// store keeps e unless the session's cached entry is at e's version or newer. A degraded
+// entry (spec 043 review P3) is kept so the list serves its facts, but it counts as no
+// answer: lookup never returns it, so every request that needs the memo rebuilds it, and
+// a good entry at the same version replaces it.
 func (c *DigestCache) store(e *digestEntry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if el, ok := c.items[e.id]; ok {
-		if !versionAfter(e.ver, el.Value.(*digestEntry).ver) {
+		old := el.Value.(*digestEntry)
+		if !versionAfter(e.ver, old.ver) && (!old.memo.degraded || e.memo.degraded || e.ver != old.ver) {
 			return // a compute that started on older data finished last
 		}
 		c.ll.Remove(el)
@@ -212,7 +243,7 @@ func (c *DigestCache) get(ctx context.Context, id store.SessionIdent, ver store.
 		return e.hit(), nil
 	}
 	c.fmu.Lock()
-	r := c.joinLocked(id, ver, compute)
+	r := c.joinLocked(id, ver, nil, compute)
 	c.fmu.Unlock()
 	return c.wait(ctx, r)
 }
@@ -226,7 +257,7 @@ func (c *DigestCache) latest(ctx context.Context, id store.SessionIdent, ver sto
 		return e.hit(), nil
 	}
 	c.fmu.Lock()
-	r := c.joinLocked(id, ver, compute)
+	r := c.joinLocked(id, ver, nil, compute)
 	c.fmu.Unlock()
 	if e, ok := c.peek(id); ok {
 		return e.hit(), nil
@@ -249,9 +280,16 @@ func (c *DigestCache) wait(ctx context.Context, r *digestRun) (digestHit, error)
 // joinLocked returns the run that will produce the memo at ver: the running one when it
 // is for ver, else the queued follow-up, created if absent and aimed at the newest ver
 // asked. With nothing running it starts one. fmu is held.
-func (c *DigestCache) joinLocked(id store.SessionIdent, ver store.Version,
+//
+// gp is where the caller ranks in the build gate; nil means the caller waits for the
+// result, so the run starts at once, and a run still queued in the gate that such a
+// caller joins is promoted to start at once (D12). A list caller that joins a queued run
+// only raises its rank.
+func (c *DigestCache) joinLocked(id store.SessionIdent, ver store.Version, gp *gatePrio,
 	compute func(context.Context) (digestMemo, error)) *digestRun {
-	newRun := func() *digestRun { return &digestRun{ver: ver, compute: compute, done: make(chan struct{})} }
+	newRun := func() *digestRun {
+		return &digestRun{id: id, ver: ver, compute: compute, done: make(chan struct{}), prio: gp.clone()}
+	}
 	rs := c.active[id]
 	if rs == nil {
 		r := newRun()
@@ -261,17 +299,83 @@ func (c *DigestCache) joinLocked(id store.SessionIdent, ver store.Version,
 	}
 	if rs.cur.ver == ver {
 		c.joined++
+		c.rankLocked(id, rs.cur, gp)
 		return rs.cur
+	}
+	if gp == nil && rs.cur.queued {
+		cur := rs.cur
+		if versionAfter(ver, cur.ver) {
+			// A waiter wants a newer version than the run still queued in the gate. That
+			// run has not started, so it is retargeted to the newer version and promoted:
+			// the waiter must not sit behind the queue, and a follow-up would only start
+			// after the queued run had waited for a slot. The callers already on it are
+			// list callers or a background pass (getBackground waits on its run), and
+			// each takes the memo at whatever version it gets (summarizeRows reads
+			// hit.ver). A follow-up not newer than the retarget is aimed at it too: its
+			// run then finds the memo and computes nothing, where it would compute an
+			// older memo and write it over the newer disk file.
+			cur.ver, cur.compute = ver, compute
+			if n := rs.next; n != nil && !versionAfter(n.ver, ver) {
+				n.ver, n.compute = ver, compute
+			}
+			c.joined++
+			c.rankLocked(id, cur, nil)
+			return cur
+		}
+		// Not newer: the waiter's version comes from the follow-up, which starts only
+		// after cur. cur is still queued behind all list work, so it is promoted too,
+		// or the waiter would wait for the queue after all (AC3).
+		c.rankLocked(id, cur, nil)
 	}
 	if rs.next == nil {
 		rs.next = newRun()
-	} else if versionAfter(ver, rs.next.ver) {
-		rs.next.ver, rs.next.compute = ver, compute
+	} else {
+		if versionAfter(ver, rs.next.ver) {
+			rs.next.ver, rs.next.compute = ver, compute
+		}
+		c.rankLocked(id, rs.next, gp)
 	}
 	return rs.next
 }
 
+// rankLocked applies a joining caller's rank to r: a waiter makes it unranked (it starts
+// at once if it was queued), a list caller raises the rank it has, never lowers it.
+func (c *DigestCache) rankLocked(id store.SessionIdent, r *digestRun, gp *gatePrio) {
+	if r.prio == nil {
+		return
+	}
+	switch {
+	case gp == nil:
+		queued := r.queued
+		c.gate.remove(r)
+		r.prio = nil
+		if queued {
+			c.launch(id, r)
+			c.gate.notify()
+		}
+	case gp.above(*r.prio):
+		seq := r.prio.seq
+		r.prio = gp.clone()
+		r.prio.seq = seq
+		if r.queued {
+			heap.Fix(&c.gate.q, r.qi)
+		}
+	}
+}
+
+// start runs r now when a caller waits for it, else queues it in the gate. fmu is held.
 func (c *DigestCache) start(id store.SessionIdent, r *digestRun) {
+	if r.prio == nil {
+		c.launch(id, r)
+		return
+	}
+	r.prio.seq = c.gate.nextSeq()
+	heap.Push(&c.gate.q, r)
+	c.dispatchLocked()
+}
+
+// launch starts r's goroutine. Its timeout starts there, so a queued run's does not run.
+func (c *DigestCache) launch(id store.SessionIdent, r *digestRun) {
 	logging.Go(c.log, "ui_build", func() error { c.run(id, r); return nil })
 }
 
@@ -309,23 +413,27 @@ func (c *DigestCache) run(id store.SessionIdent, r *digestRun) {
 		}
 		e := &digestEntry{id: id, ver: r.ver, memo: cloneMemo(m)}
 		r.res = e
-		if m.degraded {
-			return
-		}
 		c.store(e)
-		if !m.fromDisk {
+		// a degraded memo is kept in memory only (store treats it as stale); the disk file
+		// is one per session, so a memo older than memory's must not overwrite a newer one
+		if !m.fromDisk && !m.degraded && !c.heldAfter(id, r.ver) {
 			c.disk.PutMemo(id, r.ver, m.eff, m)
 		}
 	}()
 	c.fmu.Lock()
 	rs := c.active[id]
 	close(r.done)
+	if r.inSlot {
+		r.inSlot = false
+		delete(c.gate.inSlot, r)
+	}
 	if rs.next != nil {
 		rs.cur, rs.next = rs.next, nil
 		c.start(id, rs.cur)
 	} else {
 		delete(c.active, id)
 	}
+	c.dispatchLocked()
 	c.fmu.Unlock()
 }
 

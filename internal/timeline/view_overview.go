@@ -23,15 +23,7 @@ func (b *builder) overview(v *View) {
 	if b.in.Active {
 		o.Status = Mark{"●", "active"}
 	}
-	o.FolderFull, o.Folder = b.folder, b.display(b.folder)
-	if b.folder != "" && o.Folder == "." {
-		o.Folder = b.folder
-		if h := strings.TrimSuffix(b.in.Home, "/"); h != "" {
-			if rel, ok := strings.CutPrefix(b.folder, h+"/"); ok {
-				o.Folder = "~/" + rel
-			}
-		}
-	}
+	o.FolderFull, o.Folder = b.folder, FolderDisplay(b.folder, b.in.Home)
 
 	from, to := b.sessionRange()
 	o.From, o.To = rfc(from), rfc(to)
@@ -327,4 +319,16 @@ func (b *builder) needsLook(v *View) []LookItem {
 		out[hooksItem[n]].Sub = "only the hooks saw it: " + strings.Join(titles, ", ")
 	}
 	return out
+}
+
+// FolderDisplay is how a session's working folder shows: the full path, or "~/rel" when
+// it lies under home. The sessions list reads the folder from SQL and shows it through
+// this function, so it equals the one the built view shows.
+func FolderDisplay(full, home string) string {
+	if h := strings.TrimSuffix(home, "/"); h != "" {
+		if rel, ok := strings.CutPrefix(full, h+"/"); ok {
+			return "~/" + rel
+		}
+	}
+	return full
 }

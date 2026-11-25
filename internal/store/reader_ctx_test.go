@@ -176,3 +176,96 @@ func TestReader_ExistingMethodsUnchanged(t *testing.T) {
 		t.Fatalf("SessionByKey missing err = %v", err)
 	}
 }
+
+// seedMixedSessions makes six exchange sessions (two tied on last) and two hooks-only sessions.
+func seedMixedSessions(t *testing.T) *store.Reader {
+	t.Helper()
+	dir := t.TempDir()
+	s, _ := open(t, dir)
+	for i, e := range []sx{
+		{"a", "local", "cc", "k1", 1}, {"b", "local", "cc", "k2", 5}, {"c", "local", "cc", "k3", 5},
+		{"d", "local", "cc", "k4", 3}, {"e", "local", "cc", "k5", 9}, {"f", "alice", "cc", "k6", 2},
+	} {
+		ex := exchange(e.id, []byte("q"+e.id), []byte("r"+e.id))
+		ex.PrincipalID, ex.Client, ex.SessionKey = e.principal, e.client, e.session
+		ex.Start = time.Unix(1700000000+e.at, 0)
+		ex.End = ex.Start.Add(time.Second)
+		if err := s.SaveExchange(t.Context(), ex); err != nil {
+			t.Fatal(i, err)
+		}
+	}
+	for i, k := range []string{"h1", "h2"} {
+		h := hookFor("local", "cc", k, `{"n":1}`, time.Unix(1700000004+int64(i), 0))
+		h.Seq = int64(i + 1)
+		if err := s.SaveHook(t.Context(), h); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return openReader(t, dir)
+}
+
+// The window count agrees with SessionCount and the rows with SessionPage and
+// SessionPageAt, with and without after, offset and an empty page.
+func TestReader_SessionPageTotal(t *testing.T) {
+	for name, r := range map[string]*store.Reader{
+		"mixed": seedMixedSessions(t), "empty": seedSessions(t),
+	} {
+		c := r.WithContext(t.Context())
+		want, err := c.SessionCount()
+		if err != nil {
+			t.Fatal(err)
+		}
+		all, err := r.SessionRows(0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		afters := []*store.SessionAfter{nil}
+		for _, row := range all {
+			afters = append(afters, &store.SessionAfter{Last: row.Last, PrincipalID: row.PrincipalID, Client: row.Client, SessionKey: row.SessionKey})
+		}
+		for _, limit := range []int{1, 3, 100} {
+			for ai, after := range afters {
+				rows, total, err := c.SessionPageTotal(after, limit)
+				if err != nil {
+					t.Fatal(err)
+				}
+				page, err := c.SessionPage(after, limit)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if total != want || !reflect.DeepEqual(rows, page) {
+					t.Fatalf("%s after#%d limit %d: total %d rows %v, want %d %v", name, ai, limit, total, rows, want, page)
+				}
+			}
+			for _, offset := range []int{0, 1, 4, len(all), len(all) + 7} {
+				rows, total, err := c.SessionPageAtTotal(offset, limit)
+				if err != nil {
+					t.Fatal(err)
+				}
+				page, err := c.SessionPageAt(offset, limit)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if total != want || !reflect.DeepEqual(rows, page) {
+					t.Fatalf("%s offset %d limit %d: total %d rows %v, want %d %v", name, offset, limit, total, rows, want, page)
+				}
+			}
+		}
+	}
+	// the mixed store really holds hooks-only sessions, and an empty page past the end still counts them
+	c := seedMixedSessions(t).WithContext(t.Context())
+	rows, total, err := c.SessionPageAtTotal(100, 5)
+	if err != nil || len(rows) != 0 || total != 8 {
+		t.Fatalf("past the end: rows %v total %d err %v, want 0 rows and 8", rows, total, err)
+	}
+	rows, total, err = c.SessionPageTotal(nil, 8)
+	hooks := 0
+	for _, row := range rows {
+		if row.HooksOnly {
+			hooks++
+		}
+	}
+	if err != nil || total != 8 || hooks != 2 {
+		t.Fatalf("all: total %d hooks-only %d err %v, want 8 and 2", total, hooks, err)
+	}
+}
