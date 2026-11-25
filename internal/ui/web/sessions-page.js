@@ -4,6 +4,9 @@ import { bytes, dur, plural } from "./fmt.js";
 import { LABEL, explain, totalCost } from "./cost.js";
 
 export const NO_TITLE = "no prompt captured";
+// PENDING_TITLE is the title link's text while a row's facts are built: the placeholder bar
+// is drawn over it, so it is what a screen reader reads (spec 043 AC6).
+export const PENDING_TITLE = "Details loading";
 const DASH = "—";
 
 // ---- shared small builders (also used by the ungrouped and exchange views) ----
@@ -97,6 +100,8 @@ export function counter(c) {
 export function statusOf(s) {
   if (s.active) return { key: "active", glyph: "●", text: "active" };
   if (s.hooks_only) return { key: "hooks-only", glyph: "◇", text: "hooks only" };
+  // a pending row cannot say failed or ended yet: a quiet placeholder, not the empty "ended" cell (spec 043 D3)
+  if (s.pending) return { key: "pending", glyph: "○", text: PENDING_TITLE.toLowerCase() };
   if (toolCounts(s.tool_states).failed > 0 || (s.main_errors || 0) > 0) return { key: "failed", glyph: "✗", text: "failed" };
   return { key: "ended", glyph: "", text: "ended" };
 }
@@ -125,7 +130,9 @@ export function rowCells(s) {
   const models = s.models || [];
   const tools = toolCounts(s.tool_states);
   const e = s.effects || {};
-  const hooksOnly = Boolean(s.hooks_only) || (!s.has_calls && Boolean(s.has_hooks));
+  // a pending row has no has_hooks: hooks only is decided from hooks_only alone (spec 043 D15)
+  const pending = Boolean(s.pending);
+  const hooksOnly = Boolean(s.hooks_only) || (!pending && !s.has_calls && Boolean(s.has_hooks));
   // zero-valued parts are left out (027 C7b); a cell with nothing left shows "—"
   const nonZero = (n, one, many) => (n ? plural(n, one, many) : "");
   const mainCalls = l.main_calls ?? s.model_calls ?? 0;
@@ -136,10 +143,11 @@ export function rowCells(s) {
   const work = [prompts, hooksOnly ? "no model calls captured" : calls, toolText].filter(Boolean).join(" · ");
   return {
     hooksOnly,
+    pending,
     work: work || (tools.failed ? "" : DASH),
     id: s.id,
     start: s.first_at,
-    title: s.title || NO_TITLE,
+    title: pending ? PENDING_TITLE : s.title || NO_TITLE,
     key: s.session_key || "",
     folder: l.folder || "",
     folderFull: l.folder_full || l.folder || "",
@@ -371,6 +379,27 @@ function setHidden(e, hidden) {
   if (e.hidden !== hidden) e.hidden = hidden;
 }
 
+// emptyHeavy clears every heavy cell of a pending row (spec 043 AC6): the stylesheet draws a
+// placeholder bar of fixed size in each (tr.pending), so the cells hold no text. Each write is
+// on a change only, so a row that stays pending is not touched again.
+function emptyHeavy(parts) {
+  const { cells } = parts;
+  setSegments(parts.work, "");
+  setText(parts.failedSep, "");
+  setText(parts.failed, "");
+  setSegments(cells[4], "");
+  setText(cells[5], "");
+  for (const t of parts.tokens) {
+    setText(t, "");
+    setTitle(t, "");
+    setHidden(t, true);
+  }
+  for (const e of [...parts.seps, parts.cost]) setHidden(e, true);
+  setText(parts.cost, "");
+  setTitle(parts.cost, "");
+  setTokenBar(parts, []);
+}
+
 function fillRow(parts, s, selected) {
   // the same session object and the same selection: nothing to write (spec 042 AC3)
   if (parts.lastS === s && parts.lastSel === selected) return;
@@ -381,10 +410,18 @@ function fillRow(parts, s, selected) {
   // the selection marks are written only when the row's selected state changed
   if (parts.marked !== selected) {
     parts.marked = selected;
-    tr.className = selected ? "selected" : "";
     if (selected) tr.setAttribute("aria-selected", "true");
     else tr.removeAttribute("aria-selected");
   }
+  // a pending row's heavy cells are placeholder bars drawn by the stylesheet (spec 043 AC6);
+  // aria-busy says so for screen readers, and both go when the facts arrive
+  if (parts.pending !== c.pending) {
+    parts.pending = c.pending;
+    if (c.pending) tr.setAttribute("aria-busy", "true");
+    else tr.removeAttribute("aria-busy");
+  }
+  const cls = [selected ? "selected" : "", c.pending ? "pending" : ""].filter(Boolean).join(" ");
+  if (tr.className !== cls) tr.className = cls;
   if (key.start !== c.start) {
     key.start = c.start;
     const t = timeElement(c.start);
@@ -408,11 +445,16 @@ function fillRow(parts, s, selected) {
     if (c.status.glyph) cells[0].replaceChildren(icon);
     else cells[0].replaceChildren();
   }
+  if (c.pending) {
+    emptyHeavy(parts);
+    return;
+  }
   setSegments(parts.work, c.work);
   setText(parts.failedSep, c.failed && c.work ? " · " : "");
   setText(parts.failed, c.failed ? `${c.failed} failed` : "");
   setSegments(cells[4], c.changes);
   setText(cells[5], c.time);
+  setHidden(parts.tokens[0], false); // a pending row hid it
   if (c.hooksOnly) {
     // no model calls, so no counts to show: one dash for the whole cell (027 C7b)
     setText(parts.tokens[0], DASH);
@@ -508,7 +550,7 @@ function loader() {
 
 // createSessionsPage builds the landing page once; update(state) redraws the table, the
 // totals and the notes without touching the filter input, so typing keeps its focus.
-// state = { items, next_after, error, loaded, kind, q, total, scanned, page, today,
+// state = { items, next_after, error, loaded, kind, q, total, scanned, checking, stalled, page, today,
 // ungrouped: { items, next_after }, unassigned, unassignedItems }; page is the page shown (or
 // being loaded). Until the
 // page has loaded the box shows a loader. The rows are shown as given: the server filtered them.
@@ -572,7 +614,22 @@ export function createSessionsPage(handlers) {
   const foot = document.createElement("div");
   foot.className = "sp-foot";
   const unassigned = document.createElement("div");
-  el.append(head, bar, list, pager, foot, unassigned);
+  // The list's status line sits under the pager, below the fixed-height box, so it never moves
+  // the rows. It is one polite live region, built once: how many rows a filter is still
+  // checking (spec 043 AC6), or that the follow-up gave up, with a Retry (E1).
+  const status = document.createElement("div");
+  status.className = "sp-status";
+  status.setAttribute("aria-live", "polite");
+  const checkingMsg = span("muted");
+  const stalledMsg = span("muted", "Details are not available yet");
+  const stalledRetry = document.createElement("button");
+  stalledRetry.type = "button";
+  stalledRetry.className = "btn sm";
+  stalledRetry.textContent = "Retry";
+  stalledRetry.addEventListener("click", () => handlers.onRetry && handlers.onRetry());
+  for (const e of [checkingMsg, stalledMsg, stalledRetry]) e.hidden = true;
+  status.append(checkingMsg, stalledMsg, stalledRetry);
+  el.append(head, bar, list, pager, status, foot, unassigned);
 
   let kind = "all";
   let lastPage = 1;
@@ -707,7 +764,20 @@ export function createSessionsPage(handlers) {
     stat(t.cost.text, `${LABEL} cost`, t.cost.title);
   }
 
+  // drawStatus writes the status line; each part only when it changed (spec 042 AC3)
+  function drawStatus() {
+    const filtering = kind !== "all" || (state.q || "") !== "";
+    const shownList = state.loaded && !state.error;
+    const n = filtering && shownList ? state.checking || 0 : 0;
+    setText(checkingMsg, n ? `${n} ${n === 1 ? "session" : "sessions"} still being checked` : "");
+    setHidden(checkingMsg, !n);
+    const stalled = Boolean(state.stalled) && shownList;
+    setHidden(stalledMsg, !stalled);
+    setHidden(stalledRetry, !stalled);
+  }
+
   function redraw() {
+    drawStatus();
     for (const [k, b] of kinds) {
       const on = String(k === kind);
       if (pressed.get(k) === on) continue;

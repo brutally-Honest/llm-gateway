@@ -2,6 +2,7 @@ import { getJSON, openStream } from "./api.js";
 import { createUnassignedPage } from "./effects-list.js";
 import { lastID } from "./effects.js";
 import { addUnique, upsertSession } from "./entries.js";
+import { mergeRow, mergeRows } from "./merge.js";
 import { createStore } from "./store.js";
 import { createSessionPage } from "./session-page.js";
 import { createSessionsPage, localMidnight, note, pageCount, PAGE_SIZE, UNASSIGNED_SHOWN } from "./sessions-page.js";
@@ -28,7 +29,7 @@ const shell = mountShell({
   theme: initTheme(storage, root),
   look: initStyle(storage, root),
 });
-const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "", sessionsKind: "all", sessionsQ: "", sessionsTotal: 0, sessionsScanned: 0, sessionsPage: 1, ungrouped: [], ungroupedNext: null, ungroupedError: "", ungroupedHead: { items: [], next_after: null }, today: null, unassigned: 0, unassignedItems: [] });
+const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "", sessionsKind: "all", sessionsQ: "", sessionsTotal: 0, sessionsScanned: 0, sessionsPage: 1, sessionsChecking: 0, sessionsStalled: false, ungrouped: [], ungroupedNext: null, ungroupedError: "", ungroupedHead: { items: [], next_after: null }, today: null, unassigned: 0, unassignedItems: [] });
 let closeStream = null;
 let view = null;
 let page = null; // the Sessions page while it is shown
@@ -41,6 +42,11 @@ let listGen = 0; // bumps on every query change and page request; an older respo
 let curPage = 1; // the page the list shows or is loading
 let starts = [undefined]; // filtered lists: starts[k-1] is the position (after) page k starts at
 let scannedAt = []; // filtered lists: the rows the server tested for page k, at index k-1
+let fetchSeq = 0; // bumps on every list fetch (page load, refetch, follow-up); only the latest answer is applied (spec 043 AC5)
+let pageLoading = false; // a loadPage is in flight; no other list fetch starts beside it
+let followTimer = null; // the next follow-up fetch of the page on screen (spec 043 AC5)
+let followWaited = 0; // ms of follow-up delays spent since the list was last loaded
+let followDelay = 1000; // the delay before the next follow-up fetch; grows while answers bring nothing
 let unassignedSeen = null; // the unassigned count the list's section was last read for
 let queryTimer = null; // typing in the search box settles after this
 let headTimer = null; // a live session the filtered list does not hold refetches page 1 after this
@@ -50,6 +56,12 @@ let headFloor = null; // last_at (ms) of the oldest row of page 1, null when unk
 const TYPING_MS = 300;
 const HEAD_MS = 500;
 const HEAD_EVERY_MS = 5000;
+// the follow-up fetch reads the page again every FOLLOW_MS while rows are pending or a filter
+// is still checking, backs off to FOLLOW_MAX_MS while answers bring no progress, and gives up
+// once FOLLOW_GIVE_UP_MS of delays are spent (spec 043 D6, E1)
+const FOLLOW_MS = 1000;
+const FOLLOW_MAX_MS = 4000;
+const FOLLOW_GIVE_UP_MS = 120000;
 
 // load reads the ungrouped list; the sessions list has its own loaders below.
 async function load(kind, after) {
@@ -90,23 +102,54 @@ function fixURL(n) {
   history.replaceState(history.state, "", buildRoute({ name: "sessions", kind: list.kind, q: list.q, page: n }));
 }
 
+// walkFiltered reads a filtered list from page `from` up to page n, as the pages are reached
+// only through each page's next_after; if the pages run out first the last page reached is
+// answered. It returns { p, k, checking, scanned } for the last answer (k its page, checking
+// the rows the walk's answers left undecided), or null when stale() says the answer is no
+// longer wanted.
+async function walkFiltered(n, from, stale) {
+  let k = Math.min(from, n, starts.length);
+  let p;
+  let checking = 0;
+  for (;;) {
+    p = await getJSON("sessions", sessionParams(k, starts[k - 1]));
+    if (stale()) return null;
+    scannedAt[k - 1] = p.scanned || 0;
+    checking += p.checking || 0;
+    noteNext(k, p.next_after);
+    if (k >= n || !p.next_after) break;
+    k++;
+  }
+  return { p, k, checking, scanned: scannedAt.slice(0, k).reduce((a, b) => a + b, 0) };
+}
+
 // loadPage shows page n of the list for the current kind and q: the rows are dropped (a
 // skeleton shows in the box) unless keep is set, and the page is read. Every call bumps
-// listGen, so an answer to an older request (another page, another query) is dropped.
+// listGen and fetchSeq, so an answer to an older request (another page, another query) is
+// dropped, and it ends the follow-up fetches of the page before it (they start again from
+// this answer, with their time spent reset). Rows replace the held ones without the merge
+// rule (a new page, a new filter, Retry: spec 043 AC5, E7).
 //   Unfiltered: one request with offset (n-1)*50; a page past the last (from total) is
 //   corrected to the last page.
 //   Filtered: pages are reached only through each page's next_after, so a page whose start
 //   is not known is reached by walking from the furthest known start; if the pages run out
-//   first, the last page reached is shown.
+//   first, the last page reached is shown, and the URL says so unless rows are still being
+//   checked (spec 043 D13: the requested page stays the target, so a later answer can reach it).
 async function loadPage(n, keep = false) {
   const gen = ++listGen;
+  const seq = ++fetchSeq;
   curPage = n;
   clearHead();
-  store.set(keep ? { sessionsPage: n } : { sessions: [], sessionsLoaded: false, sessionsError: "", sessionsPage: n });
-  const stale = () => gen !== listGen;
+  cancelFollow();
+  pageLoading = true;
+  const head = { sessionsPage: n, sessionsChecking: 0, sessionsStalled: false };
+  store.set(keep ? head : { ...head, sessions: [], sessionsLoaded: false, sessionsError: "" });
+  const stale = () => gen !== listGen || seq !== fetchSeq;
   try {
     let p;
     let k = n;
+    let checking = 0;
+    let scanned = 0;
     if (!filtering()) {
       p = await getJSON("sessions", sessionParams(k));
       if (stale()) return;
@@ -119,27 +162,24 @@ async function loadPage(n, keep = false) {
         p = await getJSON("sessions", sessionParams(k));
         if (stale()) return;
       }
+      scanned = p.scanned || 0;
     } else {
-      k = Math.min(n, starts.length);
-      for (;;) {
-        p = await getJSON("sessions", sessionParams(k, starts[k - 1]));
-        if (stale()) return;
-        scannedAt[k - 1] = p.scanned || 0;
-        noteNext(k, p.next_after);
-        if (k >= n || !p.next_after) break;
-        k++;
-      }
-      if (k !== n) {
+      const w = await walkFiltered(n, n, stale);
+      if (!w) return;
+      ({ p, k, checking, scanned } = w);
+      if (k !== n && !checking) {
         curPage = k;
         fixURL(k);
       }
       if (k === 1) noteHeadFloor(p);
     }
+    pageLoading = false;
     store.set({
       sessions: p.items,
       sessionsNext: p.next_after,
       sessionsTotal: p.total || 0,
-      sessionsScanned: filtering() ? scannedAt.slice(0, k).reduce((a, b) => a + b, 0) : p.scanned || 0,
+      sessionsScanned: scanned,
+      sessionsChecking: checking,
       sessionsPage: k,
       sessionsError: "",
       sessionsLoaded: true,
@@ -149,13 +189,113 @@ async function loadPage(n, keep = false) {
     const un = p.unassigned_connections || 0;
     if (k === 1 || un !== unassignedSeen) loadUnassigned(un);
     unassignedSeen = un;
+    armFollow();
     // an event during the load may be newer than its answer; refetch once (spec 042 AC2).
     // A filtered refetch reads page 1 only.
     if (headDirty && !headTimer && !headCool && (!filtering() || curPage === 1)) headTimer = setTimeout(fireHead, HEAD_MS);
   } catch (e) {
     if (stale()) return;
+    pageLoading = false;
     store.set({ sessionsError: e.message });
   }
+}
+
+// outstanding is how much of the shown page is still to be filled in: its pending rows and
+// the rows a filter is checking.
+function outstanding() {
+  const s = store.get();
+  return s.sessions.filter((r) => r.pending).length + (s.sessionsChecking || 0);
+}
+
+// cancelFollow stops the follow-up fetches and forgets the time they spent.
+function cancelFollow() {
+  pauseFollow();
+  followWaited = 0;
+  followDelay = FOLLOW_MS;
+}
+
+function pauseFollow() {
+  if (followTimer) clearTimeout(followTimer);
+  followTimer = null;
+}
+
+// armFollow schedules the next follow-up fetch when the page on screen still has pending
+// rows or rows being checked (spec 043 AC5, D6). It is called after every applied list
+// answer and event. Nothing is scheduled while the tab is hidden (visibilitychange calls it
+// again) or after Retry is on offer; once FOLLOW_GIVE_UP_MS are spent the list says the
+// details are not available yet (E1).
+function armFollow() {
+  const s = store.get();
+  if (!page || followTimer || pageLoading || !s.sessionsLoaded || s.sessionsError || s.sessionsStalled) return;
+  if (!outstanding()) {
+    cancelFollow();
+    return;
+  }
+  if (document.hidden) return;
+  if (followWaited >= FOLLOW_GIVE_UP_MS) {
+    store.set({ sessionsStalled: true });
+    return;
+  }
+  followTimer = setTimeout(fireFollow, followDelay);
+}
+
+// fireFollow reads the page on screen again and folds the answer in by the merge rule, so a
+// row the answer still has pending keeps what the page already knows. A filtered page n
+// walks from page 1 so the page boundaries are worked out again (no row twice, none
+// skipped: spec 043 E4). Rows and counts that did not change cause no write.
+async function fireFollow() {
+  followTimer = null;
+  followWaited += followDelay;
+  if (pageLoading || !page) return;
+  const gen = listGen;
+  const seq = ++fetchSeq;
+  const stale = () => gen !== listGen || seq !== fetchSeq;
+  const n = curPage;
+  const before = outstanding();
+  try {
+    let p;
+    let k = n;
+    let checking = 0;
+    let scanned = 0;
+    if (!filtering()) {
+      p = await getJSON("sessions", sessionParams(n));
+      if (stale()) return;
+      scanned = p.scanned || 0;
+    } else {
+      const w = await walkFiltered(n, 1, stale);
+      if (!w) return;
+      ({ p, k, checking, scanned } = w);
+      if (k !== n && !checking) {
+        curPage = k;
+        fixURL(k);
+      }
+      if (k === 1) noteHeadFloor(p);
+    }
+    const s = store.get();
+    store.set({
+      sessions: mergeRows(s.sessions, p.items),
+      sessionsNext: p.next_after,
+      sessionsTotal: p.total || 0,
+      sessionsScanned: scanned,
+      sessionsChecking: checking,
+      sessionsPage: k,
+      sessionsError: "",
+    });
+    followDelay = outstanding() < before ? FOLLOW_MS : Math.min(followDelay * 2, FOLLOW_MAX_MS);
+  } catch {
+    // the rows shown stay; the next fetch tries again, until the time is up
+    if (stale()) return;
+    followDelay = Math.min(followDelay * 2, FOLLOW_MAX_MS);
+  }
+  armFollow();
+}
+
+// A tab that is hidden makes no follow-up fetches; showing it again carries on.
+if (typeof document.addEventListener === "function") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) pauseFollow();
+    else armFollow();
+  });
 }
 
 // noteNext records where page k+1 of a filtered list starts (next, null when page k is the
@@ -185,25 +325,35 @@ function listFailedOrLoading() {
 }
 
 // refetchHead reads the page on screen again after live events. A filtered page 1 takes the
-// answer's rows (which also renews where page 2 starts); an unfiltered list only takes the
-// new total, since its rows were already updated in place or inserted.
+// answer's rows through the merge rule (which also renews where page 2 starts); an unfiltered
+// list only takes the new total, since its rows were already updated in place or inserted.
 async function refetchHead() {
+  // a page load in flight reads the page itself, and an answer is dropped when a later fetch
+  // started (spec 043 AC5); so none starts beside a load, which refetches once it is done
+  if (pageLoading) {
+    headDirty = true;
+    return;
+  }
   const gen = listGen;
+  const seq = ++fetchSeq;
+  const stale = () => gen !== listGen || seq !== fetchSeq || listFailedOrLoading();
   const n = curPage;
   try {
     if (!filtering()) {
       // only the total is wanted: one row is enough to get it
       const t = await getJSON("sessions", { ...sessionParams(n), limit: 1 });
-      if (gen !== listGen || listFailedOrLoading()) return;
+      if (stale()) return;
       store.set({ sessionsTotal: t.total || 0, sessionsError: "" });
+      armFollow();
       return;
     }
     const p = await getJSON("sessions", sessionParams(n, starts[n - 1]));
-    if (gen !== listGen || listFailedOrLoading()) return;
+    if (stale()) return;
     noteHeadFloor(p);
     noteNext(1, p.next_after);
     scannedAt[0] = p.scanned || 0;
-    store.set({ sessions: p.items, sessionsNext: p.next_after, sessionsTotal: p.total || 0, sessionsError: "" });
+    store.set({ sessions: mergeRows(store.get().sessions, p.items), sessionsNext: p.next_after, sessionsTotal: p.total || 0, sessionsChecking: p.checking || 0, sessionsError: "" });
+    armFollow();
   } catch {
     // the rows shown stay; the next event tries again
   }
@@ -211,6 +361,7 @@ async function refetchHead() {
 
 // applyList makes kind and q the list's query and shows page n of it (1 unless the URL
 // names another): the rows are dropped (a skeleton shows) and the page positions forgotten.
+// loadPage ends any follow-up fetches of the old query.
 function applyList(kind, q, n = 1) {
   list = { kind, q };
   starts = [undefined];
@@ -234,10 +385,15 @@ function onSession(row) {
     headDirty = true;
     return;
   }
-  if (s.sessions.some((x) => x.id === row.id)) {
+  const held = s.sessions.find((x) => x.id === row.id);
+  if (held) {
+    // the event may carry a pending row or an older one than the page holds (spec 043 AC5)
+    const merged = mergeRow(held, row);
+    if (merged === held) return;
     // only an unfiltered page 1 re-sorts; elsewhere the row keeps its place under the reader
-    if (!filtering() && curPage === 1) store.set({ sessions: upsertSession(s.sessions, row) });
-    else store.set({ sessions: s.sessions.map((x) => (x.id === row.id ? row : x)) });
+    if (!filtering() && curPage === 1) store.set({ sessions: upsertSession(s.sessions, merged) });
+    else store.set({ sessions: s.sessions.map((x) => (x.id === row.id ? merged : x)) });
+    armFollow();
     return;
   }
   if (filtering()) {
@@ -246,6 +402,7 @@ function onSession(row) {
     if (headFloor !== null && Date.parse(row.last_at) < headFloor) return;
   } else if (curPage === 1 && s.sessionsLoaded) {
     store.set({ sessions: upsertSession(s.sessions, row).slice(0, PAGE_SIZE) });
+    armFollow();
   }
   headDirty = true;
   if (!headTimer && !headCool) headTimer = setTimeout(fireHead, HEAD_MS);
@@ -633,6 +790,8 @@ function showSessions() {
       q: s.sessionsQ,
       total: s.sessionsTotal,
       scanned: s.sessionsScanned,
+      checking: s.sessionsChecking,
+      stalled: s.sessionsStalled,
       page: s.sessionsPage,
       today: s.today,
       ungrouped: s.ungroupedHead,
@@ -671,6 +830,8 @@ function route() {
   listSync = null;
   cancelTyping();
   clearHead();
+  cancelFollow();
+  pageLoading = false;
   listGen++;
   if (view) view();
   view = null;

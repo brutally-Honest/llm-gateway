@@ -6,7 +6,8 @@ feature: 043-fast-rows-first
 ## Progress
 - 2026-11-25 Step 1 (measure, decide), f71b54e: empty cache on main: copy page 1 4.33 s, page 2 504, filters 2.9-3.0 s; 3x page 1 4.57 s, page 2 504; row split, filter and fill-in decisions D1-D9.
 - 2026-11-25 Step 2 (design review), aabed28: 2 P1, 6 P2, P3s and P4s; P1 and P2 fixed in the design (D10-D15, spec AC1-AC7, E1, E7).
-- 2026-11-25 Step 3a (server, sonnet), (this commit): /api/sessions and the stream snapshot never wait for a build; pending rows, row_version, checking, build gate with list priority; 16 new tests; two cmd/gateway tests now wait for filled rows; make verify green.
+- 2026-11-25 Step 3a (server, sonnet), 5d28904: /api/sessions and the stream snapshot never wait for a build; pending rows, row_version, checking, build gate with list priority; 16 new tests; two cmd/gateway tests now wait for filled rows; make verify green.
+- 2026-11-25 Step 3b (browser, sonnet), (this commit): pending rows render with fixed-width placeholders, merge rule by row_version and version, follow-up fetch with back-off and a two-minute stop, "N sessions still being checked"; 29 new web tests (273); make verify green. Quick probe on the copy before it: page 1 66 ms (filled 2.0 s), page 2 88 ms (4.1 s), kind=look 108 ms (4.8 s).
 
 ## Measurement setup
 - Store copy, taken 2026-11-25 05:51 +05:30: `sqlite3 ~/.local/share/llm-gateway/gateway.db
@@ -142,3 +143,10 @@ events) 22 ms whatever its LIMIT; the folder of 50 sessions (first hook naming a
 | P2-8 | 5 s fill at 2 slots unproven | D12 (measured in step 4) |
 | P3 | Pending shape, cheap folder wins, restored store, follow-up stop, goroutine per run, disk before gate, pass timeout | spec AC1, AC2, E1, E7; D12, D15 |
 | P4 | D5 hooks rule holds; versionAfter total in practice; no deadlock; look+q; scan budget | checked; AC4, D14 |
+- **D16** (2026-11-25) The browser's placeholders keep widths by floors on the Work, Changes,
+  Tokens and Time columns (12.5-16rem, 5rem) rather than a fixed table layout; this changes
+  the list's look slightly where those columns were narrower. The step-4 UI check measures
+  whether rows move when facts arrive.
+- **D17** (2026-11-25) The browser's first test fixture named a client; the agnosticism check
+  (`TestCore_NoProviderOrClientIdentifiers`) caught it and a haiku subagent made it neutral
+  before the commit.

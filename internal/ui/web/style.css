@@ -334,6 +334,31 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 }
 .sp-list td.work .bad { color: var(--bad); font-weight: 600; }
 .sp-list td.tokens .cost { display: block; white-space: nowrap; color: var(--muted); }
+/* A row whose facts are not built yet (spec 043 AC6): the cheap cells are real, and each heavy
+   cell holds a quiet bar. The bars are drawn here, not in the DOM, so a row going from
+   pending to filled writes only its cells' text. Nothing may move when the facts arrive:
+   the columns have a floor at least as wide as their bar, the title link and the place line
+   keep the lines they have when filled (the link's text is transparent, so its height is the
+   real one), and the Tokens bars take the height of its figures, cost and bar. No animation. */
+.sessions-page > .sp-list th.dur, .sessions-page > .sp-list td.dur { min-width: 5rem; }
+.sp-list td.work, .sp-list td.changes, .sp-list td.tokens { min-width: 12.5rem; }
+@media (min-width: 1600px) {
+.sp-list td.work, .sp-list td.tokens { min-width: 16rem; }
+}
+.sp-list tr.pending a.stitle { color: transparent; width: min(16rem, 70%); background: var(--panel2); border-radius: var(--radius-xs); user-select: none; }
+.sp-list tr.pending .splace { display: block; min-height: 1.3em; }
+.sp-list tr.pending .splace::after { content: ""; display: inline-block; width: 6rem; height: .8em; margin-left: .5rem; vertical-align: middle; background: var(--panel2); border-radius: var(--radius-xs); }
+.sp-list tr.pending .splace:empty::after { margin-left: 0; }
+.sp-list tr.pending td.work::before, .sp-list tr.pending td.changes::before, .sp-list tr.pending td.dur::before, .sp-list tr.pending td.tokens::before { content: ""; display: block; height: 1em; background: var(--panel2); border-radius: var(--radius-xs); }
+.sp-list tr.pending td.work::before { width: 9rem; }
+.sp-list tr.pending td.changes::before { width: 7rem; }
+.sp-list tr.pending td.dur::before { width: 3rem; }
+.sp-list tr.pending td.tokens::before { width: 10rem; margin-bottom: .45em; }
+.sp-list tr.pending td.tokens::after { content: ""; display: block; width: 4rem; height: 1em; margin-bottom: 9px; background: var(--panel2); border-radius: var(--radius-xs); }
+.sicon-pending { opacity: .45; }
+/* the list's status line: rows a filter is still checking, or the follow-up giving up */
+.sp-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 13px; }
+.sp-status > .muted { margin: 0; }
 .page .sp-list table { min-width: 0; }
 .page > .muted { margin: 0; font-size: 13px; }
 .page-sub { margin: 6px 0 0; font-size: 15px; font-weight: 700; color: var(--hi); }
