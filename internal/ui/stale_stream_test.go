@@ -47,10 +47,10 @@ func (e *streamEnv) heldBuild() (release func()) {
 		e.t.Fatal(err)
 	}
 	started, gate := make(chan struct{}), make(chan struct{})
-	held := func(ctx context.Context) (builtSession, error) {
+	held := func(ctx context.Context, prev *cachedBuild) (builtSession, error) {
 		close(started)
 		<-gate
-		return e.d.timelineBuild(who)(ctx)
+		return e.d.timelineBuild(who)(ctx, prev)
 	}
 	if _, err := e.hub.Timelines().latest(e.t.Context(), id, vers[id], held); err != nil {
 		e.t.Fatal(err)

@@ -113,10 +113,9 @@ type callInfo struct {
 	inputHash string // content of the captured tool call input
 }
 
-// applyHarness adds match states to the tool-call entries and appends an entry for
-// each hook event that matches no captured tool call. exchangeEvents holds each
-// exchange's events in exchange order.
-func applyHarness(src Source, session store.SessionRow, exchangeEvents [][]store.EventRow, out []Entry, opts Options) ([]Entry, error) {
+// sessionHooks reads a session's hook events, keeps those of exactly this session, and
+// orders and dedups them as the store does.
+func sessionHooks(src Source, session store.SessionRow) ([]store.HookRow, error) {
 	rows, err := src.HookEvents(session.PrincipalID, session.Client, session.SessionKey)
 	if err != nil {
 		return nil, fmt.Errorf("timeline: hook events: %w", err)
@@ -128,24 +127,55 @@ func applyHarness(src Source, session store.SessionRow, exchangeEvents [][]store
 			exact = append(exact, h)
 		}
 	}
-	hooks := dedupHooks(sortHooks(exact))
+	return dedupHooks(sortHooks(exact)), nil
+}
 
+// toolDatum is one tool event of an exchange as the hook pass reads it: a tool call
+// (its input's content hash) or a tool result, by tool call id.
+type toolDatum struct {
+	result bool // a tool result; else a tool call
+	id     string
+	hash   string
+}
+
+// toolDataOf lists an exchange's tool events that carry a tool call id, in event order,
+// duplicates and empty hashes kept. in, when not nil, interns the strings.
+func toolDataOf(evs []store.EventRow, in *interner) []toolDatum {
+	var out []toolDatum
+	for _, e := range evs {
+		if e.ToolCallID == "" {
+			continue
+		}
+		switch e.Kind {
+		case "tool_call", "tool_result":
+			out = append(out, toolDatum{result: e.Kind == "tool_result", id: in.intern(e.ToolCallID), hash: in.intern(e.ContentHash)})
+		}
+	}
+	return out
+}
+
+// contentFn reads stored content; a block that is not stored is nil, not an error.
+type contentFn func(hash string) ([]byte, error)
+
+func readerOf(src Source) contentFn { return func(h string) ([]byte, error) { return content(src, h) } }
+
+// applyHooks adds match states to the tool-call entries of out, in place, and merges an
+// entry for each hook event that matches no captured tool call. hooks are the session's
+// hook rows (ordered, deduped); tools holds each exchange's tool data in exchange order.
+// A memo, when not nil, keeps the input comparisons between runs.
+func applyHooks(hooks []store.HookRow, tools [][]toolDatum, out []Entry, read contentFn, memo *Memo, opts Options) ([]Entry, error) {
 	calls := map[string]*callInfo{}
 	resultAt := map[string][]int{} // tool call id -> exchanges holding a tool_result for it
-	for i, evs := range exchangeEvents {
-		for _, e := range evs {
-			if e.ToolCallID == "" {
-				continue
-			}
-			switch e.Kind {
-			case "tool_call":
-				if c, ok := calls[e.ToolCallID]; !ok {
-					calls[e.ToolCallID] = &callInfo{firstEx: i, inputHash: e.ContentHash}
+	for i, ds := range tools {
+		for _, d := range ds {
+			if !d.result {
+				if c, ok := calls[d.id]; !ok {
+					calls[d.id] = &callInfo{firstEx: i, inputHash: d.hash}
 				} else if c.inputHash == "" {
-					c.inputHash = e.ContentHash
+					c.inputHash = d.hash
 				}
-			case "tool_result":
-				resultAt[e.ToolCallID] = append(resultAt[e.ToolCallID], i)
+			} else {
+				resultAt[d.id] = append(resultAt[d.id], i)
 			}
 		}
 	}
@@ -159,7 +189,7 @@ func applyHarness(src Source, session store.SessionRow, exchangeEvents [][]store
 
 	verdicts := map[string]Entry{}
 	for id, c := range calls {
-		v, err := verdict(src, hooks, byID[id], c, resultAt[id], opts)
+		v, err := verdict(read, memo, hooks, byID[id], c, resultAt[id], opts)
 		if err != nil {
 			return nil, err
 		}
@@ -234,7 +264,7 @@ func hookReasonOutcome(rank int) (reason, outcome string) {
 }
 
 // verdict derives one tool call's state from the session's hook rows (ordered, deduped).
-func verdict(src Source, all, mine []store.HookRow, c *callInfo, results []int, opts Options) (Entry, error) {
+func verdict(read contentFn, memo *Memo, all, mine []store.HookRow, c *callInfo, results []int, opts Options) (Entry, error) {
 	var v Entry
 	if len(all) == 0 {
 		v.State = StateNoHarnessData
@@ -282,23 +312,44 @@ func verdict(src Source, all, mine []store.HookRow, c *callInfo, results []int, 
 		v.State = StatePending
 	}
 	if pre != nil && pre.InputHash != "" && c.inputHash != "" {
-		hin, err := content(src, pre.InputHash)
+		d, err := inputDiff(read, memo, pre.InputHash, c.inputHash, opts)
 		if err != nil {
 			return v, err
 		}
-		cin, err := content(src, c.inputHash)
-		if err != nil {
-			return v, err
-		}
-		if hin != nil && cin != nil && !sameJSON(hin, cin) {
-			v.InputDiffers = true
-			v.HookInput = string(hin)
-			if !opts.Full {
-				v.HookInput, v.HookOmitted = cut(v.HookInput, opts.limit())
-			}
-		}
+		v.InputDiffers, v.HookInput, v.HookOmitted = d.differs, d.hookInput, d.omitted
 	}
 	return v, nil
+}
+
+// inputDiff compares a hook's tool input with the captured call's: whether they differ and
+// the hook's input, cut as an entry's text is. When both are stored the result is memoised
+// by the two hashes and the cut (a content hash never changes its content); a block that
+// is not stored, or a read that fails, is never memoised.
+func inputDiff(read contentFn, memo *Memo, preHash, callHash string, opts Options) (inputDiffs, error) {
+	key := cmpKey{pre: preHash, call: callHash, limit: opts.limit(), full: opts.Full}
+	if d, ok := memo.cmpGet(key); ok {
+		return d, nil
+	}
+	hin, err := read(preHash)
+	if err != nil {
+		return inputDiffs{}, err
+	}
+	cin, err := read(callHash)
+	if err != nil {
+		return inputDiffs{}, err
+	}
+	var d inputDiffs
+	if hin != nil && cin != nil && !sameJSON(hin, cin) {
+		d.differs = true
+		d.hookInput = string(hin)
+		if !opts.Full {
+			d.hookInput, d.omitted = cut(d.hookInput, opts.limit())
+		}
+	}
+	if hin != nil && cin != nil {
+		memo.cmpPut(key, d)
+	}
+	return d, nil
 }
 
 // sameJSON compares two inputs in the canonical form: keys sorted, numbers as

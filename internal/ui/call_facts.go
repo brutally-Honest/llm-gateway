@@ -36,11 +36,16 @@ func callFacts(src timeline.Source, built []timeline.Entry, rules ClientRules, e
 // callFactsBoth is callFacts that also returns the timeline's own facts, which the session
 // view reads.
 func callFactsBoth(src timeline.Source, built []timeline.Entry, rules ClientRules, evs map[string][]store.EventRow) (map[string]*callFactsJSON, map[string]*timeline.CallFact, error) {
+	return callFactsFrom(built, rules, func(id string) ([]string, error) { return timeline.UserTextsOf(src, evs[id]) })
+}
+
+// callFactsFrom is callFactsBoth with the user texts of a request given by texts.
+func callFactsFrom(built []timeline.Entry, rules ClientRules, texts func(requestID string) ([]string, error)) (map[string]*callFactsJSON, map[string]*timeline.CallFact, error) {
 	var fr timeline.FactRules
 	if rules != nil {
 		fr = rules
 	}
-	raw, err := timeline.CallFacts(src, built, fr, evs)
+	raw, err := timeline.CallFactsWith(built, fr, texts)
 	if err != nil {
 		return nil, nil, err
 	}

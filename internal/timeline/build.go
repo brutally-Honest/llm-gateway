@@ -136,6 +136,7 @@ type thread struct {
 	hashes []string
 	id     int    // the conversation thread this call belongs to
 	reqID  string // the call's request id
+	ex     int    // the call's position among the session's exchanges
 }
 
 // Build lists a session's entries: exchanges by start time then request id, each
@@ -149,71 +150,82 @@ func Build(src Source, session store.SessionRow, opts Options) ([]Entry, error) 
 // BuildWithUsage is Build that also returns the session's usage summary, taken from
 // the same pass over the events.
 func BuildWithUsage(src Source, session store.SessionRow, opts Options) ([]Entry, Summary, error) {
+	out, sum, _, err := buildFull(src, session, opts, nil)
+	return out, sum, err
+}
+
+// BuildWithState is BuildWithUsage that also returns the state an incremental update
+// continues from (spec 040). memo is the state's memo (NewMemo()); the state keeps it.
+// The entries and the summary are those of BuildWithUsage.
+func BuildWithState(src Source, session store.SessionRow, opts Options, memo *Memo) ([]Entry, Summary, *State, error) {
+	if memo == nil {
+		memo = NewMemo()
+	}
+	return buildFull(src, session, opts, memo)
+}
+
+// buildFull is the full build; with a memo it also collects the incremental state.
+func buildFull(src Source, session store.SessionRow, opts Options, memo *Memo) ([]Entry, Summary, *State, error) {
 	exchanges, err := src.SessionExchanges(session.PrincipalID, session.Client, session.SessionKey)
 	if err != nil {
-		return nil, Summary{}, fmt.Errorf("timeline: session exchanges: %w", err)
+		return nil, Summary{}, nil, fmt.Errorf("timeline: session exchanges: %w", err)
 	}
 	var (
 		out     []Entry
 		earlier []thread
 		calls   []CallUsage
-		seen    [][]store.EventRow
+		tools   = make([][]toolDatum, 0, len(exchanges))
 		threads int // conversation threads started so far
-		in      = interner{}
+		in      = newInterner()
+		st      *State
 	)
-	for _, ex := range exchanges {
-		evs, err := loadEvents(src, ex)
+	if memo != nil {
+		src = memoSource{src, memo}
+		st = &State{opts: opts, in: in, memo: memo, slots: make([]slot, 0, len(exchanges))}
+	}
+	for i, ex := range exchanges {
+		rec, evs, err := deriveExchange(src, ex, in, st != nil)
 		if err != nil {
-			return nil, Summary{}, err
+			return nil, Summary{}, nil, err
 		}
-		seen = append(seen, evs)
-		hashes := messageHashes(evs, in)
-		if len(hashes) == 0 || foldedParse(ex.Parse) {
-			fe := folded(ex)
-			// A folded-parse exchange may still be a model call; its events are
-			// read only to find the request event.
-			callEvs := evs
-			if foldedParse(ex.Parse) {
-				if callEvs, err = src.Events(ex.RequestID); err != nil {
-					return nil, Summary{}, fmt.Errorf("timeline: events of %s: %w", ex.RequestID, err)
-				}
-			}
-			fe.Call = callOf(ex, callEvs)
+		tools = append(tools, rec.tools)
+		if rec.folded {
+			fe := rec.foldedEntry()
 			if fe.Call != nil {
 				calls = append(calls, *fe.Call)
 			}
 			out = append(out, fe) // Index 0
+			if st != nil {
+				st.slots = append(st.slots, slot{rec: rec, first: fe})
+			}
 			continue
 		}
-		lcp, best := bestMatch(earlier, hashes)
-		tid, prev := threads, ""
-		if best != nil {
-			tid, prev = best.id, best.reqID
-		} else {
-			threads++
-		}
-		earlier = append(earlier, thread{hashes: hashes, id: tid, reqID: ex.RequestID})
-		entries, err := exchangeEntries(src, ex, evs, lcp, best, opts)
+		pl := placeExchange(earlier, &threads, rec)
+		earlier = append(earlier, thread{hashes: rec.hashes, id: pl.tid, reqID: ex.RequestID, ex: i})
+		entries, err := exchangeBody(src, rec, evs, pl, opts)
 		if err != nil {
-			return nil, Summary{}, err
+			return nil, Summary{}, nil, err
 		}
-		for i := range entries {
-			entries[i].Index = i
-		}
-		entries[0].Thread, entries[0].PrevID = tid, prev
-		entries[0].Messages, entries[0].Carried = len(hashes), lcp
-		entries[0].RequestMessages = requestMessageCount(evs)
-		entries[0].Call = callOf(ex, evs)
 		if entries[0].Call != nil {
 			calls = append(calls, *entries[0].Call)
 		}
 		out = append(out, entries...)
+		if st != nil {
+			st.slots = append(st.slots, slot{rec: rec, pl: pl, first: entries[0], rest: entries[1:]})
+		}
 	}
-	out, err = applyHarness(src, session, seen, out, opts)
+	hooks, err := sessionHooks(src, session)
 	if err != nil {
-		return nil, Summary{}, err
+		return nil, Summary{}, nil, err
 	}
-	return out, Summarize(calls), nil
+	out, err = applyHooks(hooks, tools, out, readerOf(src), memoOf(st), opts)
+	if err != nil {
+		return nil, Summary{}, nil, err
+	}
+	if st != nil {
+		st.finish()
+	}
+	return out, Summarize(calls), st, nil
 }
 
 func callOf(ex store.ExchangeRow, evs []store.EventRow) *CallUsage {
@@ -240,21 +252,30 @@ func loadEvents(src Source, ex store.ExchangeRow) ([]store.EventRow, error) {
 }
 
 // interner gives equal hash strings one shared copy per pass, so lcp compares equal
-// hashes by pointer (memequal returns early on equal pointers).
-type interner map[string]string
+// hashes by pointer (memequal returns early on equal pointers). It only grows.
+type interner struct {
+	m     map[string]string
+	bytes int64 // estimated bytes the interner holds
+}
 
-func (in interner) intern(h string) string {
-	if c, ok := in[h]; ok {
+func newInterner() *interner { return &interner{m: map[string]string{}} }
+
+func (in *interner) intern(h string) string {
+	if in == nil {
+		return h
+	}
+	if c, ok := in.m[h]; ok {
 		return c
 	}
-	in[h] = h
+	in.m[h] = h
+	in.bytes += int64(len(h)) + mapEntryBytes
 	return h
 }
 
 // messageHashes are the content hashes of the message events in seq order, interned
 // through in when it is not nil. A message without a hash gets a value no other message
 // can equal.
-func messageHashes(evs []store.EventRow, in interner) []string {
+func messageHashes(evs []store.EventRow, in *interner) []string {
 	var out []string
 	for _, e := range evs {
 		if e.Kind != "message" {
@@ -263,7 +284,7 @@ func messageHashes(evs []store.EventRow, in interner) []string {
 		h := e.ContentHash
 		if h == "" {
 			h = fmt.Sprintf("\x00%s/%d", e.RequestID, e.Seq)
-		} else if in != nil {
+		} else {
 			h = in.intern(h)
 		}
 		out = append(out, h)
@@ -306,8 +327,17 @@ func lcp(a, b []string) int {
 // Ties go to a thread whose own list equals the shared run, then to the latest. A
 // run of 0 means a new thread, and best is then nil.
 func bestMatch(earlier []thread, hashes []string) (int, *thread) {
+	n, i := bestMatchIdx(earlier, hashes)
+	if i < 0 {
+		return n, nil
+	}
+	return n, &earlier[i]
+}
+
+// bestMatchIdx is bestMatch returning the index of the best thread in earlier, -1 for none.
+func bestMatchIdx(earlier []thread, hashes []string) (int, int) {
 	var (
-		best      *thread
+		best      = -1
 		bestLCP   int
 		bestExact bool
 	)
@@ -318,7 +348,7 @@ func bestMatch(earlier []thread, hashes []string) (int, *thread) {
 		}
 		exact := len(earlier[i].hashes) == n
 		if n > bestLCP || (n == bestLCP && (exact || !bestExact)) {
-			best, bestLCP, bestExact = &earlier[i], n, exact
+			best, bestLCP, bestExact = i, n, exact
 		}
 	}
 	return bestLCP, best
@@ -346,11 +376,11 @@ type errorPayload struct {
 	Message string `json:"message"`
 }
 
-func exchangeEntries(src Source, ex store.ExchangeRow, evs []store.EventRow, shared int, best *thread, opts Options) ([]Entry, error) {
+func exchangeEntries(src Source, ex store.ExchangeRow, evs []store.EventRow, shared int, diverged bool, opts Options) ([]Entry, error) {
 	partialEx := ex.Parse == "partial"
 	out := []Entry{{Kind: KindExchange, RequestID: ex.RequestID, Start: ex.StartedAt,
 		Method: ex.Method, Path: ex.Path, Status: ex.Status, Parse: ex.Parse, Partial: partialEx}}
-	if best != nil && len(best.hashes) > shared {
+	if diverged {
 		out = append(out, Entry{Kind: KindMarker, RequestID: ex.RequestID, Start: ex.StartedAt,
 			Text: MarkerDiverged, Partial: partialEx})
 	}

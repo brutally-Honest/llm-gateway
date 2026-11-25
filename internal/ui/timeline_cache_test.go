@@ -77,7 +77,7 @@ func ident(key string) store.SessionIdent {
 func TestTimelineCache_TimedOutBuildIsCachedAndRetryHits(t *testing.T) {
 	c := NewTimelineCache(context.Background(), nil)
 	release := make(chan struct{})
-	build := func(context.Context) (builtSession, error) {
+	build := func(context.Context, *cachedBuild) (builtSession, error) {
 		<-release
 		return builtSession{rows: 7}, nil
 	}
@@ -103,7 +103,7 @@ func TestTimelineCache_TimedOutBuildIsCachedAndRetryHits(t *testing.T) {
 func TestTimelineCache_FailedBuildIsNotCached(t *testing.T) {
 	c := NewTimelineCache(context.Background(), nil)
 	boom := errors.New("boom")
-	if _, err := c.get(t.Context(), ident("k"), store.Version{}, func(context.Context) (builtSession, error) {
+	if _, err := c.get(t.Context(), ident("k"), store.Version{}, func(context.Context, *cachedBuild) (builtSession, error) {
 		return builtSession{}, boom
 	}); !errors.Is(err, boom) {
 		t.Fatalf("err = %v", err)
@@ -111,7 +111,7 @@ func TestTimelineCache_FailedBuildIsNotCached(t *testing.T) {
 	if c.len() != 0 {
 		t.Fatal("failed build cached")
 	}
-	if _, err := c.get(t.Context(), ident("k"), store.Version{}, func(context.Context) (builtSession, error) {
+	if _, err := c.get(t.Context(), ident("k"), store.Version{}, func(context.Context, *cachedBuild) (builtSession, error) {
 		return builtSession{}, nil
 	}); err != nil || c.builds.Load() != 2 {
 		t.Fatalf("retry err = %v builds = %d", err, c.builds.Load())
@@ -122,7 +122,7 @@ func TestTimelineCache_ConcurrentRequestsOneBuild(t *testing.T) {
 	c := NewTimelineCache(context.Background(), nil)
 	started, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
-	build := func(context.Context) (builtSession, error) {
+	build := func(context.Context, *cachedBuild) (builtSession, error) {
 		once.Do(func() { close(started) })
 		<-release
 		return builtSession{rows: 1}, nil
@@ -144,7 +144,7 @@ func TestTimelineCache_ConcurrentRequestsOneBuild(t *testing.T) {
 }
 
 func fill(c *TimelineCache, key string, ver store.Version, bs builtSession) {
-	_, _ = c.get(context.Background(), ident(key), ver, func(context.Context) (builtSession, error) { return bs, nil })
+	_, _ = c.get(context.Background(), ident(key), ver, func(context.Context, *cachedBuild) (builtSession, error) { return bs, nil })
 }
 
 func TestTimelineCache_LRUEvictsOldestSession(t *testing.T) {
@@ -325,7 +325,7 @@ func TestTimelineCache_BuildFailureLevelFollowsCause(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			obs, logs := observer.New(zap.DebugLevel)
 			c := newTimelineCache(t.Context(), zap.New(obs), 2, 1<<30)
-			_, err := c.get(t.Context(), ident("k"), store.Version{ExCount: 1}, func(context.Context) (builtSession, error) {
+			_, err := c.get(t.Context(), ident("k"), store.Version{ExCount: 1}, func(context.Context, *cachedBuild) (builtSession, error) {
 				return builtSession{}, tc.err
 			})
 			if !errors.Is(err, tc.err) {
@@ -346,7 +346,7 @@ func TestTimelineCache_BuildFailureLevelFollowsCause(t *testing.T) {
 func TestTimelineCache_BuildPanicIsLoggedAndReturned(t *testing.T) {
 	obs, logs := observer.New(zap.ErrorLevel)
 	c := NewTimelineCache(t.Context(), zap.New(obs))
-	_, err := c.get(t.Context(), ident("k"), store.Version{ExCount: 1}, func(context.Context) (builtSession, error) {
+	_, err := c.get(t.Context(), ident("k"), store.Version{ExCount: 1}, func(context.Context, *cachedBuild) (builtSession, error) {
 		panic("boom")
 	})
 	if err == nil || !strings.Contains(err.Error(), "panicked") {

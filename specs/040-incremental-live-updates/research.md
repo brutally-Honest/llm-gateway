@@ -7,7 +7,8 @@ feature: 040-incremental-live-updates
 - 2026-11-25 Step 1 (measure, design), (this commit): baseline on main: call to view 2,534-2,712 ms, 3.0-3.2 CPU-s per call (0.7-0.9 of it capture), RSS 116 to ~680 MB; hook 2,268-2,298 ms; effect 750-786 ms; full build 1.8 s, 940 MB allocated; rules per input and fallbacks F1-F6 in spec.md; D1-D11.
 - 2026-11-25 Step 1 commit f800e3b.
 - 2026-11-25 Step 2 (design review, fresh opus), 8cedafc: 0 P1, 4 P2, 7 P3, 5 P4; P2s fixed in the design (D12-D15), P3s D16-D22, P4s folded into spec.md.
-- 2026-11-25 Step 3 (oracle test, sonnet), (this commit): `internal/ui/incremental_oracle_test.go`, S1-S7 plus 20 random seeds (25-32 steps each), skipped until step 4; with the stub pointed at a full build every case passes, with one entry's text altered it fails at S1 step 0; a neutral test client (purity check); `buildSessionInc` stub and `buildInfo` in build_session.go.
+- 2026-11-25 Step 3 (oracle test, sonnet), f43d1c8: `internal/ui/incremental_oracle_test.go`, S1-S7 plus 20 random seeds (25-32 steps each), skipped until step 4; with the stub pointed at a full build every case passes, with one entry's text altered it fails at S1 step 0; a neutral test client (purity check); `buildSessionInc` stub and `buildInfo` in build_session.go.
+- 2026-11-25 Step 4.1 (incremental build, sonnet), (this commit): `timeline.State` with per-exchange records, placement split (body key, header), snapshot diff, fallbacks F1-F6 counted by the timeline cache; view streams get a one-slot dirty signal, hooks and effects poke them at once; oracle enabled and green; planted breaks (no re-place after insertion; reused hook pass) both fail it; in process on the largest session: update 44-52 ms (append), 95-100 ms (insertion), state ~31 MB est.; quick live run: hook 291-300 ms, effect 241-244 ms, call ~950 ms from response end, first call after open a full build (cache evicted by 030's background pass, D30).
 
 ## Measurement setup
 - Store copy, taken 2026-11-25 19:19 +05:30: `sqlite3 ~/.local/share/llm-gateway/gateway.db
@@ -179,3 +180,29 @@ for it; the digest work of the global stream is 043's and out of scope.
   the per-exchange tool data mirrors the hook pass's input exactly (spec); the best match is an
   index; a hooks-only session is a valid empty state with a test; `buildView` keeps reading
   hooks itself (as on main).
+- **D24** (2026-11-25, step 4.1) Only a full build that keeps a state (`buildSession`) takes call
+  facts' user texts from the state's records; `buildFrom` (the digest path) keeps its
+  events-based path. The oracle compares two runs of the same derivation for user texts.
+- **D25** (2026-11-25, step 4.1) The input comparison memo stores a result only when both blocks
+  were read; a not-stored block is read again on each build, so a blob that lands late never
+  leaves a stale answer (stricter than D15).
+- **D26** (2026-11-25, step 4.1) F5 is `2*count > n` over changed rows plus body re-reads, checked
+  before reading events and again after placement. Tiny sessions fall back often (a hooks-only
+  state meeting its first call is `large_delta`); those full builds are cheap.
+- **D27** (2026-11-25, step 4.1) An over-cap session remembers `too_large` on its build and every
+  update reports it without retrying; `failed` logs at Warn with the error, other fallbacks at
+  Debug, `no_state` not at all.
+- **D28** (2026-11-25, step 4.1) The entry size estimate sums entries, facts, calls, rows and the
+  state without encoding (0.3 ms on the largest session, was 35 ms); `sizeFactor` 1.5, against
+  1.45 measured as retained heap over the sum (49 MB retained for build and state).
+- **D29** (2026-11-25, step 4.1) A test that replaces `buildSessionFn` with a fake gets no state,
+  so its cache never goes incremental; only the real full build seeds a state.
+- **D30** (2026-11-25, step 4.1 live run) 030's background pass (`api_sessions.go`, views of
+  inactive sessions written to disk) builds through the same 4-session timeline cache, and on
+  a fresh view cache (every upgrade, every new build identity) it evicts the live session's
+  entry, so the next update is a full build (2.8 s measured). Its builds must not displace
+  cached entries: a background build is stored only into a free slot, never by evicting.
+  Thesis: the LRU should hold what users look at. Antithesis: pin sessions with an open view
+  stream instead, which also protects them from other users' opens. Synthesis: the
+  background-pass rule is the narrow fix for the measured case; pinning waits for D4's flip
+  (more than four live sessions open).

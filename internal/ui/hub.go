@@ -106,11 +106,23 @@ type pendingRefresh struct{ timer *time.Timer }
 type subscriber struct {
 	session string // "" for the global stream
 	// view marks a session stream that wants the session view (spec 016), not entries:
-	// any message is only a poke to rebuild it, so the hub never reads entries for it.
-	view bool
-	ch   chan liveMsg
-	gone chan struct{}
-	once sync.Once
+	// any message is only a poke to rebuild it, so the hub never reads entries for it. A
+	// view stream is poked through dirty, a one-slot signal: a poke is a non-blocking send
+	// and never drops the stream, so a burst of pokes during a slow build leaves one
+	// pending rebuild (spec 040 D14).
+	view  bool
+	dirty chan struct{}
+	ch    chan liveMsg
+	gone  chan struct{}
+	once  sync.Once
+}
+
+// poke marks a view stream dirty without waiting; pokes already pending collapse into one.
+func (s *subscriber) poke() {
+	select {
+	case s.dirty <- struct{}{}:
+	default:
+	}
 }
 
 func (s *subscriber) drop() { s.once.Do(func() { close(s.gone) }) }
@@ -238,6 +250,9 @@ func (h *Hub) PublishHook(principal, client, sessionKey string) {
 		return
 	}
 	who := sessIdent{principal, client, sessionKey}
+	// The session's view streams are poked at once, on the leading edge, outside h.mu; the
+	// window below still paces the entries streams (spec 040 D7).
+	h.pokeViews(who.id())
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	select {
@@ -291,12 +306,23 @@ func (h *Hub) refresh(who sessIdent, p *pendingRefresh) {
 	h.readAndSend(who, nil, nil, global, session, true, false)
 }
 
+// pokeViews pokes the view streams of session id now, unless the hub is closed. It takes
+// h.mu only to list the streams, and pokes outside it.
+func (h *Hub) pokeViews(id string) {
+	select {
+	case <-h.done:
+		return
+	default:
+	}
+	h.poke(id)
+}
+
 // poke tells every view stream of session id that the session changed; each rebuilds
 // its view once its debounce ends.
 func (h *Hub) poke(id string) {
 	for _, s := range h.targets(id, false) {
 		if s.view {
-			h.send(s, liveMsg{})
+			s.poke()
 		}
 	}
 }
@@ -335,6 +361,9 @@ func (h *Hub) subscribeView(session string, view bool) (*subscriber, error) {
 		return nil, errTooManyStreams
 	}
 	s := &subscriber{session: session, view: view, ch: make(chan liveMsg, subscriberBuffer), gone: make(chan struct{})}
+	if view {
+		s.dirty = make(chan struct{}, 1)
+	}
 	h.subs[s] = struct{}{}
 	return s, nil
 }
@@ -359,8 +388,13 @@ func (h *Hub) unsubscribe(s *subscriber) {
 	h.mu.Unlock()
 }
 
-// send hands m to s without waiting; a full buffer drops s alone.
+// send hands m to s without waiting; a full buffer drops s alone. Whatever a view stream
+// is sent, it is only a poke to rebuild its view, and a poke never drops it.
 func (h *Hub) send(s *subscriber, m liveMsg) {
+	if s.view {
+		s.poke()
+		return
+	}
 	select {
 	case s.ch <- m:
 	default:
@@ -800,10 +834,10 @@ func sessionExchanges(ctx context.Context, d Deps, who sessIdent) ([]liveExchang
 
 // timelineBuild builds a session's timeline on bctx through the server's reader, so it
 // still lands in the cache when the request that asked for it has timed out.
-func (d Deps) timelineBuild(who sessIdent) func(context.Context) (builtSession, error) {
+func (d Deps) timelineBuild(who sessIdent) buildFunc {
 	rules := d.Rules[who.client]
-	return func(bctx context.Context) (builtSession, error) {
-		return buildSessionFn(d.Reader.WithContext(bctx), who, rules, entryCut)
+	return func(bctx context.Context, prev *cachedBuild) (builtSession, error) {
+		return buildSessionVia(d.Reader.WithContext(bctx), who, rules, entryCut, prev)
 	}
 }
 

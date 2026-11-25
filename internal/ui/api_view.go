@@ -282,8 +282,9 @@ func (d Deps) buildView(ctx context.Context, who sessIdent, fresh bool) (_ timel
 	if d.Views != nil {
 		d.Views.put(e)
 	}
-	// only a view at the version this request read, of a session that is not active (D18)
-	if built.ver == ver && !active {
+	// only a view at the version this request read, of a session that is not active (D18),
+	// built from a full build: a drift of an incremental one never survives a restart (040 D20)
+	if built.ver == ver && !active && built.bs.kind == buildFull {
 		d.Disk.PutView(e, ver, ev)
 	}
 	return v, false, nil

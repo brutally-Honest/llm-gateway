@@ -32,8 +32,8 @@ func TestLiveBuild_BurstDuringBuildOneFollowUp(t *testing.T) {
 	started, release := make(chan struct{}), make(chan struct{})
 	var mu sync.Mutex
 	var seen []int
-	build := func(rows int) func(context.Context) (builtSession, error) {
-		return func(context.Context) (builtSession, error) {
+	build := func(rows int) func(context.Context, *cachedBuild) (builtSession, error) {
+		return func(context.Context, *cachedBuild) (builtSession, error) {
 			mu.Lock()
 			seen = append(seen, rows)
 			first := len(seen) == 1
@@ -84,7 +84,7 @@ func TestLiveBuild_RequestDuringRebuildGetsOlderBuildWithoutWaiting(t *testing.T
 	v1, v2 := store.Version{ExCount: 1}, store.Version{ExCount: 2}
 	fill(c, "k", v1, builtSession{rows: 1})
 	started, release := make(chan struct{}), make(chan struct{})
-	build := func(context.Context) (builtSession, error) {
+	build := func(context.Context, *cachedBuild) (builtSession, error) {
 		close(started)
 		<-release
 		return builtSession{rows: 2}, nil
@@ -130,7 +130,7 @@ func TestLiveBuild_StaleWithNoBuildRunningServesStaleAndRebuilds(t *testing.T) {
 	fill(c, "k", v1, builtSession{rows: 1})
 	started, release := make(chan struct{}), make(chan struct{})
 	builds := 0
-	build := func(context.Context) (builtSession, error) {
+	build := func(context.Context, *cachedBuild) (builtSession, error) {
 		builds++
 		close(started)
 		<-release
@@ -167,7 +167,7 @@ func TestLiveBuild_NothingCachedWaitsForFirstBuild(t *testing.T) {
 	started, release := make(chan struct{}), make(chan struct{})
 	got := make(chan *cachedBuild, 1)
 	go func() {
-		b, _ := c.latest(t.Context(), ident("k"), store.Version{ExCount: 1}, func(context.Context) (builtSession, error) {
+		b, _ := c.latest(t.Context(), ident("k"), store.Version{ExCount: 1}, func(context.Context, *cachedBuild) (builtSession, error) {
 			close(started)
 			<-release
 			return builtSession{rows: 1}, nil
@@ -194,7 +194,7 @@ func TestLiveBuild_FailedRebuildIsLoggedAndKeepsStale(t *testing.T) {
 	v1, v2 := store.Version{ExCount: 1}, store.Version{ExCount: 2}
 	fill(c, "k", v1, builtSession{rows: 1})
 	failed := make(chan struct{})
-	b, err := c.latest(t.Context(), ident("k"), v2, func(context.Context) (builtSession, error) {
+	b, err := c.latest(t.Context(), ident("k"), v2, func(context.Context, *cachedBuild) (builtSession, error) {
 		defer close(failed)
 		return builtSession{}, errors.New("store down")
 	})
@@ -222,7 +222,7 @@ func TestLiveBuild_SlowOlderBuildDoesNotReplaceNewer(t *testing.T) {
 	started, release := make(chan struct{}), make(chan struct{})
 	newer := make(chan *cachedBuild, 1)
 	go func() {
-		b, _ := c.get(t.Context(), ident("k"), v3, func(context.Context) (builtSession, error) {
+		b, _ := c.get(t.Context(), ident("k"), v3, func(context.Context, *cachedBuild) (builtSession, error) {
 			close(started)
 			<-release
 			return builtSession{rows: 3}, nil
@@ -232,7 +232,7 @@ func TestLiveBuild_SlowOlderBuildDoesNotReplaceNewer(t *testing.T) {
 	<-started
 	older := make(chan *cachedBuild, 1)
 	go func() { // read its version before the commit, so it asks late for an older build
-		b, _ := c.get(t.Context(), ident("k"), v2, func(context.Context) (builtSession, error) {
+		b, _ := c.get(t.Context(), ident("k"), v2, func(context.Context, *cachedBuild) (builtSession, error) {
 			return builtSession{rows: 2}, nil
 		})
 		older <- b
@@ -270,15 +270,15 @@ func TestLiveBuild_FollowUpStaysAtNewestVersion(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, _ = c.get(t.Context(), ident("k"), store.Version{ExCount: 1}, func(context.Context) (builtSession, error) {
+		_, _ = c.get(t.Context(), ident("k"), store.Version{ExCount: 1}, func(context.Context, *cachedBuild) (builtSession, error) {
 			close(started)
 			<-release
 			return builtSession{rows: 1}, nil
 		})
 	}()
 	<-started
-	build := func(rows int) func(context.Context) (builtSession, error) {
-		return func(context.Context) (builtSession, error) { return builtSession{rows: rows}, nil }
+	build := func(rows int) func(context.Context, *cachedBuild) (builtSession, error) {
+		return func(context.Context, *cachedBuild) (builtSession, error) { return builtSession{rows: rows}, nil }
 	}
 	v3, v2 := store.Version{ExCount: 3}, store.Version{ExCount: 2}
 	c.fmu.Lock()

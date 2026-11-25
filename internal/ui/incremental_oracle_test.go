@@ -22,9 +22,6 @@ import (
 // build) and through the full path; the entries, call facts, timeline facts, exchange map,
 // row ids and the session view built from each must be byte-for-byte equal.
 
-// oracleSkip is the reason the oracle does not run yet; step 4 removes the skip.
-const oracleSkip = "spec 040: the incremental build (buildSessionInc) lands in step 4; this oracle is enabled then"
-
 const (
 	oracleSession = "s1"
 	oracleClient  = "oracle-client"
@@ -755,7 +752,6 @@ func oracleRandom(seed uint64) []oracleStep {
 }
 
 func TestIncrementalOracle(t *testing.T) {
-	t.Skip(oracleSkip)
 	scenarios := []struct {
 		name  string
 		steps []oracleStep
@@ -774,7 +770,6 @@ func TestIncrementalOracle(t *testing.T) {
 }
 
 func TestIncrementalOracle_Randomized(t *testing.T) {
-	t.Skip(oracleSkip)
 	for seed := uint64(1); seed <= 20; seed++ {
 		t.Run(fmt.Sprintf("S8_seed%02d", seed), func(t *testing.T) { checkOracle(t, oracleRandom(seed)) })
 	}

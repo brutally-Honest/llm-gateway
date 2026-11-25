@@ -362,7 +362,7 @@ func (h *Hub) serveView(w http.ResponseWriter, r *http.Request, session string) 
 			if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil || rc.Flush() != nil {
 				return
 			}
-		case <-sub.ch:
+		case <-sub.dirty:
 			if fire == nil {
 				fire = time.After(viewDebounce)
 			}
