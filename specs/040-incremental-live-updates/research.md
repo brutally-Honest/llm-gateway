@@ -12,7 +12,9 @@ feature: 040-incremental-live-updates
 - 2026-11-25 Step 4.1b (D30, sonnet), e1bf8a7: a background-pass build is stored only into a free slot or over its own entry; 3 tests (2 fail without it); live probe: call stored to view 291-367 ms, 0.99-1.08 CPU-s per call (capture alone 0.69-0.87), RSS ~230 MB, rise 66-81 MB; hook 287-325 ms, effect 241 ms.
 - 2026-11-25 Step 4.2 (store oracle, sonnet), 2cf864a: 70 sessions, 26,467 inputs replayed in capture order (row, parse, hook, effect), 7,039 full comparisons, 0 differences; builds 26,324 incremental, 70 full:no_state (first build), 73 full:large_delta (0.28 % real fallbacks); a planted break (body kept when the body key changed) is caught at session a1d57aac step 280; 485 s, peak 1.26 GB.
 - 2026-11-25 Step 4.3 (persistent cache, sonnet 3): not run (D6); the measured restart case is main's.
-- 2026-11-25 Step 4.4 (docs, haiku), (this commit): README live-updates bullet (about a third of a second, full rebuild on first open, eviction or a large burst); roadmap moves 040 to Done.
+- 2026-11-25 Step 4.4 (docs, haiku), 4d1e3a0: README live-updates bullet (about a third of a second, full rebuild on first open, eviction or a large burst); roadmap moves 040 to Done.
+- 2026-11-25 Step 5a (measure, HEAD 4d1e3a0, no commit of its own; recorded here): call stored to view 303-341 ms, 0.25-0.35 CPU-s over the control, RSS ~210-270 MB with a rise of 51-117 MB; hook 299-301 ms, 0.21-0.26 CPU-s; effect 247-249 ms; all AC4 targets met (table under Step 5).
+- 2026-11-25 Step 5b (UI check, haiku doc), (this commit): Chrome extension not connected, so a headed Chrome with a throwaway profile over DevTools (port 9333); 8 cases (Lean/Stark, dark/light, 1,440/2,560), 25 inputs each (20 calls, 3 hooks, 2 effects): every input on the page 265-408 ms after being stored, 0 px movement of a mid-list turn, 0 layout shift, no turn re-created, page equal to a reload (2,879 lines); docs/manual-checks/040-incremental-live-updates.md.
 
 ## Measurement setup
 - Store copy, taken 2026-11-25 19:19 +05:30: `sqlite3 ~/.local/share/llm-gateway/gateway.db
@@ -68,6 +70,26 @@ are 400 and 650 ms (D7).
 The session page opens one stream only, the view stream (`app.js` `openStream(…,
 "sessions/<id>/stream?view=1")` after `stopStream`), so the hub reads no summary or digest
 for it; the digest work of the global stream is 043's and out of scope.
+
+## Step 5: after (HEAD 4d1e3a0, same copy, harness and inputs as Step 1)
+
+The probe also times from when the call is stored (its parse visible in the copy, polled every
+5 ms through the sqlite3 CLI) to the `view` event; that is the Goal's "after it is stored".
+
+| Input | Stored to view | Response end to view | CPU (process) | CPU over control | RSS before | RSS rise |
+|---|---|---|---|---|---|---|
+| open (first view, cold) | | 2,334 ms | | | | |
+| calls 1-5 | 303-341 ms | 953-1,210 ms | 1.05-1.21 s | 0.25-0.35 s | 211-267 MB | 51-117 MB |
+| hooks 1-3 | | 299-301 ms | 0.21-0.26 s | 0.21-0.26 s | 242-252 MB | 1-2 MB |
+| effects 1-2 | | 247-249 ms | 0.17-0.18 s | | 215-217 MB | 0-2 MB |
+| control: call, no stream | | | 0.75-0.97 s | | 110-171 MB | 8-57 MB |
+
+Before (Step 1): call 2,534-2,712 ms from response end, about 2.3 CPU-s over the control, RSS
+116 MB to about 680 MB; hook 2,268-2,298 ms, 2.4 CPU-s; effect 750-786 ms.
+
+A call's time from the end of its response to the view is still about 1 s: capture parses an
+8.8 MB request (about 0.7 s) before it stores the call, and that pipeline is unchanged (Goal
+counts from the store, D1). The first open is still a full build (non-goal).
 
 ## Decisions
 - **D1** (2026-11-25) CPU per update is the gateway process's CPU from the input to quiet,
