@@ -6,7 +6,8 @@ feature: 040-incremental-live-updates
 ## Progress
 - 2026-11-25 Step 1 (measure, design), (this commit): baseline on main: call to view 2,534-2,712 ms, 3.0-3.2 CPU-s per call (0.7-0.9 of it capture), RSS 116 to ~680 MB; hook 2,268-2,298 ms; effect 750-786 ms; full build 1.8 s, 940 MB allocated; rules per input and fallbacks F1-F6 in spec.md; D1-D11.
 - 2026-11-25 Step 1 commit f800e3b.
-- 2026-11-25 Step 2 (design review, fresh opus), (this commit): 0 P1, 4 P2, 7 P3, 5 P4; P2s fixed in the design (D12-D15), P3s D16-D22, P4s folded into spec.md.
+- 2026-11-25 Step 2 (design review, fresh opus), 8cedafc: 0 P1, 4 P2, 7 P3, 5 P4; P2s fixed in the design (D12-D15), P3s D16-D22, P4s folded into spec.md.
+- 2026-11-25 Step 3 (oracle test, sonnet), (this commit): `internal/ui/incremental_oracle_test.go`, S1-S7 plus 20 random seeds (25-32 steps each), skipped until step 4; with the stub pointed at a full build every case passes, with one entry's text altered it fails at S1 step 0; a neutral test client (purity check); `buildSessionInc` stub and `buildInfo` in build_session.go.
 
 ## Measurement setup
 - Store copy, taken 2026-11-25 19:19 +05:30: `sqlite3 ~/.local/share/llm-gateway/gateway.db

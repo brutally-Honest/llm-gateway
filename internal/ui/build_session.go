@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"errors"
+
 	"github.com/brutally-honest/llm-gateway/internal/store"
 	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
@@ -127,4 +129,20 @@ func buildFrom(source timeline.Source, who sessIdent, exs []store.ExchangeRow, r
 		return builtSession{}, err
 	}
 	return builtSession{entries: entries, facts: facts, calls: calls, byID: byID, rows: len(exs)}, nil
+}
+
+// buildInfo says how a build was made: incremental, or full with the fallback reason (spec 040 F1-F6).
+type buildInfo struct {
+	Incremental bool
+	Reason      string // "" when incremental; else "no_state", "missing_row", "options", "failed", "large_delta", "too_large"
+	Rederived   int    // exchanges whose events were read again
+}
+
+// errIncrementalNotBuilt is returned until the incremental build lands (spec 040 step 4).
+var errIncrementalNotBuilt = errors.New("ui: incremental build not built yet")
+
+// buildSessionInc builds a session's timeline from prev, the session's previous build (nil
+// for none), reading only what changed since (spec 040). It is a stub until step 4.
+func buildSessionInc(c sessionSource, who sessIdent, rules ClientRules, cut int, prev *builtSession) (builtSession, buildInfo, error) {
+	return builtSession{}, buildInfo{}, errIncrementalNotBuilt
 }
