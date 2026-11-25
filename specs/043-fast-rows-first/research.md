@@ -10,7 +10,8 @@ feature: 043-fast-rows-first
 - 2026-11-25 Step 3b (browser, sonnet), 61a1aae: pending rows render with fixed-width placeholders, merge rule by row_version and version, follow-up fetch with back-off and a two-minute stop, "N sessions still being checked"; 29 new web tests (273); make verify green. Quick probe on the copy before it: page 1 66 ms (filled 2.0 s), page 2 88 ms (4.1 s), kind=look 108 ms (4.8 s).
 - 2026-11-25 Step 3c (docs, haiku), 1bad6a4: docs/install.md says the list fills in its details over a few seconds after an install.
 - 2026-11-25 Step 4a (measure, then cut SQL, sonnet), 720320e: first 3x empty measure missed 200 ms (pages to 233, look 380); profile showed SQL (D18); total from the list query and deferred version reads for undecided rows bring 3x empty to pages 74-112 ms, look 68 ms, q 200-222 ms; make verify green.
-- 2026-11-25 Step 4b (UI check, layout fix, sonnet then haiku), (this commit): first UI pass found columns moving (up to 656 px) and pending rows the wrong height (D20); fixed table layout with main's widths and placeholders one line shorter: columns move 0 px in all 8 cases, at 1440 2 of 47 rows change height, at 2560 8-13 (a look line +14 px, short rows -7 px); filters end with main's rows (look 20, search 29).
+- 2026-11-25 Step 4b (UI check, layout fix, sonnet then haiku), 11a72e5: first UI pass found columns moving (up to 656 px) and pending rows the wrong height (D20); fixed table layout with main's widths and placeholders one line shorter: columns move 0 px in all 8 cases, at 1440 2 of 47 rows change height, at 2560 8-13 (a look line +14 px, short rows -7 px); filters end with main's rows (look 20, search 29).
+- 2026-11-25 Step 4c (manual check doc, haiku), (this commit): docs/manual-checks/043-fast-rows-first.md with the 8-case results.
 
 ## Measurement setup
 - Store copy, taken 2026-11-25 05:51 +05:30: `sqlite3 ~/.local/share/llm-gateway/gateway.db
