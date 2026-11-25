@@ -156,12 +156,15 @@ test("exchangeHeaderTablesLineUp", () => {
 // line; the Tokens cell's cost stays a line of its own). Checked in the browser at 1,440
 // and 2,560.
 test("sessionColumnKeepsItsMinimumAt1440", () => {
-  assert.equal(rule(".sp-list th.title, .sp-list td.title")["min-width"], "20rem");
+  // fixed layout (spec 043 D16): Session has no width of its own and gets what the fixed
+  // columns leave of the table's 72rem floor: 1152 - (23 + 134 + 3 * 175 + 74) = 396 px >= 20rem
+  assert.equal(rule(".sp-list table")["min-width"], "72rem");
+  assert.ok(72 * 16 - (23 + 134 + 3 * 175 + 74) >= 20 * 16, "Session keeps 20rem at the narrowest table");
   // below the page's 1,600 px width (1,440 included) Work, Changes and Tokens wrap, two lines wide
   const narrow = css.match(/@media \(max-width: 1599px\) \{\n\.sp-list td\.work, \.sp-list td\.changes, \.sp-list td\.tokens \{([^}]*)\}/);
   assert.ok(narrow, "Work, Changes and Tokens wrap below 1,600 px");
   assert.match(narrow[1], /white-space: normal/);
-  assert.match(narrow[1], /min-width: 12\.5rem/, "wide enough for two lines, not more");
+  assert.doesNotMatch(narrow[1], /min-width/, "the widths come from the fixed columns");
   assert.equal(rule(".sp-list td .seg")["white-space"], "nowrap", "they wrap only at the dots");
   assert.equal(rule(".sp-list td.tokens .cost")["display"], "block", "the cost is a line of its own");
   assert.equal(rule(".sp-list td.tokens .cost")["white-space"], "nowrap", "and never breaks inside");

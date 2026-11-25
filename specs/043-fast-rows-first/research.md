@@ -9,7 +9,8 @@ feature: 043-fast-rows-first
 - 2026-11-25 Step 3a (server, sonnet), 5d28904: /api/sessions and the stream snapshot never wait for a build; pending rows, row_version, checking, build gate with list priority; 16 new tests; two cmd/gateway tests now wait for filled rows; make verify green.
 - 2026-11-25 Step 3b (browser, sonnet), 61a1aae: pending rows render with fixed-width placeholders, merge rule by row_version and version, follow-up fetch with back-off and a two-minute stop, "N sessions still being checked"; 29 new web tests (273); make verify green. Quick probe on the copy before it: page 1 66 ms (filled 2.0 s), page 2 88 ms (4.1 s), kind=look 108 ms (4.8 s).
 - 2026-11-25 Step 3c (docs, haiku), 1bad6a4: docs/install.md says the list fills in its details over a few seconds after an install.
-- 2026-11-25 Step 4a (measure, then cut SQL, sonnet), (this commit): first 3x empty measure missed 200 ms (pages to 233, look 380); profile showed SQL (D18); total from the list query and deferred version reads for undecided rows bring 3x empty to pages 74-112 ms, look 68 ms, q 200-222 ms; make verify green.
+- 2026-11-25 Step 4a (measure, then cut SQL, sonnet), 720320e: first 3x empty measure missed 200 ms (pages to 233, look 380); profile showed SQL (D18); total from the list query and deferred version reads for undecided rows bring 3x empty to pages 74-112 ms, look 68 ms, q 200-222 ms; make verify green.
+- 2026-11-25 Step 4b (UI check, layout fix, sonnet then haiku), (this commit): first UI pass found columns moving (up to 656 px) and pending rows the wrong height (D20); fixed table layout with main's widths and placeholders one line shorter: columns move 0 px in all 8 cases, at 1440 2 of 47 rows change height, at 2560 8-13 (a look line +14 px, short rows -7 px); filters end with main's rows (look 20, search 29).
 
 ## Measurement setup
 - Store copy, taken 2026-11-25 05:51 +05:30: `sqlite3 ~/.local/share/llm-gateway/gateway.db
@@ -163,3 +164,54 @@ events) 22 ms whatever its LIMIT; the folder of 50 sessions (first hook naming a
   anywhere is counted in `checking` and its version is read and its build queued after the
   answer, off the request. Store reads in isolation on 3x: list query 41 ms at any LIMIT,
   count 40 ms, versions 8 ms, effect counts 3 ms, effect versions 2 ms, folders 0.2 ms per 50.
+- **D19** (2026-11-25) Gate slots stay at `max(2, GOMAXPROCS/4)` (3 on this 12-core machine).
+  A throwaway build with GOMAXPROCS/2 (6) filled `kind=look` on the copy in 4.3-4.4 s instead
+  of 4.9 s and 3x page 2 in 4.6 s instead of 6.3 s. Thesis for 6: more margin under the 5 s
+  target. Antithesis: twice the builds at once right after an install, on a machine that
+  also runs the user's work, each holding a session's events in memory (the largest session
+  has 183 MB of event payload). Synthesis: 3 meets the copy target (pages 1.9-4.3 s, filters
+  4.9 s); what would flip it is a slower machine or a store whose viewed page misses 5 s.
+- **D20** (2026-11-25) UI check, first pass (headless Chrome over DevTools, the extension was not
+  connected): rows show 188-283 ms after navigation and fill in at 2.2-2.3 s (page 1) and
+  4.3 s (page 2), but the layout moved: header widths changed by up to 656 px (2560) and
+  473 px (1440), rows by up to 1,168 px. Cause: automatic table layout (column widths follow
+  content) and pending rows shorter than filled rows. Fix: fixed table layout with main's
+  filled widths (1440: Start 134, Session 604, Work/Changes/Tokens 175, Time 74; 2560:
+  Session 539, Work 330, Changes 267, Tokens 231) and placeholders as tall as the common
+  filled row (88 px at 1440, 69 px at 2560). A row whose facts add a "needs a look" line or
+  wrap further still grows: a placeholder cannot know that. Zero movement would need rows
+  of fixed height with clamped cells, a redesign of the list for a few seconds after an
+  install; left to the human.
+
+## Step 4: after (HEAD 720320e)
+
+| Request | Copy, empty | Copy, warm | 3x, empty | 3x, warm |
+|---|---|---|---|---|
+| Page 1 | 45-46 ms | 42-43 ms | 86-94 ms | 80-86 ms |
+| Page 2 | 55 ms | 49-53 ms | 109-112 ms | 105-108 ms |
+| Page 5 | 36-38 ms (empty page) | 33-34 ms | 74-80 ms | 70 ms |
+| `kind=look` | 25-26 ms (checking 70) | 71-77 ms | 68-69 ms (checking 210) | 202-206 ms |
+| `kind=active` | 20-21 ms | 19-20 ms | 58 ms | 58-59 ms |
+| `kind=hooks` | 21-22 ms | 20-21 ms | 70-72 ms | 60-61 ms |
+| `q=gateway` | 84-91 ms (28 shown, checking 42) | 73-75 ms | 200-222 ms (50 shown, checking 82) | 171-176 ms |
+
+No 504 anywhere. Warm is at or below main on every request (main warm: copy 34-104 ms, 3x
+119-526 ms). Over target: 3x `q=gateway` with an empty cache (200-222 ms; it returns 50 rows
+found on the folder, each needing its version read), and 3x warm `kind=look` (202-206 ms;
+main 415 ms) — warm is not under AC7's 200 ms rule, which is for an empty cache.
+
+Fill-in (empty cache, the same request repeated every 250 ms until no row is pending and
+checking is 0; first answer, then filled):
+
+| Request | Copy | 3x |
+|---|---|---|
+| Page 1 | 0.05 s, filled 1.9-2.4 s | 0.08 s, filled 2.1 s |
+| Page 2 | 0.05 s, filled 3.5-4.3 s | 0.11 s, filled 6.3 s |
+| `kind=look` | 0.02 s, all 20 found 4.9 s | — |
+| `q=gateway` | 0.09 s, all 29 found 4.9 s | — |
+- **D21** (2026-11-25) The layout fix removed the Session column's own `min-width: 20rem`
+  (fixed layout ignores cell floors); `layout.test.js` now checks that the table's 72rem
+  minimum minus the fixed columns leaves the Session column at least 20rem, the same
+  guarantee expressed for fixed layout. Pending Tokens placeholders reserve 2 figure lines
+  below 1600 px and 1 from 1600 px; measured in Chrome, a pending row is then as tall as the
+  common filled row (88 px at 1440, 69 px at 2560) in Lean and Stark.

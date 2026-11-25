@@ -133,14 +133,49 @@ const rem = (body, prop) => {
   return Number(m[1]);
 };
 
-test("everyHeavyColumnHasAFloorAtLeastAsWideAsItsPlaceholder", () => {
-  const floor = (cls) => rem(ruleBody(cls, true), "min-width");
-  assert.ok(floor(".sp-list td.work, .sp-list td.changes, .sp-list td.tokens") >= Math.max(...["work", "changes", "tokens"].map((c) => rem(ruleBody(`.sp-list tr.pending td.${c}::before`), "width"))));
-  assert.ok(floor(".sessions-page > .sp-list th.dur, .sessions-page > .sp-list td.dur") >= rem(ruleBody(".sp-list tr.pending td.dur::before"), "width"));
-  // wider windows raise the floors of Work and Tokens, never below the narrow ones
-  const wide = css.match(/@media \(min-width: 1600px\) \{\n\.sp-list td\.work, \.sp-list td\.tokens \{([^}]*)\}/);
-  assert.ok(wide);
-  assert.ok(rem(wide[1], "min-width") >= 12.5);
+const px = (body, prop) => {
+  const m = new RegExp(`${prop}: (\\d+)px`).exec(body);
+  assert.ok(m, `${prop} in ${body}`);
+  return Number(m[1]);
+};
+const wideCss = css.slice(css.indexOf("@media (min-width: 1600px) {\n.sessions-page > .sp-list th.work"));
+const wideRule = (sel) => {
+  const i = wideCss.indexOf(`\n${sel} {`);
+  assert.ok(i >= 0, `the wide block has ${sel}`);
+  return wideCss.slice(i, wideCss.indexOf("}", i));
+};
+
+test("theSessionsTableIsFixedWithExplicitWidthsAtBothBreakpoints", () => {
+  assert.match(ruleBody(".sessions-page > .sp-list table"), /table-layout: fixed/);
+  assert.equal(px(ruleBody(".sessions-page > .sp-list th.status"), "width"), 23);
+  assert.equal(px(ruleBody(".sessions-page > .sp-list th.time"), "width"), 134);
+  assert.equal(px(ruleBody(".sessions-page > .sp-list th.dur"), "width"), 74);
+  // below 1,600 px: Work, Changes and Tokens 175 px; Session (no width) takes the rest
+  assert.equal(px(ruleBody(".sessions-page > .sp-list th.work, .sessions-page > .sp-list th.changes, .sessions-page > .sp-list th.tokens"), "width"), 175);
+  assert.doesNotMatch(css, /\.sp-list th\.title|\.sp-list td\.title/, "Session has no width of its own");
+  // from 1,600 px
+  assert.equal(px(wideRule(".sessions-page > .sp-list th.work"), "width"), 330);
+  assert.equal(px(wideRule(".sessions-page > .sp-list th.changes"), "width"), 267);
+  assert.equal(px(wideRule(".sessions-page > .sp-list th.tokens"), "width"), 231);
+});
+
+test("onlyTheSessionsTableIsFixedAndNoColumnHasAFloorAnyMore", () => {
+  assert.equal(css.split("\n").filter((l) => /^[^/ ].*table-layout: fixed/.test(l)).length, 1, "one fixed table");
+  // the unassigned connections table sits under .sp-unassigned, not directly in .sessions-page
+  assert.doesNotMatch(css, /sp-unassigned[^{]*table-layout/);
+  assert.match(ruleBody(".sp-unassigned .sp-list table"), /min-width: 0/);
+  const pending = css.split("\n").filter((l) => /^\.sp-list (td|tr\.pending)|^\.sessions-page > \.sp-list [th]d\./.test(l)).join("\n");
+  assert.doesNotMatch(pending, /min-width: ?\d+(\.\d+)?rem/, "no min-width floors on the heavy columns");
+});
+
+test("heavyPlaceholdersReserveTheLinesTheFilledCellsTakeAtEachWidth", () => {
+  assert.match(css, /\n\.sp-list \{ --pend-work: 3; --pend-changes: 2; --pend-figures: 2; \}/);
+  assert.match(css, /min-width: 1600px\) \{\n\.sp-list \{ --pend-work: 1; --pend-changes: 1; --pend-figures: 1; \}/);
+  assert.match(ruleBody(".sp-list tr.pending td.work::before"), /margin-bottom: calc\(var\(--pend-work\) \* 1lh - 1em\)/);
+  assert.match(ruleBody(".sp-list tr.pending td.changes::before"), /margin-bottom: calc\(var\(--pend-changes\) \* 1lh - 1em\)/);
+  assert.match(ruleBody(".sp-list tr.pending td.tokens::before"), /margin-bottom: calc\(var\(--pend-figures\) \* 1lh - 1em\)/);
+  // no hard-coded row height
+  assert.doesNotMatch(css.split("\n").filter((l) => l.includes("tr.pending")).join("\n"), /\btr\.pending\s*\{[^}]*height/);
 });
 
 test("placeholdersKeepTheLinesTheFilledCellsHave", () => {
@@ -150,10 +185,10 @@ test("placeholdersKeepTheLinesTheFilledCellsHave", () => {
   assert.match(t, /color: transparent/);
   assert.doesNotMatch(t, /display: none|height:/, "the link's own height is the real one");
   assert.match(ruleBody(".sp-list tr.pending .splace"), /display: block/);
-  // Tokens: figures, cost and bar lines
-  assert.match(ruleBody(".sp-list tr.pending td.tokens::before"), /width: 10rem; margin-bottom: \.45em/);
+  // Tokens: figures lines, then the cost line and the bar (4px bar and its 5px gap)
+  assert.match(ruleBody(".sp-list tr.pending td.tokens::before"), /width: 10rem/);
   assert.match(ruleBody(".sp-list tr.pending td.tokens::after"), /height: 1em/);
-  assert.match(ruleBody(".sp-list tr.pending td.tokens::after"), /margin-bottom: 9px/, "the 4px bar and its 5px gap");
+  assert.match(ruleBody(".sp-list tr.pending td.tokens::after"), /margin-bottom: calc\(1lh - 1em \+ 9px\)/, "the cost line, then the 4px bar and its 5px gap");
   // a one-line bar in Work, Changes and Time
   assert.match(ruleBody(".sp-list tr.pending td.work::before, .sp-list tr.pending td.changes::before, .sp-list tr.pending td.dur::before, .sp-list tr.pending td.tokens::before"), /height: 1em/);
 });
