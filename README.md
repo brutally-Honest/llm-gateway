@@ -90,8 +90,12 @@ What it shows:
   turn has chips for its model calls, tool calls, files, searches, sites and failures, and a
   model call opens a details panel with Preview and Raw.
 - **Settings:** the header's gear sets the theme (Dark or Light) and the style (Lean or Stark).
-- **Live updates:** an active session's page updates within moments of each exchange being
-  stored, and it reconnects on its own after a drop.
+- **Live updates:** an active session's page shows a new model call, hook event or effect
+  within about a third of a second of it being stored, even on a session of several hundred
+  calls: the gateway keeps each watched session's build in memory and re-reads only what
+  changed. Some changes still rebuild the session in full (the first open, a session pushed out
+  of the in-memory cache, or a burst that touches most of a session's calls), which takes a
+  few seconds on the largest sessions. The page reconnects on its own after a drop.
 - **Exchange detail:** one exchange at `#/exchanges/<id>`, with its raw request and response
   bodies, loaded on demand.
 
