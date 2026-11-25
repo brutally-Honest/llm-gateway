@@ -251,6 +251,9 @@ func (d Deps) buildView(ctx context.Context, who sessIdent, fresh bool) (_ timel
 	get := d.Timelines.latest
 	if fresh {
 		get = d.Timelines.get
+		if isBackground(ctx) {
+			get = d.Timelines.getBackground
+		}
 	}
 	built, err := get(ctx, ident, ver, d.timelineBuild(who))
 	if err != nil {
@@ -460,3 +463,13 @@ func (d Deps) getTool(w http.ResponseWriter, r *http.Request) {
 	out.Questions = toolQuestions(d.Rules[client], out)
 	writeJSON(w, out)
 }
+
+type backgroundKey struct{}
+
+// asBackground marks ctx as the background pass's: the builds it asks of the timeline
+// cache are not stored at the cost of another session's entry (spec 040 D30).
+func asBackground(ctx context.Context) context.Context {
+	return context.WithValue(ctx, backgroundKey{}, true)
+}
+
+func isBackground(ctx context.Context) bool { return ctx.Value(backgroundKey{}) != nil }

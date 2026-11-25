@@ -97,9 +97,12 @@ type TimelineCache struct {
 type buildRun struct {
 	ver   store.Version
 	build buildFunc
-	done  chan struct{}
-	res   *cachedBuild
-	err   error
+	// bg is true while every caller of the run is the background pass; it is guarded by
+	// the cache's fmu. A foreground caller joining the run clears it.
+	bg   bool
+	done chan struct{}
+	res  *cachedBuild
+	err  error
 }
 
 // sessionBuilds is a session's builds in flight: the one running and at most one
@@ -147,11 +150,23 @@ func versionAfter(a, b store.Version) bool {
 	return !older
 }
 
-// store keeps b unless the session's cached build is at b's version or newer.
-func (c *TimelineCache) store(id store.SessionIdent, b *cachedBuild) {
+// store keeps b unless the session's cached build is at b's version or newer. A background
+// b (spec 040 D30) never evicts another session's entry: it is stored only when there is
+// room for it, or when it replaces the session's own entry within the byte budget.
+func (c *TimelineCache) store(id store.SessionIdent, b *cachedBuild, background bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if el, ok := c.items[id]; ok {
+	el, own := c.items[id]
+	if background {
+		n, bytes := c.ll.Len(), c.bytes+b.size
+		if own {
+			n, bytes = n-1, bytes-el.Value.(*cachedBuild).size
+		}
+		if n >= c.maxSess || bytes > c.maxBytes {
+			return
+		}
+	}
+	if own {
 		if !versionAfter(b.ver, el.Value.(*cachedBuild).ver) {
 			return // a build that started on older data finished last
 		}
@@ -185,11 +200,24 @@ func (c *TimelineCache) peek(id store.SessionIdent) (*cachedBuild, bool) {
 // is shared only by those waiting on it.
 func (c *TimelineCache) get(ctx context.Context, id store.SessionIdent, ver store.Version,
 	build buildFunc) (*cachedBuild, error) {
+	return c.getAs(ctx, id, ver, build, false)
+}
+
+// getBackground is get for the background pass (spec 040 D30): its build is not stored if
+// that would evict another session's entry. It is stored as usual once a foreground
+// caller has joined the run.
+func (c *TimelineCache) getBackground(ctx context.Context, id store.SessionIdent, ver store.Version,
+	build buildFunc) (*cachedBuild, error) {
+	return c.getAs(ctx, id, ver, build, true)
+}
+
+func (c *TimelineCache) getAs(ctx context.Context, id store.SessionIdent, ver store.Version,
+	build buildFunc, bg bool) (*cachedBuild, error) {
 	if b, ok := c.lookup(id, ver); ok {
 		return b, nil
 	}
 	c.fmu.Lock()
-	r := c.joinLocked(id, ver, build)
+	r := c.joinLocked(id, ver, build, bg)
 	c.fmu.Unlock()
 	return c.wait(ctx, r)
 }
@@ -203,7 +231,7 @@ func (c *TimelineCache) latest(ctx context.Context, id store.SessionIdent, ver s
 		return b, nil
 	}
 	c.fmu.Lock()
-	r := c.joinLocked(id, ver, build)
+	r := c.joinLocked(id, ver, build, false)
 	c.fmu.Unlock()
 	if old, ok := c.peek(id); ok {
 		return old, nil
@@ -224,8 +252,8 @@ func (c *TimelineCache) wait(ctx context.Context, r *buildRun) (*cachedBuild, er
 // is for ver, else the queued follow-up, created if absent and aimed at the newest ver
 // asked. With nothing running it starts one. fmu is held.
 func (c *TimelineCache) joinLocked(id store.SessionIdent, ver store.Version,
-	build buildFunc) *buildRun {
-	newRun := func() *buildRun { return &buildRun{ver: ver, build: build, done: make(chan struct{})} }
+	build buildFunc, bg bool) *buildRun {
+	newRun := func() *buildRun { return &buildRun{ver: ver, build: build, bg: bg, done: make(chan struct{})} }
 	sb := c.active[id]
 	if sb == nil {
 		r := newRun()
@@ -234,12 +262,16 @@ func (c *TimelineCache) joinLocked(id store.SessionIdent, ver store.Version,
 		return r
 	}
 	if sb.cur.ver == ver {
+		sb.cur.bg = sb.cur.bg && bg
 		return sb.cur
 	}
 	if sb.next == nil {
 		sb.next = newRun()
-	} else if versionAfter(ver, sb.next.ver) {
-		sb.next.ver, sb.next.build = ver, build
+	} else {
+		sb.next.bg = sb.next.bg && bg
+		if versionAfter(ver, sb.next.ver) {
+			sb.next.ver, sb.next.build = ver, build
+		}
 	}
 	return sb.next
 }
@@ -280,7 +312,10 @@ func (c *TimelineCache) run(id store.SessionIdent, r *buildRun) {
 		}
 		c.noteBuild(id, bs.how)
 		b := &cachedBuild{bs: bs, ver: r.ver, id: id, size: estimateSize(bs)}
-		c.store(id, b)
+		c.fmu.Lock()
+		bg := r.bg
+		c.fmu.Unlock()
+		c.store(id, b, bg)
 		r.res = b
 	}()
 	c.fmu.Lock()

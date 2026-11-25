@@ -282,8 +282,8 @@ func TestLiveBuild_FollowUpStaysAtNewestVersion(t *testing.T) {
 	}
 	v3, v2 := store.Version{ExCount: 3}, store.Version{ExCount: 2}
 	c.fmu.Lock()
-	c.joinLocked(ident("k"), v3, build(3))
-	r := c.joinLocked(ident("k"), v2, build(2)) // the older asker shares the newer run
+	c.joinLocked(ident("k"), v3, build(3), false)
+	r := c.joinLocked(ident("k"), v2, build(2), false) // the older asker shares the newer run
 	c.fmu.Unlock()
 	close(release)
 	<-done
