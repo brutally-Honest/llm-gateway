@@ -8,7 +8,8 @@ feature: 043-fast-rows-first
 - 2026-11-25 Step 2 (design review), aabed28: 2 P1, 6 P2, P3s and P4s; P1 and P2 fixed in the design (D10-D15, spec AC1-AC7, E1, E7).
 - 2026-11-25 Step 3a (server, sonnet), 5d28904: /api/sessions and the stream snapshot never wait for a build; pending rows, row_version, checking, build gate with list priority; 16 new tests; two cmd/gateway tests now wait for filled rows; make verify green.
 - 2026-11-25 Step 3b (browser, sonnet), 61a1aae: pending rows render with fixed-width placeholders, merge rule by row_version and version, follow-up fetch with back-off and a two-minute stop, "N sessions still being checked"; 29 new web tests (273); make verify green. Quick probe on the copy before it: page 1 66 ms (filled 2.0 s), page 2 88 ms (4.1 s), kind=look 108 ms (4.8 s).
-- 2026-11-25 Step 3c (docs, haiku), (this commit): docs/install.md says the list fills in its details over a few seconds after an install.
+- 2026-11-25 Step 3c (docs, haiku), 1bad6a4: docs/install.md says the list fills in its details over a few seconds after an install.
+- 2026-11-25 Step 4a (measure, then cut SQL, sonnet), (this commit): first 3x empty measure missed 200 ms (pages to 233, look 380); profile showed SQL (D18); total from the list query and deferred version reads for undecided rows bring 3x empty to pages 74-112 ms, look 68 ms, q 200-222 ms; make verify green.
 
 ## Measurement setup
 - Store copy, taken 2026-11-25 05:51 +05:30: `sqlite3 ~/.local/share/llm-gateway/gateway.db
@@ -151,3 +152,14 @@ events) 22 ms whatever its LIMIT; the folder of 50 sessions (first hook naming a
 - **D17** (2026-11-25) The browser's first test fixture named a client; the agnosticism check
   (`TestCore_NoProviderOrClientIdentifiers`) caught it and a haiku subagent made it neutral
   before the commit.
+- **D18** (2026-11-25) Step 4 first measure missed AC7 on 3x with an empty cache: pages
+  180-233 ms, `kind=look` 330-380 ms, `q` 315-345 ms (copy: all under 125 ms). A CPU
+  profile of 20 `kind=look` requests on 3x (throwaway build with pprof on 17198, not
+  committed) puts ~310 ms CPU per request in SQL: `SessionVersions` for every scanned row
+  ~115 ms and `SessionCount` (the list aggregate run a second time) ~65 ms. Two changes:
+  the total comes from the list query itself (`COUNT(*) OVER ()`), and a filtered scan reads
+  versions, effect counts and effect versions only for rows it may return or can decide
+  (a memo in memory, a memo file on disk, or a cheap match); an undecided row with nothing
+  anywhere is counted in `checking` and its version is read and its build queued after the
+  answer, off the request. Store reads in isolation on 3x: list query 41 ms at any LIMIT,
+  count 40 ms, versions 8 ms, effect counts 3 ms, effect versions 2 ms, folders 0.2 ms per 50.

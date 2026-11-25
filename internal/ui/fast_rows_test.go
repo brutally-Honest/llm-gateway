@@ -296,6 +296,109 @@ func TestFastRows_FiltersWithNothingBuilt(t *testing.T) {
 	}
 }
 
+// versionsSpy replaces sessionVersionsFn and records each call's keys, by whether it was
+// the deferred read after a filtered answer.
+type versionsSpy struct {
+	mu       sync.Mutex
+	request  [][]string
+	deferred [][]string
+}
+
+func spyVersions(t *testing.T) *versionsSpy {
+	t.Helper()
+	s := &versionsSpy{}
+	real := sessionVersionsFn
+	sessionVersionsFn = func(c *store.CtxReader, ids []store.SessionIdent, deferred bool) (map[store.SessionIdent]store.Version, error) {
+		keys := make([]string, len(ids))
+		for i, id := range ids {
+			keys[i] = id.Key
+		}
+		s.mu.Lock()
+		if deferred {
+			s.deferred = append(s.deferred, keys)
+		} else {
+			s.request = append(s.request, keys)
+		}
+		s.mu.Unlock()
+		return real(c, ids, deferred)
+	}
+	t.Cleanup(func() { sessionVersionsFn = real })
+	return s
+}
+
+func (s *versionsSpy) counts() (request, deferred int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, k := range s.request {
+		request += len(k)
+	}
+	for _, k := range s.deferred {
+		deferred += len(k)
+	}
+	return
+}
+
+// D18: a filtered request reads versions only for the rows it may return. Undecided rows
+// (nothing in memory, nothing on disk, no cheap match) are counted in checking, and their
+// versions are read and their builds queued after the answer, not during it.
+func TestFastRows_UndecidedRowsReadVersionsAfterTheAnswer(t *testing.T) {
+	e := newCacheEnv(t, 64)
+	stub := newBuildStub(t, e.cache)
+	stub.look["s003"] = true
+	stub.hold(true)
+	e.seedSessions(6)
+	spy := spyVersions(t)
+
+	var p sessPage
+	answersWithin(t, "kind=look and a title q", func() { p = e.sessNow("?kind=look&q=title-s") })
+	if len(p.Items) != 0 || p.Checking != 6 || p.Scanned != 6 {
+		t.Fatalf("look+q = %v checking %d scanned %d, want none, 6 and 6", p.keys(), p.Checking, p.Scanned)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for stub.count.Load() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the undecided rows' builds were never queued")
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	req, def := spy.counts()
+	if req != 0 || def != 6 {
+		t.Errorf("version reads: %d during the request, %d after, want 0 and 6", req, def)
+	}
+	// the builds queue in row order: the first started are the newest rows
+	got := stub.startedKeys()
+	sort.Sort(sort.Reverse(sort.StringSlice(got)))
+	if want := []string{"s005", "s004", "s003", "s002", "s001", "s000"}; len(got) == 0 || !reflect.DeepEqual(got, want[:len(got)]) {
+		t.Errorf("started builds = %v, want the first rows of the request", got)
+	}
+	stub.hold(false)
+	if p = e.settled("?kind=look&q=title-s"); fmt.Sprint(p.keys()) != "[s003]" || p.Checking != 0 {
+		t.Errorf("after the builds = %v checking %d", p.keys(), p.Checking)
+	}
+
+	// a q that matches a cheap field decides its row: only that row is read in the request
+	e2 := newCacheEnv(t, 64)
+	stub2 := newBuildStub(t, e2.cache)
+	stub2.hold(true)
+	e2.seedSessions(6)
+	spy2 := spyVersions(t)
+	answersWithin(t, "q key", func() { p = e2.sessNow("?q=s002") })
+	if fmt.Sprint(p.keys()) != "[s002]" || p.Checking != 5 || !isPending(p.Items[0]) {
+		t.Fatalf("q key = %v checking %d", p.keys(), p.Checking)
+	}
+	for time.Now().Before(deadline.Add(5 * time.Second)) {
+		if _, def := spy2.counts(); def == 5 {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	spy2.mu.Lock()
+	defer spy2.mu.Unlock()
+	if len(spy2.request) != 1 || fmt.Sprint(spy2.request[0]) != "[s002]" || len(spy2.deferred) != 1 || len(spy2.deferred[0]) != 5 {
+		t.Errorf("reads: request %v, deferred %v, want [[s002]] and one read of 5", spy2.request, spy2.deferred)
+	}
+}
+
 // AC4: with some facts built and some held, kind=look returns exactly the known matches
 // and counts the undecided rows scanned.
 func TestFastRows_LookFilterPartlyKnown(t *testing.T) {

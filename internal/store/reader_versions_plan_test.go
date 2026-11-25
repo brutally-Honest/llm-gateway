@@ -117,3 +117,39 @@ func TestUnassignedConnAfter_PlanUsesPrimaryKey(t *testing.T) {
 		t.Error("the check does not search the effects primary key by id > ?")
 	}
 }
+
+// The page-and-total queries run the list aggregate once: each of exchanges and hook_events
+// is scanned or searched a single time in the plan, as in the plain list query.
+func TestSessionPageTotal_QueryPlanAggregatesOnce(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	r, err := OpenReader(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	count := func(plan []string, table string) int {
+		n := 0
+		for _, l := range plan {
+			if (strings.HasPrefix(l, "SCAN "+table) || strings.HasPrefix(l, "SEARCH "+table)) && !strings.Contains(l, "EXISTS") {
+				n++
+			}
+		}
+		return n
+	}
+	base := planRows(t, r, sessionSelect+sessionOrder+` LIMIT 5`, 0)
+	for name, q := range map[string]string{
+		"after": sessionWindow + ` AND (last < 1 OR (last = 1 AND (principal_id, client, session_key) > ('a', 'b', 'c')))` + sessionOrder + ` LIMIT 5`,
+		"at":    sessionWindow + sessionOrder + ` LIMIT 5 OFFSET 2`,
+	} {
+		plan := planRows(t, r, q, 0)
+		t.Logf("%s: %q", name, plan)
+		if count(plan, "exchanges") != count(base, "exchanges") || count(plan, "hook_events") != count(base, "hook_events") {
+			t.Errorf("%s plan scans differ from the plain list query: %q vs %q", name, plan, base)
+		}
+	}
+}

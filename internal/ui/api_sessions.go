@@ -16,6 +16,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/brutally-honest/llm-gateway/internal/cost"
+	"github.com/brutally-honest/llm-gateway/internal/logging"
 	"github.com/brutally-honest/llm-gateway/internal/store"
 	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
@@ -456,6 +457,22 @@ func (d Deps) summarizeRows(ctx context.Context, c *store.CtxReader, ids []strin
 type listRank struct {
 	tick uint64
 	base int
+	// pos, when set, gives each row's position (one per row of the call) in place of base+i.
+	pos []int
+}
+
+// at is the position of the i-th row of a call.
+func (r listRank) at(i int) int {
+	if r.pos != nil {
+		return r.pos[i]
+	}
+	return r.base + i
+}
+
+// sessionVersionsFn reads versions for the list; deferred marks the read after a filtered
+// answer. It is a test hook, like computeMemoFn.
+var sessionVersionsFn = func(c *store.CtxReader, ids []store.SessionIdent, deferred bool) (map[store.SessionIdent]store.Version, error) {
+	return c.SessionVersions(ids)
 }
 
 // newListRank numbers a list request, so its rows build before an older request's.
@@ -480,7 +497,7 @@ func (d Deps) summarizeRowsNoWait(ctx context.Context, c *store.CtxReader, ids [
 	for i, r := range rows {
 		idents[i] = sessionIdent(r)
 	}
-	vers, err := c.SessionVersions(idents)
+	vers, err := sessionVersionsFn(c, idents, false)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -503,7 +520,7 @@ func (d Deps) summarizeRowsNoWait(ctx context.Context, c *store.CtxReader, ids [
 		full := folders[id]
 		n := counts[id]
 		fx := &effectCountsJSON{Changed: n.Changed, Read: n.Read, Sites: n.Sites}
-		gp := gatePrio{class: classList, tick: rank.tick, pos: rank.base + i}
+		gp := gatePrio{class: classList, tick: rank.tick, pos: rank.at(i)}
 
 		memo, memoVer, ok := d.Digests.memoryMemo(id, ver)
 		if !ok && d.Disk != nil {
@@ -800,15 +817,19 @@ var (
 // last batch's duration would pass scanBudget, so no new batch starts (the first batch
 // always runs, so every request progresses). Or the rows run out. next is the after token
 // of the last tested row when an untested row remains.
-func (d Deps) scanSessions(ctx context.Context, c *store.CtxReader, after *store.SessionAfter, limit int, kind, q string) (items []sessionSummary, next *string, scanned, checking int, err error) {
+func (d Deps) scanSessions(ctx context.Context, c *store.CtxReader, after *store.SessionAfter, limit int, kind, q string) (items []sessionSummary, next *string, scanned, checking, total int, err error) {
 	items = []sessionSummary{}
 	now := d.now()
 	start := scanNow()
-	rows, err := c.SessionPage(after, scanCap)
+	rows, total, err := c.SessionPageTotal(after, scanCap)
 	if err != nil {
-		return nil, nil, 0, 0, err
+		return nil, nil, 0, 0, 0, err
 	}
 	rank := d.newListRank()
+	// the undecided rows' versions are read and their builds queued once the scan is done,
+	// off the request (spec 043 D18)
+	var undecided []deferredRow
+	defer func() { d.queueDeferred(undecided) }()
 	// moreAfter: is there a row after rows[i]? rows holds all that the query returned, so
 	// only a full read can have more behind it.
 	moreAfter := func(i int) (bool, error) {
@@ -827,18 +848,19 @@ func (d Deps) scanSessions(ctx context.Context, c *store.CtxReader, after *store
 		if scanned > 0 && batchStart.Sub(start)+last > scanBudget {
 			more, err := moreAfter(off - 1)
 			if err != nil {
-				return nil, nil, 0, 0, err
+				return nil, nil, 0, 0, 0, err
 			}
 			if more {
 				next = sessionAfter(rows[off-1])
 			}
-			return items, next, scanned, checking, nil
+			return items, next, scanned, checking, total, nil
 		}
 		batch := rows[off:min(off+defaultListLimit+1, len(rows))]
-		sums, err := d.scanBatch(ctx, c, batch, off, kind, now, rank)
+		sums, und, err := d.scanBatch(ctx, c, batch, off, kind, q, now, rank)
 		if err != nil {
-			return nil, nil, 0, 0, err
+			return nil, nil, 0, 0, 0, err
 		}
+		undecided = append(undecided, und...)
 		last = scanNow().Sub(batchStart)
 		for i, row := range batch {
 			scanned++
@@ -853,45 +875,118 @@ func (d Deps) scanSessions(ctx context.Context, c *store.CtxReader, after *store
 			}
 			more, err := moreAfter(off + i)
 			if err != nil {
-				return nil, nil, 0, 0, err
+				return nil, nil, 0, 0, 0, err
 			}
 			if more {
 				next = sessionAfter(row)
 			}
-			return items, next, scanned, checking, nil
+			return items, next, scanned, checking, total, nil
 		}
 	}
-	return items, nil, scanned, checking, nil
+	return items, nil, scanned, checking, total, nil
+}
+
+// deferredRow is an undecided row of a scan: its facts are not in memory or on disk and
+// its cheap fields cannot decide it, so its version is read, and its build queued, after
+// the answer.
+type deferredRow struct {
+	row store.SessionRow
+	gp  gatePrio
 }
 
 // scanBatch is the summaries of one batch of a scan, in row order. A row that kind alone
 // rules out is not read for facts, and its summary is the cheap one, so nothing is queued
-// to build for it.
-func (d Deps) scanBatch(ctx context.Context, c *store.CtxReader, batch []store.SessionRow, off int, kind string, now time.Time, rank listRank) ([]sessionSummary, error) {
+// to build for it. Versions, effect counts and effect versions are read only for the rows
+// that need them (spec 043 D18): a memo in memory or a memo file on disk, or a match on the
+// cheap fields, which is any row the scan may return. Another row is undecided: its
+// summary is the cheap pending one, which the scan counts in checking and does not return,
+// and it is handed back to be queued after the answer.
+func (d Deps) scanBatch(ctx context.Context, c *store.CtxReader, batch []store.SessionRow, off int, kind, q string, now time.Time, rank listRank) ([]sessionSummary, []deferredRow, error) {
 	out := make([]sessionSummary, len(batch))
-	var want []store.SessionRow
-	var wantIDs []string
-	var at []int
+	var cand []int // the rows kind does not rule out
 	for i, row := range batch {
 		if (kind == "active" && !isActive(row.Last, row.EndOnly, now)) || (kind == "hooks" && !row.HooksOnly) {
 			out[i] = sessionSummary{Pending: true} // decided "no" by the kind; no fact is read
 			continue
 		}
-		want, wantIDs, at = append(want, row), append(wantIDs, sessionID(row)), append(at, i)
+		cand = append(cand, i)
 	}
-	if len(want) == 0 {
-		return out, nil
+	if len(cand) == 0 {
+		return out, nil, nil
+	}
+	var need []int
+	var und []deferredRow
+	if d.Digests == nil || d.Reader == nil {
+		need = cand
+	} else {
+		idents := make([]store.SessionIdent, len(cand))
+		for j, i := range cand {
+			idents[j] = sessionIdent(batch[i])
+		}
+		folders, err := c.SessionFolders(idents)
+		if err != nil {
+			return nil, nil, err
+		}
+		home, _ := os.UserHomeDir()
+		for j, i := range cand {
+			id := idents[j]
+			cheap := pendingSummary(sessionID(batch[i]), batch[i], folders[id], home, nil, versionJSON{}, now)
+			_, inMem := d.Digests.peek(id)
+			if inMem || d.Disk.HasMemoFile(id) || sessionVerdict(cheap, kind, q) == verdictYes {
+				need = append(need, i)
+				continue
+			}
+			out[i] = cheap
+			und = append(und, deferredRow{row: batch[i], gp: gatePrio{class: classList, tick: rank.tick, pos: off + i}})
+		}
+	}
+	if len(need) == 0 {
+		return out, und, nil
+	}
+	want := make([]store.SessionRow, len(need))
+	wantIDs := make([]string, len(need))
+	pos := make([]int, len(need))
+	for j, i := range need {
+		want[j], wantIDs[j], pos[j] = batch[i], sessionID(batch[i]), off+i
 	}
 	// the rank positions follow the request's row order, whichever rows are wanted
-	r := listRank{tick: rank.tick, base: off}
-	sums, _, err := d.summarizeRowsNoWait(ctx, c, wantIDs, want, now, r)
+	sums, _, err := d.summarizeRowsNoWait(ctx, c, wantIDs, want, now, listRank{tick: rank.tick, pos: pos})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	for j, i := range at {
+	for j, i := range need {
 		out[i] = sums[j]
 	}
-	return out, nil
+	return out, und, nil
+}
+
+// queueDeferred reads the versions of the undecided rows of a scan and queues their builds
+// at the rank they would have had, on one goroutine off the request, on the cache's
+// lifetime. A failure is logged and dropped; the next request queues them again.
+func (d Deps) queueDeferred(rows []deferredRow) {
+	if len(rows) == 0 || d.Digests == nil || d.Reader == nil {
+		return
+	}
+	logging.Go(d.logger(), "ui_queue_undecided", func() error {
+		ctx, cancel := context.WithTimeout(d.Digests.base, storeTimeout)
+		defer cancel()
+		idents := make([]store.SessionIdent, len(rows))
+		for i, r := range rows {
+			idents[i] = sessionIdent(r.row)
+		}
+		vers, err := sessionVersionsFn(d.Reader.WithContext(ctx), idents, true)
+		if err != nil {
+			if ctx.Err() == nil {
+				d.logger().Debug("ui list: cannot read versions of undecided rows", zap.Error(err))
+			}
+			return nil
+		}
+		for i, r := range rows {
+			ver := vers[idents[i]]
+			d.Digests.queue(idents[i], ver, r.gp, d.digestCompute(r.row, ver))
+		}
+		return nil
+	})
 }
 
 func (d Deps) listSessions(w http.ResponseWriter, r *http.Request) {
@@ -945,9 +1040,9 @@ func (d Deps) listSessions(w http.ResponseWriter, r *http.Request) {
 		var rows []store.SessionRow
 		var err error
 		if query.Has("offset") {
-			rows, err = c.SessionPageAt(offset, limit+1)
+			rows, page.Total, err = c.SessionPageAtTotal(offset, limit+1)
 		} else {
-			rows, err = c.SessionPage(after, limit+1)
+			rows, page.Total, err = c.SessionPageTotal(after, limit+1)
 		}
 		if err != nil {
 			writeStoreErr(w, err)
@@ -971,22 +1066,16 @@ func (d Deps) listSessions(w http.ResponseWriter, r *http.Request) {
 			page.NextAfter = sessionAfter(rows[len(rows)-1])
 		}
 	} else {
-		items, next, scanned, checking, err := d.scanSessions(ctx, c, after, limit, kind, q)
+		items, next, scanned, checking, total, err := d.scanSessions(ctx, c, after, limit, kind, q)
 		if err != nil {
 			writeStoreErr(w, err)
 			return
 		}
-		page.Items, page.NextAfter, page.Scanned, page.Checking = items, next, scanned, checking
+		page.Items, page.NextAfter, page.Scanned, page.Checking, page.Total = items, next, scanned, checking, total
 	}
 	if page.Items == nil {
 		page.Items = []sessionSummary{}
 	}
-	total, err := c.SessionCount()
-	if err != nil {
-		writeStoreErr(w, err)
-		return
-	}
-	page.Total = total
 	unassigned, err := c.UnassignedConnections()
 	if err != nil {
 		writeStoreErr(w, err)
