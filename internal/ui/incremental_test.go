@@ -2,9 +2,10 @@ package ui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -514,38 +515,173 @@ func TestEstimateSize_CountsTheState(t *testing.T) {
 	}
 }
 
-// 040 D20: a view built from an incremental build is not written to the on-disk view cache.
-func TestIncremental_ViewOfAnIncrementalBuildIsNotPutOnDisk(t *testing.T) {
-	e := newDiskEnv(t)
+// idle reports whether no view job is running or queued.
+func (j *viewJobs) idle() bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return !j.busy && len(j.order) == 0
+}
+
+func (e *diskEnv) waitJobsIdle() {
+	e.t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !e.dep.Views.jobs.idle() {
+		if time.Now().After(deadline) {
+			e.t.Fatal("the view job did not finish")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	e.flush()
+}
+
+// toIncremental serves the first view, stores one more call, and waits until the timeline
+// cache holds an incremental build at the new version. The next view request is built from it.
+func (e *diskEnv) toIncremental(path string) {
+	e.t.Helper()
 	e.call("a", 1, 0, 1, "user:one")
-	path := "/api/sessions/" + sid() + "/view"
 	e.mustGet(path)
 	e.flush()
-	file := e.fileOf("v", "k")
-	before, err := os.ReadFile(file)
-	if err != nil {
-		t.Fatalf("the first view was not written: %v", err)
-	}
 	e.call("b", 2, 0, 1, "user:one", "assistant:two", "user:three")
 	e.mustGet(path) // serves the older build and asks for a rebuild
 	deadline := time.Now().Add(5 * time.Second)
 	for e.dep.Timelines.buildCounts()["incremental"] == 0 {
 		if time.Now().After(deadline) {
-			t.Fatalf("no incremental build: %v", e.dep.Timelines.buildCounts())
+			e.t.Fatalf("no incremental build: %v", e.dep.Timelines.buildCounts())
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+}
+
+// countFullBuilds counts the full builds made outside the timeline cache's own first one.
+func countFullBuilds(t *testing.T) *atomic.Int32 {
+	t.Helper()
+	var n atomic.Int32
+	real := buildSessionFn
+	buildSessionFn = func(c sessionSource, who sessIdent, rules ClientRules, cut int) (builtSession, error) {
+		n.Add(1)
+		return real(c, who, rules, cut)
+	}
+	t.Cleanup(func() { buildSessionFn = real })
+	return &n
+}
+
+// 040 D20 and P3-4: a view built from an incremental build is not written itself; an inactive
+// session's view reaches the disk once, from a background full build, and equals the view served.
+func TestIncremental_InactiveSessionViewIsWrittenByAFullBuildJob(t *testing.T) {
+	e := newDiskEnv(t)
+	path := "/api/sessions/" + sid() + "/view"
+	e.toIncremental(path)
+	full := countFullBuilds(t)
+	served := e.mustGet(path)
 	e.mustGet(path)
-	e.flush()
-	after, err := os.ReadFile(file)
+	e.waitJobsIdle()
+	ident := store.SessionIdent{Principal: core.PrincipalLocal, Client: "cc", Key: "k"}
+	vers, err := e.d.Reader.WithContext(t.Context()).SessionVersions([]store.SessionIdent{ident})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(before) != string(after) {
-		t.Fatal("the view file was rewritten from an incremental build")
+	effs, err := e.d.Reader.WithContext(t.Context()).EffectVersions([]store.SessionIdent{ident})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ent, ok := e.disk.GetView(t.Context(), ident, viewKeyOf(vers[ident], effs[ident]), e.now)
+	if !ok {
+		t.Fatal("the view at the current version was not written")
+	}
+	got, err := json.Marshal(ent.view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a, b any
+	if err := json.Unmarshal(got, &a); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(served, &b); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(a, b) {
+		t.Fatalf("written view differs from the served one:\n%s\n%s", got, served)
+	}
+	if n := full.Load(); n != 1 {
+		t.Fatalf("full builds = %d, want exactly one job", n)
 	}
 	if got := e.dep.Timelines.buildCounts(); got["full:no_state"] != 1 {
-		t.Fatalf("counts = %v", got)
+		t.Fatalf("the job's build entered the timeline cache: %v", got)
+	}
+}
+
+// An active session's view is not written (D18): no job starts.
+func TestIncremental_ActiveSessionStartsNoViewJob(t *testing.T) {
+	e := newDiskEnv(t)
+	e.now = baseTime.Add(4 * time.Second)
+	path := "/api/sessions/" + sid() + "/view"
+	e.toIncremental(path)
+	full := countFullBuilds(t)
+	e.mustGet(path)
+	e.waitJobsIdle()
+	if full.Load() != 0 || len(e.files("v")) != 0 {
+		t.Fatalf("full builds = %d, view files = %v", full.Load(), e.files("v"))
+	}
+}
+
+// Without an on-disk cache nothing runs.
+func TestIncremental_NoDiskNoViewJob(t *testing.T) {
+	e := newDiskEnv(t)
+	e.dep.Disk = nil
+	e.dep.Views = NewViewCache()
+	e.srv = Handler(e.dep)
+	path := "/api/sessions/" + sid() + "/view"
+	e.toIncremental(path)
+	full := countFullBuilds(t)
+	e.mustGet(path)
+	e.mustGet(path)
+	e.waitJobsIdle()
+	if full.Load() != 0 || len(e.files("v")) != 0 {
+		t.Fatalf("full builds = %d, view files = %v", full.Load(), e.files("v"))
+	}
+}
+
+// Two requests for one session and version start one job; a newer version replaces a
+// queued older one, and one job runs at a time.
+func TestViewJobs_DedupeReplaceAndSerialise(t *testing.T) {
+	var j viewJobs
+	id := store.SessionIdent{Principal: "p", Client: "c", Key: "k"}
+	other := store.SessionIdent{Principal: "p", Client: "c", Key: "o"}
+	gate := make(chan struct{})
+	started := make(chan string, 8)
+	var running, maxRunning atomic.Int32
+	job := func(name string, block bool) func() {
+		return func() {
+			n := running.Add(1)
+			for m := maxRunning.Load(); n > m && !maxRunning.CompareAndSwap(m, n); m = maxRunning.Load() {
+			}
+			started <- name
+			if block {
+				<-gate
+			}
+			running.Add(-1)
+		}
+	}
+	j.submit(zap.NewNop(), other, "o1", job("o1", true))
+	if got := <-started; got != "o1" {
+		t.Fatal(got)
+	}
+	j.submit(zap.NewNop(), id, "k1", job("k1", false))
+	j.submit(zap.NewNop(), id, "k1", job("k1-again", false)) // same key: dropped
+	j.submit(zap.NewNop(), id, "k2", job("k2", false))       // replaces the queued k1
+	j.submit(zap.NewNop(), other, "o1", job("o1-again", false))
+	close(gate)
+	deadline := time.Now().Add(5 * time.Second)
+	for !j.idle() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	close(started)
+	var names []string
+	for n := range started {
+		names = append(names, n)
+	}
+	if strings.Join(names, ",") != "k2" || maxRunning.Load() != 1 {
+		t.Fatalf("ran %v, max concurrent %d", names, maxRunning.Load())
 	}
 }
 

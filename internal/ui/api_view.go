@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"go.uber.org/zap"
 
 	"github.com/brutally-honest/llm-gateway/internal/core"
+	"github.com/brutally-honest/llm-gateway/internal/logging"
 	"github.com/brutally-honest/llm-gateway/internal/store"
 	"github.com/brutally-honest/llm-gateway/internal/timeline"
 )
@@ -26,6 +28,8 @@ type ViewCache struct {
 	mu    sync.Mutex
 	ll    *list.List
 	items map[store.SessionIdent]*list.Element
+	// jobs runs the background full builds that write disk views (040 D20)
+	jobs viewJobs
 }
 
 type viewEntry struct {
@@ -290,7 +294,139 @@ func (d Deps) buildView(ctx context.Context, who sessIdent, fresh bool) (_ timel
 	if built.ver == ver && !active && built.bs.kind == buildFull {
 		d.Disk.PutView(e, ver, ev)
 	}
+	// an inactive session whose build is incremental gets its disk view from a full build in
+	// the background, so a session watched live is not cold after a restart (040 D20, D30)
+	if built.ver == ver && !active && built.bs.kind == buildIncremental && d.Disk != nil && d.Views != nil &&
+		!d.Disk.HasView(ctx, ident, key, now) {
+		d.Views.jobs.submit(d.Log, ident, key, func() { d.fullViewToDisk(who, ident, ver, ev, key) })
+	}
 	return v, false, nil
+}
+
+// fullBuildViewTimeout bounds one background full build for the disk view.
+const fullBuildViewTimeout = buildTimeout
+
+// viewJobs runs full builds for disk views one at a time, process-wide, with at most one
+// queued per session: a newer version replaces a queued older one. A key that is running,
+// queued or was the last one run for the session is not started again.
+type viewJobs struct {
+	mu      sync.Mutex
+	busy    bool
+	order   []store.SessionIdent
+	pending map[store.SessionIdent]viewJob
+	running map[store.SessionIdent]string
+	done    map[store.SessionIdent]string
+}
+
+type viewJob struct {
+	key string
+	run func()
+}
+
+// submit queues run for the session at key; it starts the runner when none is busy. The
+// jobs run on the server's lifetime context base, never on a request's.
+func (j *viewJobs) submit(log *zap.Logger, id store.SessionIdent, key string, run func()) {
+	if log == nil {
+		log = zap.NewNop()
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.running[id] == key || j.done[id] == key || j.pending[id].key == key {
+		return
+	}
+	if j.pending == nil {
+		j.pending, j.running, j.done = map[store.SessionIdent]viewJob{}, map[store.SessionIdent]string{}, map[store.SessionIdent]string{}
+	}
+	if _, queued := j.pending[id]; !queued {
+		j.order = append(j.order, id)
+	}
+	j.pending[id] = viewJob{key: key, run: run}
+	if !j.busy {
+		j.busy = true
+		logging.Go(log, "ui_view_job", func() error { j.loop(); return nil })
+	}
+}
+
+func (j *viewJobs) loop() {
+	for {
+		j.mu.Lock()
+		if len(j.order) == 0 {
+			j.busy = false
+			j.mu.Unlock()
+			return
+		}
+		id := j.order[0]
+		j.order = j.order[1:]
+		job := j.pending[id]
+		delete(j.pending, id)
+		j.running[id] = job.key
+		j.mu.Unlock()
+		func() {
+			defer func() { _ = recover() }()
+			job.run()
+		}()
+		j.mu.Lock()
+		delete(j.running, id)
+		j.done[id] = job.key
+		j.mu.Unlock()
+	}
+}
+
+// fullViewToDisk builds the session in full, outside the timeline cache, and writes its
+// view to disk when the store has not moved on and the view is whole (040 D20): only a view
+// from a full build reaches the disk. A failure is logged at Debug.
+func (d Deps) fullViewToDisk(who sessIdent, ident store.SessionIdent, ver store.Version, ev store.EffectVersion, key string) {
+	base := d.Ctx
+	if base == nil {
+		base = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(base, fullBuildViewTimeout)
+	defer cancel()
+	fail := func(err error) {
+		if err != nil && base.Err() == nil {
+			d.logger().Debug("ui view job: view not written", zap.Error(err))
+		}
+	}
+	c := d.Reader.WithContext(ctx)
+	unMax, err := c.MaxEffectID()
+	if err != nil {
+		fail(err)
+		return
+	}
+	bs, err := buildSessionFn(c, who, d.Rules[who.client], entryCut)
+	if err != nil {
+		fail(err)
+		return
+	}
+	// the store must still be at the version the request read, or the view is not the one asked for
+	vers, err := c.SessionVersions([]store.SessionIdent{ident})
+	if err != nil || vers[ident] != ver {
+		fail(err)
+		return
+	}
+	hooks, err := c.HookEvents(who.principal, who.client, who.name)
+	if err != nil {
+		fail(err)
+		return
+	}
+	last := lastActivity(bs, hooks)
+	endOnly := endOnlyHooks(bs, hooks)
+	if isActive(last, endOnly, d.now()) {
+		return // woke up meanwhile (D18)
+	}
+	v, degraded, err := d.viewDeps().sessionViewChecked(c, who, bs, hooks, false, key)
+	if err != nil || degraded {
+		fail(err)
+		return
+	}
+	evs, err := c.EffectVersions([]store.SessionIdent{ident})
+	if err != nil || evs[ident] != ev {
+		fail(err)
+		return
+	}
+	from, to := activityRange(bs, hooks)
+	d.Disk.PutView(&viewEntry{id: ident, key: key, last: last, endOnly: endOnly, view: v,
+		from: from, to: to, unMax: unMax}, ver, ev)
 }
 
 func (d Deps) getView(w http.ResponseWriter, r *http.Request) {

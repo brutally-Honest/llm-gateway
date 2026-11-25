@@ -17,7 +17,8 @@ feature: 040-incremental-live-updates
 - 2026-11-25 Step 5b (UI check, haiku doc), 0097069: Chrome extension not connected, so a headed Chrome with a throwaway profile over DevTools (port 9333); 8 cases (Lean/Stark, dark/light, 1,440/2,560), 25 inputs each (20 calls, 3 hooks, 2 effects): every input on the page 265-408 ms after being stored, 0 px movement of a mid-list turn, 0 layout shift, no turn re-created, page equal to a reload (2,879 lines); docs/manual-checks/040-incremental-live-updates.md.
 - 2026-11-25 Step 6 review round 1 (fresh opus): 0 P1, 0 P2, 4 P3, 7 P4 (table under Review). One round only (no P1/P2).
 - 2026-11-25 Step 6 fix A (sonnet), 0056ae0: P3-1 `textMemoOff` bypasses the state memo again (a broken memo now fails TestTextMemo_OutputUnchanged); P3-3 the oracle fails when under 80 % of a scenario's steps were incremental (under half below 10 steps), the store oracle when fallbacks pass 5 %; P4-5 a text with a block not stored is not memoised.
-- 2026-11-25 Step 6 fix B (sonnet), (this commit): P3-2 the stateful full build reads events straight from the reader instead of caching all of them; largest session peak heap during a full build 670-734 MB to 103-107 MB, build 2.60-2.69 s to 2.35-2.42 s, output unchanged (oracle green).
+- 2026-11-25 Step 6 fix B (sonnet), 545afd3: P3-2 the stateful full build reads events straight from the reader instead of caching all of them; largest session peak heap during a full build 670-734 MB to 103-107 MB, build 2.60-2.69 s to 2.35-2.42 s, output unchanged (oracle green).
+- 2026-11-25 Step 6 fix C (sonnet), (this commit): P3-4 an inactive session served from an incremental build gets its disk view from one background full build (one job at a time, one queued per session, never stored in the timeline cache); 4 tests, the main one fails without it.
 
 ## Measurement setup
 - Store copy, taken 2026-11-25 19:19 +05:30: `sqlite3 ~/.local/share/llm-gateway/gateway.db
@@ -93,6 +94,24 @@ Before (Step 1): call 2,534-2,712 ms from response end, about 2.3 CPU-s over the
 A call's time from the end of its response to the view is still about 1 s: capture parses an
 8.8 MB request (about 0.7 s) before it stores the call, and that pipeline is unchanged (Goal
 counts from the store, D1). The first open is still a full build (non-goal).
+
+## Review (step 6, round 1 of at most 2; fresh opus on `git diff main...HEAD`)
+
+No P1, no P2, so no second round.
+
+| # | Finding | Outcome |
+|---|---|---|
+| P3-1 | `TestTextMemo_OutputUnchanged` compared memo-on with itself: `textMemoOff` no longer reached the state memo | fixed in 0056ae0 (D32); a broken memo now fails it |
+| P3-2 | the stateful full build still cached every event of the session (peak ~700 MB on the largest) | fixed in 545afd3; peak heap 103-107 MB |
+| P3-3 | the oracle only logged build counts, so "every update full" would pass | fixed in 0056ae0: under 80 % incremental fails a scenario; the store oracle fails over 5 % fallbacks |
+| P3-4 | a watched session that went quiet never got its view on disk (D20), so it was cold after a restart | fixed in fix C (D33) |
+| P4-5 | text memo kept "not stored" results across builds | fixed in 0056ae0 (D32) |
+| P4-6 | memo and interner growth of a discarded run is not counted in `c.bytes` | accepted: bounded by the session's distinct content; recounted at the next stored build |
+| P4-7 | a reused slot's size estimate ignores the patched PrevID | accepted: a few bytes per slot, estimate only |
+| P4-8 | row headers are not counted when no state is kept (too_large) | accepted: those sessions are already over the cap; the entry still counts entries |
+| P4-9 | a foreground caller joining a background run after its store decision may get an uncached build | accepted: costs one extra rebuild, never a wrong view |
+| P4-10 | a hook triggers a second view rebuild after the 250 ms window | accepted: the second is a view-cache hit; the event carries only changed turns |
+| P4-11 | no test of a real mid-`Update` failure, no oracle case with a block not stored | accepted: F4 tests cover the fallback, D25/D32 cover not-stored blocks |
 
 ## Decisions
 - **D1** (2026-11-25) CPU per update is the gateway process's CPU from the input to quiet,
@@ -247,3 +266,11 @@ counts from the store, D1). The first open is still a full build (non-goal).
   equivalence test builds with when `textMemoOff` is set; a package var in timeline was the
   alternative. `textOf` no longer memoises a text when a text block was not stored (D25's rule
   applied to texts); output unchanged.
+- **D33** (2026-11-25, review fix C) D20 stands (only views from full builds go to disk); an
+  inactive session served from an incremental build at the read version queues one background
+  full build whose view is written to disk. One job runs at a time, one waits per session (a
+  newer version replaces it), a failed version is not retried, and the build never enters the
+  timeline cache. Thesis: keeps drift from ever reaching disk and restores main's warm restart.
+  Antithesis: writing the incremental build's view directly costs nothing and the oracle shows
+  equality. Synthesis: one full build per session going quiet is cheap insurance. Flip: many
+  sessions going quiet at once on a slow machine.
