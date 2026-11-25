@@ -39,16 +39,23 @@ was placed (shared prefix length, best earlier match, diverged marker, thread).
 
 | Input | What it can change | Incremental rule |
 |---|---|---|
-| A new exchange row (call ended, stored before its parse) | its own entries; the thread, best match and entries of every exchange after it in timeline order; hook states and hook-line merge; call facts of every call (sub-agent and main flags are per thread) | derive the new exchange from its own events only; re-place it and every exchange after it in timeline order (best match, shared prefix, thread); an exchange whose placement is unchanged keeps its entries, one whose placement changed has its entries re-made from its own events; then the global passes |
+| A new exchange row (call ended, stored before its parse) | its own entries; the thread, best match and entries of every exchange after it in timeline order; hook states and hook-line merge; call facts of every call (sub-agent and main flags are per thread) | derive the new exchange from its own events only; re-place it and every exchange after it in timeline order (best match, shared prefix, thread). Placement splits in two (D13): the body key (shared prefix length, diverged marker) decides the entries' body, and only a changed body key re-makes entries from the exchange's own events; the header fields (Thread, PrevID, Messages, Carried) are patched on a copy of the first entry. Then the global passes |
 | A parse landing on a stored row (row's parse field changes) | as above, from that exchange's position | re-derive that exchange; re-place from its position; global passes |
 | An exchange committed out of start order (a long call ending after later calls started) | as above, from its position | same as a new row: re-place from its position, not from the end |
 | A hook event | tool-call states and chips, input-differs, hook lines and their merge position, agent ids, hence sub-agent/main call facts | no exchange is re-derived or re-placed; the hook rows are re-read whole and the hook pass and call-facts pass run whole over the kept state |
-| A file or network effect | effect labels (ADR 0015) of any turn, files/commands/sites lists, unassigned connections | the timeline build is untouched (as on main); the view is rebuilt whole from the cached build |
+| A file or network effect of the session | effect labels (ADR 0015) of any turn, files/commands/sites lists | the timeline build is untouched (as on main); the view is rebuilt whole from the cached build |
+| An unassigned connection (no session) | the view's unassigned-connections note | as on main: no poke; the next view rebuild picks it up (D21) |
 | Time passing (active flag flips) | status | view rebuilt whole (as on main) |
 
 The global passes, run whole on every update from the kept state: the hook pass (tool-call
-states, loose hook lines merged by time), call facts (threads, side calls, sub-agents, main),
-the usage summary, and the lookup maps. Then `BuildView` runs whole, so a late hook or
+states, loose hook lines merged by time) over a fresh concatenation of the kept entries (the
+hook pass writes entries in place, so it never sees a slice the state shares), call facts
+(threads, side calls, sub-agents, main), and the lookup maps.
+
+The per-exchange tool data mirrors exactly what the hook pass reads from a full build: an
+ordered list of (kind, tool call id, content hash) with duplicates and empty hashes kept; a
+folded-parse exchange contributes none, a hash-less exchange that is not folded keeps its
+tool events. The best match is kept as an index into the state's order, never a pointer. Then `BuildView` runs whole, so a late hook or
 effect re-attributes earlier turns exactly as a full build does.
 
 Exchange changes are found by diffing a fresh snapshot of the session's exchange rows
@@ -62,6 +69,8 @@ dropped stream message or a hub overflow cannot make the state drift (D3).
 - F4 the incremental update fails or panics (logged, then a full build);
 - F5 more than half of the session's exchanges would need re-deriving from their events;
 - F6 the state would exceed its size cap (D4): a full build, and no state is kept.
+A failed or panicked update (F4) never leaves its base state in the cache: the entry is
+replaced by the full build. A hooks-only session (no exchange) is a valid empty state, not F1.
 Every build counts as incremental or full with its reason; the counts are kept by the timeline
 cache and the store-copy run records the rate.
 
@@ -74,14 +83,17 @@ cache and the store-copy run records the rate.
   recorded in research.md).
 - AC3 The oracle run over every session of the store copy, each session's inputs replayed in
   capture order, finds no difference; the sessions checked and the fallback rate are recorded.
-- AC4 On the largest session of the copy, measured as in Step 1: capture (or hook post, or
+- AC4 On the largest session of the copy, with the session page's view stream the only stream
+  open (a sessions list open elsewhere adds 043's digest work, D22), measured as in Step 1: capture (or hook post, or
   effect) to the next SSE `view` event under 500 ms; CPU per update under 0.5 s beyond the
   no-stream control; RSS rise per update under 300 MB.
 - AC5 The incremental state lives in the timeline cache's entry for the session, is bounded
   by that cache's session count and byte budget, has its own per-session cap, and is dropped
   with the entry.
 - AC6 The fallback reasons F1-F6 each have a test; each build is counted as incremental or
-  full by reason.
+  full by reason; an unchanged snapshot re-derives no exchange (D16).
+- AC9 A view stream is never dropped for being poked: a burst of pokes during a slow build
+  collapses into one pending rebuild (D14).
 - AC7 The docs that describe live updates say how fast they are now and that some changes
   still cause a full rebuild.
 - AC8 UI check (docs/manual-checks/040-incremental-live-updates.md): Lean and Stark, light and

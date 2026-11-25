@@ -5,6 +5,8 @@ feature: 040-incremental-live-updates
 
 ## Progress
 - 2026-11-25 Step 1 (measure, design), (this commit): baseline on main: call to view 2,534-2,712 ms, 3.0-3.2 CPU-s per call (0.7-0.9 of it capture), RSS 116 to ~680 MB; hook 2,268-2,298 ms; effect 750-786 ms; full build 1.8 s, 940 MB allocated; rules per input and fallbacks F1-F6 in spec.md; D1-D11.
+- 2026-11-25 Step 1 commit f800e3b.
+- 2026-11-25 Step 2 (design review, fresh opus), (this commit): 0 P1, 4 P2, 7 P3, 5 P4; P2s fixed in the design (D12-D15), P3s D16-D22, P4s folded into spec.md.
 
 ## Measurement setup
 - Store copy, taken 2026-11-25 19:19 +05:30: `sqlite3 ~/.local/share/llm-gateway/gateway.db
@@ -130,3 +132,49 @@ for it; the digest work of the global stream is 043's and out of scope.
 - **D11** (2026-11-25) Only the `parse` column of an exchange row changes after insert
   (`store.SaveParse`), and events are written in the same transaction. The diff still
   compares whole rows, so any other change also re-derives that exchange.
+- **D12** (2026-11-25, review P2-1) The incremental driver lives in `TimelineCache.run`: the
+  cache's build function becomes `func(ctx, prev *cachedBuild) (builtSession, error)`, `run`
+  hands it `peek(id)`'s entry, and every caller (`timelineBuild`, `api_timeline.go`) passes the
+  same function, so whether a run is incremental never depends on which caller queued it last.
+- **D13** (2026-11-25, review P2-2) Placement is split: the body key (shared prefix length,
+  diverged marker: `len(best.hashes) > shared`) decides the entries' body; the header fields
+  (Thread, PrevID, Messages, Carried) are patched on a copy of the first entry. Entries are
+  re-made from events only when the body key changes, so a late call that opens a new thread
+  renumbers later threads without re-reading their events. F5 counts re-reads from events
+  only, never header patches.
+- **D14** (2026-11-25, review P2-3) A view subscriber gets a one-slot dirty signal: a poke is a
+  non-blocking send to it and never drops the stream, so a burst of hook or effect pokes
+  during a slow build (any fallback) leaves one pending rebuild. Pokes are sent outside
+  `h.mu`. With that, D7 (leading-edge pokes) stands.
+- **D15** (2026-11-25, review P2-4) Correction to D5: the memos (text by hash and role; hook
+  input against call input by the two hashes and the cut) live in the state, are counted in
+  its running size estimate (D8) and in the F6 cap, and are mutated only inside the session's
+  serialised build run, so they need no mutex; a new state takes the old one's memo and the
+  old state is never a build base again. A content read that fails with anything but not-found
+  is never memoised. F3 drops them.
+- **D16** (2026-11-25, review P3-5) Row equality in the snapshot diff is explicit: every scalar
+  field, `TTFBNS` dereferenced, headers compared by value. A test asserts an unchanged
+  snapshot re-derives zero exchanges.
+- **D17** (2026-11-25, review P3-6) The interner is append-only and lives in the state, so kept
+  hashes stay shared and the state stays small; F6's 128 MB cap is checked against the
+  largest session's measured state in step 4 and moved if needed (new D-entry).
+- **D18** (2026-11-25, review P3-7) Not changed: a run is labelled with the version its caller
+  read, which can be older than the snapshot the build reads. It is the same on main, it only
+  costs a wasted store or one extra rebuild, and the next update's snapshot diff corrects the
+  state whatever the label. Flip: a measured rebuild loop caused by it.
+- **D19** (2026-11-25, review P3-8) F4 replaces the cache entry with the full build; the
+  incremental path never mutates its base state, and the hook pass always gets a fresh
+  concatenation of entries.
+- **D20** (2026-11-25, review P3-9) `cachedBuild` records whether it is a full or incremental
+  build; the on-disk view cache stores only views built from a full build, so a drift (should
+  one ever slip past the oracle) never survives a restart. An inactive session gets its disk
+  view on its next full build, as on main after an eviction.
+- **D21** (2026-11-25, review P3-10) Unassigned connections keep main's behaviour: they do not
+  poke session view streams; the next rebuild of the view shows them. Out of scope.
+- **D22** (2026-11-25, review P3-11) AC4 is measured with the session page's view stream as the
+  only stream, which is how the session page runs; a sessions list open in another tab adds
+  the digest catch-up, which is 043's (non-goal).
+- **D23** (2026-11-25, review P4s) The unused usage summary is dropped from the global passes;
+  the per-exchange tool data mirrors the hook pass's input exactly (spec); the best match is an
+  index; a hooks-only session is a valid empty state with a test; `buildView` keeps reading
+  hooks itself (as on main).
