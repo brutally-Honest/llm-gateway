@@ -74,6 +74,18 @@ func (s *eventsOnce) PutText(hash, role, text string, ok bool) {
 	s.texts[textKey{hash, role}] = memoText{text, ok}
 }
 
+// snapshotSource serves a stateful full build: the snapshot's exchanges, and events straight
+// from the reader. That build reads no exchange's events twice (call-fact texts come from the
+// state), so nothing is cached and a large session's events are not held until the build ends.
+type snapshotSource struct {
+	timeline.Source
+	exs []store.ExchangeRow
+}
+
+func (s snapshotSource) SessionExchanges(string, string, string) ([]store.ExchangeRow, error) {
+	return s.exs, nil
+}
+
 // sameExchanges reports whether a and b are the same slice.
 func sameExchanges(a, b []store.ExchangeRow) bool {
 	return len(a) == len(b) && (len(a) == 0 || &a[0] == &b[0])
@@ -153,7 +165,7 @@ func buildSessionRows(c sessionSource, who sessIdent, rows []store.RowExchange, 
 	for _, x := range exs {
 		byID[x.RequestID] = x
 	}
-	src := &eventsOnce{Source: c, exs: exs, events: map[string][]store.EventRow{}}
+	src := snapshotSource{Source: c, exs: exs}
 	session := store.SessionRow{PrincipalID: who.principal, Client: who.client, SessionKey: who.name}
 	memo := timeline.NewMemo()
 	if textMemoOff {
