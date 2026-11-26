@@ -151,3 +151,40 @@ export function prettyJSON(text) {
     return text;
   }
 }
+
+// readableJSON is a display form of prettyJSON (spec 046 U10): a string value that holds
+// line breaks is shown with real line breaks, its continuation lines indented two spaces
+// past the key. It is NOT valid JSON. The Copy button copies prettyJSON, never this.
+// Text that does not parse as JSON is returned unchanged.
+export function readableJSON(text) {
+  let v;
+  try {
+    v = JSON.parse(text);
+  } catch {
+    return text;
+  }
+  return readableValue(v, "");
+}
+
+// readableValue renders v as JSON.stringify(v, null, 2) would, except for multi-line strings.
+// indent is the whitespace of the line where v starts; its children sit one step deeper.
+function readableValue(v, indent) {
+  const inner = indent + "  ";
+  if (typeof v === "string") {
+    if (!v.includes("\n")) return JSON.stringify(v);
+    const lines = v.split("\n").map((l) => JSON.stringify(l).slice(1, -1));
+    return `"${lines.join("\n" + inner)}"`;
+  }
+  if (Array.isArray(v)) {
+    if (v.length === 0) return "[]";
+    const items = v.map((x) => inner + readableValue(x, inner));
+    return `[\n${items.join(",\n")}\n${indent}]`;
+  }
+  if (v !== null && typeof v === "object") {
+    const keys = Object.keys(v);
+    if (keys.length === 0) return "{}";
+    const props = keys.map((k) => `${inner}${JSON.stringify(k)}: ${readableValue(v[k], inner)}`);
+    return `{\n${props.join(",\n")}\n${indent}}`;
+  }
+  return JSON.stringify(v);
+}

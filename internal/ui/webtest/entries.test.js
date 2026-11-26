@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compareEntries, omittedNote, hookLabel, hookInputEntry } from "../web/entries.js";
+import { compareEntries, omittedNote, hookLabel, hookInputEntry, prettyJSON, readableJSON } from "../web/entries.js";
 
 test("module loads and compareEntries orders by time", () => {
   const a = { start: "2026-01-01T00:00:05.12Z", exchange_id: "x", index: 0 };
@@ -41,4 +41,42 @@ test("hookInputEntry takes truncation from the hook input, not the call input", 
   assert.equal(hookInputEntry(call).exchange_id, "ex");
   assert.equal(hookInputEntry({ ...call, hook_omitted_bytes: 5 }).truncated, true);
   assert.equal(hookInputEntry({ id: "c", exchange_id: "ex" }).truncated, false);
+});
+
+// spec 046 U10: the tool dialog's Input shows strings with line breaks as real lines.
+test("readableJSONShowsLineBreaksInStrings", () => {
+  const text = JSON.stringify({ command: "echo one\necho two", n: 2, flag: true, list: ["a", "b\nc"], nested: { text: "x\ny" } });
+  const out = readableJSON(text);
+  assert.ok(out.includes("echo one\n    echo two"), "a real newline between the two lines");
+  assert.ok(!out.includes("\\n"), "no literal backslash-n");
+  assert.equal(out, [
+    "{",
+    '  "command": "echo one',
+    '    echo two",',
+    '  "n": 2,',
+    '  "flag": true,',
+    '  "list": [',
+    '    "a",',
+    '    "b',
+    '      c"',
+    "  ],",
+    '  "nested": {',
+    '    "text": "x',
+    '      y"',
+    "  }",
+    "}",
+  ].join("\n"));
+  // a string without a newline is its JSON form
+  assert.equal(readableJSON(JSON.stringify({ a: "plain" })), prettyJSON(JSON.stringify({ a: "plain" })));
+  assert.equal(readableJSON(JSON.stringify({ a: "b" })), prettyJSON(JSON.stringify({ a: "b" })));
+  // quotes and backslashes inside a multi-line string are escaped as JSON escapes them
+  assert.equal(readableJSON(JSON.stringify({ msg: 'say "hi"\nok\\' })), '{\n  "msg": "say \\"hi\\"\n    ok\\\\"\n}');
+  // a top-level multi-line string and an empty container keep their JSON shape
+  assert.equal(readableJSON(JSON.stringify("p\nq")), '"p\n  q"');
+  assert.equal(readableJSON(JSON.stringify({ e: [], o: {} })), '{\n  "e": [],\n  "o": {}\n}');
+});
+
+test("readableJSONReturnsNonJSONUnchanged", () => {
+  assert.equal(readableJSON("not json\nat all"), "not json\nat all");
+  assert.equal(readableJSON(""), "");
 });

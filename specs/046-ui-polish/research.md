@@ -13,7 +13,8 @@ feature: 046-ui-polish
 - 2026-11-26 step 2 U6 (haiku): first column is "Last active" from last_at, start in its tooltip, header tooltip names the sort (D5), a18a6dd; 1 test added, 1 header expectation moved; make verify green.
 - 2026-11-26 step 2 U7 (haiku): a 404 view shows "Session not found." with a link to the list; any failed open clears the rail skeleton, 5bc3d16; 2 app tests, fake fetch takes an error body; make verify green.
 - 2026-11-26 step 2 U8 (haiku): an empty filtered list names the filter and/or search with a Clear that resets both in one history entry, cf34639; 4 tests, 4 expectations moved to the new text; make verify green.
-- 2026-11-26 step 2 U9 (haiku): a visible "reconnecting…" beside the live dot while the stream is down, gone on reconnect; aria-hidden since the dot already speaks (this commit); 1 test, 2 app assertions; make verify green.
+- 2026-11-26 step 2 U9 (haiku): a visible "reconnecting…" beside the live dot while the stream is down, gone on reconnect; aria-hidden since the dot already speaks, 8da3757; 1 test, 2 app assertions; make verify green.
+- 2026-11-26 step 2 U10 (haiku): the tool dialog's Input shows multi-line strings with real line breaks, Copy keeps the JSON (D7, D12) (this commit); 3 tests; make verify green.
 
 ## Findings
 
@@ -138,3 +139,6 @@ has 7 of 28 in this copy.
   folder reserved a place line (1.3em) that a filled row with no folder and no model hides. A
   pending place line now keeps its line only when it has text; a row that later gains a model
   line grows by it, which the rule allows.
+- **D12** 2026-11-26 U10: a multi-line string's continuation lines are indented to its key's
+  depth plus two spaces, so a long command stays visibly inside its key; the added spaces are
+  display only, and Copy gives the exact JSON without them.
