@@ -235,3 +235,5 @@ Nothing is exported today: no metrics endpoint, no tracing, no metrics library i
 - §11 has the scope `observability` for this work and `deploy` for compose files.
 - The roadmap's "Not now: OpenTelemetry" means OTel ingestion from harnesses (019 D9),
   not this phase.
+
+> Note (2026-11-26, spec 048): PLAN.md §10 and §11 moved to AGENTS.md (Workflow, Commits, Scopes, Enforcement). A citation of either section above now points there. Nothing else in this file changed.

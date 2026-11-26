@@ -158,3 +158,5 @@ macOS from here. The macOS job is the first check there (AC7).
   - Why 22 and not 24: it is the oldest supported version, so CI fails on a newer-only
     API before users on 22 hit it. The newest end is covered by the developer's own
     `make verify` (Node v25). Raising the floor is a change to ADR 0013, not to CI.
+
+> Note (2026-11-26, spec 048): PLAN.md §10 and §11 moved to AGENTS.md (Workflow, Commits, Scopes, Enforcement). A citation of either section above now points there. Nothing else in this file changed.

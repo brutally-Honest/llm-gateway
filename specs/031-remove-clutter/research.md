@@ -262,3 +262,6 @@ longer exists; the deleted text assertions only restated facts asserted on the `
   → Rewrapped.
 - **P4** `TestStream_BackfilledExchangesAppearOnReconnectSnapshot` keeps "Backfilled" in
   its name. → Kept (D15).
+
+> Note (2026-11-26, spec 048): PLAN.md §10 and §11 moved to AGENTS.md (Workflow, Commits, Scopes, Enforcement). A citation of either section above now points there. Nothing else in this file changed.
+> Note (2026-11-26, spec 048): "PLAN wins over AGENTS.md" above described the rule at the time. It no longer holds: AGENTS.md owns how work is done and PLAN.md owns intent and design.

@@ -10,7 +10,7 @@ tasks: ./tasks.md
 The feature's working memory: doubts, roadblocks and limits, with their answers.
 
 What belongs here, when to escalate an answer to `spec.md`, `plan.md` or an ADR, and
-the never-delete rule: `PLAN.md` §10 and `AGENTS.md`. Don't restate them here.
+the never-delete rule: `AGENTS.md` (Workflow; it replaced PLAN.md §10 in 048). Don't restate them here.
 
 ---
 

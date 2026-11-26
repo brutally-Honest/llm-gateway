@@ -131,3 +131,5 @@ Real SQLite stores in `t.TempDir()` for store, reader, viewer-command and backfi
 - v1 (2026-10-11) — revise: real-session fixture task (T004) added, AC28 replay moved to T011, ADR notes the wire-shaped text helper
 - v1 (2026-10-11) — revise: fixture capture setup and privacy review added to T004, Test strategy and Risks
 - v1 (2026-10-11) — revise: T004 moves the global CLAUDE.md aside during capture; an unfixable grep failure stops with an open question and no commit
+
+> Note (2026-11-26, spec 048): PLAN.md §10 and §11 moved to AGENTS.md (Workflow, Commits, Scopes, Enforcement). A citation of either section above now points there. Nothing else in this file changed.

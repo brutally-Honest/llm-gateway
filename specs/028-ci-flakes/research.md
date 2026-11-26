@@ -270,3 +270,5 @@ every path including a panic. There is no deadlock and no new race. A mutation p
 - P4 the test name and the "Nothing else follows" comment: under the allowed
   interleaving, `d` is sent as `exchange` and then as `entries` (each event type once, per
   AC54). → Recorded only; the test's own order is pinned by `quiet()`.
+
+> Note (2026-11-26, spec 048): PLAN.md §10 and §11 moved to AGENTS.md (Workflow, Commits, Scopes, Enforcement). A citation of either section above now points there. Nothing else in this file changed.

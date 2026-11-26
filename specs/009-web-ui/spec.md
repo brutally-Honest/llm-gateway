@@ -406,3 +406,5 @@ None. The requirement's decisions are recorded above; smaller choices are in res
     name the store and timeline already use; `tool_use_id` is a provider wire name the purity test
     bans (AC12, D10). AC33 (CR-003): the exchange body endpoint carries the stricter
     `default-src 'none'; sandbox` CSP instead of the standard one; every other response is unchanged.
+
+> Note (2026-11-26, spec 048): PLAN.md §10 and §11 moved to AGENTS.md (Workflow, Commits, Scopes, Enforcement). A citation of either section above now points there. Nothing else in this file changed.

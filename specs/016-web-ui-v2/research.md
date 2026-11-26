@@ -427,3 +427,5 @@ web test that now covers the same fact, or the AC that drops the feature.
   handlers only on elements made as `el("button"|"a")` or with `fmt.js` `button()`.
 - Throwaway gateway recipe: `docs/manual-checks/016-session-page.md` Setup; seed scratch
   repos collect under `~/llmgw-seed-session/` and are removed by hand.
+
+> Note (2026-11-26, spec 048): PLAN.md §10 and §11 moved to AGENTS.md (Workflow, Commits, Scopes, Enforcement). A citation of either section above now points there. Nothing else in this file changed.
