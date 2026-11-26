@@ -24,7 +24,8 @@ feature: 046-ui-polish
 - 2026-11-26 step 4 P3-c (sonnet): a failed open says "Turns not loaded." in the rail; "No turns." only for a missing session, 673653c; 1 expectation moved, 1 assertion added; make verify green.
 - 2026-11-26 step 4 P3-d (sonnet): compile-time check and an end-to-end test that the real profile titles turns (D20), 6e07596; probed by changing the signature (build fails); make verify green.
 - 2026-11-26 step 4 P3-e (sonnet): Clear moves focus to the search box, 8ae2249; 1 assertion, failing before; make verify green. Round 1 closed: P2-a, P2-b (partial, D17), P3-a..e fixed; P4 left as recorded.
-- 2026-11-26 step 4 round 2 (fresh opus): no P1, 2 P2, 4 P3, 3 P4 (see Review round 2). P2-1 + P3-4 (sonnet): command blocks parsed as a leading run (D21) (this commit); 5 cases, probed failing before; make verify green.
+- 2026-11-26 step 4 round 2 (fresh opus): no P1, 2 P2, 4 P3, 3 P4 (see Review round 2). P2-1 + P3-4 (sonnet): command blocks parsed as a leading run (D21), 8460aa7; 5 cases, probed failing before; make verify green.
+- 2026-11-26 step 4 round 2 P2-2 (sonnet): the digest title is shown on the ungrouped page, so D16 stays (D22); end-to-end test asserts list title == view title (this commit); make verify green.
 
 ## Findings
 
@@ -248,3 +249,13 @@ Fresh opus reviewer, `git diff main...HEAD` at 8ae2249. No P1. Last round (cap t
   that run; only the run is stripped, the rest stays as typed and is titled again by the
   rule (a synthetic remainder stays synthetic). Tag-like text in typed args or a skill body
   no longer changes the verdict. Probed: the five new cases fail on the previous rules.go.
+- **D22** 2026-11-26 Round 2 P2-2 (corrects D16 and step 1's Findings): a session-list row
+  shows the view overview's title (`api_sessions.go:468-469, 584-585`); `Digest.Title` is
+  shown only on the ungrouped page (`/api/ungrouped`, rows with no session view) and is what
+  a search matches on those rows (`api_sessions.go:810`). Thesis for dropping D16's work:
+  on session rows it is replaced. Antithesis: on ungrouped rows it is the only title, and its
+  extra cost is a facts pass over entries already built plus one small read per agent call.
+  Synthesis: keep D16; the end-to-end test now checks the list row's title equals the view's.
+  Flips if the ungrouped page gets a view of its own. The sub-agent case was not added to the
+  end-to-end test (its upstream fixture is a fixed stream with no tool call); the timeline
+  tests cover it.

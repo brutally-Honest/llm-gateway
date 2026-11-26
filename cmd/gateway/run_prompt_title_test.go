@@ -59,7 +59,8 @@ func TestRun_PromptTitleRuleReachesTheView(t *testing.T) {
 	h := ui.Handler(ui.Deps{Addr: "127.0.0.1:7199", Reader: r, Rules: uiRules()})
 	var page struct {
 		Items []struct {
-			ID string `json:"id"`
+			ID    string `json:"id"`
+			Title string `json:"title"`
 		} `json:"items"`
 	}
 	getSessionsReady(t, h, &page)
@@ -86,5 +87,9 @@ func TestRun_PromptTitleRuleReachesTheView(t *testing.T) {
 	}
 	if got := view.Overview.Title; got != "fix the login button" {
 		t.Errorf("session title = %q, want %q", got, "fix the login button")
+	}
+	// the sessions list shows the same title as the view (046 round 2 P4-1)
+	if got := page.Items[0].Title; got != view.Overview.Title {
+		t.Errorf("list row title = %q, want the overview's %q", got, view.Overview.Title)
 	}
 }
