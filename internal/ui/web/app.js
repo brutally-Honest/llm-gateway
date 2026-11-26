@@ -652,7 +652,12 @@ async function showSession(id) {
   try {
     view = await retryOn504(() => getJSON(`sessions/${enc(id)}/view`), () => page.setStatus("building session…"));
   } catch (e) {
-    if (mine === seq) page.setStatus(e.message, "error");
+    if (mine === seq) {
+      if (e.status === 404) {
+        shell.setRoute(parseRoute(location.hash), "Session not found");
+        page.setMissing();
+      } else page.setStatus(e.message, "error");
+    }
     return;
   }
   if (mine !== seq) return;

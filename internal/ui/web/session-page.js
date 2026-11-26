@@ -397,13 +397,36 @@ export function createSessionPage(ctx = {}) {
   };
   page.applyEvent = (ev) => page.setView(mergeView(view, ev));
   let loader = null; // the story's loader, until the view arrives
+  // noTurns replaces the rail's loading item with "No turns." when no view is coming
+  const noTurns = () => {
+    tocList.replaceChildren(el("li", "muted", "No turns."));
+    tocSub.textContent = "";
+  };
   page.setStatus = (text, kind = "note") => {
     status.replaceChildren();
     if (text) status.append(el("p", `page-note${kind === "error" ? " error" : ""}`, text));
     // until the view arrives the page keeps its loader, under any note ("building session…")
     loader = !view && kind !== "error" ? skeleton("Loading the session…", 4, "cards") : null;
     if (loader) status.append(loader);
-    if (!view) reconcile(story, [status]);
+    if (!view) {
+      if (kind === "error") noTurns();
+      reconcile(story, [status]);
+    }
+  };
+  // setMissing says the session does not exist: a note with a way back, and no loader or
+  // rail skeleton left on the page
+  page.setMissing = () => {
+    status.replaceChildren();
+    const note = el("p", "page-note error", "Session not found. ");
+    const back = el("a", "", "Back to the sessions list");
+    back.href = "#/";
+    note.append(back);
+    status.append(note);
+    loader = null;
+    if (!view) {
+      noTurns();
+      reconcile(story, [status]);
+    }
   };
   page.moveTurn = (delta) => select(current + delta);
   page.dialogOpen = () => dialog.isOpen();

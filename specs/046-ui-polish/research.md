@@ -10,7 +10,8 @@ feature: 046-ui-polish
 - 2026-11-26 step 2 U3 (haiku): a network failure or unreadable answer reads "The gateway is not answering." (code unreachable), the list keeps Retry, 2e3d87e; 7 api tests, 1 list test; make verify green.
 - 2026-11-26 step 2 U4 (haiku, one follow-up): a pending row reserves one line per heavy cell and a place line only with a folder, so rows only grow, e8f98e3; 5 old assertions replaced, 1 test added; make verify green.
 - 2026-11-26 step 2 U5 (haiku): installer UI line, four doctor fix texts and the install.md row no longer claim a 30 s warm-up; grace logic kept (D6), d88b490; 1 test added, 2 extended; make verify green.
-- 2026-11-26 step 2 U6 (haiku): first column is "Last active" from last_at, start in its tooltip, header tooltip names the sort (D5) (this commit); 1 test added, 1 header expectation moved; make verify green.
+- 2026-11-26 step 2 U6 (haiku): first column is "Last active" from last_at, start in its tooltip, header tooltip names the sort (D5), a18a6dd; 1 test added, 1 header expectation moved; make verify green.
+- 2026-11-26 step 2 U7 (haiku): a 404 view shows "Session not found." with a link to the list; any failed open clears the rail skeleton (this commit); 2 app tests, fake fetch takes an error body; make verify green.
 
 ## Findings
 
