@@ -155,13 +155,8 @@ func promptTitle(text string, depth int) (string, bool) {
 		return promptTitle(rest, depth+1)
 	}
 	switch {
-	case strings.HasPrefix(s, "<command-message>") || strings.HasPrefix(s, "<command-name>"):
-		if strings.Contains(s, "<local-command-stdout>") || strings.Contains(s, "<local-command-stderr>") {
-			return localCommandTitle(s)
-		}
-		return slashCommandTitle(s)
-	case strings.HasPrefix(s, "<local-command-caveat>"):
-		return localCommandTitle(s)
+	case strings.HasPrefix(s, "<command-message>") || strings.HasPrefix(s, "<command-name>") || strings.HasPrefix(s, "<local-command-caveat>"):
+		return commandTitle(s, depth)
 	case strings.HasPrefix(s, "<task-notification>"):
 		title := "(system) background task"
 		if sum := stripPasted(tagBody(s, "summary")); sum != "" {
@@ -230,30 +225,54 @@ func tagBody(s, tag string) string {
 	return strings.TrimSpace(rest)
 }
 
-// removeTag removes every <tag>…</tag> block from s; an unclosed one goes to the end.
-func removeTag(s, tag string) string {
-	open, closing := "<"+tag+">", "</"+tag+">"
+// commandBlockTags are the blocks Claude Code writes ahead of a slash command or a local
+// command's output; only these may form the leading run.
+var commandBlockTags = []string{"local-command-caveat", "command-name", "command-message", "command-args", "local-command-stdout", "local-command-stderr"}
+
+// commandRun is the leading run of command blocks of a message: each block complete
+// (opening tag to its own closing tag), separated only by whitespace.
+type commandRun struct {
+	bodies map[string]string // first body per tag
+	rest   string            // everything after the run, as typed
+	local  bool              // an output block or the caveat is in the run
+}
+
+func leadingCommandRun(s string) commandRun {
+	run := commandRun{bodies: map[string]string{}}
 	for {
-		i := strings.Index(s, open)
-		if i < 0 {
-			return s
+		t := strings.TrimLeft(s, " \t\r\n")
+		matched := false
+		for _, tag := range commandBlockTags {
+			rest, ok := strings.CutPrefix(t, "<"+tag+">")
+			if !ok {
+				continue
+			}
+			body, after, closed := strings.Cut(rest, "</"+tag+">")
+			if !closed {
+				break
+			}
+			if _, seen := run.bodies[tag]; !seen {
+				run.bodies[tag] = strings.TrimSpace(body)
+			}
+			if tag != "command-name" && tag != "command-message" && tag != "command-args" {
+				run.local = true
+			}
+			s, matched = after, true
+			break
 		}
-		rest := s[i+len(open):]
-		j := strings.Index(rest, closing)
-		if j < 0 {
-			return s[:i]
+		if !matched {
+			run.rest = s
+			return run
 		}
-		s = s[:i] + rest[j+len(closing):]
 	}
 }
 
-// commandName is the "/name" a command block pair names; "" when none.
-func commandName(s string) string {
-	n := tagBody(s, "command-name")
+// name is the "/name" the run's command blocks name; "" when none.
+func (r commandRun) name() string {
+	n := r.bodies["command-name"]
 	if n == "" {
-		n = tagBody(s, "command-message")
+		n = r.bodies["command-message"]
 	}
-	n = strings.TrimSpace(n)
 	if n == "" {
 		return ""
 	}
@@ -263,29 +282,28 @@ func commandName(s string) string {
 	return n
 }
 
-// slashCommandTitle is "/name args"; whatever follows the command blocks (a skill body)
-// is dropped.
+// commandTitle titles a message that opens with command blocks. With an output block or the
+// caveat in the leading run it is a local command: the rest, as typed, is titled again (a
+// synthetic rest stays synthetic); with nothing left, the command's name, synthetic. Without
+// one it is a typed slash command, "/name args" from the run, and whatever follows the run
+// (a skill body) is dropped. Tag-like text in args or after the run is never stripped.
 // A command with no readable name is synthetic, so a "(system)" title never leads a session.
-func slashCommandTitle(s string) (string, bool) {
-	name := commandName(s)
-	if name == "" {
-		return "(system) slash command", true
+func commandTitle(s string, depth int) (string, bool) {
+	run := leadingCommandRun(s)
+	name := run.name()
+	if !run.local {
+		if name == "" {
+			return "(system) slash command", true
+		}
+		if args := stripPasted(run.bodies["command-args"]); args != "" {
+			return name + " " + args, false
+		}
+		return name, false
 	}
-	if args := stripPasted(tagBody(s, "command-args")); args != "" {
-		return name + " " + args, false
-	}
-	return name, false
-}
-
-// localCommandTitle drops the caveat, command and output blocks of a local command. What
-// the user typed after them is the title; with nothing, the command's name, synthetic.
-func localCommandTitle(s string) (string, bool) {
-	name := commandName(s)
-	for _, tag := range []string{"local-command-caveat", "command-name", "command-message", "command-args", "local-command-stdout", "local-command-stderr"} {
-		s = removeTag(s, tag)
-	}
-	if typed := stripPasted(s); typed != "" {
-		return typed, false
+	if strings.TrimSpace(run.rest) != "" {
+		if t, syn := promptTitle(run.rest, depth+1); t != "" {
+			return t, syn
+		}
 	}
 	if name == "" {
 		return "(system) local command", true

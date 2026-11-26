@@ -23,7 +23,8 @@ feature: 046-ui-polish
 - 2026-11-26 step 4 P3-b + P4-4 (sonnet): a local command without its caveat block no longer titles a session as a typed slash command (D19), ecd9aa0; 6 rule cases; make verify green.
 - 2026-11-26 step 4 P3-c (sonnet): a failed open says "Turns not loaded." in the rail; "No turns." only for a missing session, 673653c; 1 expectation moved, 1 assertion added; make verify green.
 - 2026-11-26 step 4 P3-d (sonnet): compile-time check and an end-to-end test that the real profile titles turns (D20), 6e07596; probed by changing the signature (build fails); make verify green.
-- 2026-11-26 step 4 P3-e (sonnet): Clear moves focus to the search box (this commit); 1 assertion, failing before; make verify green. Round 1 closed: P2-a, P2-b (partial, D17), P3-a..e fixed; P4 left as recorded.
+- 2026-11-26 step 4 P3-e (sonnet): Clear moves focus to the search box, 8ae2249; 1 assertion, failing before; make verify green. Round 1 closed: P2-a, P2-b (partial, D17), P3-a..e fixed; P4 left as recorded.
+- 2026-11-26 step 4 round 2 (fresh opus): no P1, 2 P2, 4 P3, 3 P4 (see Review round 2). P2-1 + P3-4 (sonnet): command blocks parsed as a leading run (D21) (this commit); 5 cases, probed failing before; make verify green.
 
 ## Findings
 
@@ -221,3 +222,29 @@ Fresh opus reviewer, `git diff main...HEAD` at a5e6b06. No P1.
   `var _ timeline.PromptTitler = claudecode.Profile{}` beside `uiRules()`, so a signature
   drift fails the build, plus `TestRun_PromptTitleRuleReachesTheView` through the real
   gateway, store and UI handler.
+
+## Review round 2
+Fresh opus reviewer, `git diff main...HEAD` at 8ae2249. No P1. Last round (cap two).
+- **P2-1** `rules.go:155-158, 265-279`: a message is taken as a local command when an output
+  tag appears anywhere (inside typed args or a skill body), and `removeTag` cuts typed text
+  after a local command; a typed `/review … <local-command-stdout> …` became "/review"
+  synthetic. With **P3-4** (same function): text after a local command is not titled again.
+- **P2-2** `digest.go:122-186` vs `api_sessions.go:402,468,584`: the list row's title is
+  always the view overview's (`memo.row.title`), never `Digest.Title`, so round 1's P2-a was
+  not visible and D16's extra work per row is spent on a value that is replaced. Correction
+  to D16 and to step 1's Findings ("the session title (overview and list digest)"): the list
+  shows the overview title.
+- **P3-1** `build.go:461-470`, `view_overview.go:159`: a media-only first message titles the
+  session "[media]"; D16's line on media-only messages is wrong for the view.
+- **P3-2** `rules.go:197`: `withTail` cuts at the first end marker, so a body that quotes its
+  own closing tag leaks its rest as a typed title.
+- **P3-3** `rules.go:131`: an unclosed line-start pasted tag without the client's quoted id
+  eats a typed line ("<pasted_content should not show…" → "").
+- P4 (left): P4-1 the e2e test reads only the view (folded into P2-2's fix); P4-2 a slash
+  command with no readable name drops its args; P4-3 old hooks-only turn mismatch.
+- **D21** 2026-11-26 Round 2 P2-1/P3-4 fix (corrects D19): a command message is parsed as a
+  leading run of complete blocks (caveat, command name/message/args, stdout, stderr) from
+  the start of the text; it is a local command only if the caveat or an output block is in
+  that run; only the run is stripped, the rest stays as typed and is titled again by the
+  rule (a synthetic remainder stays synthetic). Tag-like text in typed args or a skill body
+  no longer changes the verdict. Probed: the five new cases fail on the previous rules.go.
