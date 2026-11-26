@@ -3,6 +3,7 @@ feature: 045-failures-visible
 kind: fix
 created: 2026-11-26
 branch: fix/045-failures-visible
+status: done
 ---
 
 This spec covers what was planned as 037 (missing blobs break reads) and 038 (silent

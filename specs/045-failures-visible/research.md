@@ -11,6 +11,9 @@ feature: 045-failures-visible
 - 2026-11-26 step 5: 8c13546, header banner from /api/health every 15 s, both styles and themes; webtests 285/285, make verify green.
 - 2026-11-26 step 6: c61172f, docs (observability.md Capture health, install.md check and troubleshooting rows), doctor link to #check-capture-health; make verify green.
 - 2026-11-26 step 7: end-to-end on a throwaway gateway (17196-17199) passed: degraded 200, metrics, doctor warn, banner in 8 cases, call listed without body, list loads with blobs deleted, hook drops reconcile (D19); manual check written.
+- 2026-11-26 step 8 round 1: no P1; P2-1 fixed dd21305, P3-1 736ea98, P3-2 documented 79d4448 (D22), P4 banner poll c6e1f34.
+- 2026-11-26 step 8 round 2: no P1/P2; P3-a fixed 07190e5, P3-b 3971d69; P4 banner re-announce left open. No third round (cap two).
+- 2026-11-26 finished: spec marked done; make verify green; throwaway gateway, upstream and Chrome stopped.
 
 ## Findings
 
@@ -230,3 +233,6 @@ fixes complete for every caller; /healthz cannot answer non-200; no double count
   so a damaged session is not rebuilt on every request. The memo is flagged at the Content
   reader inside computeMemo, which covers digest, stats and view at once. Probed: removing
   either the view or the memo guard fails the new test.
+- **D26** 2026-11-26 Round 2 P4 (the banner's status text is rewritten every 15 s even when
+  unchanged, which some screen readers announce again) is left open: P4s were not in scope
+  for fixing, and it is a one-line follow-up (assign the text only when it differs).
