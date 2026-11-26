@@ -162,13 +162,13 @@ func promptTitle(text string, depth int) (string, bool) {
 		if sum := stripPasted(tagBody(s, "summary")); sum != "" {
 			title = sum
 		}
-		return withTail(title, s, taskNoteEnd, depth)
+		return withTail(title, s, taskNoteEnd, true, depth)
 	case s == toolLoadedText:
 		return "(system) tool loaded", true
 	case strings.HasPrefix(s, toolLoadedText+"\n"):
-		return withTail("(system) tool loaded", s, toolLoadedText, depth)
+		return withTail("(system) tool loaded", s, toolLoadedText, false, depth)
 	case strings.HasPrefix(s, otherSession):
-		return withTail("(system) message from another session", s, otherSessionEnd, depth)
+		return withTail("(system) message from another session", s, otherSessionEnd, true, depth)
 	case strings.HasPrefix(s, skillOpening):
 		return skillTitle(strings.TrimPrefix(s, skillOpening)), true
 	case strings.HasPrefix(s, compactOpening):
@@ -178,9 +178,9 @@ func promptTitle(text string, depth int) (string, bool) {
 	case strings.HasPrefix(s, webPageOpening):
 		return "(system) web page content", true
 	case strings.HasPrefix(s, claudeMDOpening):
-		return withTail("(system) CLAUDE.md context", s, claudeMDEnd, depth)
+		return withTail("(system) CLAUDE.md context", s, claudeMDEnd, true, depth)
 	case strings.HasPrefix(s, usageResetOpen):
-		return withTail("(system) usage limit reset", s, usageResetEnd, depth)
+		return withTail("(system) usage limit reset", s, usageResetEnd, false, depth)
 	}
 	return stripPasted(s), false
 }
@@ -192,8 +192,15 @@ func promptTitle(text string, depth int) (string, bool) {
 // marker, or none after it, is synthetic as a whole. Openings with no known end (skill
 // body, continuation summary, web page, compaction request) cannot be cut apart: a
 // single newline does not tell a block's own line breaks from the join.
-func withTail(title, s, end string, depth int) (string, bool) {
+//
+// A closing tag ends the block at its last occurrence, so a body that quotes its own
+// closing tag does not leak the rest of the body as typed text (last is true). A fixed
+// sentence or line ends it at the first, since typed text after it may repeat it.
+func withTail(title, s, end string, last bool, depth int) (string, bool) {
 	i := strings.Index(s, end)
+	if last {
+		i = strings.LastIndex(s, end)
+	}
 	if i < 0 || depth >= maxTitleDepth {
 		return title, true
 	}

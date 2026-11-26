@@ -26,7 +26,8 @@ feature: 046-ui-polish
 - 2026-11-26 step 4 P3-e (sonnet): Clear moves focus to the search box, 8ae2249; 1 assertion, failing before; make verify green. Round 1 closed: P2-a, P2-b (partial, D17), P3-a..e fixed; P4 left as recorded.
 - 2026-11-26 step 4 round 2 (fresh opus): no P1, 2 P2, 4 P3, 3 P4 (see Review round 2). P2-1 + P3-4 (sonnet): command blocks parsed as a leading run (D21), 8460aa7; 5 cases, probed failing before; make verify green.
 - 2026-11-26 step 4 round 2 P2-2 (sonnet): the digest title is shown on the ungrouped page, so D16 stays (D22); end-to-end test asserts list title == view title, 6784b18; make verify green.
-- 2026-11-26 step 4 round 2 P3-1 (sonnet): an image-only prompt no longer titles the session (D23) (this commit); 3 tests, the main one failing before; make verify green.
+- 2026-11-26 step 4 round 2 P3-1 (sonnet): an image-only prompt no longer titles the session (D23), 812a90d; 3 tests, the main one failing before; make verify green.
+- 2026-11-26 step 4 round 2 P3-2 (sonnet): a client block ends at its last closing tag (D24) (this commit); 7 cases, 6 failing before; make verify green.
 
 ## Findings
 
@@ -267,3 +268,10 @@ Fresh opus reviewer, `git diff main...HEAD` at 8ae2249. No P1. Last round (cap t
   one edge left as is: an image-only first prompt followed only by synthetic ones gives
   "[media]" in the view and the first synthetic title in the digest (shown only on the
   ungrouped page, D22).
+- **D24** 2026-11-26 Round 2 P3-2 fix: a block that ends in a closing tag (agent message, task
+  notification, CLAUDE.md context) ends at the LAST such tag, so a body that quotes its own
+  closing tag stays whole; the usage-limit sentence and "Tool loaded." keep the first match
+  (a fixed sentence cannot be quoted short, and typed text may repeat it). Trade-off: typed
+  text that itself contains the same closing tag after the block, or typed text between two
+  blocks of the same kind in one message, is taken into the block (synthetic). Rarer than a
+  report quoting its tag; the story still shows the whole prompt.
