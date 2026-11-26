@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/klauspost/compress/zstd"
 )
@@ -238,10 +239,14 @@ func (r *Reader) contentCtx(ctx context.Context, hash string) ([]byte, error) {
 	path := filepath.Join(r.dir, blobDirName, hash[:2], hash[2:])
 	compressed, err := os.ReadFile(path)
 	if err != nil {
-		// Only a blob that is permanently gone or unreadable is "unavailable"; any other
-		// failure (EMFILE, EIO, a directory in the way...) may pass, so it stays a plain
-		// error and callers neither cache the result nor treat the content as lost.
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) {
+		// Permanent means a retry cannot succeed: the blob is not there, permission is
+		// denied, or the on-disk layout is wrong (ENOTDIR: a file where the blobs/xx
+		// directory should be; EISDIR: a directory at the blob path), plus the undecodable
+		// and wrong-size cases below. Those are "unavailable". Anything else (EIO, EMFILE,
+		// ELOOP ...) is a failed read that may pass: it stays a plain error, is retried
+		// and is cached nowhere.
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) ||
+			errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.EISDIR) {
 			return nil, fmt.Errorf("blob %s: %w: %w", path, ErrContentUnavailable, err)
 		}
 		return nil, fmt.Errorf("blob %s: %w", path, err)

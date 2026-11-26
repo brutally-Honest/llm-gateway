@@ -200,3 +200,26 @@ Fresh opus reviewer, `git diff main...HEAD` at 9b8532d. No P1.
   then count only a checkpoint abandoned at session end. P4 health.js: a tick is skipped
   while the previous /api/health read is in flight. P4 hooks abandoned at shutdown stay in
   the shutdown line only: the process is exiting and no later health read exists.
+
+## Review round 2
+Fresh opus reviewer, `git diff main...HEAD` at 79d4448. No P1, no P2. Confirmed the round 1
+fixes complete for every caller; /healthz cannot answer non-200; no double counting.
+- **P3-a** `store/reader.go:241`, `timeline/build.go:500`: ENOTDIR and EISDIR come from the
+  disk layout and never pass on retry, but stayed plain errors, so the timeline build and
+  digest of that session failed for good (against AC1). D20's "EISDIR is transient" was wrong.
+- **P3-b** `ui/view.go:56`: a view with a placeholder is written to the disk cache keyed by
+  session version; when another session's write heals the shared blob (D14), this session's
+  version does not change, so it keeps the placeholder across restarts.
+- **P4** `web/shell.js setHealth`: the role=status text is rewritten every 15 s even when
+  unchanged, which some screen readers announce again.
+- **D23** 2026-11-26 Correction to D20 (round 2 P3-a): ENOTDIR and EISDIR are permanent
+  (the disk layout is wrong) and now read as `ErrContentUnavailable`. The transient test case
+  uses a symlink loop (ELOOP) instead of a directory. Probed: without the change, the new
+  directory and file-for-directory cases and the "session still builds" UI test fail. A disk
+  that returns EIO for a blob is left as a failed read (retried, cached nowhere): treating a
+  failing disk is repairing a damaged store, a non-goal.
+- **D24** 2026-11-26 `make verify` failed once on `TestSessionsPage_BadParams` with "TempDir
+  RemoveAll cleanup: directory not empty" (the step 2 subagent saw the same on
+  `TestAPI_AfterFromOtherListIs400`). Pre-existing, not from this branch: the two tests at
+  `-count=200` fail 11 times on a clean main worktree (bd01c63), 3 at 79d4448 and 8 with the
+  P3-a change. Verify was rerun unchanged; the flake is left for its own fix (out of scope).

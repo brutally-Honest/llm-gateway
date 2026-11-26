@@ -171,3 +171,39 @@ func TestBlobWriteFailure_CallListedWithoutBody(t *testing.T) {
 	}
 	wantEnvelope(t, e.get("/api/exchanges/ew/body?part=request"), http.StatusNotFound, "body_not_stored")
 }
+
+// A text block whose blob path is a directory (EISDIR: the on-disk layout is wrong, a retry
+// never helps) is a placeholder for the block, not a build error: the session is listed and
+// not pending, and its timeline shows the placeholder (spec 045 AC1, D20).
+func TestBlobUnavailable_DirectoryAtBlobPath(t *testing.T) {
+	e := newAPIEnv(t)
+	ex := &core.Exchange{
+		RequestID: "ed", PrincipalID: core.PrincipalLocal, Protocol: "test", Client: "cc",
+		Auth: core.AuthAPIKey, Method: "POST", Path: "/v1/x", Status: 200, SessionKey: "d",
+		Start: baseTime.Add(time.Second),
+	}
+	ex.End = ex.Start.Add(time.Second)
+	if err := e.s.SaveExchange(t.Context(), ex); err != nil {
+		t.Fatal(err)
+	}
+	e.parseMsgs("ed", "ok", []any{"user", text(bigText("text-d"))}, []any{"assistant", text("short d")})
+	p := blobPath(e.dir, sha("ed-0-0"))
+	if err := os.Remove(p); err != nil {
+		t.Fatalf("seed has no blob at %s: %v", p, err)
+	}
+	if err := os.Mkdir(p, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	list := e.page("/api/sessions")
+	if len(list.Items) != 1 || isPending(list.Items[0]) {
+		t.Fatalf("sessions = %v, want one row that is not pending", list.Items)
+	}
+	rec := e.get("/api/sessions/" + sessIDFor("d") + "/timeline")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("timeline status = %d: %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), timeline.Unavailable) {
+		t.Errorf("timeline lacks %q: %s", timeline.Unavailable, rec.Body)
+	}
+}

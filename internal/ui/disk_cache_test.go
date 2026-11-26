@@ -818,7 +818,7 @@ func TestDiskCache_ContentErrorIsCachedNowhere(t *testing.T) {
 	}
 }
 
-// A blob read that fails for a transient reason (here the blob path is a directory) is a failed
+// A blob read that fails for a transient reason (here the blob path is a symlink loop) is a failed
 // read, not an unavailable blob: the result is served and kept nowhere (045 review P2-1).
 func TestDiskCache_TransientBlobErrorIsCachedNowhere(t *testing.T) {
 	e := newDiskEnv(t)
@@ -837,7 +837,7 @@ func TestDiskCache_TransientBlobErrorIsCachedNowhere(t *testing.T) {
 	if err := os.Remove(blob); err != nil {
 		t.Fatalf("the copy is not a blob file: %v", err)
 	}
-	if err := os.Mkdir(blob, 0o700); err != nil {
+	if err := os.Symlink(blob, blob); err != nil {
 		t.Fatal(err)
 	}
 
