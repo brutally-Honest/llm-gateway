@@ -6,7 +6,7 @@
 - [x] 2026-11-26 task 2: uninstall --purge wording (help, keep lists, docs; D6-D8)
 - [x] 2026-11-26 task 3: app.js liveText comment says red (style.css:215 `--live-off`); no other amber text in UI or docs
 - [x] 2026-11-26 task 4: outbound-destination audit; list under Notes; what-gets-recorded.md privacy bullets fixed (D9)
-- [ ] task 5: check of the 048 round-2 fix commit (6059872)
+- [x] 2026-11-26 task 5: check of the 048 round-2 fix commit (6059872): no typos, no links added, no contradictions (`?` help matches keys.js/shell.js; --purge paragraph superseded by 6fbd103); nothing to fix
 - [ ] review round 1
 - [ ] review round 2 (if needed)
 - [ ] spec marked done; PR and CI
