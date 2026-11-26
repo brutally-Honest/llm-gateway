@@ -4,7 +4,7 @@
 - [x] 2026-11-26 PR #77 confirmed on origin/main; branch chore/049-notes-purge-cleanup from up-to-date main; spec and research created
 - [x] 2026-11-26 task 1: notes local only (150ed75 hook/Makefile/tests/AGENTS.md, b55a178 ADR 0022)
 - [x] 2026-11-26 task 2: uninstall --purge wording (help, keep lists, docs; D6-D8)
-- [ ] task 3: app.js liveText comment
+- [x] 2026-11-26 task 3: app.js liveText comment says red (style.css:215 `--live-off`); no other amber text in UI or docs
 - [ ] task 4: outbound-destination audit
 - [ ] task 5: check of the 048 round-2 fix commit (6059872)
 - [ ] review round 1

@@ -529,7 +529,7 @@ async function loadUngroupedHead() {
 }
 
 // liveText is the header status for a stream state: its word, the dot's tone (green
-// when live, amber while it retries), and the note shown beside the dot (only while the
+// when live, red while it retries), and the note shown beside the dot (only while the
 // stream is down; the snapshot error already has its own message on the page).
 function liveText(state) {
   if (state === "connected") return ["live", "ok", ""];
