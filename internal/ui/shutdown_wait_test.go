@@ -96,3 +96,37 @@ func TestShutdown_DiskWriterStopsAfterWait(t *testing.T) {
 		}
 	}
 }
+
+// Spec 047 D16: once Wait has started, begin counts nothing and says so, so a handler
+// still running after the shutdown cannot start a goroutine behind the wait.
+func TestFlight_BeginAfterWaitStartedIsRefused(t *testing.T) {
+	var f flight
+	if !f.begin() {
+		t.Fatal("begin refused before any Wait")
+	}
+	gone, stop := context.WithCancel(context.Background())
+	stop()
+	if f.Wait(gone) {
+		t.Fatal("Wait returned true with one goroutine still counted and no time left")
+	}
+	if f.begin() {
+		t.Fatal("begin counted a goroutine after Wait started")
+	}
+	f.end()
+	if !f.Wait(context.Background()) {
+		t.Fatal("Wait did not return after the counted goroutine ended")
+	}
+	if f.begin() {
+		t.Fatal("begin counted a goroutine after Wait finished")
+	}
+}
+
+// With nothing counted, Wait is true at once even when its context is already done.
+func TestFlight_WaitWithNothingCountedIsTrueWhateverTheContext(t *testing.T) {
+	var f flight
+	gone, stop := context.WithCancel(context.Background())
+	stop()
+	if !f.Wait(gone) {
+		t.Fatal("Wait with a zero count and a done context returned false")
+	}
+}

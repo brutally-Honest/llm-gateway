@@ -654,6 +654,13 @@ func Prefill(ctx context.Context, d Deps) {
 	if d.Reader == nil {
 		return
 	}
+	// Counted with the digests' goroutines, so the shutdown's wait covers it (spec 047 D16).
+	if d.Digests != nil {
+		if !d.Digests.begin() {
+			return
+		}
+		defer d.Digests.end()
+	}
 	start := time.Now()
 	d.Disk.Cleanup()
 	var after *store.SessionAfter
@@ -1059,7 +1066,9 @@ func (d Deps) queueDeferred(rows []deferredRow) {
 	if len(rows) == 0 || d.Digests == nil || d.Reader == nil {
 		return
 	}
-	d.Digests.begin()
+	if !d.Digests.begin() {
+		return
+	}
 	logging.Go(d.logger(), "ui_queue_undecided", func() error {
 		defer d.Digests.end()
 		ctx, cancel := context.WithTimeout(d.Digests.base, storeTimeout)

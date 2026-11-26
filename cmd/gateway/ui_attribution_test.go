@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,23 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/store"
 	"github.com/brutally-honest/llm-gateway/internal/ui"
 )
+
+// uiTestHandler is the UI handler on r with its caches made here, so cleanup can cancel
+// and wait for their background work before the reader (registered earlier) closes (spec
+// 047 F1).
+func uiTestHandler(t *testing.T, addr string, r *store.Reader) http.Handler {
+	t.Helper()
+	d := ui.Deps{Addr: addr, Reader: r, Rules: uiRules(), Ctx: t.Context(),
+		Digests: ui.NewDigestCache(t.Context(), nil), Timelines: ui.NewTimelineCache(t.Context(), nil), Views: ui.NewViewCache()}
+	t.Cleanup(func() {
+		// t.Context() is already cancelled here, so the work is winding down.
+		bg := context.Background()
+		if !d.Views.Wait(bg) || !d.Digests.Wait(bg) || !d.Timelines.Wait(bg) {
+			t.Error("background work did not finish")
+		}
+	})
+	return ui.Handler(d)
+}
 
 // spec 015 AC9, research.md Q5: the proxy stores an unassigned connection under client
 // "unknown", which has no rules; with the profiles the gateway registers, a connection to
@@ -40,7 +58,7 @@ func TestUI_UnassignedHarnessUsesRegisteredProfiles(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = r.Close() })
 	const addr = "127.0.0.1:7199"
-	h := ui.Handler(ui.Deps{Addr: addr, Reader: r, Rules: uiRules()})
+	h := uiTestHandler(t, addr, r)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://"+addr+"/api/effects/unassigned", nil))
 	if rec.Code != http.StatusOK {

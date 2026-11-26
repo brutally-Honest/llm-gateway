@@ -51,6 +51,34 @@ func openEnv(t *testing.T, dir string, s *store.Store) *apiEnv {
 // ends, that work is cancelled and waited for before any cleanup registered earlier runs,
 // so the reader, the store and the folder are not used or written to after they close
 // (spec 047 F1). Register it after the cleanups it must run before.
+// backgroundDone cancels nothing: it waits for the background work of d's caches, whose
+// contexts the caller has cancelled, and reports whether it all finished.
+func backgroundDone(d Deps) bool {
+	bg := context.Background()
+	ok := true
+	if d.Views != nil {
+		ok = d.Views.Wait(bg) && ok
+	}
+	if d.Digests != nil {
+		ok = d.Digests.Wait(bg) && ok
+	}
+	if d.Timelines != nil {
+		ok = d.Timelines.Wait(bg) && ok
+	}
+	return ok
+}
+
+// waitBackground waits for d's caches in cleanup, as testHandler does, for a test that
+// builds its Handler by hand. Register it after the cleanups it must run before.
+func waitBackground(t testing.TB, d Deps) {
+	t.Helper()
+	t.Cleanup(func() {
+		if !backgroundDone(d) {
+			t.Error("background work did not finish")
+		}
+	})
+}
+
 func testHandler(t *testing.T, d Deps) http.Handler {
 	t.Helper()
 	ctx := t.Context()

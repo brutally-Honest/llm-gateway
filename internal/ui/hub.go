@@ -129,6 +129,10 @@ func (s *subscriber) drop() { s.once.Do(func() { close(s.gone) }) }
 
 // Hub fans committed exchanges out to open streams. Publish never blocks.
 type Hub struct {
+	// flight counts the goroutines that read through the reader (the dispatcher, hook
+	// refreshes, effects reads, catch-ups); Wait is the shutdown's wait for them, after
+	// Close, before the reader closes (spec 047 D16).
+	flight
 	log       *zap.Logger
 	timelines *TimelineCache
 	digests   *DigestCache
@@ -181,7 +185,11 @@ func (h *Hub) Timelines() *TimelineCache { return h.timelines }
 func (h *Hub) Digests() *DigestCache { return h.digests }
 
 func newHub(d Deps, queue int) *Hub {
-	ctx, cancel := context.WithCancel(context.Background())
+	parent := d.Ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
 	if d.Digests == nil {
 		d.Digests = newDigestCacheCtx(ctx, d.Log, digestCacheSize).WithDisk(d.Disk)
 	}
@@ -223,7 +231,10 @@ func newHub(d Deps, queue int) *Hub {
 
 // start runs the dispatcher through logging.Go, so a panic in it is logged, not fatal.
 func (h *Hub) start() {
-	logging.Go(h.log, "ui_hub", func() error { h.run(); return nil })
+	if !h.begin() {
+		return
+	}
+	logging.Go(h.log, "ui_hub", func() error { defer h.end(); h.run(); return nil })
 }
 
 // Publish queues a commit. It never waits: a full queue sets the overflow flag, and after
@@ -265,7 +276,10 @@ func (h *Hub) PublishHook(principal, client, sessionKey string) {
 	}
 	p := &pendingRefresh{}
 	p.timer = time.AfterFunc(h.hookEvery, func() {
-		logging.Go(h.log, "ui_hub_hook", func() error { h.refresh(who, p); return nil })
+		if !h.begin() {
+			return
+		}
+		logging.Go(h.log, "ui_hub_hook", func() error { defer h.end(); h.refresh(who, p); return nil })
 	})
 	h.pending[who] = p
 }
@@ -605,10 +619,15 @@ func (h *Hub) catchUp(who sessIdent, entries bool, ids []string, need []store.Ve
 		h.mu.Unlock()
 		return
 	}
+	if !h.begin() {
+		h.mu.Unlock()
+		return
+	}
 	h.catching[who] = &pendingCatch{entries: entries, ids: append([]string(nil), ids...), need: append([]store.Version(nil), need...)}
 	h.catchRuns++
 	h.mu.Unlock()
 	logging.Go(h.log, "ui_hub_catchup", func() error {
+		defer h.end()
 		defer func() {
 			h.mu.Lock()
 			h.catchRuns--

@@ -38,7 +38,7 @@ branch: fix/047-flake-and-banner
 - **AC4** 15 s of polls with unchanged counts make no DOM change to the banner (webtest).
 
 ## Edge cases
-- Lost count resets (gateway restart) to a lower value after dismissal: a later rise above the
-  dismissed value shows the banner again; a value at or below it does not.
+- Gateway restart after dismissal (new `since`, count from 0): any loss after it shows the
+  banner, even below the dismissed count (research D1; corrected 2026-11-26, review round 1).
 - sessionStorage unavailable (throws): dismissal still works for the page's lifetime.
 - Status goes ok then degraded again with a higher count: banner shows.

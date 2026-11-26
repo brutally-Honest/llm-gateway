@@ -385,8 +385,29 @@ func (c *DigestCache) start(id store.SessionIdent, r *digestRun) {
 
 // launch starts r's goroutine. Its timeout starts there, so a queued run's does not run.
 func (c *DigestCache) launch(id store.SessionIdent, r *digestRun) {
-	c.begin()
+	if !c.begin() {
+		c.abandon(id, r)
+		return
+	}
 	logging.Go(c.log, "ui_build", func() error { defer c.end(); c.run(id, r); return nil })
+}
+
+// abandon ends r, and the follow-up behind it, with errStopped when shutdown has begun and
+// no goroutine may start. fmu is held.
+func (c *DigestCache) abandon(id store.SessionIdent, r *digestRun) {
+	if r.inSlot {
+		r.inSlot = false
+		delete(c.gate.inSlot, r)
+	}
+	r.err = errStopped
+	close(r.done)
+	if rs := c.active[id]; rs != nil && rs.cur == r {
+		if n := rs.next; n != nil {
+			n.err = errStopped
+			close(n.done)
+		}
+		delete(c.active, id)
+	}
 }
 
 // run computes r, stores the result, and starts the queued follow-up if one was asked for.

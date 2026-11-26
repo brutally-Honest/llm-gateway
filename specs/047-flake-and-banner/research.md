@@ -5,6 +5,7 @@
 - 2026-11-26 F1 reproduced, cause found, fixed and committed (fix(ui))
 - 2026-11-26 U11 dismissible banner built and committed (fix(ui))
 - 2026-11-26 U12 banner updates only on change, committed (fix(ui))
+- 2026-11-26 review round 1 P1/P2 fixed and committed (fix(server))
 
 ## Decisions
 - **D1** 2026-11-26 Dismissal stores `{since, lost}` from the answer shown when dismissed
@@ -100,3 +101,54 @@
 - **D14** 2026-11-26 U12 probe: with `setHealth` back to unconditional assignments the new test
   fails ("unchanged polls do not touch the banner": 4 writes to each of hidden, text and reason);
   with the fix restored all 11 tests in `health-banner.test.js` pass.
+- **D15** 2026-11-26 Review round 1 (opus, `git diff main...HEAD`). P1: `close` ran
+  `stopUIWork` on the drain ctx before `hooks`/`effects`/`sink.Close`, so slow UI work spent the
+  capture drain budget and could leave exchanges undrained (observability ranks above the UI);
+  and the hub's `Deps` had no `Ctx`, so view jobs it queued ran on `context.Background()` and
+  were never cancelled. P2: Prefill runs on the run ctx and is not counted; hub goroutines are
+  not counted; a handler still running after `stopUI`'s 2 s fallback can `begin()` after
+  `Wait`. P3: other tests build a `Handler` on a TempDir without `testHandler`; no test covers
+  `captureRun.close` ordering. P4: `flight.Wait` may return false when ctx is done and the
+  count is zero; spec edge case contradicted D1 (spec corrected); `captureRun.bg` comment.
+  Banner (U11/U12) found correct. P1 and P2 are fixed in a follow-up commit; second round
+  allowed because of the P1.
+- **D16** 2026-11-26 Review round 1 fix, P1. `captureRun.close` now runs: `hub.Close`, `stopBG()`
+  (cancel at once), `hooks.Close(ctx)`, `effects.close(ctx)`, `sink.Close(ctx)`, then
+  `waitUIWork`, then `store.Close` and `reader.Close`. The UI wait has its own budget:
+  `uiWorkTimeout` (5 s), a timeout on `context.Background()`, not on the drain ctx and not on
+  `WithoutCancel(ctx)`. Choice: a fresh budget is the simplest thing that cannot touch the
+  drain, and 5 s is above `uiStopTimeout` (2 s) because a build mid-read needs time to reach
+  its next ctx check; it runs after the drain, so it cannot cost capture anything. The hub is
+  now built with `Ctx: ctx` (the cancellable bg ctx), and the hub's own context is a child of
+  it, so queued view jobs (`fullViewToDisk`) are cancelled at `stopBG`.
+- **D17** 2026-11-26 Review round 1 fix, P2. (1) `Prefill` runs on `deps.Ctx` (the bg ctx) and
+  counts itself in the digest cache's flight (`begin`/`end` at its top), so the one shutdown
+  wait covers it; with no digest cache it is not counted. (2) `Hub` embeds a `flight`; the
+  dispatcher, `ui_hub_hook`, `ui_hub_effects` and `ui_hub_catchup` are counted; `waitUIWork`
+  calls `hub.Wait` first. (3) `flight` is now a mutex, a count and a stopping flag: `begin()`
+  returns false once `Wait` has started, and every call site skips the goroutine then. Where a
+  run is already registered (timeline and digest caches) the refused run is ended with
+  `errStopped` through `abandon`, with the follow-up behind it and its gate slot, so no waiter
+  hangs; the view-job runner stays not-busy; `queueDeferred`, the hook and effects timers, the
+  catch-up and `Prefill` just return. P4: `Wait` with a zero count returns true whatever
+  ctx says. The `captureRun.bg` comment is corrected (nil with the UI off).
+- **D18** 2026-11-26 Review round 1 fix, P3 tests. `TestCaptureRun_CloseDrainsBeforeItWaitsForTheUI`
+  (cmd/gateway/run_close_order_test.go) holds a UI wait until its own budget ends (test seams
+  `uiHold` and `uiBudget` on `captureRun`; there is no exported way to hold a UI job from
+  cmd). It asserts: undrained 0, the drain ctx not spent, all 5 exchanges stored and the store
+  open and the reader readable when the UI wait starts, the store closed afterwards. Probe: with
+  the UI hold put back before `hooks.Close` on the drain ctx (the old order), it fails ("the
+  drain context ended (context deadline exceeded): the UI wait spent its budget"); restored, it
+  passes (20 runs with -race). Flight: `TestFlight_BeginAfterWaitStartedIsRefused` and
+  `TestFlight_WaitWithNothingCountedIsTrueWhateverTheContext`. The other `Handler` tests now
+  wait for background work in cleanup through `waitBackground` / `backgroundDone`
+  (api_today, incremental, disk_cache x2, timeline_cache, digest_cache incl. the benchmark) and
+  cmd/gateway's `uiTestHandler` (prompt_title, attribution, side_calls). The test envs'
+  caches moved from `context.Background()` to `t.Context()` so the wait ends. Not converted:
+  `TestHandler_FallbackCachesLogBuildPanics` (timeline_cache_test.go) builds `Handler` with nil
+  caches on purpose, to test the fallback caches the router makes, which no test can reach to
+  wait for; its builds panic and end at once.
+- **D19** 2026-11-26 Review round 1 results: F1 reproduction (`go test -c -race ./internal/ui`,
+  `-test.run '^(TestSessionsPage_BadParams|TestAPI_AfterFromOtherListIs400)$' -test.count=200`)
+  3 rounds of 200: all PASS.
+  `make verify` passed (exit 0) after the changes.

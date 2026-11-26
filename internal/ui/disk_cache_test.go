@@ -590,6 +590,7 @@ func TestDiskCache_FolderDeletedMidRun(t *testing.T) {
 	e.dep.Digests = NewDigestCache(t.Context(), nil).WithDisk(e.disk)
 	e.dep.Views = NewViewCache()
 	e.srv = Handler(e.dep)
+	waitBackground(e.t, e.dep)
 	e.mustGet("/api/sessions/" + sid())
 	e.mustGet("/api/sessions/" + sid() + "/view")
 	e.flush()
@@ -746,6 +747,7 @@ func TestDiskCache_ViewOfAnOlderBuildNotWritten(t *testing.T) {
 	e.flush()
 	e.dep.Views = NewViewCache() // memory forgets the view; the timeline cache keeps its build
 	e.srv = Handler(e.dep)
+	waitBackground(e.t, e.dep)
 	wrote, skipped := e.disk.written.Load(), e.disk.skipped.Load()
 
 	// the session moves on; a request that takes whatever timeline is cached gets the old build

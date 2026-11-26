@@ -344,9 +344,8 @@ func (j *viewJobs) submit(log *zap.Logger, id store.SessionIdent, key string, ru
 		j.order = append(j.order, id)
 	}
 	j.pending[id] = viewJob{key: key, run: run}
-	if !j.busy {
+	if !j.busy && j.begin() {
 		j.busy = true
-		j.begin()
 		logging.Go(log, "ui_view_job", func() error { defer j.end(); j.loop(); return nil })
 	}
 }

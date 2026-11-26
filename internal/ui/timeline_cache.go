@@ -278,8 +278,25 @@ func (c *TimelineCache) joinLocked(id store.SessionIdent, ver store.Version,
 	return sb.next
 }
 
+// abandon ends r, and the follow-up behind it, with errStopped when shutdown has begun and
+// no goroutine may start. fmu is held.
+func (c *TimelineCache) abandon(id store.SessionIdent, r *buildRun) {
+	r.err = errStopped
+	close(r.done)
+	if sb := c.active[id]; sb != nil && sb.cur == r {
+		if n := sb.next; n != nil {
+			n.err = errStopped
+			close(n.done)
+		}
+		delete(c.active, id)
+	}
+}
+
 func (c *TimelineCache) start(id store.SessionIdent, r *buildRun) {
-	c.begin()
+	if !c.begin() {
+		c.abandon(id, r)
+		return
+	}
 	logging.Go(c.log, "ui_build", func() error { defer c.end(); c.run(id, r); return nil })
 }
 
