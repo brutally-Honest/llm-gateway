@@ -1,6 +1,8 @@
 package timeline_test
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -181,4 +183,70 @@ func TestDigestTitleOfOnlySyntheticMainPromptsIgnoresSubAgentPrompts(t *testing.
 	d, o := digestAndOverview(t, subAgentTitleSession("SYS: tool loaded", "SYS: skill demo-skill"))
 	eq(t, "digest title", d, "(system) tool loaded")
 	eq(t, "overview title", o, "(system) tool loaded")
+}
+
+// mediaMsg adds a user message of an image block, after a text block when text is not empty.
+func mediaMsg(f *fake, id, text string, pos int) {
+	var blocks []map[string]string
+	if text != "" {
+		raw, _ := json.Marshal(map[string]string{"type": "text", "text": text})
+		blocks = append(blocks, map[string]string{"hash": f.put(string(raw)), "type": "text"})
+	}
+	blocks = append(blocks, map[string]string{"hash": "", "type": "media"})
+	payload, _ := json.Marshal(map[string]any{"role": "user", "blocks": blocks})
+	f.add(id, store.EventRow{Kind: "message", ContentHash: hashOf(fmt.Sprintf("user|media|%d|%s", pos, text)), Payload: payload})
+}
+
+// mediaSession is titleSession where "IMG" is an image-only message and "IMG: x" is
+// the text x with an image.
+func mediaSession(msgs ...string) *fixture {
+	f := newFake()
+	for i := range msgs {
+		id := "c" + string(rune('a'+i))
+		x := f.exchange(id, vat(float64(i*2+1)), "ok")
+		x.EndedAt = vat(float64(i*2 + 2))
+		f.request(id, "m1")
+		for j, p := range msgs[:i+1] {
+			if p == "IMG" {
+				mediaMsg(f, id, "", j)
+			} else if text, ok := strings.CutPrefix(p, "IMG: "); ok {
+				mediaMsg(f, id, text, j)
+			} else {
+				f.msg(id, "user", p)
+			}
+			f.msg(id, "assistant", "ok")
+		}
+		f.usage(id, false, n(10), n(5), n(0), n(0))
+	}
+	return &fixture{f: f}
+}
+
+// 046 P3-1: a message of only an image starts a turn titled "[media]", but it is not a
+// typed prompt: the session title, in the overview and in the list, is the first typed one.
+func TestSessionTitleSkipsAMediaOnlyPrompt(t *testing.T) {
+	x := mediaSession("IMG", "<p>fix the button</p>")
+	v := x.viewWith(t, titleRules{})
+	if len(v.Turns) != 2 {
+		t.Fatalf("turns = %d", len(v.Turns))
+	}
+	eq(t, "rail title of the media turn", v.Turns[0].Title, "[media]")
+	eq(t, "overview title", v.Overview.Title+" ("+v.Overview.TitleSource+")", "fix the button (prompt)")
+	d, err := timeline.SessionDigest(x.f, store.SessionRow{PrincipalID: "p", Client: "c", SessionKey: "k"}, titleRules{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eq(t, "digest title", d.Title, "fix the button")
+}
+
+func TestSessionTitleKeepsATextAndImagePrompt(t *testing.T) {
+	v := mediaSession("IMG: look at this", "later prompt").viewWith(t, titleRules{})
+	eq(t, "title", v.Overview.Title, "look at this [media]")
+}
+
+// no typed prompt at all: every prompt is synthetic, and D4 takes the first one's title.
+// (A session of image-only messages alone starts no turn, as no call of it is a main
+// call with text, so it reads "No prompt" as before.)
+func TestSessionTitleOfOnlySyntheticAndMediaPromptsIsTheFirst(t *testing.T) {
+	v := mediaSession("IMG", "SYS: tool loaded").viewWith(t, titleRules{})
+	eq(t, "title", v.Overview.Title+" ("+v.Overview.TitleSource+")", "[media] (prompt)")
 }

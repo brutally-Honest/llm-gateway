@@ -352,5 +352,10 @@ func turnTitle(rules any, prompt string) (string, bool) {
 	if pt, ok := rules.(PromptTitler); ok {
 		title, synthetic = pt.PromptTitle(title)
 	}
+	// a prompt of block placeholders only ("[media]") has no typed words: the title keeps
+	// the placeholder for the rail, but the session title looks past it (046 P3-1)
+	if prompt != "" && strings.TrimSpace(stripPlaceholders(prompt)) == "" {
+		synthetic = true
+	}
 	return cutRunes(strings.Join(strings.Fields(title), " "), titleRunes), synthetic
 }

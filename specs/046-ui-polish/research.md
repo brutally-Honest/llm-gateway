@@ -25,7 +25,8 @@ feature: 046-ui-polish
 - 2026-11-26 step 4 P3-d (sonnet): compile-time check and an end-to-end test that the real profile titles turns (D20), 6e07596; probed by changing the signature (build fails); make verify green.
 - 2026-11-26 step 4 P3-e (sonnet): Clear moves focus to the search box, 8ae2249; 1 assertion, failing before; make verify green. Round 1 closed: P2-a, P2-b (partial, D17), P3-a..e fixed; P4 left as recorded.
 - 2026-11-26 step 4 round 2 (fresh opus): no P1, 2 P2, 4 P3, 3 P4 (see Review round 2). P2-1 + P3-4 (sonnet): command blocks parsed as a leading run (D21), 8460aa7; 5 cases, probed failing before; make verify green.
-- 2026-11-26 step 4 round 2 P2-2 (sonnet): the digest title is shown on the ungrouped page, so D16 stays (D22); end-to-end test asserts list title == view title (this commit); make verify green.
+- 2026-11-26 step 4 round 2 P2-2 (sonnet): the digest title is shown on the ungrouped page, so D16 stays (D22); end-to-end test asserts list title == view title, 6784b18; make verify green.
+- 2026-11-26 step 4 round 2 P3-1 (sonnet): an image-only prompt no longer titles the session (D23) (this commit); 3 tests, the main one failing before; make verify green.
 
 ## Findings
 
@@ -259,3 +260,10 @@ Fresh opus reviewer, `git diff main...HEAD` at 8ae2249. No P1. Last round (cap t
   Flips if the ungrouped page gets a view of its own. The sub-agent case was not added to the
   end-to-end test (its upstream fixture is a fixed stream with no tool call); the timeline
   tests cover it.
+- **D23** 2026-11-26 Round 2 P3-1 fix (corrects D16's media-only line): a title made only of
+  the view's placeholders (`[reasoning]`, `[media]`, `[unknown]`, via `stripPlaceholders`) is
+  synthetic, so the session title skips an image-only prompt; the rail still shows "[media]".
+  The digest never sees placeholders (it reads text blocks only), so the two agree except in
+  one edge left as is: an image-only first prompt followed only by synthetic ones gives
+  "[media]" in the view and the first synthetic title in the digest (shown only on the
+  ungrouped page, D22).
