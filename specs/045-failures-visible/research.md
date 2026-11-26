@@ -4,7 +4,8 @@ feature: 045-failures-visible
 # Research & decisions — 045-failures-visible
 
 ## Progress
-- 2026-11-26 step 1: branch fix/045-failures-visible made from main at bd01c63; spec and research written (paths, D1-D12).
+- 2026-11-26 step 1: branch fix/045-failures-visible made from main at bd01c63; spec and research written (paths, D1-D12), committed b818522.
+- 2026-11-26 step 2: 4c1cc71, missing/unreadable blob is a per-block placeholder; body endpoint 404 body_not_stored with one log line; make verify green.
 
 ## Findings
 
@@ -121,4 +122,18 @@ the status stays 200.
 - **D11** Doctor reads the /healthz body through `Env.Fetch` once the API listener passes and
   adds one `capture-health` result: pass when ok, warn when degraded with the counts and the
   fix "see the gateway's log; restart after fixing the cause to clear the counts".
+- **D13** 2026-11-26 The old disk-cache test made its "real read error" by deleting a
+  blob, which D1 turns into "unavailable". It is kept with its assertions and now corrupts
+  the content row's size (a scan error); a probe that left the row intact made it fail. A
+  second test covers the deleted blob being served and not degraded. Effect content and
+  diff answer 404 `content_unavailable`; `gateway dump` prints "(content unavailable)".
+- **D14** 2026-11-26 Correction to D5 and D2: the row cannot keep a hash with no
+  content row. `foreign_keys` is on and every body, event, hook and effect hash column
+  `REFERENCES content(hash)`, so leaving the content row out failed every insert. Instead the
+  content row is still inserted (location 'blob') and only the file is missing, which the
+  reader already reports as `ErrContentUnavailable` (D1), so the call shows "[content
+  unavailable]" and the body endpoint 404 `body_not_stored`. To heal, `writeBlobs` now stats
+  the file of an item whose row exists and rewrites it when it is missing (one stat per
+  large item already stored). A blob that keeps failing is counted once per attempt. The
+  "row with no content row" case of D2 stays handled for a damaged store.
 - **D12** Capture off: no store and no sinks, so the counts are zero and health is ok.

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/klauspost/compress/zstd"
@@ -46,9 +47,31 @@ type Store struct {
 	// before its transaction; an error from it fails the write there.
 	beforeRows func() error
 
+	blobWriteFailures atomic.Int64 // blobs left unwritten; their writes still went on
+	writeFailures     atomic.Int64 // failed data writes (not maintenance deletes)
+
 	mu     sync.Mutex
 	failed bool // sticky: the file was deleted or replaced
 	warned bool // the "unreadable" warning has been logged
+}
+
+// Failures counts what went wrong in writes since the store opened.
+type Failures struct {
+	BlobWrites int64 // blobs that could not be written; the write itself succeeded
+	Writes     int64 // data writes that failed (SaveExchange, SaveParse, SaveHook, SaveEffects, SaveCheckpoint)
+}
+
+// Failures returns the counters.
+func (s *Store) Failures() Failures {
+	return Failures{BlobWrites: s.blobWriteFailures.Load(), Writes: s.writeFailures.Load()}
+}
+
+// counted adds a failed data write to the counter and returns err unchanged.
+func (s *Store) counted(err error) error {
+	if err != nil {
+		s.writeFailures.Add(1)
+	}
+	return err
 }
 
 // fileID is a file's identity: device and inode.
@@ -148,7 +171,10 @@ func (s *Store) Close() error {
 // write stores items and runs fn in one transaction on the writer connection. It
 // first checks that the database file is still the one the store opened (research
 // Q10, Q11), then puts every blob on disk, and only then opens the transaction that
-// inserts the content rows and runs fn: a row never points at a missing blob.
+// inserts the content rows and runs fn. A blob that could not be written is counted
+// and logged, not fatal: its content row is still inserted, so the row points at a
+// missing blob and reads as content unavailable (spec 045 D5). A later write of the
+// same hash writes the missing blob and heals it.
 func (s *Store) write(ctx context.Context, items []content, fn func(*sql.Tx) error) error {
 	if err := s.checkFile(); err != nil {
 		return err

@@ -128,3 +128,46 @@ func TestBlobUnavailable_PerBlockPlaceholder(t *testing.T) {
 		t.Error("the log line carries the body")
 	}
 }
+
+// A call whose blobs could not be written is still stored and listed: its body and its
+// big blocks read as unavailable, never as an error (spec 045 D5).
+func TestBlobWriteFailure_CallListedWithoutBody(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory modes")
+	}
+	e := newAPIEnv(t)
+	blobs := filepath.Join(e.dir, "blobs")
+	if err := os.MkdirAll(blobs, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(blobs, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(blobs, 0o700) })
+
+	body := []byte(bigText("reqbody"))
+	ex := &core.Exchange{
+		RequestID: "ew", PrincipalID: core.PrincipalLocal, Protocol: "test", Client: "cc",
+		Auth: core.AuthAPIKey, Method: "POST", Path: "/v1/x", Status: 200, SessionKey: "w",
+		Start:   baseTime.Add(time.Second),
+		Request: core.Body{Chunks: [][]byte{body}, Size: int64(len(body))},
+	}
+	ex.End = ex.Start.Add(time.Second)
+	if err := e.s.SaveExchange(t.Context(), ex); err != nil {
+		t.Fatalf("SaveExchange: %v", err)
+	}
+	e.parseMsgs("ew", "ok", []any{"user", text(bigText("text-w"))}, []any{"assistant", text("short w")})
+	if f := e.s.Failures(); f.BlobWrites == 0 || f.Writes != 0 {
+		t.Fatalf("Failures = %+v, want blob failures and no write failures", f)
+	}
+
+	p := e.page("/api/sessions")
+	if len(p.Items) != 1 {
+		t.Fatalf("sessions listed = %d, want 1: %v", len(p.Items), keys(p))
+	}
+	if got := e.get("/api/sessions/" + sessIDFor("w") + "/timeline"); got.Code != http.StatusOK ||
+		!strings.Contains(got.Body.String(), timeline.Unavailable) {
+		t.Errorf("timeline = %d, want 200 with %q: %s", got.Code, timeline.Unavailable, got.Body.String())
+	}
+	wantEnvelope(t, e.get("/api/exchanges/ew/body?part=request"), http.StatusNotFound, "body_not_stored")
+}

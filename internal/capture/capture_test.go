@@ -253,7 +253,9 @@ func TestCapture_StoreDeadClientUnaffected(t *testing.T) {
 
 	// The directory is made read-only after startup. The open database handles keep
 	// working, so what fails is every write that needs a new file: a body over the
-	// inline limit needs a blob (research Q11).
+	// inline limit needs a blob (research Q11). Since spec 045 D5 that no longer fails
+	// the capture: the exchange row is stored, the blob failure is counted and logged,
+	// and the body reads as content unavailable.
 	t.Run("db_read_only", func(t *testing.T) {
 		checkNoLeaksAtEnd(t)
 		dir := t.TempDir()
@@ -275,9 +277,16 @@ func TestCapture_StoreDeadClientUnaffected(t *testing.T) {
 			ids = append(ids, rig.send(t, path, path+strings.Repeat("x", 8<<10)))
 		}
 		drainSink(t, rig.sink)
-		wantFailures(t, logs, "store", ids)
-		if got := rig.sink.Counts().StoreFailed; got != int64(len(ids)) {
-			t.Errorf("StoreFailed = %d, want %d", got, len(ids))
+		for _, id := range ids {
+			if lines := captureFailed(t, logs, id); len(lines) != 0 {
+				t.Errorf("exchange %s: %d capture_failed lines, want 0 (the row is kept)", id, len(lines))
+			}
+		}
+		if got := rig.sink.Counts().StoreFailed; got != 0 {
+			t.Errorf("StoreFailed = %d, want 0", got)
+		}
+		if f := st.Failures(); f.BlobWrites != int64(len(ids)) || f.Writes != 0 {
+			t.Errorf("Failures = %+v, want BlobWrites %d, Writes 0", f, len(ids))
 		}
 	})
 

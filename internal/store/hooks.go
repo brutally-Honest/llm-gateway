@@ -36,7 +36,7 @@ func (s *Store) SaveHook(ctx context.Context, h *HookRecord) error {
 		items = append(items, content{hash: input.String, data: h.Event.ToolInput})
 	}
 	e := h.Event
-	return s.write(ctx, items, func(tx *sql.Tx) error {
+	return s.counted(s.write(ctx, items, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `INSERT INTO hook_events (
 			seq, principal_id, client, session_key, tool_use_id, phase, source_name,
 			tool_name, agent_id, agent_type, input_hash, payload_hash, received_at, work_dir
@@ -51,5 +51,5 @@ func (s *Store) SaveHook(ctx context.Context, h *HookRecord) error {
 			return fmt.Errorf("insert hook event: %w", err)
 		}
 		return nil
-	})
+	}))
 }
