@@ -7,6 +7,8 @@ date: 2026-09-23
 
 > Superseded by [ADR 0019](0019-ci-on-linux-and-macos.md), which adds CI on Linux and macOS
 > beside the local gate. The pre-push gate and the golangci-lint binary install still stand.
+> Amended by [ADR 0022](0022-git-notes-stay-local.md): notes are no longer pushed, and the
+> pre-push hook now rejects `refs/notes` pushes.
 
 ## Context
 The gateway is a local, single-user tool: one developer, one machine, one remote.
