@@ -166,9 +166,10 @@ The call is kept, and the rest of the page works. The cause and the fix are in
 An active session page updates by itself. New calls, hook events and effects appear without
 a reload, and only the turns that changed are redrawn. The sessions list updates the same
 way. A dot in the header is green while the connection is up. If it drops, the dot turns
-amber and the word **reconnecting…** shows beside it. The page then retries by itself, a bit
-more slowly each time, up to every 30 seconds. If the live snapshot fails, the header says
-"live: snapshot failed, retrying in 30 s". Ended sessions have no live connection.
+red and the word **reconnecting…** shows beside it. The page then retries by itself, a bit
+more slowly each time, up to every 30 seconds. If the live snapshot fails, the dot turns
+red and the page shows "Live snapshot failed: …" with the reason. Hovering the dot, or a
+screen reader, gives "live: snapshot failed, retrying in 30 s". Ended sessions have no live connection.
 
 ## When something fails
 

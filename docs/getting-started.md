@@ -71,8 +71,10 @@ arrive, and the copies it keeps are stored as sent, secrets included. Read
   function from your shell file and removes the gateway's Claude Code settings file. It
   shows the list first and asks. It keeps your config, your recorded data and the
   `gateway` program itself.
-- `gateway uninstall --purge` does the same and also deletes your config and all recorded
-  data. It asks once more and names the size. This cannot be undone.
+- `gateway uninstall --purge` does the same and also deletes your config folder and the
+  default data folder. It keeps a data folder set with `capture.dir`, and on macOS the
+  logs in `~/Library/Logs/llm-gateway`. It asks once more and names the size. This cannot
+  be undone.
 
 Open a new terminal afterwards. `claude` then runs as plain Claude Code.
 

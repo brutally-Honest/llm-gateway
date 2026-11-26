@@ -6,8 +6,8 @@
 - [x] 2026-11-26 group B: docs/architecture.md, docs/ui.md (D15-D20)
 - [x] 2026-11-26 group C: README.md, docs/getting-started.md (D21-D24)
 - [x] 2026-11-26 group D: AGENTS.md/PLAN.md rules, stale sweep, status lines, links (D25-D43)
-- [ ] review round 1
-- [ ] fixes for round 1 P1-P3
+- [x] 2026-11-26 review round 1: 62 claims, 1 P2, 7 P3, 9 P4 (P4s under Notes)
+- [x] 2026-11-26 fixes for round 1 P2-P3 (D44-D51)
 - [ ] review round 2 (only if round 1 found P1-P3)
 - [ ] spec marked done, PR opened, CI watched
 
@@ -296,3 +296,22 @@ Not checked against code: AppArmor profile text and the Claude Code sandbox bug 
 Status-line audit: every spec folder with a spec.md has `status: done` except 033 (fixed) and 048 (`draft`, left); 004, 007, 011, 012 hold it in brief.md; 003-017 keep kit frontmatter. All 21 ADRs use `accepted` or `superseded`, with a date, as docs/decisions/0000-template.md. `make verify` has no link check (Makefile lines 109-113: lint, test, web-test).
 
 Link check: script in the scratchpad (not in the repo), every relative link and #anchor (GitHub slugs) in all tracked .md files outside vendored code. Final run: 144 links checked, 1 reported broken, 0 real. The one report is specs/001-core-and-anthropic-passthrough/tasks.md:318, a path inside an inline code span (D43). First run, before the fixes: 141 checked, the same 1.
+- **D44** 2026-11-26 Review round 1 P2: **needs owner decision.** AGENTS.md "Do not" (line ~183) said "if it is hard to reverse, stop and ask", which contradicted Workflow step 2 (build without stopping) and the escalation rule (hard to reverse gets an ADR). Reworded: record a D-entry and continue; a hard-to-reverse call also gets an ADR; stop and ask only if it cannot be decided safely or is under "Always stop and ask first". This deviates from "prefer PLAN.md's wording" because PLAN's wording contradicted its own build-without-stopping step.
+- **D45** 2026-11-26 Review round 1 P3: README.md "What it records" said file changes and network connections need the sandbox. File effects are on by default (internal/config/effects.go:110-116); the settings file sets HTTPS_PROXY, HTTP_PROXY and NODE_USE_ENV_PROXY whatever the sandbox says (internal/clients/claudecode/snippet.go:56-63); the sandbox defaults off (effects.go:120). "All Bash traffic" only with the sandbox matches docs/clients/claude-code.md line 315. Reworded.
+- **D46** 2026-11-26 Review round 1 P3: docs/ui.md said the live dot turns amber on a drop. It turns red (`--live-off`, internal/ui/web/style.css:15,29,215; shell.js:228). Fixed to red.
+- **D47** 2026-11-26 Review round 1 P3: docs/ui.md quoted "live: snapshot failed, retrying in 30 s" as header text. That string is only the dot's hover title and a screen-reader span (internal/ui/web/shell.js:131,234-235); the visible note is empty for snapshot_error (app.js:536); the page shows "Live snapshot failed: …" (app.js:674). Reworded with those exact strings.
+- **D48** 2026-11-26 Review round 1 P3: docs/what-gets-recorded.md AppArmor section mixed two problems. Split: (a) AppArmor stops bwrap, sandbox off, doctor warns (internal/install/preflight.go:325-348), fix in install.md#check-apparmor; (b) a Claude Code sandbox failure, untested `sandbox.network.allowAllUnixSockets`, in claude-code.md#the-sandbox-optional. Removed "does not claim a fix"; kept "further investigation deferred until after v1". Both anchors resolve (headings "### Check: apparmor" and "### The sandbox (optional)"). Nothing tested.
+- **D49** 2026-11-26 Review round 1 P3: README.md and docs/getting-started.md said `--purge` deletes all recorded data. It deletes the config folder and config.DefaultCaptureDir (internal/install/env.go:120,131; internal/install/uninstall.go:213-218). A custom `capture.dir` is not deleted. On macOS the logs in ~/Library/Logs/llm-gateway (internal/install/service.go:189) are created by install but never removed by uninstall (logDir used only at service.go:192,251,423). Both places now say what is deleted and kept.
+- **D50** 2026-11-26 Review round 1 P3: .githooks/commit-msg printed "Format (PLAN.md §11):", a section that moved. Changed that string only to "Format (AGENTS.md, Commits):" (heading "## Commits" exists, AGENTS.md:108).
+- **D51** 2026-11-26 Review round 1 P3: **needs owner decision.** AGENTS.md said "Notes stay local: never push `refs/notes/*`" while "Always stop and ask first" lists remote-ref changes, notes included. Made them agree without setting policy: notes are local by default; pushing refs/notes needs the human's explicit go-ahead; the fetch refspec in `make setup` stays so notes can be fetched if ever pushed. Consistent with D34, whose "never pushed" wording is now superseded by this line (D34 is kept as history). The notes-push policy is left to the owner.
+
+### Review round 1 P4 follow-ups (not fixed in 048)
+- docs/architecture.md shutdown steps 3-4: `stopBG` runs inside `captureRun.close` (step 4), and the UI stop runs during the grace period, not after it (cmd/gateway/run.go:429-433, 1009-1011).
+- docs/what-gets-recorded.md: "claude.ai connectors" listed as going straight to Anthropic; PLAN §3 says they are not loaded at all through a custom base URL.
+- docs/what-gets-recorded.md disk growth: "compression shrinks everything" is too broad; content of 4096 bytes or less is stored inline, uncompressed (internal/store/content.go:16-18,58-59).
+- docs/ui.md pager: reads "Page N" without "of M" when a filter or search is on, or the total is unknown (internal/ui/web/sessions-page.js:669).
+- docs/ui.md "Active": means the last exchange started under 5 minutes ago (internal/ui/api_sessions.go:26-27, api_view.go:99-102), not "running now".
+- docs/what-gets-recorded.md: the stored auth kind is api_key / bearer / both / none (internal/protocols/anthropic/adapter.go:30-44), not "API key or subscription".
+- specs/033-docs-correctness/research.md:118 "AGENTS.md defers to PLAN.md" has no dated note like 031's.
+- No doc says `uninstall --purge` keeps macOS logs at ~/Library/Logs/llm-gateway (fixed in round 1 fixes, D49; kept here as the original finding).
+- PLAN's "agnosticism rules are a review aid, not a template section" and its Commands item were not carried into AGENTS.md.

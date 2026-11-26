@@ -146,7 +146,9 @@ git config core.hooksPath .githooks
 git config notes.rewriteRef refs/notes/commits
 git config --add remote.origin.fetch '+refs/notes/*:refs/notes/*'
 ```
-Notes stay local: never push `refs/notes/*`. GitHub doesn't display notes anyway, so the
+Notes are local by default. Pushing `refs/notes/*` changes a remote ref, so it needs the
+human's explicit go-ahead (see "Always stop and ask first"). The fetch refspec stays so
+notes can be fetched if they are ever pushed. GitHub doesn't display notes anyway, so the
 PR description still carries the essentials (spec link, acceptance-criteria evidence).
 
 ### Enforcement
@@ -180,8 +182,9 @@ go-ahead.
   strings, or by using another tool to perform the action that was blocked. Reading or
   editing a file with Read/Edit/Write is fine when only a Bash command naming it was
   blocked.
-- When unsure, record the call as a D-entry in research.md and continue; if it is hard to
-  reverse, stop and ask.
+- When unsure, record the call as a D-entry in research.md and continue. A call that is
+  hard to reverse also gets an ADR. If it cannot be decided safely, or it is listed under
+  "Always stop and ask first", stop and ask.
 
 ## Always stop and ask first
 A D-entry is for judgment calls inside the repo. These need the human's explicit go-ahead

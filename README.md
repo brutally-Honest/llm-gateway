@@ -32,7 +32,7 @@ Details: [docs/ui.md](docs/ui.md).
 ## What it records and what it does not
 
 - Records model calls (prompts and responses), tool calls and results, tokens and cost.
-- Records file changes and network connections made through its proxy, when the sandbox is on.
+- Records file changes, and network connections made through its proxy. All Bash traffic goes through the proxy only when the optional sandbox is on.
 - Stores copies as sent, secrets in prompts and files included. Auth headers and keys are not stored.
 - Misses calls that do not go through the gateway, such as Claude Code's direct checks to `api.anthropic.com`.
 - Listens on loopback only and has no login.
@@ -64,10 +64,10 @@ session shows up there.
 
 ```sh
 gateway uninstall            # removes the service, the claude function and the settings file
-gateway uninstall --purge    # also deletes the config and the recorded data
+gateway uninstall --purge    # also deletes the config folder and the default data folder
 ```
 
-Plain `uninstall` keeps your config, your recorded data and the `gateway` binary.
+Plain `uninstall` keeps your config, your recorded data and the `gateway` binary. `--purge` keeps a data folder set with `capture.dir`, and on macOS the logs in `~/Library/Logs/llm-gateway`.
 
 ## Build from source
 

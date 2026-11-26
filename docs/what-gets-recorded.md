@@ -98,12 +98,14 @@ Nothing in the gateway checks your Node version.
 ## AppArmor on Ubuntu
 
 On some Ubuntu systems (24.04 and later), AppArmor restricts unprivileged user
-namespaces. That can turn off the `bwrap` sandbox Claude Code uses for Bash commands.
-The sandbox setting `sandbox.network.allowAllUnixSockets` is the one that matters here.
-This is a known issue and is under investigation after v1. This page does not claim a
-fix. The gateway's sandbox option is off by default, and `gateway doctor` warns about
-the condition: see [install.md](install.md#check-apparmor) and
-[claude-code.md](clients/claude-code.md#the-sandbox-optional).
+namespaces. That stops `bwrap`, so Claude Code's sandbox is off and Bash runs without it.
+`gateway doctor` warns about this. The fix is a `bwrap` AppArmor profile, then run
+`gateway install` again: see [install.md](install.md#check-apparmor).
+
+Separately, Claude Code's sandbox can fail Bash commands on these systems. The setting
+`sandbox.network.allowAllUnixSockets` is the relevant one, and it is untested. See
+[claude-code.md](clients/claude-code.md#the-sandbox-optional). The gateway's sandbox option
+is off by default. Further investigation of the sandbox is deferred until after v1.
 
 ## Privacy
 
