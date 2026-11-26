@@ -23,14 +23,20 @@ function repeat(fn, ms) {
 }
 
 // startHealthPoll reads health once now and again every `every` ms, and hands each good answer
-// to onHealth. A failed read changes nothing, so the banner stays as it was. One timer per
-// call; the returned function stops it. The fetcher and timers are injectable for tests.
+// to onHealth. A failed read changes nothing, so the banner stays as it was. A tick is skipped
+// while the previous read is still running, so a hung /api/health never piles up fetches. One
+// timer per call; the returned function stops it. The fetcher and timers are injectable for tests.
 export function startHealthPoll({ read, onHealth, every = HEALTH_EVERY_MS, setTimer = repeat, clearTimer = clearInterval }) {
+  let busy = false;
   const tick = async () => {
+    if (busy) return;
+    busy = true;
     try {
       onHealth(await read());
     } catch {
       // keep the last state: no flicker, no error banner
+    } finally {
+      busy = false;
     }
   };
   tick();

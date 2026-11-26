@@ -89,6 +89,38 @@ test("healthPollerReadsNowAndEveryTickAndKeepsStateOnFailure", async () => {
   assert.deepEqual(cleared, [42]);
 });
 
+test("healthPollerSkipsTickWhileReadInFlight", async () => {
+  let tick = null;
+  let reads = 0;
+  let resolveRead = null;
+  const read = () => {
+    reads++;
+    return new Promise((r) => {
+      resolveRead = r;
+    });
+  };
+  const seen = [];
+  startHealthPoll({
+    read,
+    onHealth: (h) => seen.push(h.lost),
+    every: 15000,
+    setTimer: (fn) => {
+      tick = fn;
+      return 1;
+    },
+    clearTimer: () => {},
+  });
+  assert.equal(reads, 1, "one read on start");
+  tick();
+  tick();
+  assert.equal(reads, 1, "ticks while the read is pending start nothing");
+  resolveRead(degraded(2));
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(seen, [2]);
+  tick();
+  assert.equal(reads, 2, "a settled read lets the next tick through");
+});
+
 test("healthBannerCssServesBothStylesAndThemes", () => {
   const m = css.match(/(^|\n)\.health-banner\s*\{([^}]*)\}/);
   assert.ok(m, ".health-banner has a rule");
