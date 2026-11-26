@@ -33,7 +33,7 @@ a capture or a store or blob write was dropped or failed. It still proxies every
 normally.
 
 The counts are since process start. They never go down. A restart clears them, so restart
-only after the cause is fixed. Each place shows the same state:
+only after the cause is fixed. The counts are failed writes and dropped events, not distinct calls: a failure that a later retry repaired still counts. Each place shows the same state:
 
 | Where | What it shows |
 |---|---|
@@ -59,7 +59,7 @@ counts. `reason` appears only when degraded and names each non-zero kind.
 |---|---|---|
 | `hook_events_dropped` | a burst of hook events overflowed `hooks.queue_size` or `hooks.memory_limit`, or a body was over `capture.max_body_bytes` or unreadable | raise `hooks.queue_size` or `hooks.memory_limit` if bursts are normal; check the log for `hook event dropped` |
 | `captures_dropped` | the capture queue was full (`capture.queue_size`, `capture.workers`), the capture memory budget was exceeded, or the effects network recorder queue was full | raise the queue or the workers; check disk speed; check the log for `capture_failed` or the shutdown line |
-| `store_write_failures` | the SQLite store refused a write: disk full, permissions, or the store file was deleted or replaced | check free space and permissions of `capture.dir`; check the log for `capture_failed` (stage `store`), `hook event not stored` or `store file deleted or replaced` |
+| `store_write_failures` | the SQLite store refused a write: disk full, permissions, or the store file was deleted or replaced | check free space and permissions of `capture.dir`; check the log for `capture_failed` (stage `store`), `hook event not stored` or `store file deleted or replaced`. Each failed write counts once; an effects checkpoint that fails is retried on the session's next hook event, so its changes may still be saved later, but the failed attempt stays counted. |
 | `blob_write_failures` | a body over 4 KiB could not be written to `<capture.dir>/blobs`: disk full, permissions or a read-only filesystem. The call is kept without that body | fix the space or permissions; check the log for `blob not stored` (with the hash) |
 
 Fix the cause first, then restart the gateway to clear the counts. A later write of the same

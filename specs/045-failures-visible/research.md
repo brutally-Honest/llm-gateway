@@ -190,3 +190,13 @@ Fresh opus reviewer, `git diff main...HEAD` at 9b8532d. No P1.
   moment of failure fails the new test (BlobWrites 1, Writes 1). P4 (same code): a directory
   sync failure after a good rename is logged ("blob dir not synced") and not counted; the
   file is in place. No test seam makes syncDir fail, so that P4 has no test.
+- **D22** 2026-11-26 P3-2 is closed by documenting, not by changing the count. Thesis: count
+  only what is finally lost, so a retried checkpoint does not leave the gateway degraded.
+  Antithesis: whether a later checkpoint saves the changes is unknown when the attempt fails
+  (the session may end first), so not counting would hide a real loss in exactly the case
+  this spec is about. Synthesis: the counts are failed writes and dropped events, said so in
+  docs/observability.md; a repaired failure still counts. Flips if effects checkpoints fail
+  routinely in normal use (for example a busy store), which would make degraded meaningless:
+  then count only a checkpoint abandoned at session end. P4 health.js: a tick is skipped
+  while the previous /api/health read is in flight. P4 hooks abandoned at shutdown stay in
+  the shutdown line only: the process is exiting and no later health read exists.
