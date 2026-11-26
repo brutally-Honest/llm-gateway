@@ -15,14 +15,15 @@ import (
 var ErrNotFound = errors.New("not found")
 
 // ErrContentUnavailable is returned for content the store has a row for but cannot
-// read: its blob file is missing, unreadable, corrupt or the wrong size.
+// read for a permanent reason: its blob file is missing, not permitted, corrupt or the
+// wrong size. A transient read failure (EMFILE, EIO...) is a plain error instead.
 var ErrContentUnavailable = errors.New("content unavailable")
 
 // SaveExchange stores one captured exchange: its row, and both bodies by the sha256
 // of the bytes as captured (a gzip body is hashed as gzip). An empty body is stored
 // as no body. One transaction, after the bodies' blobs are written. A body whose blob
-// cannot be written is still referenced by hash with no content row: it reads as
-// content unavailable and the call is kept (spec 045 D5).
+// cannot be written still gets its content row; only the blob file is missing, so it
+// reads as content unavailable and the call is kept (spec 045 D5, D14).
 func (s *Store) SaveExchange(ctx context.Context, ex *core.Exchange) error {
 	reqH, err := headerJSON(ex.RequestHeader)
 	if err != nil {

@@ -167,3 +167,21 @@ the status stays 200.
   keeps the text until then (repairing or re-checking a damaged store is a non-goal).
   The Chrome extension was not connected; the banner check ran in a headless Chrome with a
   throwaway profile over DevTools on 127.0.0.1:9333.
+
+## Review round 1
+Fresh opus reviewer, `git diff main...HEAD` at 9b8532d. No P1.
+- **P2-1** `store/reader.go:236`: every blob ReadFile error became `ErrContentUnavailable`,
+  so a transient one (EMFILE, EIO) was cached as a placeholder, on disk too, for good.
+- **P3-1** `store/content.go:74` + `store.go counted`: on a full disk one lost call counts
+  twice (blob ENOSPC, then SQLITE_FULL on the write).
+- **P3-2** `effects/checkpoint.go:99`, `runner.go:279`: a failed checkpoint is retried and
+  later saved, but each failed attempt counts as a store write failure.
+- **P4** `content.go:117` a syncDir failure after a good rename counts as a blob failure;
+  `exchange.go:24` stale doc comment; `hooks/sink.go:217` events abandoned at shutdown are
+  not in hook_events_dropped (only the shutdown line); `web/health.js` a hung /api/health
+  read does not stop the next one starting.
+- **D20** 2026-11-26 P2-1 fix: only a permanent blob failure is `ErrContentUnavailable`
+  (file not there, permission denied, undecodable, wrong size). Any other read error (EMFILE,
+  EIO, EISDIR) stays a plain error, so the result is degraded and cached nowhere, and the
+  next request retries (spec 030 D16 as before). Probed: with every read error treated as
+  permanent, both new tests fail.

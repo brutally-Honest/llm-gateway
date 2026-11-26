@@ -39,7 +39,8 @@ func (vd viewDeps) sessionView(c viewReader, who sessIdent, bs builtSession, hoo
 }
 
 // sessionViewChecked is sessionView that also reports degraded: some content read failed
-// for a reason other than not-found (a passed deadline, an I/O error), so the view was
+// for a reason other than not-found or a permanently unavailable blob (a passed deadline,
+// a transient I/O error), so the view was
 // built with less than the store holds. The view is served as it is, but no cache may keep
 // it (spec 030 D16).
 func (vd viewDeps) sessionViewChecked(c viewReader, who sessIdent, bs builtSession, hooks []store.HookRow, active bool, version string) (_ timeline.View, degraded bool, _ error) {

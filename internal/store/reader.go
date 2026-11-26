@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -204,7 +205,9 @@ func scanExchange(row rowScanner) (ExchangeRow, error) {
 }
 
 // Content reads the content stored under hash, inline or from its blob,
-// decompressed. A hash the store doesn't hold is ErrNotFound.
+// decompressed. A hash the store doesn't hold is ErrNotFound. A blob that is missing,
+// not permitted, corrupt or the wrong size is ErrContentUnavailable (permanent); any
+// other read failure is a plain error and may succeed on a retry.
 func (r *Reader) Content(hash string) ([]byte, error) {
 	return r.contentCtx(context.Background(), hash)
 }
@@ -235,7 +238,13 @@ func (r *Reader) contentCtx(ctx context.Context, hash string) ([]byte, error) {
 	path := filepath.Join(r.dir, blobDirName, hash[:2], hash[2:])
 	compressed, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("blob %s: %w: %w", path, ErrContentUnavailable, err)
+		// Only a blob that is permanently gone or unreadable is "unavailable"; any other
+		// failure (EMFILE, EIO, a directory in the way...) may pass, so it stays a plain
+		// error and callers neither cache the result nor treat the content as lost.
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) {
+			return nil, fmt.Errorf("blob %s: %w: %w", path, ErrContentUnavailable, err)
+		}
+		return nil, fmt.Errorf("blob %s: %w", path, err)
 	}
 	out, err := r.dec.DecodeAll(compressed, make([]byte, 0, size))
 	if err != nil {

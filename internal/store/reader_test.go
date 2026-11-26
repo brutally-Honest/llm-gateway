@@ -308,6 +308,47 @@ func TestReader_UnknownID(t *testing.T) {
 	}
 }
 
+// Only a permanent blob failure is ErrContentUnavailable: a blob path that is a directory
+// (EISDIR, a failure that may pass) is a plain error, a permission-denied blob is unavailable.
+func TestReader_TransientBlobErrorIsNotUnavailable(t *testing.T) {
+	dir := t.TempDir()
+	log, _ := newLogger()
+	s, err := store.Open(dir, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	isDir, noPerm := noise(inlineMax*2, 21), noise(inlineMax*2, 22)
+	if err := s.SaveExchange(t.Context(), exchange("r1", isDir, noPerm)); err != nil {
+		t.Fatal(err)
+	}
+	r := openReader(t, dir)
+	blob := func(b []byte) string {
+		h := sum(b)
+		return filepath.Join(dir, "blobs", h[:2], h[2:])
+	}
+	if err := os.Remove(blob(isDir)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(blob(isDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, err = r.Content(sum(isDir))
+	if err == nil || errors.Is(err, store.ErrContentUnavailable) || errors.Is(err, store.ErrNotFound) {
+		t.Errorf("directory blob: err = %v, want a plain error", err)
+	}
+	if os.Geteuid() == 0 {
+		return
+	}
+	if err := os.Chmod(blob(noPerm), 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(blob(noPerm), 0o600) })
+	if _, err := r.Content(sum(noPerm)); !errors.Is(err, store.ErrContentUnavailable) {
+		t.Errorf("chmod 000 blob: err = %v, want ErrContentUnavailable", err)
+	}
+}
+
 // A content row whose blob cannot be read is ErrContentUnavailable; a hash with no row is
 // ErrNotFound and never ErrContentUnavailable.
 func TestReader_ContentUnavailableBlob(t *testing.T) {

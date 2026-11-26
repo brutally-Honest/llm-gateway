@@ -818,6 +818,48 @@ func TestDiskCache_ContentErrorIsCachedNowhere(t *testing.T) {
 	}
 }
 
+// A blob read that fails for a transient reason (here the blob path is a directory) is a failed
+// read, not an unavailable blob: the result is served and kept nowhere (045 review P2-1).
+func TestDiskCache_TransientBlobErrorIsCachedNowhere(t *testing.T) {
+	e := newDiskEnv(t)
+	e.call("a", 1, 0, 0, "user:fix the retry")
+	copyOf := bytes.Repeat([]byte("line\n"), store.InlineMax)
+	id := store.SessionIdent{Principal: core.PrincipalLocal, Client: "cc", Key: "k"}
+	cp := store.Checkpoint{Copies: [][]byte{copyOf}, Effects: []core.Effect{{Kind: core.EffectFileChange,
+		At: baseTime.Add(2 * time.Second), Principal: id.Principal, Client: id.Client, SessionKey: id.Key, Root: "/w",
+		Path: "/w/a.txt", Change: core.FileCreated, Size: int64(len(copyOf)), Mode: "git", AfterHash: store.ContentHash(copyOf)}},
+		Upserts: []store.SnapshotRow{{Root: "/w"}}}
+	if err := e.s.SaveCheckpoint(t.Context(), id, cp); err != nil {
+		t.Fatal(err)
+	}
+	h := store.ContentHash(copyOf)
+	blob := filepath.Join(e.dir, "blobs", h[:2], h[2:])
+	if err := os.Remove(blob); err != nil {
+		t.Fatalf("the copy is not a blob file: %v", err)
+	}
+	if err := os.Mkdir(blob, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	e.mustGet("/api/sessions/" + sid() + "/view") // served
+	e.mustGet("/api/sessions/" + sid())
+	e.flush()
+	if len(e.files("v")) != 0 || len(e.files("m")) != 0 {
+		t.Errorf("a degraded result was written: %v %v", e.files("m"), e.files("v"))
+	}
+	if _, ok := e.dep.Views.peek(id); ok {
+		t.Error("a degraded view is in the in-memory view cache")
+	}
+	if pe, ok := e.dep.Digests.peek(id); ok {
+		if !pe.memo.degraded {
+			t.Error("a good memo is in the in-memory digest cache for a degraded session")
+		}
+		if _, ok := e.dep.Digests.lookup(id, pe.ver); ok {
+			t.Error("a degraded memo answers a lookup")
+		}
+	}
+}
+
 // A blob that is gone is not a failed read (spec 045 D1): the view and the list are served
 // with a placeholder for the block, and the result is not marked degraded.
 func TestDiskCache_UnavailableBlobIsNotDegraded(t *testing.T) {
