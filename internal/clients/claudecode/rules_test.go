@@ -209,6 +209,18 @@ func TestRules_PromptTitle(t *testing.T) {
 		{"web page", "Web page content:\nhello", "(system) web page content", true},
 		{"claude md", "The following is the user's CLAUDE.md configuration.\nrules", "(system) CLAUDE.md context", true},
 		{"usage reset", "Your claude.ai usage limit has reset. Continue.", "(system) usage limit reset", true},
+		{"claude md then typed", "The following is the user's CLAUDE.md configuration.\n<user_claude_md>\nrules\n\nmore rules\n</user_claude_md>\nfix the login button", "fix the login button", false},
+		{"claude md then pasted typed", "The following is the user's CLAUDE.md configuration.\n<user_claude_md>rules</user_claude_md>\n" + tag + "fix the login button" + end, "fix the login button", false},
+		{"claude md with a closed tag only", "The following is the user's CLAUDE.md configuration.\n<user_claude_md>rules</user_claude_md>\n", "(system) CLAUDE.md context", true},
+		{"usage reset then typed", "Your claude.ai usage limit has reset. Carry on, but do not repeat work that is already complete.\nfix the login button", "fix the login button", false},
+		{"usage reset only", "Your claude.ai usage limit has reset. Carry on, but do not repeat work that is already complete.", "(system) usage limit reset", true},
+		{"task notification then typed", "<task-notification><summary>Background command \"npm test\" completed</summary></task-notification>\nfix the login button", "fix the login button", false},
+		{"two task notifications", "<task-notification><summary>first</summary></task-notification>\n<task-notification><summary>second</summary></task-notification>", "first", true},
+		{"subagent message then typed", "Another Claude session sent a message:\n<agent-message>done</agent-message>\nfix the login button", "fix the login button", false},
+		{"two synthetic blocks", "The following is the user's CLAUDE.md configuration.\n<user_claude_md>rules</user_claude_md>\nYour claude.ai usage limit has reset. Carry on.", "(system) CLAUDE.md context", true},
+		{"tool loaded block then typed", "Tool loaded.\nfix the login button", "fix the login button", false},
+		{"tool loaded block twice", "Tool loaded.\nTool loaded.", "(system) tool loaded", true},
+		{"typed text with a line break after a typed block", "fix the login button\nTool loaded.", "fix the login button Tool loaded.", false},
 		{"phrase later in a real prompt", "please explain: Another Claude session sent a message: and Base directory for this skill: x", "please explain: Another Claude session sent a message: and Base directory for this skill: x", false},
 	}
 	for _, c := range cases {

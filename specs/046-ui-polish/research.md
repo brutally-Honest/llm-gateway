@@ -17,7 +17,8 @@ feature: 046-ui-polish
 - 2026-11-26 step 2 U10 (haiku): the tool dialog's Input shows multi-line strings with real line breaks, Copy keeps the JSON (D7, D12), a60bc38; 3 tests; make verify green.
 - 2026-11-26 step 3 (partial): empty-cache start, 0 of 46 rows shrank at 1,440 and 2,560 px; at 2,560 px the four-figure Tokens cell was cut (U2 regression), fixed by wrapping Tokens at the dots at every width (D13, haiku), fac8476; make verify green.
 - 2026-11-26 step 3: UI check on the store copy passed in all four style/theme combinations at 1,440 and 2,560 px (titles 0 raw wrappers, Last active, error + Retry, reconnecting note, empty filter + Clear, session not found, multi-line input); written as docs/manual-checks/046-ui-polish.md (haiku), a5e6b06.
-- 2026-11-26 step 4 round 1 (fresh opus): no P1, 2 P2, 5 P3, 7 P4 (see Review round 1). P2-a (sonnet): list and session titles read the same main-thread prompts (D16) (this commit); 2 tests failing before the fix; make verify green.
+- 2026-11-26 step 4 round 1 (fresh opus): no P1, 2 P2, 5 P3, 7 P4 (see Review round 1). P2-a (sonnet): list and session titles read the same main-thread prompts (D16), 65e572e; 2 tests failing before the fix; make verify green.
+- 2026-11-26 step 4 P2-b (sonnet): typed text after a synthetic part with a known end is the title; open-ended parts left as a recorded gap (D17) (this commit); 12 rule cases, 6 failing before; make verify green.
 
 ## Findings
 
@@ -188,3 +189,15 @@ Fresh opus reviewer, `git diff main...HEAD` at a5e6b06. No P1.
   extra content read per agent call per list row. Nil rules keep the old path (they cannot
   tell main from sub-agent). A media-only user message starts a view turn but gives the
   digest no text; both then fall to the next prompt.
+- **D17** 2026-11-26 P2-b fix, partial. Text blocks of a user message reach the title rule
+  joined by a single "\n" (`build.go:468`, `digest.go:270`), which a block's own lines also
+  contain, so blocks cannot be split back. Openings with a known end — CLAUDE.md context
+  (`</user_claude_md>`), task notification, usage-limit reset (its fixed closing sentence),
+  subagent message (closing agent-message tag), "Tool loaded." as a first line — now title
+  from typed text that follows them. Open-ended openings (skill body, continuation summary,
+  web page content, compaction request) still hide typed text that follows in the same
+  message. Thesis for finishing it here: carry blocks through `Entry`, the view, the digest
+  and `PromptTitler`. Antithesis: that changes core types for a case the store copy never
+  shows (each of those arrived as its own message). Synthesis: leave the gap, recorded;
+  the story still shows the whole prompt. Flips if a client sends typed text in the same
+  message as one of those bodies.

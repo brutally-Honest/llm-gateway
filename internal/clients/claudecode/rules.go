@@ -119,6 +119,10 @@ const (
 	webPageOpening  = "Web page content:"
 	claudeMDOpening = "The following is the user's CLAUDE.md configuration."
 	usageResetOpen  = "Your claude.ai usage limit has reset."
+	usageResetEnd   = "do not repeat work that is already complete."
+	claudeMDEnd     = "</user_claude_md>"
+	otherSessionEnd = "</agent-message>"
+	taskNoteEnd     = "</task-notification>"
 	maxTitleDepth   = 8
 )
 
@@ -152,14 +156,17 @@ func promptTitle(text string, depth int) (string, bool) {
 	case strings.HasPrefix(s, "<local-command-caveat>"):
 		return localCommandTitle(s)
 	case strings.HasPrefix(s, "<task-notification>"):
+		title := "(system) background task"
 		if sum := stripPasted(tagBody(s, "summary")); sum != "" {
-			return sum, true
+			title = sum
 		}
-		return "(system) background task", true
+		return withTail(title, s, taskNoteEnd, depth)
 	case s == toolLoadedText:
 		return "(system) tool loaded", true
+	case strings.HasPrefix(s, toolLoadedText+"\n"):
+		return withTail("(system) tool loaded", s, toolLoadedText, depth)
 	case strings.HasPrefix(s, otherSession):
-		return "(system) message from another session", true
+		return withTail("(system) message from another session", s, otherSessionEnd, depth)
 	case strings.HasPrefix(s, skillOpening):
 		return skillTitle(strings.TrimPrefix(s, skillOpening)), true
 	case strings.HasPrefix(s, compactOpening):
@@ -169,11 +176,33 @@ func promptTitle(text string, depth int) (string, bool) {
 	case strings.HasPrefix(s, webPageOpening):
 		return "(system) web page content", true
 	case strings.HasPrefix(s, claudeMDOpening):
-		return "(system) CLAUDE.md context", true
+		return withTail("(system) CLAUDE.md context", s, claudeMDEnd, depth)
 	case strings.HasPrefix(s, usageResetOpen):
-		return "(system) usage limit reset", true
+		return withTail("(system) usage limit reset", s, usageResetEnd, depth)
 	}
 	return stripPasted(s), false
+}
+
+// withTail finishes a synthetic opening whose text ends at a known marker. A message is
+// the user's text blocks joined with a single newline (timeline fillMessage and textOf), so
+// the text after the marker may be a later block; when it holds text, the message is
+// synthetic only if that text is too (the first title stays then). An opening with no
+// marker, or none after it, is synthetic as a whole. Openings with no known end (skill
+// body, continuation summary, web page, compaction request) cannot be cut apart: a
+// single newline does not tell a block's own line breaks from the join.
+func withTail(title, s, end string, depth int) (string, bool) {
+	i := strings.Index(s, end)
+	if i < 0 || depth >= maxTitleDepth {
+		return title, true
+	}
+	rest := strings.TrimSpace(s[i+len(end):])
+	if rest == "" {
+		return title, true
+	}
+	if t, syn := promptTitle(rest, depth+1); !syn && t != "" {
+		return t, false
+	}
+	return title, true
 }
 
 // stripPasted removes pasted-content tags, keeping the text between them.

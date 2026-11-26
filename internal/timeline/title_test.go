@@ -14,6 +14,14 @@ type titleRules struct{ viewRules }
 
 func (titleRules) PromptTitle(p string) (string, bool) {
 	if s, ok := strings.CutPrefix(p, "SYS: "); ok {
+		// a message's text blocks arrive joined with a newline: text after a synthetic
+		// first line is a later block, and when it is typed it gives the title (046 P2-b)
+		if first, rest, cut := strings.Cut(s, "\n"); cut && strings.TrimSpace(rest) != "" {
+			if t, syn := (titleRules{}).PromptTitle(rest); !syn {
+				return t, false
+			}
+			return "(system) " + first, true
+		}
 		return "(system) " + s, true
 	}
 	p = strings.TrimSuffix(strings.TrimPrefix(p, "<p>"), "</p>")
@@ -101,6 +109,23 @@ func TestDigestTitleAgreesWithTheOverview(t *testing.T) {
 			t.Errorf("empty digest title for %v", msgs)
 		}
 	}
+}
+
+// 046 P2-b: a first message whose synthetic part is followed by typed text in a later block
+// titles the session with the typed text, in the list and in the overview alike
+func TestSessionTitleOfAMergedSyntheticAndTypedMessage(t *testing.T) {
+	for _, msgs := range [][]string{
+		{"SYS: client md context\n<p>fix the login button</p>"},
+		{"SYS: tool loaded", "SYS: client md context\n<p>fix the login button</p>", "later prompt"},
+		{"SYS: client md context\n<r>reminder</r><p>fix the login button</p>"},
+	} {
+		d, o := digestAndOverview(t, titleSession(msgs...))
+		eq(t, strings.Join(msgs, "|")+" digest", d, "fix the login button")
+		eq(t, strings.Join(msgs, "|")+" overview", o, "fix the login button")
+	}
+	d, o := digestAndOverview(t, titleSession("SYS: first\nSYS: second"))
+	eq(t, "two synthetic parts: digest", d, "(system) first")
+	eq(t, "two synthetic parts: overview", o, "(system) first")
 }
 
 // without a PromptTitler the digest title is the first prompt as before
