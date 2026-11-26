@@ -29,7 +29,8 @@ feature: 046-ui-polish
 - 2026-11-26 step 4 round 2 P3-1 (sonnet): an image-only prompt no longer titles the session (D23), 812a90d; 3 tests, the main one failing before; make verify green.
 - 2026-11-26 step 4 round 2 P3-2 (sonnet): a client block ends at its last closing tag (D24), eacab03; 7 cases, 6 failing before; make verify green.
 - 2026-11-26 step 4 round 2 P3-3 (sonnet): a typed line starting with a bare pasted tag keeps its text; empty-title safety net (D25), 466cd2b; 4 cases, 3 failing before; make verify green. Round 2 closed: P2-1, P2-2 (kept, D22), P3-1..4 fixed; P4 left. No third round.
-- 2026-11-26 final real-data recheck: 25 subagent-message turns titled by the client footer (D26), fixed by sonnet (this commit); 2 cases, failing before; make verify green.
+- 2026-11-26 final real-data recheck: 25 subagent-message turns titled by the client footer (D26), fixed by sonnet, 9f3bcea; 2 cases, failing before; make verify green.
+- 2026-11-26 finished (this commit): recheck on the final binary: 82 synthetic turns titled "(system) …", 0 raw wrappers, 0 typed prompts titled (system), 0 empty titles, list == session title for all 70 sessions; spec marked done; throwaway gateways and Chrome stopped (nothing on 17195-17199 or 9333); `~/.cache/llm-gateway-046` deleted; `llm-gateway.service` never touched.
 
 ## Findings
 

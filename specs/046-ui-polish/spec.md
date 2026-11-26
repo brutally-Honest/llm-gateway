@@ -3,6 +3,7 @@ feature: 046-ui-polish
 kind: fix
 created: 2026-11-26
 branch: fix/046-ui-polish
+status: done
 ---
 
 This spec covers what was planned as 039 (UI polish). It is built here as 046.
