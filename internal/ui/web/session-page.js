@@ -242,7 +242,7 @@ export function createSessionPage(ctx = {}) {
       };
       if (c.failed) mark("bad", "✗", `${c.failed} failed`);
       if (t.end) mark(t.end.word === "ended by error" ? "bad" : "", t.end.glyph, t.end.word);
-      b.append(el("span", "n", t.n ? String(t.n) : "·"), el("span", "p clamp", t.prompt || "(no prompt text)"), meta);
+      b.append(el("span", "n", t.n ? String(t.n) : "·"), el("span", "p clamp", t.title || t.prompt || "(no prompt text)"), meta);
     }
     entries = next;
     tocList.replaceChildren(...items);

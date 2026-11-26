@@ -25,6 +25,13 @@ type SideCallNamer interface {
 	SideCallName(userTexts []string) string
 }
 
+// PromptTitler is optional on ViewRules and on DigestRules: it gives the title of a prompt
+// (reminders removed) with its wrappers taken off, and whether the text was added by the
+// client itself, which a session title skips (046). Without it a title is the prompt.
+type PromptTitler interface {
+	PromptTitle(prompt string) (title string, synthetic bool)
+}
+
 // EffectLabel is an effect's attribution (spec 015) as the view reads it.
 type EffectLabel struct {
 	Label      string
@@ -249,9 +256,12 @@ type SideCall struct {
 
 // Turn is one prompt and what followed it (AC4).
 type Turn struct {
-	N               int      `json:"n"`
-	Hash            string   `json:"hash"`
-	Prompt          string   `json:"prompt"`
+	N      int    `json:"n"`
+	Hash   string `json:"hash"`
+	Prompt string `json:"prompt"`
+	// Title is the prompt as a heading: wrappers taken off, whitespace collapsed, cut to
+	// titleRunes (046). Prompt stays the full text.
+	Title           string   `json:"title"`
 	PromptTruncated bool     `json:"prompt_truncated,omitempty"`
 	Reminders       []string `json:"reminders,omitempty"`
 	At              string   `json:"at"`
@@ -277,6 +287,8 @@ type Turn struct {
 	// there is nothing to draw.
 	Figure string `json:"figure,omitempty"`
 	atNS   int64
+	// synthetic is set when Title names text the client added by itself.
+	synthetic bool
 }
 
 // The turn figures, and the most a turn may hold and still be drawn as boxes.

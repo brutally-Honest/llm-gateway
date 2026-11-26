@@ -48,6 +48,10 @@ func SessionDigest(src Source, session store.SessionRow, rules DigestRules) (Dig
 		d.ToolStates[s] = 0
 	}
 	var generated, firstPrompt string
+	// firstPrompt is the first typed prompt; until one is found it is the first synthetic
+	// one's title (046 D4). seen spares a text the exchanges repeat.
+	var firstSynthetic bool
+	seen := map[string]bool{}
 	for _, ex := range exchanges {
 		evs, err := loadEvents(src, ex)
 		if err != nil {
@@ -85,15 +89,29 @@ func SessionDigest(src Source, session store.SessionRow, rules DigestRules) (Dig
 			continue
 		}
 		d.MainErrors += errs
-		if firstPrompt == "" {
-			for _, t := range userTexts {
-				if rules != nil {
-					t = rules.StripReminders(t)
-				}
-				if t = strings.TrimSpace(t); t != "" {
-					firstPrompt = t
-					break
-				}
+		for _, t := range userTexts {
+			if firstPrompt != "" && !firstSynthetic {
+				break
+			}
+			if rules != nil {
+				t = rules.StripReminders(t)
+			}
+			if t = strings.TrimSpace(t); t == "" || seen[t] {
+				continue
+			}
+			seen[t] = true
+			title, synthetic := t, false
+			if pt, ok := rules.(PromptTitler); ok {
+				// the same title the session view gives its turns (046)
+				title, synthetic = pt.PromptTitle(t)
+				title = strings.Join(strings.Fields(title), " ")
+			}
+			switch {
+			case title == "":
+			case !synthetic:
+				firstPrompt, firstSynthetic = title, false
+			case firstPrompt == "":
+				firstPrompt, firstSynthetic = title, true
 			}
 		}
 	}

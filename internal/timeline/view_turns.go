@@ -52,6 +52,10 @@ func (b *builder) renderTurn(vt *vturn) {
 	if t.N == 0 {
 		t.Prompt = "Before the first prompt"
 	}
+	t.Title, t.synthetic = turnTitle(b.in.Rules, t.Prompt)
+	if t.N == 0 {
+		t.Title, t.synthetic = cutRunes(strings.Join(strings.Fields(t.Prompt), " "), titleRunes), false
+	}
 
 	t.Steps = []Step{}
 	var mains []*vcall

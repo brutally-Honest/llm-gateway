@@ -657,3 +657,16 @@ test("shortTurnIsDrawnCallByCall", async () => {
   assert.equal(page.dialogOpen(), true, "a tool box opens the tool's details");
   assert.equal(withClass(byId(page.el, "turn-2"), "flow").length, 0);
 });
+
+// 046 U1: the turn list shows a turn's title, the story keeps its whole prompt; without a
+// title the list falls back to the prompt.
+test("turnListShowsTheTitleAndTheStoryTheWholePrompt", () => {
+  const v = fixture();
+  v.turns = [turn(1, { title: "fix the login button", prompt: "<pasted_content id=\"a1\">fix the login button</pasted_content>" }), turn(2)];
+  const { page } = mount(v);
+  const rail = withClass(page.el, "toc-item").map((e) => withClass(e, "p")[0].textContent);
+  assert.ok(rail.includes("fix the login button"), "the rail shows the title");
+  assert.ok(!rail.some((t) => t.includes("pasted_content")), "no wrapper in the rail");
+  assert.ok(rail.includes("prompt 2"), "no title: the prompt");
+  assert.match(textOf(byId(page.el, "turn-1")), /<pasted_content id="a1">/, "the story keeps the whole prompt");
+});

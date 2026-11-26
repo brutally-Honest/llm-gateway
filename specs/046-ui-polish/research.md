@@ -119,3 +119,9 @@ has 7 of 28 in this copy.
   the shortest filled row": one line per heavy cell at every width, and Tokens' cost line and
   bar only as a filled row has them. A row may still grow (043 D22's +14 px case); it never
   shrinks.
+- **D10** 2026-11-26 U1 build details: openings are matched on the prompt as given, so a prompt
+  that starts with a pasted tag and then a synthetic opening counts as the user's (pasted)
+  text, not synthetic; the text left after a local command is stripped of pasted tags only;
+  a slash or local command with no readable name is "(system) slash command" / "(system)
+  local command"; the digest skips a user text it has already judged (exchanges repeat the
+  history). Without a `PromptTitler` both titles behave exactly as before.
