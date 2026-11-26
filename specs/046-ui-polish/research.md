@@ -15,7 +15,8 @@ feature: 046-ui-polish
 - 2026-11-26 step 2 U8 (haiku): an empty filtered list names the filter and/or search with a Clear that resets both in one history entry, cf34639; 4 tests, 4 expectations moved to the new text; make verify green.
 - 2026-11-26 step 2 U9 (haiku): a visible "reconnecting…" beside the live dot while the stream is down, gone on reconnect; aria-hidden since the dot already speaks, 8da3757; 1 test, 2 app assertions; make verify green.
 - 2026-11-26 step 2 U10 (haiku): the tool dialog's Input shows multi-line strings with real line breaks, Copy keeps the JSON (D7, D12), a60bc38; 3 tests; make verify green.
-- 2026-11-26 step 3 (partial): empty-cache start, 0 of 46 rows shrank at 1,440 and 2,560 px; at 2,560 px the four-figure Tokens cell was cut (U2 regression), fixed by wrapping Tokens at the dots at every width (D13, haiku) (this commit); make verify green.
+- 2026-11-26 step 3 (partial): empty-cache start, 0 of 46 rows shrank at 1,440 and 2,560 px; at 2,560 px the four-figure Tokens cell was cut (U2 regression), fixed by wrapping Tokens at the dots at every width (D13, haiku), fac8476; make verify green.
+- 2026-11-26 step 3: UI check on the store copy passed in all four style/theme combinations at 1,440 and 2,560 px (titles 0 raw wrappers, Last active, error + Retry, reconnecting note, empty filter + Clear, session not found, multi-line input); written as docs/manual-checks/046-ui-polish.md (haiku) (this commit).
 
 ## Findings
 
@@ -152,3 +153,6 @@ has 7 of 28 in this copy.
 - **D14** 2026-11-26 With four figures, a filled row's Tokens cell takes three lines at 1,440 px
   and two at 2,560 px, so rows are taller than before U2 (measured growth on fill up to 66 px at
   1,440). Accepted: the rule is that rows never shrink, and a layout redesign is a non-goal.
+- **D15** 2026-11-26 Step 3: the tool dialog's "Hook input" block (shown only when the hook saw
+  a different input) still shows the hook's raw text with escaped line breaks. Left as is: it
+  is shown to compare the raw input the hook received, and U10 names the tool's Input.
