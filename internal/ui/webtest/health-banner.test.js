@@ -260,3 +260,65 @@ test("dismissalShowsAgainOnRestartAndWorksWithThrowingStorage", async () => {
     assert.equal(b.hidden, false, "higher lost shows");
   });
 });
+
+// spec 047 U12 (AC4): the banner's hidden state, text and reason are written only when they change.
+// writeCounter wraps a property on one node with a setter that counts the writes (the stub keeps
+// the value as a plain property, so the wrap is test-only).
+function writeCounter(node, prop) {
+  const box = { value: node[prop], writes: 0 };
+  Object.defineProperty(node, prop, {
+    get: () => box.value,
+    set: (v) => {
+      box.writes++;
+      box.value = v;
+    },
+    configurable: true,
+    enumerable: true,
+  });
+  return box;
+}
+
+test("bannerWritesOnlyWhenItsTextChanges", async () => {
+  const { head, shell } = await mount();
+  const [b] = banners(head);
+  const textNode = all(b).find((e) => e.className === "health-text");
+  const reasonNode = all(b).find((e) => e.className === "health-reason");
+  const hidden = writeCounter(b, "hidden");
+  const text = writeCounter(textNode, "textContent");
+  const reason = writeCounter(reasonNode, "textContent");
+  const counts = () => ({ hidden: hidden.writes, text: text.writes, reason: reason.writes });
+
+  let current = degraded(3);
+  let tick = null;
+  const stop = startHealthPoll({
+    read: async () => current,
+    onHealth: (h) => shell.setHealth(h),
+    every: 15000,
+    setTimer: (fn, ms) => {
+      assert.equal(ms, 15000);
+      tick = fn;
+      return 1;
+    },
+    clearTimer: () => {},
+  });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(b.hidden, false, "the first answer shows the banner");
+  assert.deepEqual(counts(), { hidden: 1, text: 1, reason: 1 }, "the first render writes each property once");
+
+  // 60 s of polls (the start read and four 15 s ticks) with the same degraded answer: no writes
+  hidden.writes = text.writes = reason.writes = 0;
+  for (let i = 0; i < 4; i++) await tick();
+  assert.deepEqual(counts(), { hidden: 0, text: 0, reason: 0 }, "unchanged polls do not touch the banner");
+
+  // the count rises: the text is written once, the reason and hidden state are not
+  current = degraded(5);
+  await tick();
+  assert.deepEqual(counts(), { hidden: 0, text: 1, reason: 0 }, "a changed count rewrites the text once");
+  assert.match(textNode.textContent, /: 5 lost since start$/);
+
+  // and the same answer again is quiet
+  hidden.writes = text.writes = reason.writes = 0;
+  await tick();
+  assert.deepEqual(counts(), { hidden: 0, text: 0, reason: 0 });
+  stop();
+});

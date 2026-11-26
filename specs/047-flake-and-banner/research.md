@@ -4,6 +4,7 @@
 - 2026-11-26 spec and research created on fix/047-flake-and-banner
 - 2026-11-26 F1 reproduced, cause found, fixed and committed (fix(ui))
 - 2026-11-26 U11 dismissible banner built and committed (fix(ui))
+- 2026-11-26 U12 banner updates only on change, committed (fix(ui))
 
 ## Decisions
 - **D1** 2026-11-26 Dismissal stores `{since, lost}` from the answer shown when dismissed
@@ -85,3 +86,17 @@
 - **D11** 2026-11-26 `docs/manual-checks/045-failures-visible.md` 1.5 still says the banner
   "cannot be dismissed". It is left as is: it is 045's dated record of what was checked then.
   The current behaviour is in `docs/observability.md` and in this spec.
+- **D12** 2026-11-26 U12 writes. `setHealth` compares each value with the node's current one
+  (`health.hidden`, `healthText.textContent`, `healthReason.textContent`) and assigns only on a
+  difference. The comparison reads the DOM, not a cached copy of the last answer, so a click on
+  the dismiss button (which sets `hidden` directly) cannot leave the check out of step. The
+  banner text and reason formats are unchanged.
+- **D13** 2026-11-26 U12 test. The DOM stub keeps `hidden` and `textContent` as plain
+  properties, so `bannerWritesOnlyWhenItsTextChanges` wraps those three properties on the
+  banner's nodes with counting setters, in the test only. It drives the real `startHealthPoll`
+  with injected timers and a fake `read`: the first render writes each property once, four
+  further 15 s ticks with the same answer write nothing, a rise in `lost` writes the text once
+  and not the reason or hidden state, and a repeat of that answer is quiet again.
+- **D14** 2026-11-26 U12 probe: with `setHealth` back to unconditional assignments the new test
+  fails ("unchanged polls do not touch the banner": 4 writes to each of hidden, text and reason);
+  with the fix restored all 11 tests in `health-banner.test.js` pass.

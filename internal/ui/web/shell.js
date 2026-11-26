@@ -246,9 +246,12 @@ export function mountShell({ head, storage, root, theme, look = "lean" }) {
       // higher count): the dismissal no longer applies, so it is cleared
       if (b.show && dismissed && visible) dismissal.clear();
       if (b.show) shown = h;
-      health.hidden = !visible;
-      healthText.textContent = b.text;
-      healthReason.textContent = b.reason ? ` — ${b.reason}` : "";
+      // written only when they change: the banner is a live region, and a rewrite of the same
+      // text makes a screen reader announce it again on every poll (spec 047 U12)
+      const reason = b.reason ? ` — ${b.reason}` : "";
+      if (health.hidden !== !visible) health.hidden = !visible;
+      if (healthText.textContent !== b.text) healthText.textContent = b.text;
+      if (healthReason.textContent !== reason) healthReason.textContent = reason;
     },
     // setKeyBar records the page's shortcuts for the "?" dialog.
     setKeyBar(route, pos) {
