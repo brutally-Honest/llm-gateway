@@ -37,9 +37,11 @@ func newTLEnv(t *testing.T) *tlEnv {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = r.Close() })
-	cache := NewTimelineCache(context.Background(), nil)
+	cache := NewTimelineCache(t.Context(), nil)
 	d := Deps{Addr: addr, Reader: r, Rules: map[string]ClientRules{"cc": testRules{}}, Timelines: cache,
+		Ctx: t.Context(), Digests: NewDigestCache(t.Context(), nil), Views: NewViewCache(),
 		Now: func() time.Time { return baseTime.Add(100 * time.Second) }}
+	waitBackground(t, d)
 	return &tlEnv{digestEnv: &digestEnv{apiEnv: &apiEnv{t: t, s: s, dir: dir, h: Handler(d)}, d: d}, cache: cache}
 }
 

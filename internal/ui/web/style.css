@@ -179,6 +179,10 @@ a.brand:focus-visible { outline: 2px solid var(--accent-strong); outline-offset:
    Lean and square in Stark; the text wraps, so it never scrolls the page sideways */
 .health-banner { flex: 1 0 100%; min-width: 0; padding: 6px 12px; font-size: 13px; font-weight: 500; color: var(--bad); background: var(--bad-bg); border: 1px solid var(--bad); border-radius: var(--radius-md); overflow-wrap: anywhere; }
 .health-banner .health-link { margin-left: 8px; color: var(--bad); font-weight: 700; text-decoration: underline !important; }
+/* spec 047 U11: the dismiss button is styled like the link (no box, --bad, bold) in both styles */
+.health-banner .health-dismiss { margin-left: 8px; padding: 0 4px; background: none; border: 0; color: var(--bad); font: inherit; font-weight: 700; line-height: 1; }
+.health-banner .health-dismiss:hover { background: none; text-decoration: underline; }
+.health-banner .health-dismiss:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
 :root[data-style="stark"] .health-banner { font-family: var(--font-mono); }
 /* no underline on anything in the header, at rest or on hover (027 C7a) */
 header#shell-head a, header#shell-head a:hover { text-decoration: none; }

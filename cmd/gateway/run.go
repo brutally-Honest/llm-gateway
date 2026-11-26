@@ -370,7 +370,7 @@ func serve(ctx context.Context, d deps) int {
 			warm := time.Since(started)
 			metrics.Warmup(warm)
 			log.Info("ui ready", zap.Int64("warm_ms", warm.Milliseconds()))
-			logging.Go(log, "ui_prefill", func() error { ui.Prefill(ctx, deps); return nil })
+			logging.Go(log, "ui_prefill", func() error { ui.Prefill(deps.Ctx, deps); return nil })
 			return srvUI.Serve(uiLn)
 		})
 		log.Info("ui started", zap.String("addr", uiLn.Addr().String()))
@@ -502,6 +502,9 @@ func stopUI(ctx context.Context, srv *http.Server, capt *captureRun, log *zap.Lo
 const (
 	uiStopTimeout = 2 * time.Second
 	cutWait       = 2 * time.Second
+	// uiWorkTimeout bounds the wait for the UI's background work at close, after capture
+	// has drained. It is separate from the drain's budget on purpose (spec 047 D16).
+	uiWorkTimeout = 5 * time.Second
 	// traceFlushTimeout bounds the last span export at exit (spec 021): a collector that
 	// is down must not hold the stop open.
 	traceFlushTimeout = 2 * time.Second
@@ -534,6 +537,18 @@ type captureRun struct {
 	effects *effectsRun
 	// skew is effects.attribution.skew, for labelling effects in the UI (spec 015).
 	skew time.Duration
+	// stopBG cancels the context the UI's background work (builds, view jobs, the hub's
+	// goroutines, the prefill pass, the disk cache writer) runs on; it is nil with the UI
+	// off. close cancels it first, drains capture, then waits for that work before it
+	// closes the reader.
+	stopBG context.CancelFunc
+	// bg is the context that work runs on: the child stopBG cancels. It is nil with the
+	// UI off, and in a run built without startCaptureWith.
+	bg context.Context
+	// uiBudget and uiHold are test seams: uiBudget replaces uiWorkTimeout when set, and
+	// uiHold, when set, runs with the UI waits as one more piece of UI work.
+	uiBudget time.Duration
+	uiHold   func(ctx context.Context)
 	// dir is the capture directory, where a stop leaves its record (spec 021).
 	dir string
 	// metrics is the gateway's own metrics; nil in tests that leave them out.
@@ -568,11 +583,19 @@ func hookConfig(h config.Hooks, profiles []core.Profile) hooks.Config {
 // hasUI reports whether the UI is on for this run.
 func (c *captureRun) hasUI() bool { return c != nil && c.hub != nil }
 
+// bgOr is the context the UI's background work runs on, or ctx when there is none.
+func (c *captureRun) bgOr(ctx context.Context) context.Context {
+	if c.bg != nil {
+		return c.bg
+	}
+	return ctx
+}
+
 // uiDeps is what the UI handler is built from.
 func (c *captureRun) uiDeps(ctx context.Context, addr string, log *zap.Logger) ui.Deps {
 	return ui.Deps{
 		Addr: addr, Log: log, Reader: c.reader, Hub: c.hub,
-		Rules: uiRules(), Ctx: ctx, Timelines: c.timelines, Digests: c.digests, Views: c.views, Disk: c.disk,
+		Rules: uiRules(), Ctx: c.bgOr(ctx), Timelines: c.timelines, Digests: c.digests, Views: c.views, Disk: c.disk,
 		AttributionSkew: c.skew, Metrics: c.metrics,
 	}
 }
@@ -610,6 +633,7 @@ func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, wit
 	var digests *ui.DigestCache
 	var views *ui.ViewCache
 	var disk *ui.DiskCache
+	var stopBG context.CancelFunc
 	if withUI {
 		// The store exists now (E2), so the read-only view can open on it.
 		if reader, err = store.OpenReader(dir); err != nil {
@@ -620,6 +644,9 @@ func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, wit
 				zap.String("reason", storeOpenReason(err)))
 			return nil, exitRuntime
 		}
+		// The UI's background work runs on its own child of ctx, so close can cancel and
+		// wait for it whatever ended the run.
+		ctx, stopBG = context.WithCancel(ctx)
 		// The persistent cache hashes the executable (tens of ms) before the UI serves; if
 		// that or the store check fails, the UI runs from memory alone.
 		if disk, err = ui.OpenDiskCache(ctx, dir, version, e.Attribution.Skew, reader, log, m); err != nil {
@@ -629,7 +656,7 @@ func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, wit
 		timelines = ui.NewTimelineCache(ctx, log)
 		digests = ui.NewDigestCache(ctx, log).WithDisk(disk)
 		views = ui.NewViewCache()
-		hub = ui.NewHub(ui.Deps{Log: log, Reader: reader, Rules: uiRules(), Timelines: timelines, Digests: digests,
+		hub = ui.NewHub(ui.Deps{Ctx: ctx, Log: log, Reader: reader, Rules: uiRules(), Timelines: timelines, Digests: digests,
 			Views: views, Disk: disk, AttributionSkew: e.Attribution.Skew, Metrics: m})
 		cfg.OnCommit = hub.Publish
 	}
@@ -657,7 +684,7 @@ func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, wit
 	return &captureRun{
 		store: st, sink: sink, hooks: hookSink, budget: core.NewBudget(c.MemoryLimit), maxBodyBytes: c.MaxBodyBytes,
 		reader: reader, hub: hub, timelines: timelines, views: views, digests: digests, disk: disk, effects: eff,
-		skew: e.Attribution.Skew, dir: dir, metrics: m,
+		skew: e.Attribution.Skew, dir: dir, metrics: m, stopBG: stopBG, bg: ctx,
 	}, exitOK
 }
 
@@ -977,17 +1004,48 @@ func (c *captureRun) close(ctx context.Context) (undrained int, err error) {
 	if c.hub != nil {
 		c.hub.Close()
 	}
+	// Cancel the UI's work at once, but wait for it only after capture has drained: the UI
+	// never takes the drain's budget (observability ranks above it).
+	if c.stopBG != nil {
+		c.stopBG()
+	}
 	if c.hooks != nil {
 		c.hooks.Close(ctx)
 	}
 	// After the hook sink: its last events may still signal a checkpoint.
 	c.effects.close(ctx)
 	undrained = c.sink.Close(ctx)
+	c.waitUIWork()
 	err = c.store.Close()
 	if c.reader != nil {
 		_ = c.reader.Close()
 	}
 	return undrained, err
+}
+
+// waitUIWork waits for the UI's background work, already cancelled, before the reader and
+// the store close under it (spec 047 F1): a build or view job mid-read would otherwise
+// reopen the database after it is closed. The disk cache's write in hand ends whole; no
+// later write starts. It has its own budget, uiWorkTimeout, and spends none of the
+// drain's.
+func (c *captureRun) waitUIWork() {
+	if c.stopBG == nil {
+		return
+	}
+	budget := uiWorkTimeout
+	if c.uiBudget > 0 {
+		budget = c.uiBudget
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+	if c.uiHold != nil {
+		c.uiHold(ctx)
+	}
+	c.hub.Wait(ctx)
+	c.views.Wait(ctx)
+	c.digests.Wait(ctx)
+	c.timelines.Wait(ctx)
+	c.disk.Wait(ctx)
 }
 
 // stop is close plus the one capture stopped line (spec 002, Shutdown): what was left

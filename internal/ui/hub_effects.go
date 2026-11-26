@@ -49,7 +49,10 @@ func (h *Hub) PublishEffects(principal, client, sessionKey string) {
 		return
 	}
 	h.effPending[who] = time.AfterFunc(h.effEvery, func() {
-		logging.Go(h.log, "ui_hub_effects", func() error { h.sendEffects(who); return nil })
+		if !h.begin() {
+			return
+		}
+		logging.Go(h.log, "ui_hub_effects", func() error { defer h.end(); h.sendEffects(who); return nil })
 	})
 }
 

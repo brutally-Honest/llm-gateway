@@ -311,6 +311,8 @@ const fullBuildViewTimeout = buildTimeout
 // queued per session: a newer version replaces a queued older one. A key that is running,
 // queued or was the last one run for the session is not started again.
 type viewJobs struct {
+	// flight counts the runner goroutine; Wait is the shutdown's wait for it.
+	flight
 	mu      sync.Mutex
 	busy    bool
 	order   []store.SessionIdent
@@ -342,11 +344,15 @@ func (j *viewJobs) submit(log *zap.Logger, id store.SessionIdent, key string, ru
 		j.order = append(j.order, id)
 	}
 	j.pending[id] = viewJob{key: key, run: run}
-	if !j.busy {
+	if !j.busy && j.begin() {
 		j.busy = true
-		logging.Go(log, "ui_view_job", func() error { j.loop(); return nil })
+		logging.Go(log, "ui_view_job", func() error { defer j.end(); j.loop(); return nil })
 	}
 }
+
+// Wait returns true when no background view job is running, or false when ctx ends first.
+// Cancel the jobs' base context first.
+func (v *ViewCache) Wait(ctx context.Context) bool { return v == nil || v.jobs.Wait(ctx) }
 
 func (j *viewJobs) loop() {
 	for {

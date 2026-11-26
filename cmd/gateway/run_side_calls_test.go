@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/brutally-honest/llm-gateway/internal/store"
-	"github.com/brutally-honest/llm-gateway/internal/ui"
 )
 
 // sideCallFixtures are spec 018's request bodies, redacted copies of captured ones, in the
@@ -159,7 +158,7 @@ func captureSideCallSession(t *testing.T) sideCallSession {
 	t.Cleanup(func() { _ = r.Close() })
 
 	var s sideCallSession
-	s.handler = ui.Handler(ui.Deps{Addr: "127.0.0.1:7199", Reader: r, Rules: uiRules()})
+	s.handler = uiTestHandler(t, "127.0.0.1:7199", r)
 	var page struct {
 		Items []json.RawMessage `json:"items"`
 	}

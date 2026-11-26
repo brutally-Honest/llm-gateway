@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/brutally-honest/llm-gateway/internal/store"
-	"github.com/brutally-honest/llm-gateway/internal/ui"
 )
 
 // 046 P3-d: the title rule reaches the view through the rules the server really hands the
@@ -56,7 +55,7 @@ func TestRun_PromptTitleRuleReachesTheView(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = r.Close() })
-	h := ui.Handler(ui.Deps{Addr: "127.0.0.1:7199", Reader: r, Rules: uiRules()})
+	h := uiTestHandler(t, "127.0.0.1:7199", r)
 	var page struct {
 		Items []struct {
 			ID    string `json:"id"`

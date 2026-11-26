@@ -113,7 +113,7 @@ func TestEffectsAPI_Attribution(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = r.Close() })
-	e.h = Handler(Deps{Addr: addr, Reader: r, Rules: map[string]ClientRules{"client-a": attrTestRules{}},
+	e.h = testHandler(t, Deps{Addr: addr, Reader: r, Rules: map[string]ClientRules{"client-a": attrTestRules{}},
 		Now: func() time.Time { return baseTime.Add(100 * time.Second) }})
 	id := store.SessionIdent{Principal: core.PrincipalLocal, Client: "client-a", Key: "s1"}
 	seq := int64(0)

@@ -76,6 +76,16 @@ func (e *diskEnv) restart(version string) {
 		Digests: NewDigestCache(ctx, log).WithDisk(disk), Timelines: NewTimelineCache(ctx, log), Views: NewViewCache(),
 		Disk: disk, Metrics: e.reg, Now: func() time.Time { return e.now }}
 	e.srv = Handler(e.dep)
+	// Runs before the cleanups registered earlier (the reader, the store, the folder): the
+	// background work ends first (spec 047 F1).
+	dep := e.dep
+	e.t.Cleanup(func() {
+		cancel()
+		bg := context.Background()
+		if !dep.Views.Wait(bg) || !dep.Digests.Wait(bg) || !dep.Timelines.Wait(bg) || !disk.Wait(bg) {
+			e.t.Error("background work did not finish")
+		}
+	})
 }
 
 func (e *diskEnv) get(path string) (int, []byte) {
@@ -580,6 +590,7 @@ func TestDiskCache_FolderDeletedMidRun(t *testing.T) {
 	e.dep.Digests = NewDigestCache(t.Context(), nil).WithDisk(e.disk)
 	e.dep.Views = NewViewCache()
 	e.srv = Handler(e.dep)
+	waitBackground(e.t, e.dep)
 	e.mustGet("/api/sessions/" + sid())
 	e.mustGet("/api/sessions/" + sid() + "/view")
 	e.flush()
@@ -736,6 +747,7 @@ func TestDiskCache_ViewOfAnOlderBuildNotWritten(t *testing.T) {
 	e.flush()
 	e.dep.Views = NewViewCache() // memory forgets the view; the timeline cache keeps its build
 	e.srv = Handler(e.dep)
+	waitBackground(e.t, e.dep)
 	wrote, skipped := e.disk.written.Load(), e.disk.skipped.Load()
 
 	// the session moves on; a request that takes whatever timeline is cached gets the old build

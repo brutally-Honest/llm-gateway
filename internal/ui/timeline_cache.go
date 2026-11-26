@@ -81,6 +81,8 @@ type TimelineCache struct {
 	ll       *list.List // front is most recently used
 	items    map[store.SessionIdent]*list.Element
 	builds   atomic.Int64
+	// flight counts the build goroutines; Wait is the shutdown's wait for them.
+	flight
 	// cmu guards counts: the builds made, "incremental" or "full:<reason>".
 	cmu    sync.Mutex
 	counts map[string]int
@@ -276,8 +278,26 @@ func (c *TimelineCache) joinLocked(id store.SessionIdent, ver store.Version,
 	return sb.next
 }
 
+// abandon ends r, and the follow-up behind it, with errStopped when shutdown has begun and
+// no goroutine may start. fmu is held.
+func (c *TimelineCache) abandon(id store.SessionIdent, r *buildRun) {
+	r.err = errStopped
+	close(r.done)
+	if sb := c.active[id]; sb != nil && sb.cur == r {
+		if n := sb.next; n != nil {
+			n.err = errStopped
+			close(n.done)
+		}
+		delete(c.active, id)
+	}
+}
+
 func (c *TimelineCache) start(id store.SessionIdent, r *buildRun) {
-	logging.Go(c.log, "ui_build", func() error { c.run(id, r); return nil })
+	if !c.begin() {
+		c.abandon(id, r)
+		return
+	}
+	logging.Go(c.log, "ui_build", func() error { defer c.end(); c.run(id, r); return nil })
 }
 
 // run builds r, stores the result, and starts the queued follow-up if one was asked for.

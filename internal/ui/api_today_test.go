@@ -138,6 +138,7 @@ func TestToday_SessionsCountHooksOnlyActivity(t *testing.T) {
 func (e *digestEnv) nowAt(sec int) {
 	e.d.Now = func() time.Time { return baseTime.Add(time.Duration(sec) * time.Second) }
 	e.h = Handler(e.d)
+	waitBackground(e.t, e.d)
 }
 
 func hourly(t *testing.T, m map[string]any) (calls, sessions []float64, h map[string]any) {

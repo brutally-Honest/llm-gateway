@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -42,8 +43,65 @@ func openEnv(t *testing.T, dir string, s *store.Store) *apiEnv {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = r.Close() })
-	e.h = Handler(Deps{Addr: addr, Reader: r, Now: func() time.Time { return baseTime.Add(100 * time.Second) }})
+	e.h = testHandler(t, Deps{Addr: addr, Reader: r, Now: func() time.Time { return baseTime.Add(100 * time.Second) }})
 	return e
+}
+
+// testHandler is Handler with its caches and background work on t's lifetime: when the test
+// ends, that work is cancelled and waited for before any cleanup registered earlier runs,
+// so the reader, the store and the folder are not used or written to after they close
+// (spec 047 F1). Register it after the cleanups it must run before.
+// backgroundDone cancels nothing: it waits for the background work of d's caches, whose
+// contexts the caller has cancelled, and reports whether it all finished.
+func backgroundDone(d Deps) bool {
+	bg := context.Background()
+	ok := true
+	if d.Views != nil {
+		ok = d.Views.Wait(bg) && ok
+	}
+	if d.Digests != nil {
+		ok = d.Digests.Wait(bg) && ok
+	}
+	if d.Timelines != nil {
+		ok = d.Timelines.Wait(bg) && ok
+	}
+	return ok
+}
+
+// waitBackground waits for d's caches in cleanup, as testHandler does, for a test that
+// builds its Handler by hand. Register it after the cleanups it must run before.
+func waitBackground(t testing.TB, d Deps) {
+	t.Helper()
+	t.Cleanup(func() {
+		if !backgroundDone(d) {
+			t.Error("background work did not finish")
+		}
+	})
+}
+
+func testHandler(t *testing.T, d Deps) http.Handler {
+	t.Helper()
+	ctx := t.Context()
+	if d.Ctx == nil {
+		d.Ctx = ctx
+	}
+	if d.Digests == nil {
+		d.Digests = NewDigestCache(ctx, d.Log)
+	}
+	if d.Timelines == nil {
+		d.Timelines = NewTimelineCache(ctx, d.Log)
+	}
+	if d.Views == nil {
+		d.Views = NewViewCache()
+	}
+	t.Cleanup(func() {
+		// t.Context() is already cancelled here, so the work is winding down.
+		bg := context.Background()
+		if !d.Views.Wait(bg) || !d.Digests.Wait(bg) || !d.Timelines.Wait(bg) {
+			t.Error("background work did not finish")
+		}
+	})
+	return Handler(d)
 }
 
 // save stores an exchange at base+at seconds; key "" is ungrouped.

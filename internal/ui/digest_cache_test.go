@@ -39,9 +39,11 @@ func newCacheEnv(t *testing.T, size int) *cacheEnv {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = r.Close() })
-	e := &cacheEnv{cache: newDigestCache(size), now: baseTime.Add(100 * time.Second)}
+	e := &cacheEnv{cache: newDigestCacheCtx(t.Context(), nil, size), now: baseTime.Add(100 * time.Second)}
 	d := Deps{Addr: addr, Reader: r, Rules: map[string]ClientRules{"cc": testRules{}}, Digests: e.cache,
+		Ctx: t.Context(), Timelines: NewTimelineCache(t.Context(), nil), Views: NewViewCache(),
 		Now: func() time.Time { return e.now }}
+	waitBackground(t, d)
 	e.digestEnv = &digestEnv{apiEnv: &apiEnv{t: t, s: s, dir: dir, h: Handler(d)}, d: d}
 	return e
 }
@@ -225,8 +227,10 @@ func BenchmarkSessionList_WarmCache(b *testing.B) {
 	defer func() { _ = r.Close() }()
 	cache := NewDigestCache(context.Background(), nil)
 	d := Deps{Addr: addr, Reader: r, Rules: map[string]ClientRules{"cc": testRules{}}, Digests: cache,
+		Timelines: NewTimelineCache(context.Background(), nil), Views: NewViewCache(),
 		Now: func() time.Time { return baseTime.Add(100 * time.Second) }}
 	h := Handler(d)
+	defer func() { backgroundDone(d) }()
 	e := &apiEnv{s: s}
 	for i := range 50 {
 		ex := &core.Exchange{RequestID: "r" + string(rune('A'+i/26)) + string(rune('a'+i%26)), PrincipalID: core.PrincipalLocal,

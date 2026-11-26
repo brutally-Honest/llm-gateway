@@ -630,6 +630,7 @@ func TestIncremental_NoDiskNoViewJob(t *testing.T) {
 	e.dep.Disk = nil
 	e.dep.Views = NewViewCache()
 	e.srv = Handler(e.dep)
+	waitBackground(e.t, e.dep)
 	path := "/api/sessions/" + sid() + "/view"
 	e.toIncremental(path)
 	full := countFullBuilds(t)
