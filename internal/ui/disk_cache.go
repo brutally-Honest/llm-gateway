@@ -159,6 +159,8 @@ type DiskCache struct {
 	m     *observability.Metrics
 	q     chan diskReq
 	now   func() time.Time
+	// stopped is closed when the writer goroutine has returned.
+	stopped chan struct{}
 
 	// hw and viewWrites belong to the writer goroutine.
 	hw         highWater
@@ -192,7 +194,7 @@ func OpenDiskCache(ctx context.Context, dir, version string, skew time.Duration,
 	base := filepath.Join(dir, diskDirName)
 	c := &DiskCache{
 		build: build, root: filepath.Join(base, build), ctx: ctx, r: r, log: log, m: m,
-		q: make(chan diskReq, diskQueueSize), now: time.Now,
+		q: make(chan diskReq, diskQueueSize), now: time.Now, stopped: make(chan struct{}),
 	}
 	if r != nil {
 		qctx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -207,8 +209,24 @@ func OpenDiskCache(ctx context.Context, dir, version string, skew time.Duration,
 	if err := os.MkdirAll(filepath.Join(c.root, diskViewDir), diskDirMode); err != nil {
 		return nil, fmt.Errorf("ui view cache: %w", err)
 	}
-	logging.Go(log, "ui_cache_writer", func() error { c.writer(); return nil })
+	logging.Go(log, "ui_cache_writer", func() error { defer close(c.stopped); c.writer(); return nil })
 	return c, nil
+}
+
+// Wait returns true when the writer has returned, or false when ctx ends first. The writer
+// stops with the context OpenDiskCache was given, so cancel that first: the write in hand
+// then finishes whole (a temp file renamed into place) and the rest of the queue is
+// dropped, never half written. A nil cache has no writer.
+func (c *DiskCache) Wait(ctx context.Context) bool {
+	if c == nil {
+		return true
+	}
+	select {
+	case <-c.stopped:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // buildIdentity hashes the inputs a cached view depends on into the 16-character build id.

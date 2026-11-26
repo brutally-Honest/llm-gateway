@@ -131,6 +131,10 @@ type DigestCache struct {
 	// wait on it. Guarded by fmu.
 	joined int
 
+	// flight counts the build goroutines and the queueDeferred goroutines; Wait is the
+	// shutdown's wait for them.
+	flight
+
 	// The build gate (spec 043 D12). Guarded by fmu.
 	gate gateState
 	// ticks numbers list requests: a newer request ranks above every older one.
@@ -381,7 +385,8 @@ func (c *DigestCache) start(id store.SessionIdent, r *digestRun) {
 
 // launch starts r's goroutine. Its timeout starts there, so a queued run's does not run.
 func (c *DigestCache) launch(id store.SessionIdent, r *digestRun) {
-	logging.Go(c.log, "ui_build", func() error { c.run(id, r); return nil })
+	c.begin()
+	logging.Go(c.log, "ui_build", func() error { defer c.end(); c.run(id, r); return nil })
 }
 
 // run computes r, stores the result, and starts the queued follow-up if one was asked for.

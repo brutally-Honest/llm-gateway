@@ -1059,7 +1059,9 @@ func (d Deps) queueDeferred(rows []deferredRow) {
 	if len(rows) == 0 || d.Digests == nil || d.Reader == nil {
 		return
 	}
+	d.Digests.begin()
 	logging.Go(d.logger(), "ui_queue_undecided", func() error {
+		defer d.Digests.end()
 		ctx, cancel := context.WithTimeout(d.Digests.base, storeTimeout)
 		defer cancel()
 		idents := make([]store.SessionIdent, len(rows))

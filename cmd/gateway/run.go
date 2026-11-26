@@ -534,6 +534,11 @@ type captureRun struct {
 	effects *effectsRun
 	// skew is effects.attribution.skew, for labelling effects in the UI (spec 015).
 	skew time.Duration
+	// stopBG cancels the context the UI's background work (builds, view jobs, the disk
+	// cache writer) runs on; close then waits for that work before it closes the reader.
+	stopBG context.CancelFunc
+	// bg is the context that work runs on; nil in a run built without startCaptureWith.
+	bg context.Context
 	// dir is the capture directory, where a stop leaves its record (spec 021).
 	dir string
 	// metrics is the gateway's own metrics; nil in tests that leave them out.
@@ -568,11 +573,19 @@ func hookConfig(h config.Hooks, profiles []core.Profile) hooks.Config {
 // hasUI reports whether the UI is on for this run.
 func (c *captureRun) hasUI() bool { return c != nil && c.hub != nil }
 
+// bgOr is the context the UI's background work runs on, or ctx when there is none.
+func (c *captureRun) bgOr(ctx context.Context) context.Context {
+	if c.bg != nil {
+		return c.bg
+	}
+	return ctx
+}
+
 // uiDeps is what the UI handler is built from.
 func (c *captureRun) uiDeps(ctx context.Context, addr string, log *zap.Logger) ui.Deps {
 	return ui.Deps{
 		Addr: addr, Log: log, Reader: c.reader, Hub: c.hub,
-		Rules: uiRules(), Ctx: ctx, Timelines: c.timelines, Digests: c.digests, Views: c.views, Disk: c.disk,
+		Rules: uiRules(), Ctx: c.bgOr(ctx), Timelines: c.timelines, Digests: c.digests, Views: c.views, Disk: c.disk,
 		AttributionSkew: c.skew, Metrics: c.metrics,
 	}
 }
@@ -610,6 +623,7 @@ func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, wit
 	var digests *ui.DigestCache
 	var views *ui.ViewCache
 	var disk *ui.DiskCache
+	var stopBG context.CancelFunc
 	if withUI {
 		// The store exists now (E2), so the read-only view can open on it.
 		if reader, err = store.OpenReader(dir); err != nil {
@@ -620,6 +634,9 @@ func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, wit
 				zap.String("reason", storeOpenReason(err)))
 			return nil, exitRuntime
 		}
+		// The UI's background work runs on its own child of ctx, so close can cancel and
+		// wait for it whatever ended the run.
+		ctx, stopBG = context.WithCancel(ctx)
 		// The persistent cache hashes the executable (tens of ms) before the UI serves; if
 		// that or the store check fails, the UI runs from memory alone.
 		if disk, err = ui.OpenDiskCache(ctx, dir, version, e.Attribution.Skew, reader, log, m); err != nil {
@@ -657,7 +674,7 @@ func startCaptureWith(ctx context.Context, c config.Capture, h config.Hooks, wit
 	return &captureRun{
 		store: st, sink: sink, hooks: hookSink, budget: core.NewBudget(c.MemoryLimit), maxBodyBytes: c.MaxBodyBytes,
 		reader: reader, hub: hub, timelines: timelines, views: views, digests: digests, disk: disk, effects: eff,
-		skew: e.Attribution.Skew, dir: dir, metrics: m,
+		skew: e.Attribution.Skew, dir: dir, metrics: m, stopBG: stopBG, bg: ctx,
 	}, exitOK
 }
 
@@ -977,6 +994,7 @@ func (c *captureRun) close(ctx context.Context) (undrained int, err error) {
 	if c.hub != nil {
 		c.hub.Close()
 	}
+	c.stopUIWork(ctx)
 	if c.hooks != nil {
 		c.hooks.Close(ctx)
 	}
@@ -988,6 +1006,21 @@ func (c *captureRun) close(ctx context.Context) (undrained int, err error) {
 		_ = c.reader.Close()
 	}
 	return undrained, err
+}
+
+// stopUIWork cancels the UI's background work and waits for it, within ctx, before the
+// reader and the store close under it (spec 047 F1): a build or view job mid-read would
+// otherwise reopen the database after it is closed. The disk cache's write in hand ends
+// whole; no later write starts.
+func (c *captureRun) stopUIWork(ctx context.Context) {
+	if c.stopBG == nil {
+		return
+	}
+	c.stopBG()
+	c.views.Wait(ctx)
+	c.digests.Wait(ctx)
+	c.timelines.Wait(ctx)
+	c.disk.Wait(ctx)
 }
 
 // stop is close plus the one capture stopped line (spec 002, Shutdown): what was left

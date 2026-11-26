@@ -40,7 +40,7 @@ func TestBlobUnavailable_PerBlockPlaceholder(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = r.Close() })
-		e.h = Handler(Deps{Addr: addr, Reader: r, Log: zap.New(c),
+		e.h = testHandler(t, Deps{Addr: addr, Reader: r, Log: zap.New(c),
 			Now: func() time.Time { return baseTime.Add(100 * time.Second) }})
 		return l
 	}()
