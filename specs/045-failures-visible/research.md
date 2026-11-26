@@ -8,7 +8,8 @@ feature: 045-failures-visible
 - 2026-11-26 step 2: 4c1cc71, missing/unreadable blob is a per-block placeholder; body endpoint 404 body_not_stored with one log line; make verify green.
 - 2026-11-26 step 3: bb5f426, blob write failure keeps the row (content row kept, file missing, D14), heals on rewrite, counted; make verify green.
 - 2026-11-26 step 4: 221641f, counters + metrics, /healthz and /api/health degraded body (200), doctor capture-health; make verify green (one lint fix first).
-- 2026-11-26 step 5: banner built (health.js, shell.js setHealth, app.js poll); webtests 285/285; see commit below.
+- 2026-11-26 step 5: 8c13546, header banner from /api/health every 15 s, both styles and themes; webtests 285/285, make verify green.
+- 2026-11-26 step 6: docs (observability.md Capture health, install.md check and troubleshooting rows) and the doctor link moved to #check-capture-health; see commit below.
 
 ## Findings
 

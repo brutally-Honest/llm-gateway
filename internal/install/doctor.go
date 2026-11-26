@@ -337,7 +337,7 @@ func captureHealth(e *Env, cfg config.Config) (Result, bool) {
 	if json.Unmarshal([]byte(body), &h) != nil || (h.Status != "ok" && h.Status != "degraded") || h.Since.IsZero() {
 		return Result{}, false
 	}
-	r := Result{ID: "capture-health", Name: "Capture health", Link: anchor("listeners")}
+	r := Result{ID: "capture-health", Name: "Capture health", Link: anchor("capture-health")}
 	since := h.Since.UTC().Format(time.RFC3339)
 	if h.Status == "ok" {
 		r.Level, r.Detail = Pass, "no capture data lost since "+since
