@@ -148,8 +148,9 @@ commands carry `ANTHROPIC_BASE_URL` pointing at it), uninstall warns that stoppi
 service cuts that session off, and asks first, even with `--yes`. Answer no and nothing
 changes; run it from a plain terminal instead, or pass `--yes --force` to skip the question.
 
-`gateway uninstall --purge` also deletes the config and the captured data; it asks once more,
-naming the size. `--yes` answers both questions.
+`gateway uninstall --purge` also deletes the config folder and the default data folder; it asks
+once more, naming the size. It keeps a data folder set with `capture.dir`, and on macOS the logs in
+`~/Library/Logs/llm-gateway`. `--yes` answers both questions.
 
 ## Doctor
 
@@ -258,8 +259,8 @@ started" (from the API's `/metrics`); after that it is a **fail**.
 The UI keeps a per-session cache of list rows and session views in `<capture.dir>/view-cache/`
 (by default `~/.local/share/llm-gateway/view-cache/`). It holds only results built from the
 store, so it is disposable: delete the folder at any time, even while the gateway runs. It is
-rebuilt in the background after a start. `gateway uninstall --purge` removes it with the rest
-of the data folder. Restoring an older `gateway.db` from a backup is detected, and that
+rebuilt in the background after a start. `gateway uninstall --purge` removes it only with the
+default data folder; a custom `capture.dir` and its `view-cache/` are kept. Restoring an older `gateway.db` from a backup is detected, and that
 build's cache is dropped; deleting `view-cache/` when you restore is the simple rule. A view
 over 32 MiB is not cached, and the folder is kept under 1 GiB (the oldest views go first).
 Folders are 0700 and files 0600. There is no config key for it.

@@ -304,6 +304,9 @@ Link check: script in the scratchpad (not in the repo), every relative link and 
 - **D49** 2026-11-26 Review round 1 P3: README.md and docs/getting-started.md said `--purge` deletes all recorded data. It deletes the config folder and config.DefaultCaptureDir (internal/install/env.go:120,131; internal/install/uninstall.go:213-218). A custom `capture.dir` is not deleted. On macOS the logs in ~/Library/Logs/llm-gateway (internal/install/service.go:189) are created by install but never removed by uninstall (logDir used only at service.go:192,251,423). Both places now say what is deleted and kept.
 - **D50** 2026-11-26 Review round 1 P3: .githooks/commit-msg printed "Format (PLAN.md §11):", a section that moved. Changed that string only to "Format (AGENTS.md, Commits):" (heading "## Commits" exists, AGENTS.md:108).
 - **D51** 2026-11-26 Review round 1 P3: **needs owner decision.** AGENTS.md said "Notes stay local: never push `refs/notes/*`" while "Always stop and ask first" lists remote-ref changes, notes included. Made them agree without setting policy: notes are local by default; pushing refs/notes needs the human's explicit go-ahead; the fetch refspec in `make setup` stays so notes can be fetched if ever pushed. Consistent with D34, whose "never pushed" wording is now superseded by this line (D34 is kept as history). The notes-push policy is left to the owner.
+- **D52** 2026-11-26 Review round 2 P3: docs/ui.md said `?` opens the shortcuts "for the page you are on" and "Any". The session page and call details have empty shortcut lists (internal/ui/web/keys.js:7-8), keyBar returns level "" for them (keys.js:30) and showHelp returns early without a level (internal/ui/web/shell.js:150). `?` works only on the Sessions, ungrouped and exchange pages; both places reworded.
+- **D53** 2026-11-26 Review round 2 P3: docs/install.md said `--purge` deletes "the config and the captured data" and removes view-cache "with the rest of the data folder". Purge removes only the config folder and the default data folder (internal/install/uninstall.go:213-218; internal/install/env.go:120,131); a custom `capture.dir` with its view-cache and the macOS logs (internal/install/service.go:189) are kept. Reworded to match README.md and docs/getting-started.md. The help string in cmd/gateway/install.go has the same problem; it is code and stays a follow-up.
+- **D54** 2026-11-26 Review round 2 P3: AGENTS.md stated three rules twice. Dependency rule: now only under "Always stop and ask first" (ADR and go-ahead); Stack and "Do not" point to or drop it. `--no-verify` ban: now only under "Always stop and ask first"; Enforcement points to it. Hard to reverse leads to an ADR: Workflow step 3 and its table are the home; the "When unsure" line refers to step 3 and keeps its meaning (D-entry and continue; stop and ask if it cannot be decided safely or is under "Always stop and ask first"). Supersedes the wording of D44 in that line.
 
 ### Review round 1 P4 follow-ups (not fixed in 048)
 - docs/architecture.md shutdown steps 3-4: `stopBG` runs inside `captureRun.close` (step 4), and the UI stop runs during the grace period, not after it (cmd/gateway/run.go:429-433, 1009-1011).
@@ -315,3 +318,20 @@ Link check: script in the scratchpad (not in the repo), every relative link and 
 - specs/033-docs-correctness/research.md:118 "AGENTS.md defers to PLAN.md" has no dated note like 031's.
 - No doc says `uninstall --purge` keeps macOS logs at ~/Library/Logs/llm-gateway (fixed in round 1 fixes, D49; kept here as the original finding).
 - PLAN's "agnosticism rules are a review aid, not a template section" and its Commands item were not carried into AGENTS.md.
+
+### Review round 2 P4 follow-ups (not fixed in 048)
+- `--purge` also keeps ~/.local/state/llm-gateway/startup-error.json (internal/startup/startup.go:49-58; exists only after a failed start, cleared at cmd/gateway/startgate.go:39).
+- what-gets-recorded.md:74 stored auth kind is api_key/bearer/both (internal/core/adapter.go:13-15); "subscription" should be "bearer token (subscription login)".
+- what-gets-recorded.md:65-67 connectors: PLAN.md §3 says they are not loaded through a custom base URL (also round 1).
+- what-gets-recorded.md:146 "compression shrinks everything": 4096 bytes or less are stored inline, uncompressed (internal/store/content.go:16-18) (also round 1).
+- architecture.md:156 the UI stop runs while calls drain (cmd/gateway/run.go:429-433); stopBG is in captureRun.close at the start of step 4 (run.go:1008-1010) (also round 1).
+- ui.md:54 the pager reads "Page N" without "of M" when filtering or when the total is unknown (internal/ui/web/sessions-page.js:669) (also round 1).
+- ui.md:86-87 the unassigned label and the client column are hidden when every row has the same value (sessions-page.js:505-506).
+- ui.md:136 side calls can show an error status (internal/timeline/view_overview.go:94-96); say "never a Needs-a-look item".
+- ui.md:172 any non-active session (idle 5 min) has no live connection, not only ended ones (internal/ui/api_sessions.go:27, app.js:669).
+- AGENTS.md notes example cites (Q2, Q5) while the text says (D2, D5).
+- AGENTS.md "never code outside the current spec's scope" sits next to "small fixes don't need a spec folder".
+- AGENTS.md PR step says opening a PR needs the go-ahead "(see below)", but the list below names push and merge.
+- specs/048 spec Edge cases "PLAN.md's wording wins" should be scoped to this merge.
+- cmd/gateway/install.go:64 uninstall --purge help text overstates what is deleted (code).
+- internal/ui/web/app.js:531 comment says the dot is amber; it is red (code comment).

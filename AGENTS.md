@@ -162,11 +162,10 @@ The skill gets the message right when it is written. The repo assumes it wasn't:
   HEAD, tracked files are clean and `make verify` passes (ADR 0001).
 - CI runs the `verify` workflow on Linux and macOS for every PR and every push to main
   (ADR 0019, which supersedes ADR 0001's "no CI").
-- Never bypass either hook with `--no-verify`.
+- Bypassing either hook is under "Always stop and ask first".
 
 ## Stack
-Decided in `PLAN.md` §8. Do not introduce a dependency without an ADR and the human's
-go-ahead.
+Decided in `PLAN.md` §8. Adding a dependency is under "Always stop and ask first".
 
 ## Commands
 - install: `make setup`
@@ -177,13 +176,12 @@ go-ahead.
 ## Do not
 - Do not weaken lint, tests or config to make a check pass.
 - Do not add suppressions, skip tests, or delete assertions.
-- Do not add a dependency without an ADR and the human's go-ahead.
 - Never get around a guard, hook or check by splitting, quoting, encoding or renaming
   strings, or by using another tool to perform the action that was blocked. Reading or
   editing a file with Read/Edit/Write is fine when only a Bash command naming it was
   blocked.
-- When unsure, record the call as a D-entry in research.md and continue. A call that is
-  hard to reverse also gets an ADR. If it cannot be decided safely, or it is listed under
+- When unsure, record the call as a D-entry in research.md and continue (Workflow step 3
+  says when it also gets an ADR). If it cannot be decided safely, or it is listed under
   "Always stop and ask first", stop and ask.
 
 ## Always stop and ask first
@@ -192,5 +190,5 @@ every time, even mid-build:
 - Anything outside the repo: other directories, system config, external services.
 - Any push or merge (local or pull request), or change to a remote branch or ref (notes included).
 - Deleting user data: local stores, captures, untracked files, or anything not in git.
-- Adding a dependency, even with an ADR drafted.
+- Adding a dependency: it needs an ADR and the human's go-ahead, even with the ADR drafted.
 - Bypassing, disabling or skipping a hook, guard or check (`--no-verify` included).

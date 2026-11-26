@@ -23,7 +23,7 @@ cache is empty, so details fill in over a few seconds
 - A trail of links shows where you are.
 - A small dot shows the live connection (see [Live updates](#live-updates)).
 - The gear button opens **Settings** (see [Themes](#themes)).
-- The `?` key opens **Keyboard shortcuts** for the page you are on.
+- The `?` key opens **Keyboard shortcuts** on the Sessions page, the ungrouped list and the exchange page. The session page and call details have no shortcut list, so `?` does nothing there.
 - A red banner appears when the gateway reports a capture problem (see
   [Capture-health banner](#capture-health-banner)).
 
@@ -214,4 +214,4 @@ blocked, the choice still works until you reload.
 | Session | `j` and `k` step through turns, arrow keys move between tabs, Esc closes a dialog |
 | Call details | Up and down arrows move between calls, Esc closes |
 | Ungrouped list, exchange page | Backspace goes back to Sessions |
-| Any | `?` shows the shortcuts for the page |
+| Sessions, ungrouped list, exchange page | `?` shows the shortcuts for the page (not on the session page or in call details) |
