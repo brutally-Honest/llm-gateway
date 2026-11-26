@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -164,6 +165,28 @@ func TestHandler_OversizeBody200NotStoredCounted(t *testing.T) {
 		t.Fatalf("recs=%d oversize=%d", len(st.records()), s.Counts().Oversize)
 	}
 	if !strings.Contains(buf.String(), "over limit") || strings.Contains(buf.String(), "S3CRET") {
+		t.Fatalf("log: %s", buf.String())
+	}
+}
+
+type failingBody struct{}
+
+func (failingBody) Read([]byte) (int, error) { return 0, errors.New("boom") }
+
+func TestHandler_UnreadableBody200CountedOnlyAsUnreadable(t *testing.T) {
+	st := &fakeStore{}
+	h, s, buf := newHandler(t, st, 4, 1024, true)
+	req := httptest.NewRequest(http.MethodPost, "/_gateway/hooks/c", failingBody{})
+	req.Host = "127.0.0.1"
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != 200 || w.Body.Len() != 0 {
+		t.Fatalf("%d", w.Code)
+	}
+	if c := s.Counts(); c.Unreadable != 1 || c.Oversize != 0 || c.Memory != 0 || c.QueueFull != 0 {
+		t.Fatalf("counts = %+v, want only Unreadable = 1", c)
+	}
+	if !strings.Contains(buf.String(), "unreadable") {
 		t.Fatalf("log: %s", buf.String())
 	}
 }

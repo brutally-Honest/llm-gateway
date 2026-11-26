@@ -6,6 +6,8 @@ feature: 045-failures-visible
 ## Progress
 - 2026-11-26 step 1: branch fix/045-failures-visible made from main at bd01c63; spec and research written (paths, D1-D12), committed b818522.
 - 2026-11-26 step 2: 4c1cc71, missing/unreadable blob is a per-block placeholder; body endpoint 404 body_not_stored with one log line; make verify green.
+- 2026-11-26 step 3: bb5f426, blob write failure keeps the row (content row kept, file missing, D14), heals on rewrite, counted; make verify green.
+- 2026-11-26 step 4: counters, metrics, /healthz and /api/health degraded body, doctor check built; see commit below.
 
 ## Findings
 
@@ -137,3 +139,14 @@ the status stays 200.
   large item already stored). A blob that keeps failing is counted once per attempt. The
   "row with no content row" case of D2 stays handled for a damaged store.
 - **D12** Capture off: no store and no sinks, so the counts are zero and health is ok.
+- **D15** 2026-11-26 Hook drop counts are split: `memory` (budget refused) is now its own
+  count, `oversize` is only a body over the limit, and `unreadable` is new; the shutdown
+  lines carry all four. Hook loss is read from the capture-on sink only; with capture off
+  the handler returns before reading a body, so nothing there can be lost (D12).
+- **D16** 2026-11-26 Store failure counts reach the gateway through an optional
+  `Failures()` interface on `captureRun.store`, so test fakes need no change and count zero.
+  /healthz and /api/health without a provider (tests) report ok with `since` = construction.
+- **D17** 2026-11-26 Doctor skips the capture-health check silently when it cannot read a
+  health body it understands (no Fetch, fetch error, unparsable, or an older gateway's bare
+  `{"status":"ok"}`); a warn never makes doctor exit non-zero. Its link is the listeners
+  anchor until docs/install.md has its own `### Check:` section (step 6).

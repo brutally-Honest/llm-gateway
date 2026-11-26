@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/brutally-honest/llm-gateway/internal/logging"
+	"github.com/brutally-honest/llm-gateway/internal/observability"
 )
 
 // sentinel stands in for a secret. It must never reach the logs.
@@ -146,8 +147,46 @@ func TestHealthz(t *testing.T) {
 	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
 		t.Errorf("Content-Type = %q, want application/json", ct)
 	}
-	if body != `{"status":"ok"}` {
+	// Spec 045: the body now carries the capture counts; a gateway with no health
+	// provider is ok with zero counts.
+	var got observability.Health
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("body %q: %v", body, err)
+	}
+	if got.Status != "ok" || got.Lost != 0 || got.Reason != "" || got.Since.IsZero() {
 		t.Errorf("body = %q", body)
+	}
+}
+
+// Spec 045 AC5: a degraded gateway still answers 200 to GET /healthz. The claude shell
+// function (curl -f) and install's waitHealthy key on the status code alone, so a
+// non-200 here would bypass the gateway for every claude run.
+func TestHealthz_DegradedStillAnswers200(t *testing.T) {
+	since := time.Date(2026, 11, 26, 9, 0, 0, 0, time.UTC)
+	srv := NewWithHealth(logging.New(&syncBuffer{}, "debug"), nil, func() observability.Health {
+		return observability.HealthOf(observability.Loss{HookEventsDropped: 2, BlobWriteFailures: 1}, since)
+	})
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	resp, err := http.Get("http://" + ln.Addr().String() + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q", ct)
+	}
+	want := `{"status":"degraded","since":"2026-11-26T09:00:00Z","lost":3,"counts":{"hook_events_dropped":2,"captures_dropped":0,"store_write_failures":0,"blob_write_failures":1},"reason":"hook events dropped, blob writes failed"}`
+	if string(b) != want {
+		t.Errorf("body = %s\nwant   %s", b, want)
 	}
 }
 
@@ -205,7 +244,7 @@ func TestAccessLog_PathOnly(t *testing.T) {
 	}
 	req.Header.Set("Authorization", "Bearer "+sentinel)
 	req.Header.Set("x-api-key", sentinel)
-	resp, _ := h.do(req)
+	resp, respBody := h.do(req)
 
 	line := h.waitLines("request", 1)[0]
 	if strings.Contains(h.logs.String(), sentinel) {
@@ -222,7 +261,7 @@ func TestAccessLog_PathOnly(t *testing.T) {
 	}
 	checks := map[string]any{
 		"level": "info", "method": "GET", "path": "/healthz",
-		"status": float64(200), "bytes": float64(len(`{"status":"ok"}`)),
+		"status": float64(200), "bytes": float64(len(respBody)), // spec 045: the body is the health JSON, not a fixed string
 		"request_id": resp.Header.Get(requestIDHeader),
 	}
 	for k, v := range checks {

@@ -107,8 +107,10 @@ func TestRouter_PathOutsidePrefixIs404(t *testing.T) {
 	}
 
 	res, body := gw.send(t, http.MethodGet, "/healthz", nil)
-	if res.StatusCode != http.StatusOK || string(body) != `{"status":"ok"}` {
-		t.Errorf("/healthz = %d %q, want 200 {\"status\":\"ok\"}", res.StatusCode, body)
+	// Spec 045: the body carries the capture counts too; no provider means ok, zero lost.
+	if res.StatusCode != http.StatusOK || !strings.HasPrefix(string(body), `{"status":"ok","since":`) ||
+		!strings.Contains(string(body), `"lost":0`) {
+		t.Errorf("/healthz = %d %q, want 200 status ok, lost 0", res.StatusCode, body)
 	}
 }
 

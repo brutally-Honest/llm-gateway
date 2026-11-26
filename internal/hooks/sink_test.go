@@ -143,10 +143,57 @@ func TestSink_MemoryLimitDrops(t *testing.T) {
 	if s.Submit("c", 0, time.Time{}, []byte(`{"a":1}`)) { // 7 more crosses 10
 		t.Fatal("submit over the memory limit accepted")
 	}
-	if got := s.Counts().Oversize; got != 1 {
-		t.Fatalf("Oversize = %d, want 1", got)
+	// Spec 045: the memory-limit drop has its own count, apart from body-over-limit.
+	if c := s.Counts(); c.Memory != 1 || c.Oversize != 0 || c.QueueFull != 0 || c.Unreadable != 0 {
+		t.Fatalf("counts = %+v, want only Memory = 1", c)
 	}
 	close(st.gate)
+}
+
+func TestSink_RecordOversizeAndUnreadableCountOnlyTheirOwn(t *testing.T) {
+	log, _, _ := logger()
+	s := hooks.NewSink(cfg(4, 1, 1<<20, nil), &fakeStore{}, log)
+	defer closeSink(t, s)
+	s.RecordOversize("c", 8)
+	if c := s.Counts(); c.Oversize != 1 || c.Memory != 0 || c.Unreadable != 0 || c.QueueFull != 0 {
+		t.Fatalf("counts = %+v, want only Oversize = 1", c)
+	}
+	s.RecordUnreadable("c")
+	if c := s.Counts(); c.Oversize != 1 || c.Unreadable != 1 || c.Memory != 0 || c.QueueFull != 0 {
+		t.Fatalf("counts = %+v, want Oversize = 1, Unreadable = 1", c)
+	}
+}
+
+// 32 goroutines hammer a tiny queue behind a stalled worker: every delivery is either
+// accepted or counted as queue full, none lost uncounted (spec 045).
+func TestSink_ConcurrentSubmitAccountsForEveryDelivery(t *testing.T) {
+	st := &fakeStore{gate: make(chan struct{}), started: make(chan struct{})}
+	log, _, _ := logger()
+	s := hooks.NewSink(cfg(2, 1, 1<<20, nil), st, log)
+	const goroutines, each = 32, 50
+	var accepted atomic.Int64
+	var wg sync.WaitGroup
+	for range goroutines {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range each {
+				if s.Submit("c", 0, time.Time{}, []byte(`{}`)) {
+					accepted.Add(1)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	c := s.Counts()
+	if got := accepted.Load() + c.QueueFull; got != goroutines*each {
+		t.Fatalf("accepted %d + queue full %d = %d, want %d", accepted.Load(), c.QueueFull, got, goroutines*each)
+	}
+	if c.Memory != 0 || c.Oversize != 0 {
+		t.Fatalf("counts = %+v", c)
+	}
+	close(st.gate)
+	closeSink(t, s)
 }
 
 func TestSink_UnknownClientStoredAsUnknown(t *testing.T) {

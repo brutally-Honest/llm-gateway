@@ -52,8 +52,12 @@ type Config struct {
 type Counts struct {
 	// QueueFull is every delivery Submit refused: the queue was full, or the sink closed.
 	QueueFull int64
-	// Oversize is every delivery dropped because its body would cross the memory limit.
+	// Memory is every delivery Submit dropped because its body would cross the memory limit.
+	Memory int64
+	// Oversize is every delivery the handler dropped because its body was over the body limit.
 	Oversize int64
+	// Unreadable is every delivery the handler dropped because its body could not be read.
+	Unreadable int64
 	// CaptureOff is every delivery answered but not stored because capture is off.
 	CaptureOff int64
 	// NotJSON is every stored delivery whose body is not valid JSON.
@@ -89,6 +93,8 @@ type Sink struct {
 
 	queueFull   atomic.Int64
 	oversize    atomic.Int64
+	memory      atomic.Int64
+	unreadable  atomic.Int64
 	notJSON     atomic.Int64
 	captureOff  atomic.Int64
 	storeFailed atomic.Int64
@@ -125,7 +131,7 @@ func (s *Sink) Submit(client string, seq int64, at time.Time, body []byte) bool 
 	n := int64(len(body))
 	if !s.closed {
 		if !s.budget.TryReserve(n) {
-			s.oversize.Add(1)
+			s.memory.Add(1)
 			s.log.Warn("hook event dropped: memory limit", zap.String("client", client), zap.Int64("bytes", n))
 			return false
 		}
@@ -145,6 +151,12 @@ func (s *Sink) Submit(client string, seq int64, at time.Time, body []byte) bool 
 func (s *Sink) RecordOversize(client string, limit int64) {
 	s.oversize.Add(1)
 	s.log.Warn("hook event dropped: body over limit", zap.String("client", client), zap.Int64("limit", limit))
+}
+
+// RecordUnreadable counts and logs one delivery whose body the handler could not read.
+func (s *Sink) RecordUnreadable(client string) {
+	s.unreadable.Add(1)
+	s.log.Warn("hook event dropped: body unreadable", zap.String("client", client))
 }
 
 // RecordCaptureOff counts one delivery answered but not stored because capture is off.
@@ -189,7 +201,9 @@ wait:
 func (s *Sink) Counts() Counts {
 	return Counts{
 		QueueFull:   s.queueFull.Load(),
+		Memory:      s.memory.Load(),
 		Oversize:    s.oversize.Load(),
+		Unreadable:  s.unreadable.Load(),
 		CaptureOff:  s.captureOff.Load(),
 		NotJSON:     s.notJSON.Load(),
 		StoreFailed: s.storeFailed.Load(),

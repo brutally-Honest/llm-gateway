@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/brutally-honest/llm-gateway/internal/observability"
 	"github.com/brutally-honest/llm-gateway/internal/store"
 )
 
@@ -162,11 +164,26 @@ func TestUI_StaticNonGETIs405(t *testing.T) {
 
 func TestAPI_Health(t *testing.T) {
 	rec := do(t, newTestRouter(), "GET", "/api/health", nil)
-	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != `{"ok":true}` {
+	// Spec 045: "ok":true stays, beside the capture health; no provider is ok, zero lost.
+	var got map[string]any
+	if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &got) != nil ||
+		got["ok"] != true || got["status"] != "ok" || got["lost"] != float64(0) {
 		t.Errorf("health = %d %s", rec.Code, rec.Body)
 	}
 	if rec.Header().Get("Content-Type") != "application/json" {
 		t.Errorf("content-type = %q", rec.Header().Get("Content-Type"))
+	}
+}
+
+func TestAPI_HealthDegraded(t *testing.T) {
+	since := time.Date(2026, 11, 26, 9, 0, 0, 0, time.UTC)
+	h := newRouter(Deps{Addr: addr, Health: func() observability.Health {
+		return observability.HealthOf(observability.Loss{CapturesDropped: 5, StoreWriteFailures: 2}, since)
+	}})
+	rec := do(t, h, "GET", "/api/health", nil)
+	want := `{"ok":true,"status":"degraded","since":"2026-11-26T09:00:00Z","lost":7,"counts":{"hook_events_dropped":0,"captures_dropped":5,"store_write_failures":2,"blob_write_failures":0},"reason":"captures dropped, store writes failed"}`
+	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != want {
+		t.Errorf("health = %d %s\nwant     %s", rec.Code, rec.Body, want)
 	}
 }
 
