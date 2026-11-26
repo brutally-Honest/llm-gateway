@@ -128,11 +128,12 @@ const (
 
 // pastedTag matches a real pasted-content wrapper tag, opening or closing, and nothing a
 // user merely typed about it. Two shapes count: a tag that starts a line (after optional
-// spaces), which goes with the line break after it, and, when unclosed, to the end of its
-// line; and a complete tag carrying a quoted attribute (the client's id="…"), anywhere.
+// spaces), which goes with the line break after it, and, when unclosed, only in the
+// client's quoted attribute form (id="ab12, to the end of its line, so a typed line that
+// merely begins with the tag name stays); and a complete tag carrying a quoted attribute (the client's id="…"), anywhere.
 // A bare or unquoted tag in the middle of a sentence is left as typed. Each match stays
 // inside one line, so several pasted blocks never merge.
-var pastedTag = regexp.MustCompile(`(?m)^[ \t]*</?pasted_content\b[^>\n]*(?:>|$)\n?|</?pasted_content[ \t]+[A-Za-z_-]+=(?:"[^"\n]*"|'[^'\n]*')[^>\n]*>`)
+var pastedTag = regexp.MustCompile(`(?m)^[ \t]*</?pasted_content\b[^>\n]*>\n?|^[ \t]*</?pasted_content[ \t]+[A-Za-z_-]+=["'][^>\n]*$\n?|</?pasted_content[ \t]+[A-Za-z_-]+=(?:"[^"\n]*"|'[^'\n]*')[^>\n]*>`)
 
 // PromptTitle gives a turn's title from its prompt (reminders already removed), and
 // whether the title is synthetic: text Claude Code added by itself, which a session title
@@ -182,7 +183,12 @@ func promptTitle(text string, depth int) (string, bool) {
 	case strings.HasPrefix(s, usageResetOpen):
 		return withTail("(system) usage limit reset", s, usageResetEnd, false, depth)
 	}
-	return stripPasted(s), false
+	// Safety net: stripping must never turn a typed prompt into an empty title, which the
+	// overview would skip; fall back to the text as typed.
+	if t := stripPasted(s); t != "" {
+		return t, false
+	}
+	return s, false
 }
 
 // withTail finishes a synthetic opening whose text ends at a known marker. A message is
