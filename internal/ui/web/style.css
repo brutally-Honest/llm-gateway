@@ -356,13 +356,15 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .sp-list td.work, .sp-list td.tools, .sp-list td.changes, .sp-list td.dur, .sp-list td.tokens { white-space: nowrap; color: var(--text); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 /* below the page's full 1,600 px width, Work, Changes and Tokens wrap onto two lines, at
    the dots, so the Session column keeps its 20rem and nothing is cut (research D49, 020
-   D17); wider, they stay on one line */
+   D17); wider, Work and Changes stay on one line, and Tokens wraps at the dots at every
+   width since it holds four figures (spec 046 U2) */
 .sp-list td .seg { white-space: nowrap; }
 /* 1599px must stay one below .sessions-page, .page { max-width: 1600px } */
 @media (max-width: 1599px) {
 .sp-list td.work, .sp-list td.changes, .sp-list td.tokens { white-space: normal; min-width: 12.5rem; }
 .sessions-page > .sp-list td.work, .sessions-page > .sp-list td.changes, .sessions-page > .sp-list td.tokens { min-width: 0; }
 }
+.sp-list td.tokens { white-space: normal; }
 .sp-list td.work .bad { color: var(--bad); font-weight: 600; }
 .sp-list td.tokens .cost { display: block; white-space: nowrap; color: var(--muted); }
 /* A row whose facts are not built yet (spec 043 AC6): the cheap cells are real, and each heavy

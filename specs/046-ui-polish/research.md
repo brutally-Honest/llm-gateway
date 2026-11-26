@@ -14,7 +14,8 @@ feature: 046-ui-polish
 - 2026-11-26 step 2 U7 (haiku): a 404 view shows "Session not found." with a link to the list; any failed open clears the rail skeleton, 5bc3d16; 2 app tests, fake fetch takes an error body; make verify green.
 - 2026-11-26 step 2 U8 (haiku): an empty filtered list names the filter and/or search with a Clear that resets both in one history entry, cf34639; 4 tests, 4 expectations moved to the new text; make verify green.
 - 2026-11-26 step 2 U9 (haiku): a visible "reconnecting…" beside the live dot while the stream is down, gone on reconnect; aria-hidden since the dot already speaks, 8da3757; 1 test, 2 app assertions; make verify green.
-- 2026-11-26 step 2 U10 (haiku): the tool dialog's Input shows multi-line strings with real line breaks, Copy keeps the JSON (D7, D12) (this commit); 3 tests; make verify green.
+- 2026-11-26 step 2 U10 (haiku): the tool dialog's Input shows multi-line strings with real line breaks, Copy keeps the JSON (D7, D12), a60bc38; 3 tests; make verify green.
+- 2026-11-26 step 3 (partial): empty-cache start, 0 of 46 rows shrank at 1,440 and 2,560 px; at 2,560 px the four-figure Tokens cell was cut (U2 regression), fixed by wrapping Tokens at the dots at every width (D13, haiku) (this commit); make verify green.
 
 ## Findings
 
@@ -142,3 +143,12 @@ has 7 of 28 in this copy.
 - **D12** 2026-11-26 U10: a multi-line string's continuation lines are indented to its key's
   depth plus two spaces, so a long command stays visibly inside its key; the added spaces are
   display only, and Copy gives the exact JSON without them.
+- **D13** 2026-11-26 Step 3 found the four-figure Tokens cell cut at 2,560 px (fixed 231 px
+  column from 1,600 px, `nowrap`). Thesis: widen the column so the figures stay on one line,
+  as 043 laid out. Antithesis: any width is a guess at the font (Stark's figures are wider than
+  Lean's) and takes room from Session. Synthesis: Tokens wraps at the dots at every width, as it
+  already did below 1,600 px; no column moves. Flips if a later layout gives Tokens its own
+  flexible width.
+- **D14** 2026-11-26 With four figures, a filled row's Tokens cell takes three lines at 1,440 px
+  and two at 2,560 px, so rows are taller than before U2 (measured growth on fill up to 66 px at
+  1,440). Accepted: the rule is that rows never shrink, and a layout redesign is a non-goal.

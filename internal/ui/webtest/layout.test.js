@@ -203,8 +203,18 @@ test("sessionColumnKeepsItsMinimumAt1440", () => {
   assert.equal(rule(".sp-list td .seg")["white-space"], "nowrap", "they wrap only at the dots");
   assert.equal(rule(".sp-list td.tokens .cost")["display"], "block", "the cost is a line of its own");
   assert.equal(rule(".sp-list td.tokens .cost")["white-space"], "nowrap", "and never breaks inside");
-  // wider, every count cell stays on one line
+  // the base count rule is nowrap; wider, Work and Changes keep it, while Tokens is set to wrap at the dots by the rule that follows the media block (spec 046 U2, tested below)
   assert.equal(rule(".sp-list td.work, .sp-list td.tools, .sp-list td.changes, .sp-list td.dur, .sp-list td.tokens")["white-space"], "nowrap");
+});
+
+// spec 046 U2 (research D13): Tokens holds four figures, so it wraps at the dots at every
+// width, not only below 1,600 px; each figure is a .seg span that stays on one line.
+test("tokensWrapAtTheDotsAtEveryWidth", () => {
+  const outsideMedia = css.replace(/@media[^{]*\{[\s\S]*?\n\}\n/g, "");
+  const m = outsideMedia.match(/(^|\n)\.sp-list td\.tokens \{([^}]*)\}/);
+  assert.ok(m, "a rule outside any @media block styles .sp-list td.tokens");
+  assert.match(m[2], /(^|;)\s*white-space:\s*normal\s*(;|$)/, "Tokens wraps outside any media query");
+  assert.equal(rule(".sp-list td .seg")["white-space"], "nowrap", "each figure stays on one line");
 });
 
 // spec 027 C4 (Karthik, 2026-11-21): nothing shifts sideways when a scrollbar comes or goes:
