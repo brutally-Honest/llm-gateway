@@ -8,7 +8,8 @@ feature: 046-ui-polish
 - 2026-11-26 step 2 U1 (sonnet): 7aa2d79, turn and session titles from `PromptTitle`, story keeps the whole prompt; 7 timeline tests, a table test, 1 webtest; make verify green.
 - 2026-11-26 step 2 U2 (haiku): token cell and bar show cache write between output and cache read, e365ed5; 4 existing expectations moved from 3 figures to 4; make verify green.
 - 2026-11-26 step 2 U3 (haiku): a network failure or unreadable answer reads "The gateway is not answering." (code unreachable), the list keeps Retry, 2e3d87e; 7 api tests, 1 list test; make verify green.
-- 2026-11-26 step 2 U4 (haiku, one follow-up): a pending row reserves one line per heavy cell and a place line only with a folder, so rows only grow (this commit); 5 old assertions replaced, 1 test added; make verify green.
+- 2026-11-26 step 2 U4 (haiku, one follow-up): a pending row reserves one line per heavy cell and a place line only with a folder, so rows only grow, e8f98e3; 5 old assertions replaced, 1 test added; make verify green.
+- 2026-11-26 step 2 U5 (haiku): installer UI line, four doctor fix texts and the install.md row no longer claim a 30 s warm-up; grace logic kept (D6) (this commit); 1 test added, 2 extended; make verify green.
 
 ## Findings
 

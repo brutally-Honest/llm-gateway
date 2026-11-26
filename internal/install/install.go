@@ -654,7 +654,7 @@ func summary(e *Env, c Client, p Paths, pl plan, prev *State, cfg config.Config,
 		e.printf("Then run `gateway doctor`.\n")
 	}
 	if cfg.UI.Enabled {
-		e.printf("  UI         http://%s (it opens once its start-up warm-up ends, up to about 30 s on a large store)\n", cfg.UI.ListenAddr)
+		e.printf("  UI         http://%s\n", cfg.UI.ListenAddr)
 	}
 	if prev != nil {
 		from := prev.Version

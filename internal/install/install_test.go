@@ -543,6 +543,26 @@ func TestRunningGatewayPortsFree(t *testing.T) {
 	contains(t, f.out.String(), "7197 held by the running gateway")
 }
 
+// The summary's UI line is the address alone: the UI serves as soon as it binds (spec 030),
+// so no start-up warm-up is claimed.
+func TestSummaryUILineHasNoWarmupClaim(t *testing.T) {
+	f := newFake(t, "linux")
+	if code := f.install(InstallOptions{Yes: true}); code != ExitOK {
+		t.Fatalf("exit %d\n%s", code, f.out)
+	}
+	var ui string
+	for line := range strings.SplitSeq(f.out.String(), "\n") {
+		if strings.HasPrefix(line, "  UI ") {
+			ui = line
+		}
+	}
+	if ui != "  UI         http://127.0.0.1:7199" {
+		t.Fatalf("UI line = %q\n%s", ui, f.out)
+	}
+	lacks(t, ui, "warm-up")
+	lacks(t, ui, "30 s")
+}
+
 // A gateway that never answers /healthz fails the install with the log hint.
 func TestUnhealthyAfterInstall(t *testing.T) {
 	f := newFake(t, "linux")

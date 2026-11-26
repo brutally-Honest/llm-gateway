@@ -341,7 +341,7 @@ rewrite it.
 |---|---|---|
 | `claude` runs but nothing shows in the UI | the terminal predates the install, so the function is not defined | open a new terminal; `type claude` should say it is a shell function |
 | Claude Code stops answering (connection errors) while it runs `gateway uninstall` | the session goes through the gateway, and uninstall stopped it | uninstall now warns and asks first; answer no and run it from a plain terminal. To recover a cut-off session: `gateway install` from another terminal, or `systemctl --user start llm-gateway` |
-| The UI does not load right after install or a restart | it builds its sessions list before it accepts connections (up to about 30 s on a large store) | wait, then reload |
+| The UI does not load right after install or a restart | the gateway is still starting (the UI serves as soon as it binds its port) | wait a few seconds, then reload; if it still fails, run `gateway doctor` |
 | "llm-gateway is not running: starting plain Claude Code" | the gateway is stopped | `gateway doctor`; then `systemctl --user restart llm-gateway` or `launchctl kickstart -k gui/$(id -u)/dev.llm-gateway` |
 | `install.sh: checksum mismatch` | a corrupted or tampered download | run it again; if it repeats, report it and do not install |
 | `install.sh: this release has no build for …` | an unsupported OS or CPU | build from source |

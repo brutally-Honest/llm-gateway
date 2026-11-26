@@ -277,9 +277,22 @@ func TestDoctorUIUsesItsHealthRoute(t *testing.T) {
 		}
 		return 200, nil
 	}
-	// API up, UI silent, no start time to read: most likely the warm-up, so a warn.
-	if r := results(f)["listener-ui"]; r.Level != Warn || !strings.Contains(r.Detail, "most likely warming up") {
+	// API up, UI silent, no start time to read: most likely the gateway is still starting, so a warn.
+	r := results(f)["listener-ui"]
+	if r.Level != Warn || !strings.Contains(r.Detail, "most likely warming up") || !strings.Contains(r.Fix, "may still be starting") {
 		t.Fatalf("%+v", r)
+	}
+	lacksUIWarmupClaim(t, r)
+}
+
+// lacksUIWarmupClaim fails when a UI-listener Fix claims a start-up warm-up or a 30 s wait:
+// the UI serves as soon as it binds (spec 030).
+func lacksUIWarmupClaim(t *testing.T, r Result) {
+	t.Helper()
+	for _, bad := range []string{"30 s", "warm-up"} {
+		if strings.Contains(r.Fix, bad) {
+			t.Fatalf("Fix claims %q: %+v", bad, r)
+		}
 	}
 }
 
@@ -310,15 +323,18 @@ func TestDoctorUIWarmingUp(t *testing.T) {
 		}
 		return results(f)["listener-ui"]
 	}
-	if r := setup(12*time.Second, true); r.Level != Warn || !strings.Contains(r.Detail, "warming up, about 12 s since the gateway started") || !strings.Contains(r.Fix, "warm-up ends") {
+	if r := setup(12*time.Second, true); r.Level != Warn || !strings.Contains(r.Detail, "warming up, about 12 s since the gateway started") || !strings.Contains(r.Fix, "may still be starting") {
 		t.Fatalf("12 s: %+v", r)
 	}
+	lacksUIWarmupClaim(t, setup(12*time.Second, true))
 	if r := setup(5*time.Minute, true); r.Level != Fail || !strings.Contains(r.Detail, "300 s after the gateway started") {
 		t.Fatalf("5 min: %+v", r)
 	}
+	lacksUIWarmupClaim(t, setup(5*time.Minute, true))
 	if r := setup(12*time.Second, false); r.Level != Fail || r.Detail != "127.0.0.1:7199 does not answer" {
 		t.Fatalf("API down: %+v", r)
 	}
+	lacksUIWarmupClaim(t, setup(12*time.Second, false))
 }
 
 // Spec 025 AC5: a gateway failing its start under the service records the error;

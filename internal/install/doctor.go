@@ -225,15 +225,15 @@ func Diagnose(e *Env, c Client) []Result {
 // uiHealthPath is the UI listener's health route.
 const uiHealthPath = "/api/health"
 
-// uiWarmupGrace is how long after a start a silent UI counts as warming up, not broken:
-// the warm-up was 22.5 s on the real store (roadmap), so 120 s leaves room to grow.
+// uiWarmupGrace is how long after a start a silent UI counts as still starting, not broken.
+// The UI serves as soon as it binds its port (spec 030), so the grace covers a gateway that
+// is still starting; 120 s leaves room for a slow start.
 const uiWarmupGrace = 120 * time.Second
 
 var startTimeLine = regexp.MustCompile(`(?m)^process_start_time_seconds ([0-9.e+]+)$`)
 
-// uiWarming judges a UI that does not answer while the API does: the UI accepts only
-// after its start-up warm-up, so within uiWarmupGrace of the gateway's start it is a
-// warn, after it a fail. The start comes from process_start_time_seconds on the API's
+// uiWarming judges a UI that does not answer while the API does: the gateway may still be
+// starting, so within uiWarmupGrace of the gateway's start it is a warn, after it a fail. The start comes from process_start_time_seconds on the API's
 // /metrics (023 research D26).
 func uiWarming(e *Env, cfg config.Config, r Result, addr string) Result {
 	var started time.Time
@@ -254,15 +254,15 @@ func uiWarming(e *Env, cfg config.Config, r Result, addr string) Result {
 	case started.IsZero():
 		r.Level = Warn
 		r.Detail = addr + " not answering yet while the API does: most likely warming up"
-		r.Fix = "wait about 30 s and run doctor again; if it still fails, see the gateway's log"
+		r.Fix = "the gateway may still be starting: wait a few seconds and run doctor again; if it still fails, see the gateway's log"
 	case now().Sub(started) < uiWarmupGrace:
 		r.Level = Warn
 		r.Detail = fmt.Sprintf("%s warming up, about %d s since the gateway started", addr, int(now().Sub(started).Round(time.Second).Seconds()))
-		r.Fix = "the UI opens when its warm-up ends (about 20–30 s on a large store): wait and run doctor again"
+		r.Fix = "the gateway may still be starting: wait a few seconds and run doctor again"
 	default:
 		r.Level = Fail
 		r.Detail = fmt.Sprintf("%s does not answer, %d s after the gateway started", addr, int(now().Sub(started).Round(time.Second).Seconds()))
-		r.Fix = "past the warm-up: see the gateway's log (Login service) and check ui.listen_addr in the config"
+		r.Fix = "past the start-up grace: see the gateway's log (Login service) and check ui.listen_addr in the config"
 	}
 	return r
 }
@@ -305,7 +305,7 @@ func listenerChecks(e *Env, cfg config.Config, cfgOK bool) []Result {
 			r.Level, r.Detail = Fail, x.addr+" does not answer"
 			r.Fix = "start the gateway (see Login service); if it runs, check the port in the config"
 			if x.id == "listener-ui" {
-				r.Fix = "the UI accepts only after its start-up warm-up (up to about 30 s on a large store): wait and run doctor again; else start the gateway"
+				r.Fix = "start the gateway (see Login service); if it runs, check ui.listen_addr in the config"
 			}
 			if !cfgOK {
 				r.Fix = "fix the config first"
