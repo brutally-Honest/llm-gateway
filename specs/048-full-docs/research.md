@@ -3,7 +3,7 @@
 ## Progress
 - [x] 2026-11-26 branch chore/048-full-docs from up-to-date main; spec and research created
 - [x] 2026-11-26 group A: docs/what-gets-recorded.md (D4-D14)
-- [ ] group B: docs/architecture.md and UI docs
+- [x] 2026-11-26 group B: docs/architecture.md, docs/ui.md (D15-D20)
 - [ ] group C: README.md and docs/getting-started.md
 - [ ] group D: AGENTS.md / PLAN.md rules, stale-docs sweep, links
 - [ ] review round 1
@@ -58,6 +58,28 @@
   subscription) but no account id; left out any claim about how Claude Code names accounts.
 - **D14** 2026-11-26 Left out: ports, hooks install detail, the full effects scope rules
   (extra_dirs, ignored folders). They belong to claude-code.md and architecture.md (group B).
+- **D15** 2026-11-26 Ports: the brief's list is right but incomplete. `/metrics` is also on the UI
+  listener (7199), and `/api/health` is UI-only; the hooks route is `/_gateway/hooks/{client}` on
+  7197. architecture.md says so. The proxy listeners start only with capture, `effects.enabled`
+  and `effects.network.enabled`; the UI only with capture and `ui.enabled`.
+- **D16** 2026-11-26 Shutdown order in architecture.md follows `captureRun.close`: hub closed and UI
+  work cancelled first, hook sink, effects, capture queue drain (budget of its own, one
+  `shutdown_timeout`), then the 5 s UI wait (`uiWorkTimeout`), then reader and store. The 2 s UI
+  server stop (`uiStopTimeout`) is also named, since it happens before the drain.
+- **D17** 2026-11-26 View-cache key: the build folder name hashes format, version, executable hash,
+  attribution skew, home folder and time zone, so "keyed on the binary" is true but incomplete;
+  the page says so (a new binary gives a new folder, empty after every install).
+- **D18** 2026-11-26 ui.md is the one home for UI description. Replaced one passage in
+  docs/install.md (the list filling in, under "The UI's view cache") with a pointer. Left alone on
+  purpose: docs/roadmap.md (a history of specs, not a description), the chip table in
+  claude-code-hooks.md (owned by the hooks doc, which ui.md links), README.md (group C).
+- **D19** 2026-11-26 docs/observability.md already matched the code on health (200 on degraded,
+  banner text, per-tab dismissal, restart or higher count brings it back). No sentence changed.
+- **D20** 2026-11-26 Session-page recovery: the code has no Retry button on a failed session view; it
+  shows the message and "Turns not loaded.", and a 504 gets one automatic retry after 1 s with
+  "building session…". ui.md says "reload the page" and offers Retry only where the code has one
+  (sessions list, the "Details are not available yet" line). Search matches client, session key,
+  id, folder, title and models (`searchVerdict`), so ui.md lists those.
 
 ## Notes
 
@@ -108,3 +130,79 @@ Stale or doubtful statements in OTHER docs (not fixed; group D):
 4. docs/clients/claude-code-hooks.md:10-13 — says hooks go in ~/.claude/settings.json at user scope; the installer puts them in the gateway's own settings file loaded by `--settings` (internal/clients/claudecode/snippet.go:50-70, install.go:100). Check whether the page still describes the intended path.
 5. docs/install.md:47 and :195-199 vs docs/clients/claude-code.md:192-194 — install.md offers an AppArmor profile fix; claude-code.md calls `allowAllUnixSockets` an untested workaround; docs/roadmap.md:140 says to test it. Not contradictory, but the three should be kept consistent by group D (the new page claims no fix).
 6. docs/capture.md:88 area and docs/clients/claude-code.md:313 — "HTTPS ... never decrypted" not re-checked here beyond internal/netproxy recording fields; reviewer to confirm.
+
+### Group B evidence
+Claims in docs/architecture.md and docs/ui.md.
+- Ports 7197/7198/7195/7199 and settings — internal/config/config.go:103, internal/config/effects.go:118-119, internal/config/ui.go:25
+- /healthz and /metrics on the API listener — internal/server/server.go:58-60; hooks route `/_gateway/hooks/{client}` — internal/hooks/handler.go:16; other `/_gateway/*` is 404 — internal/server/server.go:68
+- Adapter prefix `/anthropic/*` — internal/protocols/anthropic/adapter.go:25, internal/core/registry.go:123-126
+- UI listener: /metrics, /api/health, GET only, host and origin checks — internal/ui/ui.go:124-131, internal/ui/middleware.go:73-114
+- Port 7196 kept free — docs/install.md:36 (not re-checked in code)
+- Proxy listeners need effects and network enabled; UI needs capture and ui.enabled — cmd/gateway/run.go:746-749, 242-248, 712-716
+- Hooks route always mounted; capture off answers and counts only — cmd/gateway/run.go:~300 comment "The hook route is always mounted"
+- Rate limiter mounted only when enabled, per key, fixed window, in memory — cmd/gateway/run.go:266-281, internal/config/ratelimit.go:7-37
+- ReverseProxy with Rewrite and tees — internal/core/proxy.go:55-59, internal/core/tee.go:106-166
+- Submit never waits, drops and counts when full — internal/capture/sink.go:102-115; N workers over a bounded channel — internal/capture/sink.go:90-95; defaults queue 256, workers 2 — internal/config/capture.go:33-34
+- Raw exchange stored first, then parse, then events — internal/capture/pipeline.go:25-45
+- Commit calls the hub — cmd/gateway/run.go:661 (`cfg.OnCommit = hub.Publish`)
+- SQLite WAL, pure-Go driver, one writer — internal/store/store.go:1-4, 154; blobs over 4 KiB, sha256, zstd — internal/store/content.go:18
+- UI reads through a read-only reader — cmd/gateway/run.go:639, internal/store/reader.go:19-22, 74
+- Hook sink has its own queue — cmd/gateway/run.go (hooks.NewSink), docs/clients/claude-code-hooks.md:123-125
+- Timeline, cost, effects packages as described — package listing of internal/ (go files), internal/timeline/view.go, internal/cost/cost.go:1-5
+- View cache location, `m/` and `v/`, modes 0600/0700 — internal/ui/disk_cache.go:29-60
+- View cache limits 32 MiB per view, 1 GiB per build — internal/ui/disk_cache.go:54-56
+- View cache build key (format, version, exe hash, skew, home, zone) — internal/ui/disk_cache.go:178-181, 236-239; entry key adds session version — internal/ui/disk_cache.go:338-340
+- Store behind cache deletes the build folder; cache open failure runs from memory — internal/ui/disk_cache.go:266-295, cmd/gateway/run.go:652-656
+- Debounce 150 ms — internal/ui/stream.go:275; heartbeat 15 s, 32 streams — internal/ui/hub.go:25,29; reopen 1 s growing to 30 s — internal/ui/web/api.js:78-79
+- Stream routes /api/stream and /api/sessions/{id}/stream?view=1 — internal/ui/stream.go:21-22, 295-311; spec 040 incremental state — specs/040-incremental-live-updates/spec.md (not re-proved in code: only the debounce and "only changed turns" in stream.go:277-290)
+- "A few cases still fall back to a full build" — NOT VERIFIABLE IN CODE here: taken from docs/roadmap.md:17-20 (040 entry)
+- Shutdown order and figures — cmd/gateway/run.go:1000-1024 (close), 1026-1040 (waitUIWork), 503-510 (2 s, 2 s, 5 s, 2 s consts), 388-440 (stop sequence); shutdown_timeout default 10 s — internal/config/config.go:105; "recorded as cut by the gateway" — cmd/gateway/run.go (srv.Cancel(core.ErrShutdown))
+- last-shutdown.json — docs/observability.md:26-28 (not re-checked in code)
+- healthz 200 on degraded, with reason — internal/server/server.go:44-47, 129-138; shell function `curl -fsS --max-time 1 <health> && command claude --settings` — internal/clients/claudecode/install.go:98-108
+- Banner text, dismissal per tab, returns on higher count or new since — internal/ui/web/health.js:8-12, 21-32, 15-second poll health.js:2; shell.js:151-166, 210-224
+- Four counters — internal/observability/health.go:14-82; doctor warns — internal/install/doctor.go:340
+- "[content unavailable]" per block — internal/timeline/build.go:22, 501-541
+- Page title "Sessions" and "today" — internal/ui/web/sessions-page.js:~575-580 (h1 + `sp-when`, title "since local midnight")
+- Tiles — sessions-page.js todayCells/drawToday (stat() calls); sparklines on sessions and model calls — same
+- Columns, "Last active", status glyphs — sessions-page.js COLUMNS (line ~486-489), statusOf (line ~93)
+- Pinned header — internal/ui/web/style.css:313 (`.sp-list th` sticky); webtest sticky-header.test.js
+- PAGE_SIZE 50, Previous/Next, "Page N of M" — sessions-page.js (PAGE_SIZE, pagerBtn, drawPager text)
+- Pending rows, "Details loading", bars, "still being checked", "Details are not available yet", Retry — sessions-page.js:7-10, 625-637, drawStatus; style.css:383-388
+- Filters All / Needs a look / Active / Hooks only; box "Filter sessions"; label "Show" — sessions-page.js FILTER_LABELS, 581-587
+- Search fields — internal/ui/api_sessions.go:searchVerdict; 200-byte cap — internal/ui/web/route.js:6-20; Esc clears — sessions-page.js:~688
+- No-match text and Clear — sessions-page.js drawNoMatch; "No sessions captured yet." — sessions-page.js (shown.length === 0 branch)
+- Ungrouped link text — sessions-page.js ungroupedText; "Unassigned connections (N)", first 10, "All N unassigned connections →" — sessions-page.js UNASSIGNED_SHOWN and unassignedSection
+- Turns rail, "background task", clamp title, duration — session-page.js:43-50, 229-250
+- Title rule and list of "(system)" titles — internal/clients/claudecode/rules.go:140-195, 290-347; session title skips synthetic — specs/046-ui-polish/spec.md U1 and internal/timeline/digest.go:151-169
+- Overview, Time, Context, "Needs a look", "and N more", cap 8 — session-page.js:257-305; internal/timeline/view_overview.go:12-13
+- Cost label "API-equivalent", partial "≥" — internal/ui/web/cost.js:6-10, 45-55; session-page.js:312-318
+- "A model with no price is left out" — cost.js:46-47 (hover "no price for"), internal/cost/cost.go:72-75
+- Side calls disclosure text — session-page.js:321-332
+- Tabs Story/Files/Commands/Sites/Context — session-page.js:120, side-card.js:10-13
+- Chips list — docs/clients/claude-code-hooks.md:78-85; tool-card.js chip rendering
+- Preview/Raw, stored in the browser — story.js:238-245 (localStorage key `gw.textMode`); session-page.js:126-139
+- Files: Changed/Read/Searched, By file/By turn — side-card.js:150-196
+- Context tab, token counts incl. cache write — side-card.js:312-324
+- Call details sections, URL changes — call-dialog.js:308, 354; internal/ui/web/route.js:60-62
+- "Session not found" and link back — app.js:658, session-page.js:420-422
+- Live dot, "reconnecting…", snapshot failed text — app.js:533-538; shell.js:230-240
+- Stream only for active sessions — app.js:665-670; list stream — app.js:548
+- "The gateway is not answering." and Retry on list — api.js:1-10, sessions-page.js:840-847; webtest api.test.js
+- "building session…" and one retry after 1 s — app.js:573-584, 654
+- "Turns not loaded." — session-page.js:412; "No such call in this session." — app.js:619
+- "Call details unavailable:" — call-dialog.js:436
+- Banner "details" link to /api/health, × button — shell.js:150-162
+- Settings: Theme Light/Dark, Style Lean/Stark; keys `theme` and `style` in localStorage; defaults dark and lean; OS theme ignored; applied before paint — internal/ui/web/theme.js:1-76, boot.js:1-17, shell.js:60-105
+- Stark "monospace capital labels", square corners — style.css:92-105
+- "per browser and per address" — NOT VERIFIABLE IN CODE: browser localStorage is per origin; worded from that fact
+- Shortcuts — internal/ui/web/keys.js:3-12, 39-69; "?" help — shell.js:177-190; arrow keys on tabs — keys.js comment (line 5-8), not re-proved in side-card.js
+- "UI accepts only GET" — internal/ui/middleware.go:106-114
+- Screenshot placeholder is an HTML comment only; no images added.
+
+Stale or doubtful statements in OTHER docs (not fixed; group D):
+1. docs/install.md:195-199 and 47 — AppArmor fix text vs claude-code.md:192 "untested workaround" (see group A item 5); unchanged.
+2. docs/clients/claude-code.md:116-119 — shutdown paragraph says "Captures then finish storing, so a stop with nothing in flight takes well under a second"; code (run.go:1000-1040) also waits for the UI's background work up to 5 s, which is usually instant. Not wrong, but incomplete next to architecture.md.
+3. docs/roadmap.md:28 — 029 and 027 entries describe UI details (50 rows, "whole-row link", "newest first", day tiles) that ui.md now owns; left as history. Check "a session is one page scroll of turn cards, newest first" (027): the session page now has a Turns rail and tabs (session-page.js:8-10 comment), so the entry no longer describes the page.
+4. docs/clients/claude-code.md:315-317 — "linked to the one session active in the last 10 minutes": same wording issue as group A item 3 (code: a hook event inside the window and no session end).
+5. docs/clients/claude-code-hooks.md:118-122 — "its ungrouped list has no hook entries" and "known v1 gap": not re-checked against ungrouped-list.js.
+6. docs/install.md:268 (fixed in this group) described rows as showing "start time"; the first column is "Last active".

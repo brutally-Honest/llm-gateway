@@ -265,10 +265,8 @@ over 32 MiB is not cached, and the folder is kept under 1 GiB (the oldest views 
 Folders are 0700 and files 0600. There is no config key for it.
 
 The cache is empty right after an install or an upgrade (it is tied to the gateway binary) and
-on a new install. The sessions list still answers at once: each row shows its start time,
-folder and status straight away, and its title, work, changes, time and tokens fill in over a
-few seconds as they are built, the page you are looking at first. A filtered list or search
-says how many sessions are still being checked until they are done.
+on a new install. The sessions list still answers at once and fills in the details over a few
+seconds; see [ui.md](ui.md#the-list).
 
 ### Check: capture-health
 Reads the `/healthz` body. **Pass** when no capture data was lost since the gateway started;
