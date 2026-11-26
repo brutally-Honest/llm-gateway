@@ -52,7 +52,7 @@ func (vd viewDeps) sessionViewChecked(c viewReader, who sessIdent, bs builtSessi
 	content := func(hash string) []byte {
 		b, err := c.Content(hash)
 		if err != nil {
-			if !errors.Is(err, store.ErrNotFound) {
+			if !errors.Is(err, store.ErrNotFound) && !errors.Is(err, store.ErrContentUnavailable) {
 				failed.Store(true)
 			}
 			return nil

@@ -17,8 +17,9 @@ import (
 // entry keeps unless Options.Full is set.
 const DefaultEntryLimit = 2000
 
-// NotStored is the text of a block whose content the store does not hold.
-const NotStored = "[content not stored]"
+// Unavailable is the text of a block whose content the store cannot supply: the hash has
+// no row, or its blob is missing or unreadable.
+const Unavailable = "[content unavailable]"
 
 // Source is what Build reads. *store.Reader satisfies it.
 type Source interface {
@@ -141,7 +142,7 @@ type thread struct {
 
 // Build lists a session's entries: exchanges by start time then request id, each
 // reduced to what it adds to the best-matching earlier exchange. A source error is
-// returned; missing content is shown as NotStored.
+// returned; missing content is shown as Unavailable.
 func Build(src Source, session store.SessionRow, opts Options) ([]Entry, error) {
 	out, _, err := BuildWithUsage(src, session, opts)
 	return out, err
@@ -497,7 +498,7 @@ func content(src Source, hash string) ([]byte, error) {
 		return nil, nil
 	}
 	b, err := src.Content(hash)
-	if errors.Is(err, store.ErrNotFound) {
+	if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrContentUnavailable) {
 		return nil, nil
 	}
 	if err != nil {
@@ -512,7 +513,7 @@ func rawContent(src Source, hash string) (string, error) {
 		return "", err
 	}
 	if b == nil {
-		return NotStored, nil
+		return Unavailable, nil
 	}
 	return string(b), nil
 }
@@ -525,7 +526,7 @@ func toolResultText(src Source, hash string) (string, error) {
 		return "", err
 	}
 	if b == nil {
-		return NotStored, nil
+		return Unavailable, nil
 	}
 	var s string
 	if json.Unmarshal(b, &s) == nil {
@@ -537,7 +538,7 @@ func toolResultText(src Source, hash string) (string, error) {
 // blockText is the block's "text" string, else the block as stored.
 func blockText(raw []byte) string {
 	if raw == nil {
-		return NotStored
+		return Unavailable
 	}
 	var t struct {
 		Text *string `json:"text"`

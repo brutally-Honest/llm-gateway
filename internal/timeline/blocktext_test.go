@@ -14,7 +14,7 @@ func TestBlockText_TextFieldElseRawJSON(t *testing.T) {
 			t.Errorf("blockText(%s) = %q, want %q", c.in, got, c.want)
 		}
 	}
-	if got := blockText(nil); got != NotStored {
+	if got := blockText(nil); got != Unavailable {
 		t.Errorf("nil = %q", got)
 	}
 }

@@ -769,8 +769,8 @@ func TestDiskCache_ViewOfAnOlderBuildNotWritten(t *testing.T) {
 	}
 }
 
-// A content read that fails for a reason other than not-found makes a result that is
-// served and kept nowhere: not in memory, not on disk.
+// A content read that fails for a reason other than not-found or unavailable (here a row the
+// reader cannot scan) makes a result that is served and kept nowhere: not in memory, not on disk.
 func TestDiskCache_ContentErrorIsCachedNowhere(t *testing.T) {
 	e := newDiskEnv(t)
 	e.call("a", 1, 0, 0, "user:fix the retry")
@@ -784,10 +784,18 @@ func TestDiskCache_ContentErrorIsCachedNowhere(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := store.ContentHash(copyOf)
-	blob := filepath.Join(e.dir, "blobs", h[:2], h[2:])
-	if err := os.Remove(blob); err != nil {
-		t.Fatalf("the copy is not a blob file: %v", err)
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(e.dir, store.DBName)+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatal(err)
 	}
+	res, err := db.Exec("UPDATE content SET size = 'not-a-number' WHERE hash = ?", h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		t.Fatalf("corrupted %d content rows, want 1", n)
+	}
+	_ = db.Close()
 
 	e.mustGet("/api/sessions/" + sid() + "/view") // served
 	e.mustGet("/api/sessions/" + sid())
@@ -810,12 +818,40 @@ func TestDiskCache_ContentErrorIsCachedNowhere(t *testing.T) {
 	}
 }
 
+// A blob that is gone is not a failed read (spec 045 D1): the view and the list are served
+// with a placeholder for the block, and the result is not marked degraded.
+func TestDiskCache_UnavailableBlobIsNotDegraded(t *testing.T) {
+	e := newDiskEnv(t)
+	e.call("a", 1, 0, 0, "user:fix the retry")
+	copyOf := bytes.Repeat([]byte("line\n"), store.InlineMax) // over InlineMax: a blob file
+	id := store.SessionIdent{Principal: core.PrincipalLocal, Client: "cc", Key: "k"}
+	cp := store.Checkpoint{Copies: [][]byte{copyOf}, Effects: []core.Effect{{Kind: core.EffectFileChange,
+		At: baseTime.Add(2 * time.Second), Principal: id.Principal, Client: id.Client, SessionKey: id.Key, Root: "/w",
+		Path: "/w/a.txt", Change: core.FileCreated, Size: int64(len(copyOf)), Mode: "git", AfterHash: store.ContentHash(copyOf)}},
+		Upserts: []store.SnapshotRow{{Root: "/w"}}}
+	if err := e.s.SaveCheckpoint(t.Context(), id, cp); err != nil {
+		t.Fatal(err)
+	}
+	h := store.ContentHash(copyOf)
+	blob := filepath.Join(e.dir, "blobs", h[:2], h[2:])
+	if err := os.Remove(blob); err != nil {
+		t.Fatalf("the copy is not a blob file: %v", err)
+	}
+
+	e.mustGet("/api/sessions/" + sid() + "/view") // served
+	e.mustGet("/api/sessions/" + sid())
+	e.flush()
+	if pe, ok := e.dep.Digests.peek(id); ok && pe.memo.degraded {
+		t.Error("a missing blob degraded the digest memo")
+	}
+}
+
 // sessionViewChecked reports a content failure other than not-found and ignores not-found.
 func TestSessionView_DegradedOnlyForRealContentErrors(t *testing.T) {
 	for _, tc := range []struct {
 		err  error
 		want bool
-	}{{errors.New("i/o"), true}, {context.DeadlineExceeded, true}, {store.ErrNotFound, false}, {nil, false}} {
+	}{{errors.New("i/o"), true}, {context.DeadlineExceeded, true}, {store.ErrNotFound, false}, {store.ErrContentUnavailable, false}, {nil, false}} {
 		r := fakeViewReader{err: tc.err}
 		_, degraded, err := viewDeps{}.sessionViewChecked(r, sessIdent{core.PrincipalLocal, "cc", "k"}, builtSession{}, nil, false, "")
 		if err != nil || degraded != tc.want {

@@ -307,3 +307,46 @@ func TestReader_UnknownID(t *testing.T) {
 		}
 	}
 }
+
+// A content row whose blob cannot be read is ErrContentUnavailable; a hash with no row is
+// ErrNotFound and never ErrContentUnavailable.
+func TestReader_ContentUnavailableBlob(t *testing.T) {
+	dir := t.TempDir()
+	log, _ := newLogger()
+	s, err := store.Open(dir, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	gone, bad := noise(inlineMax*2, 11), noise(inlineMax*2, 12)
+	if err := s.SaveExchange(t.Context(), exchange("r1", gone, bad)); err != nil {
+		t.Fatal(err)
+	}
+	r := openReader(t, dir)
+	blob := func(b []byte) string {
+		h := sum(b)
+		return filepath.Join(dir, "blobs", h[:2], h[2:])
+	}
+	if _, err := r.Content(sum(gone)); err != nil {
+		t.Fatalf("undamaged: %v", err)
+	}
+	if err := os.Remove(blob(gone)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(blob(bad), []byte("not zstd at all"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for name, b := range map[string][]byte{"deleted": gone, "corrupt": bad} {
+		_, err := r.Content(sum(b))
+		if !errors.Is(err, store.ErrContentUnavailable) || errors.Is(err, store.ErrNotFound) {
+			t.Errorf("%s: err = %v, want ErrContentUnavailable only", name, err)
+		}
+		if err != nil && !strings.Contains(err.Error(), blob(b)) {
+			t.Errorf("%s: error %q does not name the blob path", name, err)
+		}
+	}
+	_, err = r.Content(sum([]byte("never stored")))
+	if !errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrContentUnavailable) {
+		t.Errorf("unknown hash: err = %v, want ErrNotFound only", err)
+	}
+}

@@ -235,14 +235,14 @@ func (r *Reader) contentCtx(ctx context.Context, hash string) ([]byte, error) {
 	path := filepath.Join(r.dir, blobDirName, hash[:2], hash[2:])
 	compressed, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("blob %s: %w", path, err)
+		return nil, fmt.Errorf("blob %s: %w: %w", path, ErrContentUnavailable, err)
 	}
 	out, err := r.dec.DecodeAll(compressed, make([]byte, 0, size))
 	if err != nil {
-		return nil, fmt.Errorf("blob %s: %w", path, err)
+		return nil, fmt.Errorf("blob %s: %w: %w", path, ErrContentUnavailable, err)
 	}
 	if int64(len(out)) != size {
-		return nil, fmt.Errorf("blob %s: %d bytes, the row says %d", path, len(out), size)
+		return nil, fmt.Errorf("blob %s: %w: %d bytes, the row says %d", path, ErrContentUnavailable, len(out), size)
 	}
 	return out, nil
 }

@@ -14,6 +14,10 @@ import (
 // ErrNotFound is returned for an exchange the store does not hold.
 var ErrNotFound = errors.New("not found")
 
+// ErrContentUnavailable is returned for content the store has a row for but cannot
+// read: its blob file is missing, unreadable, corrupt or the wrong size.
+var ErrContentUnavailable = errors.New("content unavailable")
+
 // SaveExchange stores one captured exchange: its row, and both bodies by the sha256
 // of the bytes as captured (a gzip body is hashed as gzip). An empty body is stored
 // as no body. One transaction, after the bodies' blobs are on disk.
