@@ -307,3 +307,112 @@ func TestReader_UnknownID(t *testing.T) {
 		}
 	}
 }
+
+// Only a permanent blob failure is ErrContentUnavailable: a blob that is a symlink loop
+// (ELOOP, a failure that may pass) is a plain error; a permission-denied blob, a directory
+// at the blob path (EISDIR) and a file where the blobs/xx directory belongs (ENOTDIR) are
+// unavailable.
+func TestReader_TransientBlobErrorIsNotUnavailable(t *testing.T) {
+	dir := t.TempDir()
+	log, _ := newLogger()
+	s, err := store.Open(dir, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	loop, noPerm := noise(inlineMax*2, 21), noise(inlineMax*2, 22)
+	asDir, badLayout := noise(inlineMax*2, 23), noise(inlineMax*2, 24)
+	if err := s.SaveExchange(t.Context(), exchange("r1", loop, noPerm)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveExchange(t.Context(), exchange("r2", asDir, badLayout)); err != nil {
+		t.Fatal(err)
+	}
+	r := openReader(t, dir)
+	blob := func(b []byte) string {
+		h := sum(b)
+		return filepath.Join(dir, "blobs", h[:2], h[2:])
+	}
+	if err := os.Remove(blob(loop)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(blob(loop), blob(loop)); err != nil {
+		t.Fatal(err)
+	}
+	_, err = r.Content(sum(loop))
+	if err == nil || errors.Is(err, store.ErrContentUnavailable) || errors.Is(err, store.ErrNotFound) {
+		t.Errorf("symlink-loop blob: err = %v, want a plain error", err)
+	}
+	if err := os.Remove(blob(asDir)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(blob(asDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Content(sum(asDir)); !errors.Is(err, store.ErrContentUnavailable) {
+		t.Errorf("directory at the blob path: err = %v, want ErrContentUnavailable", err)
+	}
+	badDir := filepath.Dir(blob(badLayout))
+	if err := os.Rename(badDir, badDir+".away"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(badDir, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Content(sum(badLayout)); !errors.Is(err, store.ErrContentUnavailable) {
+		t.Errorf("file where the blob directory belongs: err = %v, want ErrContentUnavailable", err)
+	}
+	if os.Geteuid() == 0 {
+		return
+	}
+	if err := os.Chmod(blob(noPerm), 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(blob(noPerm), 0o600) })
+	if _, err := r.Content(sum(noPerm)); !errors.Is(err, store.ErrContentUnavailable) {
+		t.Errorf("chmod 000 blob: err = %v, want ErrContentUnavailable", err)
+	}
+}
+
+// A content row whose blob cannot be read is ErrContentUnavailable; a hash with no row is
+// ErrNotFound and never ErrContentUnavailable.
+func TestReader_ContentUnavailableBlob(t *testing.T) {
+	dir := t.TempDir()
+	log, _ := newLogger()
+	s, err := store.Open(dir, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	gone, bad := noise(inlineMax*2, 11), noise(inlineMax*2, 12)
+	if err := s.SaveExchange(t.Context(), exchange("r1", gone, bad)); err != nil {
+		t.Fatal(err)
+	}
+	r := openReader(t, dir)
+	blob := func(b []byte) string {
+		h := sum(b)
+		return filepath.Join(dir, "blobs", h[:2], h[2:])
+	}
+	if _, err := r.Content(sum(gone)); err != nil {
+		t.Fatalf("undamaged: %v", err)
+	}
+	if err := os.Remove(blob(gone)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(blob(bad), []byte("not zstd at all"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for name, b := range map[string][]byte{"deleted": gone, "corrupt": bad} {
+		_, err := r.Content(sum(b))
+		if !errors.Is(err, store.ErrContentUnavailable) || errors.Is(err, store.ErrNotFound) {
+			t.Errorf("%s: err = %v, want ErrContentUnavailable only", name, err)
+		}
+		if err != nil && !strings.Contains(err.Error(), blob(b)) {
+			t.Errorf("%s: error %q does not name the blob path", name, err)
+		}
+	}
+	_, err = r.Content(sum([]byte("never stored")))
+	if !errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrContentUnavailable) {
+		t.Errorf("unknown hash: err = %v, want ErrNotFound only", err)
+	}
+}

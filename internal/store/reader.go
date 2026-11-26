@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/klauspost/compress/zstd"
 )
@@ -204,7 +206,9 @@ func scanExchange(row rowScanner) (ExchangeRow, error) {
 }
 
 // Content reads the content stored under hash, inline or from its blob,
-// decompressed. A hash the store doesn't hold is ErrNotFound.
+// decompressed. A hash the store doesn't hold is ErrNotFound. A blob that is missing,
+// not permitted, corrupt or the wrong size is ErrContentUnavailable (permanent); any
+// other read failure is a plain error and may succeed on a retry.
 func (r *Reader) Content(hash string) ([]byte, error) {
 	return r.contentCtx(context.Background(), hash)
 }
@@ -235,14 +239,24 @@ func (r *Reader) contentCtx(ctx context.Context, hash string) ([]byte, error) {
 	path := filepath.Join(r.dir, blobDirName, hash[:2], hash[2:])
 	compressed, err := os.ReadFile(path)
 	if err != nil {
+		// Permanent means a retry cannot succeed: the blob is not there, permission is
+		// denied, or the on-disk layout is wrong (ENOTDIR: a file where the blobs/xx
+		// directory should be; EISDIR: a directory at the blob path), plus the undecodable
+		// and wrong-size cases below. Those are "unavailable". Anything else (EIO, EMFILE,
+		// ELOOP ...) is a failed read that may pass: it stays a plain error, is retried
+		// and is cached nowhere.
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) ||
+			errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.EISDIR) {
+			return nil, fmt.Errorf("blob %s: %w: %w", path, ErrContentUnavailable, err)
+		}
 		return nil, fmt.Errorf("blob %s: %w", path, err)
 	}
 	out, err := r.dec.DecodeAll(compressed, make([]byte, 0, size))
 	if err != nil {
-		return nil, fmt.Errorf("blob %s: %w", path, err)
+		return nil, fmt.Errorf("blob %s: %w: %w", path, ErrContentUnavailable, err)
 	}
 	if int64(len(out)) != size {
-		return nil, fmt.Errorf("blob %s: %d bytes, the row says %d", path, len(out), size)
+		return nil, fmt.Errorf("blob %s: %w: %d bytes, the row says %d", path, ErrContentUnavailable, len(out), size)
 	}
 	return out, nil
 }

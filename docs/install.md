@@ -270,6 +270,11 @@ folder and status straight away, and its title, work, changes, time and tokens f
 few seconds as they are built, the page you are looking at first. A filtered list or search
 says how many sessions are still being checked until they are done.
 
+### Check: capture-health
+Reads the `/healthz` body. **Pass** when no capture data was lost since the gateway started;
+**warn** when it is degraded, with the lost count and the reason. The gateway still proxies
+while degraded. See [Capture health](observability.md#capture-health) for each counter and its fix.
+
 ### Check: settings
 `~/.config/llm-gateway/claude-settings.json` exists and points at this gateway (its
 `ANTHROPIC_BASE_URL` and every hook URL). **Fix:** `gateway install` rewrites it from your
@@ -349,6 +354,8 @@ rewrite it.
 | `claude` is defined twice | a hand-written function beside the managed block | `gateway install`, and say yes to replacing it |
 | The gateway won't start, or doctor and install stop, with `listen_addr "0.0.0.0:7197": not loopback: v1 has no auth, and captures hold prompts and secrets as sent; use 127.0.0.1, ::1 or localhost` (or the same for `ui.listen_addr` or an `effects.network` proxy address) | a listener is set to a host other than loopback: `0.0.0.0`, `::`, an empty host, a LAN IP or a hostname. v1 refuses it, with no override, because anyone who can reach the port could read every capture | set the key named in the message to a `127.0.0.1` address (or `::1`, `localhost`) in `~/.config/llm-gateway/config.yaml`, or unset the `GATEWAY_*` env var that sets it, then `gateway doctor`. To use the gateway from another machine, tunnel to it (`ssh -L 7197:127.0.0.1:7197 <host>`) |
 | `gateway: command not found` (Linux) | `~/.local/bin` is not on PATH | add `export PATH="$HOME/.local/bin:$PATH"` to your startup file, or run `~/.local/bin/gateway doctor` |
+| The UI shows "capture degraded: N lost since start"; doctor warns Capture health | the gateway dropped or could not store capture data since it started; the reason names which | see the counters in [Capture health](observability.md#capture-health); fix the cause (space, permissions, queue sizes), then restart the gateway to clear the count |
+| A message shows `[content unavailable]` | its blob file under `capture.dir/blobs` is missing or unreadable, or could not be written | check permissions and free space of `capture.dir`; the rest of the session is unaffected |
 
 ## Releases
 

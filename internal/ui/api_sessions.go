@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -367,7 +368,9 @@ type memoSource interface {
 // computeMemo computes a session's stats, digest and list-row facts from one read of its
 // exchanges, with each exchange's events loaded once for all three. The row facts come
 // from the session's view, so the list counts in the session page's terms (spec 017 AC1).
-func computeMemo(src memoSource, vd viewDeps, row store.SessionRow) (digestMemo, error) {
+func computeMemo(base memoSource, vd viewDeps, row store.SessionRow) (digestMemo, error) {
+	seen := &absentSource{memoSource: base}
+	var src memoSource = seen
 	rules := vd.rules[row.Client]
 	exs, err := src.SessionExchanges(row.PrincipalID, row.Client, row.SessionKey)
 	if err != nil {
@@ -392,11 +395,28 @@ func computeMemo(src memoSource, vd viewDeps, row store.SessionRow) (digestMemo,
 		return digestMemo{}, err
 	}
 	// the facts read here do not depend on the active flag
-	v, degraded, err := vd.sessionViewChecked(src, who, bs, hooks, false, "")
+	v, degraded, viewPartial, err := vd.sessionViewPartial(src, who, bs, hooks, false, "")
 	if err != nil {
 		return digestMemo{}, err
 	}
-	return digestMemo{digest: dg, stats: st, row: rowFactsOf(v), degraded: degraded}, nil
+	return digestMemo{digest: dg, stats: st, row: rowFactsOf(v), degraded: degraded,
+		partial: viewPartial || seen.absent.Load()}, nil
+}
+
+// absentSource notes a content read that found nothing stored or an unavailable blob. The
+// digest reads content through timeline, which turns both into "no content", so this is
+// where a memo learns its digest was built without some block.
+type absentSource struct {
+	memoSource
+	absent atomic.Bool
+}
+
+func (a *absentSource) Content(hash string) ([]byte, error) {
+	b, err := a.memoSource.Content(hash)
+	if hash != "" && (errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrContentUnavailable)) {
+		a.absent.Store(true)
+	}
+	return b, err
 }
 
 // summarizeRows builds the summaries of rows (ids[i] is rows[i]'s id), waiting for a

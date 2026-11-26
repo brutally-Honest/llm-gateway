@@ -314,11 +314,24 @@ func (d Deps) effectContent(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if contentGone(w, err) {
+		return
+	}
 	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
 	writeJSON(w, contentJSON{Path: e.Path, Content: string(body), Valid: utf8.Valid(body)})
+}
+
+// contentGone answers 404 content_unavailable when err says the stored content cannot be
+// read, and reports whether it did.
+func contentGone(w http.ResponseWriter, err error) bool {
+	if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrContentUnavailable) {
+		writeErr(w, http.StatusNotFound, "content_unavailable", "the stored content is unavailable")
+		return true
+	}
+	return false
 }
 
 // noContentReason says why an effect has no content to show.
@@ -361,13 +374,20 @@ func (d Deps) effectDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	before, err := c.Content(e.BeforeHash)
+	if contentGone(w, err) {
+		return
+	}
 	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
 	var after []byte
 	if e.AfterHash != "" {
-		if after, err = c.Content(e.AfterHash); err != nil {
+		after, err = c.Content(e.AfterHash)
+		if contentGone(w, err) {
+			return
+		}
+		if err != nil {
 			writeStoreErr(w, err)
 			return
 		}

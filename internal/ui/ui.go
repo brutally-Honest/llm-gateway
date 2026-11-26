@@ -44,6 +44,9 @@ type Deps struct {
 	// Views memoises session views (spec 016); nil gets a fresh memo from Handler and
 	// NewHub. The server passes one instance to both.
 	Views *ViewCache
+	// Health reports what capture has lost since start, for /api/health (spec 045); nil
+	// is ok with zero counts.
+	Health func() observability.Health
 	// Calls memoises what each parsed call adds to the day's totals; nil gets a fresh memo
 	// from Handler.
 	Calls *CallMemo
@@ -124,8 +127,17 @@ func newRouter(d Deps, extra ...func(chi.Router)) chi.Router {
 		r.Get("/metrics", d.Metrics.Handler().ServeHTTP)
 	}
 	r.Route("/api", func(api chi.Router) {
+		born := time.Now()
 		api.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
-			writeJSON(w, map[string]bool{"ok": true})
+			h := observability.HealthOf(observability.Loss{}, born)
+			if d.Health != nil {
+				h = d.Health()
+			}
+			// One flat object: "ok" says the UI is serving, the rest is capture health.
+			writeJSON(w, struct {
+				OK bool `json:"ok"`
+				observability.Health
+			}{true, h})
 		})
 		if d.Reader != nil {
 			mountSessions(api, d)

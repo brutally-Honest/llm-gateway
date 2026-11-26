@@ -36,6 +36,11 @@ type digestMemo struct {
 	// serve its facts; lookup treats it as absent, so it is rebuilt on every request that
 	// needs the memo (spec 043).
 	degraded bool
+	// partial: a content the session refers to was not found or is unavailable, so the
+	// memo was built without it. It is served and kept in memory, but never written to
+	// disk: another session can heal a shared blob without changing this session's
+	// version, and a restart must rebuild the memo (045 round 2).
+	partial bool
 	// fromDisk: the memo came from the on-disk cache, so it is neither a compute nor
 	// written again.
 	fromDisk bool
@@ -416,7 +421,7 @@ func (c *DigestCache) run(id store.SessionIdent, r *digestRun) {
 		c.store(e)
 		// a degraded memo is kept in memory only (store treats it as stale); the disk file
 		// is one per session, so a memo older than memory's must not overwrite a newer one
-		if !m.fromDisk && !m.degraded && !c.heldAfter(id, r.ver) {
+		if !m.fromDisk && !m.degraded && !m.partial && !c.heldAfter(id, r.ver) {
 			c.disk.PutMemo(id, r.ver, m.eff, m)
 		}
 	}()

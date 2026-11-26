@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"go.uber.org/zap"
 )
 
 // InlineMax is the largest content, in bytes, stored inline in the content table.
@@ -44,29 +46,37 @@ func dedup(items []content) []content {
 	return out
 }
 
-// writeBlobs puts every item over InlineMax on disk before any row can reference it.
-// An item whose row already exists is skipped: its blob was written before the row.
-func (s *Store) writeBlobs(ctx context.Context, items []content) error {
+// writeBlobs puts every item over InlineMax on disk before its row is inserted. An
+// item whose row already exists is skipped when its blob file is there; if the file is
+// missing (an earlier write could not store it) it is written again, which heals it.
+// A blob that cannot be written is logged (hash only, never the data) and the write
+// goes on: the content row is still inserted (the foreign keys need it), and reads the
+// missing file as content unavailable (spec 045 D5). It returns how many blobs failed;
+// the caller counts them only if the write commits, since a failed write is counted
+// once as a whole. A cancelled context or a failed lookup still fails the whole write.
+func (s *Store) writeBlobs(ctx context.Context, items []content) (failed int, err error) {
 	for _, c := range items {
 		if len(c.data) <= InlineMax {
 			continue
 		}
-		if err := ctx.Err(); err != nil {
-			return err
+		if cerr := ctx.Err(); cerr != nil {
+			return failed, cerr
 		}
 		var one int
-		err := s.db.QueryRowContext(ctx, `SELECT 1 FROM content WHERE hash = ?`, c.hash).Scan(&one)
-		if err == nil {
-			continue
+		qerr := s.db.QueryRowContext(ctx, `SELECT 1 FROM content WHERE hash = ?`, c.hash).Scan(&one)
+		if qerr == nil {
+			if _, serr := os.Stat(s.blobPath(c.hash)); !errors.Is(serr, os.ErrNotExist) {
+				continue
+			}
+		} else if !errors.Is(qerr, sql.ErrNoRows) {
+			return failed, fmt.Errorf("look up content %s: %w", c.hash, qerr)
 		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("look up content %s: %w", c.hash, err)
-		}
-		if err := s.writeBlob(c); err != nil {
-			return err
+		if werr := s.writeBlob(c); werr != nil {
+			failed++
+			s.log.Warn("blob not stored", zap.String("hash", c.hash), zap.Error(werr))
 		}
 	}
-	return nil
+	return failed, nil
 }
 
 // writeBlob writes c zstd-compressed to <dir>/blobs/<hash[0:2]>/<hash[2:]>: a temp
@@ -105,8 +115,10 @@ func (s *Store) writeBlob(c content) (err error) {
 	if err = os.Rename(tmp, target); err != nil {
 		return fmt.Errorf("blob %s: %w", target, err)
 	}
-	if err = syncDir(parent); err != nil {
-		return fmt.Errorf("blob %s: sync dir: %w", target, err)
+	// The blob is in place and readable; a failed directory sync only weakens the
+	// durability of the rename, so it is logged and not returned (not a lost blob).
+	if serr := syncDir(parent); serr != nil {
+		s.log.Warn("blob dir not synced", zap.String("hash", c.hash), zap.Error(serr))
 	}
 	return nil
 }
@@ -144,7 +156,7 @@ func syncDir(dir string) error {
 }
 
 // insertContent writes the rows for items inside tx. A blob's file is already on
-// disk; an existing row is left as it is.
+// disk, unless its write failed (writeBlobs); an existing row is left as it is.
 func insertContent(ctx context.Context, tx *sql.Tx, items []content) error {
 	for _, c := range items {
 		var err error

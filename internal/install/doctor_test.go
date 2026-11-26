@@ -55,6 +55,72 @@ func TestDoctorAllPass(t *testing.T) {
 	}
 }
 
+// healthzFake serves body for the API's /healthz through Env.Fetch.
+func healthzFake(f *fake, body string) {
+	f.env.Fetch = func(url string) (string, error) {
+		if url == "http://127.0.0.1:7197/healthz" {
+			return body, nil
+		}
+		return "", os.ErrDeadlineExceeded
+	}
+}
+
+// Spec 045 D11: doctor reports what capture has lost, from the /healthz body.
+func TestDoctorCaptureHealth(t *testing.T) {
+	const okBody = `{"status":"ok","since":"2026-11-26T09:00:00Z","lost":0,"counts":{"hook_events_dropped":0,"captures_dropped":0,"store_write_failures":0,"blob_write_failures":0}}`
+	const badBody = `{"status":"degraded","since":"2026-11-26T09:00:00Z","lost":7,"counts":{"hook_events_dropped":0,"captures_dropped":5,"store_write_failures":2,"blob_write_failures":0},"reason":"captures dropped, store writes failed"}`
+
+	f := installed(t)
+	healthzFake(f, okBody)
+	r := results(f)["capture-health"]
+	if r.Level != Pass || r.Detail != "no capture data lost since 2026-11-26T09:00:00Z" || r.Name != "Capture health" {
+		t.Fatalf("ok: %+v", r)
+	}
+	f.out.Reset()
+	if code := Doctor(f.env, testClient(), DoctorOptions{}); code != ExitOK || !strings.Contains(f.out.String(), "Capture health") || !strings.Contains(f.out.String(), "no capture data lost since 2026-11-26T09:00:00Z") {
+		t.Fatalf("plain ok: exit %d\n%s", code, f.out)
+	}
+
+	healthzFake(f, badBody)
+	r = results(f)["capture-health"]
+	wantDetail := "7 lost since 2026-11-26T09:00:00Z: captures dropped, store writes failed (hook events dropped 0, captures dropped 5, store writes failed 2, blob writes failed 0)"
+	if r.Level != Warn || r.Detail != wantDetail || !strings.Contains(r.Fix, "docs/observability.md, Capture health") {
+		t.Fatalf("degraded: %+v", r)
+	}
+	f.out.Reset()
+	if code := Doctor(f.env, testClient(), DoctorOptions{}); code != ExitOK { // a warn is not a fail
+		t.Fatalf("degraded exit %d", code)
+	}
+	if !strings.Contains(f.out.String(), wantDetail) {
+		t.Fatalf("plain output lacks the degraded line:\n%s", f.out)
+	}
+	f.out.Reset()
+	Doctor(f.env, testClient(), DoctorOptions{JSON: true})
+	var js struct{ Checks []Result }
+	if err := json.Unmarshal(f.out.Bytes(), &js); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, c := range js.Checks {
+		found = found || (c.ID == "capture-health" && c.Level == Warn)
+	}
+	if !found {
+		t.Fatalf("json output lacks capture-health warn:\n%s", f.out)
+	}
+
+	// An older gateway's body, or garbage, or no answer: no result, no failure.
+	for _, body := range []string{`{"status":"ok"}`, `not json`, ``} {
+		healthzFake(f, body)
+		if r, ok := results(f)["capture-health"]; ok {
+			t.Errorf("body %q gave %+v", body, r)
+		}
+	}
+	f.env.Fetch = nil
+	if _, ok := results(f)["capture-health"]; ok {
+		t.Error("nil Fetch gave a capture-health result")
+	}
+}
+
 // Each check fails (or warns) when what it checks is broken, with a fix and a link; a
 // fail makes doctor exit non-zero (spec AC21, AC22).
 func TestDoctorEachCheckFails(t *testing.T) {
@@ -232,6 +298,9 @@ func TestDoctorUIWarmingUp(t *testing.T) {
 			return 200, nil
 		}
 		f.env.Fetch = func(url string) (string, error) {
+			if url == "http://127.0.0.1:7197/healthz" { // spec 045: capture health; no answer here
+				return "", os.ErrDeadlineExceeded
+			}
 			if url != "http://127.0.0.1:7197/metrics" {
 				t.Fatalf("fetched %s", url)
 			}

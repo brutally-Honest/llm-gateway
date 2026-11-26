@@ -14,17 +14,24 @@ import (
 // ErrNotFound is returned for an exchange the store does not hold.
 var ErrNotFound = errors.New("not found")
 
+// ErrContentUnavailable is returned for content the store has a row for but cannot
+// read for a permanent reason: its blob file is missing, not permitted, corrupt or the
+// wrong size. A transient read failure (EMFILE, EIO...) is a plain error instead.
+var ErrContentUnavailable = errors.New("content unavailable")
+
 // SaveExchange stores one captured exchange: its row, and both bodies by the sha256
 // of the bytes as captured (a gzip body is hashed as gzip). An empty body is stored
-// as no body. One transaction, after the bodies' blobs are on disk.
+// as no body. One transaction, after the bodies' blobs are written. A body whose blob
+// cannot be written still gets its content row; only the blob file is missing, so it
+// reads as content unavailable and the call is kept (spec 045 D5, D14).
 func (s *Store) SaveExchange(ctx context.Context, ex *core.Exchange) error {
 	reqH, err := headerJSON(ex.RequestHeader)
 	if err != nil {
-		return fmt.Errorf("store %s: request headers: %w", s.path, err)
+		return s.counted(fmt.Errorf("store %s: request headers: %w", s.path, err))
 	}
 	resH, err := headerJSON(ex.ResponseHeader)
 	if err != nil {
-		return fmt.Errorf("store %s: response headers: %w", s.path, err)
+		return s.counted(fmt.Errorf("store %s: response headers: %w", s.path, err))
 	}
 	var items []content
 	reqHash := bodyContent(ex.Request, &items)
@@ -34,7 +41,7 @@ func (s *Store) SaveExchange(ctx context.Context, ex *core.Exchange) error {
 	if ex.HasTTFB {
 		ttfb = sql.NullInt64{Int64: int64(ex.TTFB), Valid: true}
 	}
-	return s.write(ctx, items, func(tx *sql.Tx) error {
+	return s.counted(s.write(ctx, items, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `INSERT INTO exchanges (
 			request_id, principal_id, protocol, client, auth, method, path, query,
 			request_headers, response_headers, status, started_at, ttfb_ns, ended_at, stream,
@@ -51,7 +58,7 @@ func (s *Store) SaveExchange(ctx context.Context, ex *core.Exchange) error {
 			return fmt.Errorf("insert exchange %s: %w", ex.RequestID, err)
 		}
 		return nil
-	})
+	}))
 }
 
 // SaveParse stores an exchange's parse: its canonical events, the content they refer
@@ -63,7 +70,7 @@ func (s *Store) SaveParse(ctx context.Context, requestID, principalID string,
 	for _, c := range contents {
 		items = append(items, content{hash: c.Hash, data: c.Bytes})
 	}
-	return s.write(ctx, items, func(tx *sql.Tx) error {
+	return s.counted(s.write(ctx, items, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx,
 			`UPDATE exchanges SET parse = ? WHERE request_id = ?`, string(status), requestID)
 		if err != nil {
@@ -89,7 +96,7 @@ func (s *Store) SaveParse(ctx context.Context, requestID, principalID string,
 			}
 		}
 		return nil
-	})
+	}))
 }
 
 // bodyContent adds b to items and returns its hash, or NULL for an empty body.

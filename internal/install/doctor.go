@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/brutally-honest/llm-gateway/internal/config"
+	"github.com/brutally-honest/llm-gateway/internal/observability"
 	"github.com/brutally-honest/llm-gateway/internal/startup"
 )
 
@@ -311,8 +312,42 @@ func listenerChecks(e *Env, cfg config.Config, cfgOK bool) []Result {
 			}
 		}
 		out = append(out, r)
+		if x.id == "listener-api" && ok {
+			if h, found := captureHealth(e, cfg); found {
+				out = append(out, h)
+			}
+		}
 	}
 	return out
+}
+
+// captureHealth reads the API's /healthz body (spec 045 D11) and reports what capture
+// has lost since the gateway started. found is false when there is nothing to say: no
+// Fetch, no answer, or a body that is not the health shape (an older gateway answered
+// {"status":"ok"} alone), so doctor stays silent rather than guess.
+func captureHealth(e *Env, cfg config.Config) (Result, bool) {
+	if e.Fetch == nil {
+		return Result{}, false
+	}
+	body, err := e.Fetch("http://" + cfg.ListenAddr + "/healthz")
+	if err != nil {
+		return Result{}, false
+	}
+	var h observability.Health
+	if json.Unmarshal([]byte(body), &h) != nil || (h.Status != "ok" && h.Status != "degraded") || h.Since.IsZero() {
+		return Result{}, false
+	}
+	r := Result{ID: "capture-health", Name: "Capture health", Link: anchor("capture-health")}
+	since := h.Since.UTC().Format(time.RFC3339)
+	if h.Status == "ok" {
+		r.Level, r.Detail = Pass, "no capture data lost since "+since
+		return r, true
+	}
+	r.Level = Warn
+	r.Detail = fmt.Sprintf("%d lost since %s: %s (hook events dropped %d, captures dropped %d, store writes failed %d, blob writes failed %d)",
+		h.Lost, since, h.Reason, h.Counts.HookEventsDropped, h.Counts.CapturesDropped, h.Counts.StoreWriteFailures, h.Counts.BlobWriteFailures)
+	r.Fix = "see the gateway's log for the cause (docs/observability.md, Capture health); counts are since start, a restart clears them once the cause is fixed"
+	return r, true
 }
 
 func functionChecks(e *Env, c Client, p Paths, st *State) []Result {

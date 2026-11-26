@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"go.uber.org/zap"
 
 	"github.com/brutally-honest/llm-gateway/internal/contentcoding"
 	"github.com/brutally-honest/llm-gateway/internal/store"
@@ -175,7 +176,11 @@ func (d Deps) getBody(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	raw, err := c.Content(hash)
-	if errors.Is(err, store.ErrNotFound) {
+	if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrContentUnavailable) {
+		if d.Log != nil {
+			d.Log.Warn("body unavailable", zap.String("request_id", chi.URLParam(r, "id")), zap.String("part", part),
+				zap.String("hash", hash), zap.Error(err))
+		}
 		writeErr(w, http.StatusNotFound, "body_not_stored", "this body was not stored")
 		return
 	}

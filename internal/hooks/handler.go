@@ -77,7 +77,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, h.maxBody+1))
 	switch {
 	case err != nil:
-		h.log.Warn("hook body unreadable", zap.String("client", client))
+		h.sink.RecordUnreadable(client)
 	case int64(len(body)) > h.maxBody:
 		h.sink.RecordOversize(client, h.maxBody)
 	default:

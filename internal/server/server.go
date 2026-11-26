@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"sync/atomic"
@@ -35,14 +36,26 @@ func New(log *zap.Logger, mount ...func(chi.Router)) *Server {
 // counted, a proxied call's upstream timings and errors are recorded, and GET /metrics
 // serves them. A nil m is New.
 func NewWithMetrics(log *zap.Logger, m *observability.Metrics, mount ...func(chi.Router)) *Server {
+	return NewWithHealth(log, m, nil, mount...)
+}
+
+// NewWithHealth is NewWithMetrics with the capture health /healthz reports (spec 045).
+// A nil health is ok with zero counts, since the server was built. /healthz answers 200
+// whether ok or degraded: the claude shell function and install key on the status code,
+// so a degraded gateway must never be bypassed. Only "not serving" is non-200.
+func NewWithHealth(log *zap.Logger, m *observability.Metrics, health func() observability.Health, mount ...func(chi.Router)) *Server {
 	s := &Server{}
+	if health == nil {
+		born := time.Now()
+		health = func() observability.Health { return observability.HealthOf(observability.Loss{}, born) }
+	}
 	base, cancel := context.WithCancelCause(context.Background())
 	s.cancel = cancel
 	r := chi.NewRouter()
 	// Outermost first. inflight wraps everything, so a request that panics is still
 	// counted and decremented.
 	r.Use(s.countInFlight, requestID, accessLog(log, m), recoverer(log))
-	r.Get("/healthz", healthz)
+	r.Get("/healthz", healthz(health))
 	if m != nil {
 		r.Get("/metrics", m.Handler().ServeHTTP)
 	}
@@ -113,8 +126,14 @@ func (s *Server) countInFlight(next http.Handler) http.Handler {
 	})
 }
 
-func healthz(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+func healthz(health func() observability.Health) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		body, err := json.Marshal(health())
+		if err != nil { // cannot happen for this type; still answer, serving is what 200 says
+			body = []byte(`{"status":"ok"}`)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+	}
 }

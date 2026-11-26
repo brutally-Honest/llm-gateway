@@ -276,7 +276,7 @@ func (d Deps) buildView(ctx context.Context, who sessIdent, fresh bool) (_ timel
 	last := lastActivity(built.bs, hooks)
 	endOnly := endOnlyHooks(built.bs, hooks)
 	active := isActive(last, endOnly, now)
-	v, degraded, err := d.viewDeps().sessionViewChecked(c, who, built.bs, hooks, active, key)
+	v, degraded, partial, err := d.viewDeps().sessionViewPartial(c, who, built.bs, hooks, active, key)
 	if err != nil {
 		return timeline.View{}, false, err
 	}
@@ -291,12 +291,13 @@ func (d Deps) buildView(ctx context.Context, who sessIdent, fresh bool) (_ timel
 	}
 	// only a view at the version this request read, of a session that is not active (D18),
 	// built from a full build: a drift of an incremental one never survives a restart (040 D20)
-	if built.ver == ver && !active && built.bs.kind == buildFull {
+	// and never a partial one (a placeholder for a blob another session may heal, 045 round 2)
+	if built.ver == ver && !active && built.bs.kind == buildFull && !partial {
 		d.Disk.PutView(e, ver, ev)
 	}
 	// an inactive session whose build is incremental gets its disk view from a full build in
 	// the background, so a session watched live is not cold after a restart (040 D20, D30)
-	if built.ver == ver && !active && built.bs.kind == buildIncremental && d.Disk != nil && d.Views != nil &&
+	if built.ver == ver && !active && built.bs.kind == buildIncremental && !partial && d.Disk != nil && d.Views != nil &&
 		!d.Disk.HasView(ctx, ident, key, now) {
 		d.Views.jobs.submit(d.Log, ident, key, func() { d.fullViewToDisk(who, ident, ver, ev, key) })
 	}
@@ -414,8 +415,8 @@ func (d Deps) fullViewToDisk(who sessIdent, ident store.SessionIdent, ver store.
 	if isActive(last, endOnly, d.now()) {
 		return // woke up meanwhile (D18)
 	}
-	v, degraded, err := d.viewDeps().sessionViewChecked(c, who, bs, hooks, false, key)
-	if err != nil || degraded {
+	v, degraded, partial, err := d.viewDeps().sessionViewPartial(c, who, bs, hooks, false, key)
+	if err != nil || degraded || partial {
 		fail(err)
 		return
 	}

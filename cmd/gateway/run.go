@@ -321,7 +321,9 @@ func serve(ctx context.Context, d deps) int {
 			hc := hookSink.Counts()
 			log.Info("hook ingest stopped",
 				zap.Int64("hooks_queue_full", hc.QueueFull),
+				zap.Int64("hooks_memory", hc.Memory),
 				zap.Int64("hooks_oversize", hc.Oversize),
+				zap.Int64("hooks_unreadable", hc.Unreadable),
 				zap.Int64("hooks_capture_off", hc.CaptureOff),
 				zap.Int64("hooks_not_json", hc.NotJSON),
 				zap.Int64("hooks_store_failed", hc.StoreFailed),
@@ -347,13 +349,15 @@ func serve(ctx context.Context, d deps) int {
 	// The adapters' prefixes first, then the test-only routes.
 	mounts := append([]func(chi.Router){registry.Mount, hookHandler.Mount}, d.mount...)
 	capt.observe(metrics, log)
-	srv := server.NewWithMetrics(log, metrics, mounts...)
+	health := capt.health(started)
+	srv := server.NewWithHealth(log, metrics, health, mounts...)
 	serveErr := logging.Go(log, "serve", func() error { return srv.Serve(ln) })
 
 	var uiSrv *http.Server
 	var uiErr <-chan error // nil, so never ready, when the UI is off
 	if uiLn != nil {
 		deps := capt.uiDeps(ctx, uiLn.Addr().String(), log)
+		deps.Health = health
 		uiSrv = &http.Server{
 			Handler:           ui.Handler(deps),
 			ReadHeaderTimeout: 10 * time.Second,
@@ -807,8 +811,27 @@ func (c *captureRun) observe(m *observability.Metrics, log *zap.Logger) {
 		map[string]string{"reason": "queue_full"}, func() float64 { return float64(c.sink.Counts().DroppedQueueFull) })
 	m.CounterFunc("gateway_capture_dropped_total", "Exchanges dropped from capture, by reason.",
 		map[string]string{"reason": "memory"}, func() float64 { return float64(c.budget.Dropped()) })
+	// Spec 045 (D8): every loss is a counter read from the same atomics health reads.
+	const hookHelp = "Hook events dropped before storage, by reason."
+	if hs := c.hooks; hs != nil {
+		for reason, read := range map[string]func(hooks.Counts) int64{
+			"queue_full": func(h hooks.Counts) int64 { return h.QueueFull },
+			"memory":     func(h hooks.Counts) int64 { return h.Memory },
+			"oversize":   func(h hooks.Counts) int64 { return h.Oversize },
+			"unreadable": func(h hooks.Counts) int64 { return h.Unreadable },
+		} {
+			m.CounterFunc("gateway_hook_events_dropped_total", hookHelp,
+				map[string]string{"reason": reason}, func() float64 { return float64(read(hs.Counts())) })
+		}
+	}
+	m.CounterFunc("gateway_store_write_failures_total", "Data writes the store failed.",
+		nil, func() float64 { return float64(c.storeFailures().Writes) })
+	m.CounterFunc("gateway_blob_write_failures_total", "Blob files the store could not write.",
+		nil, func() float64 { return float64(c.storeFailures().BlobWrites) })
 	if c.proxyOn() {
 		proxy := c.effects.proxy
+		m.CounterFunc("gateway_capture_dropped_total", "Exchanges dropped from capture, by reason.",
+			map[string]string{"reason": "effects"}, func() float64 { return float64(c.effects.proxyCounts().Dropped) })
 		m.GaugeFunc("gateway_proxy_tunnels_open", "Open tunnels and forwarded requests on the proxy listeners.",
 			func() float64 { return float64(proxy.Open()) })
 	}
@@ -822,6 +845,43 @@ func (c *captureRun) observe(m *observability.Metrics, log *zap.Logger) {
 	case ok:
 		m.LastShutdown(last)
 	}
+}
+
+// storeFailures are the store's failure counts; zero with capture off or a store that
+// does not count (a test fake).
+func (c *captureRun) storeFailures() store.Failures {
+	if c == nil {
+		return store.Failures{}
+	}
+	if f, ok := c.store.(interface{ Failures() store.Failures }); ok {
+		return f.Failures()
+	}
+	return store.Failures{}
+}
+
+// loss is everything capture has lost since start (spec 045 D7). Capture-off deliveries
+// are not a loss, and parse failures are not either: the raw exchange is stored. With
+// capture off there is no store or sink, so every count is zero (D12).
+func (c *captureRun) loss() observability.Loss {
+	if c == nil {
+		return observability.Loss{}
+	}
+	var hc hooks.Counts
+	if c.hooks != nil {
+		hc = c.hooks.Counts()
+	}
+	sf := c.storeFailures()
+	return observability.Loss{
+		HookEventsDropped:  hc.QueueFull + hc.Memory + hc.Oversize + hc.Unreadable,
+		CapturesDropped:    c.sink.Counts().DroppedQueueFull + c.budget.Dropped() + c.effects.proxyCounts().Dropped,
+		StoreWriteFailures: sf.Writes,
+		BlobWriteFailures:  sf.BlobWrites,
+	}
+}
+
+// health is the provider /healthz and /api/health read; since is the process start.
+func (c *captureRun) health(since time.Time) func() observability.Health {
+	return func() observability.Health { return observability.HealthOf(c.loss(), since) }
 }
 
 // openTunnels is how many proxy tunnels are open now; 0 with the proxy off.
@@ -953,7 +1013,9 @@ func (c *captureRun) stop(ctx context.Context, log *zap.Logger) {
 		zap.Int64("effects_proxy_dropped", pc.Dropped),
 		zap.Int64("effects_proxy_store_failed", pc.Failed),
 		zap.Int64("hooks_queue_full", hc.QueueFull),
+		zap.Int64("hooks_memory", hc.Memory),
 		zap.Int64("hooks_oversize", hc.Oversize),
+		zap.Int64("hooks_unreadable", hc.Unreadable),
 		zap.Int64("hooks_capture_off", hc.CaptureOff),
 		zap.Int64("hooks_not_json", hc.NotJSON),
 		zap.Int64("hooks_store_failed", hc.StoreFailed),

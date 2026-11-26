@@ -1,5 +1,6 @@
 import { STYLES, THEMES, pickStyle, pickTheme } from "./theme.js";
 import { keyBar } from "./keys.js";
+import { healthBanner } from "./health.js";
 
 // breadcrumb returns the header trail: "Sessions" first (the link back to the list once
 // inside a view). The page's own heading says where you are, so the trail stops at the
@@ -159,7 +160,20 @@ export function mountShell({ head, storage, root, theme, look = "lean" }) {
   brand.href = "#/";
   brand.setAttribute("aria-label", "LLM Gateway — home");
   brand.title = "Sessions";
-  head.replaceChildren(brand, crumbs, live, open, settings, help.dlg);
+  // the capture-health banner: its own full-width row of the header, shown while the gateway
+  // reports degraded; it has no close button (spec 045 D4)
+  const health = el("div", "", "health-banner");
+  health.setAttribute("role", "status");
+  health.hidden = true;
+  const healthText = el("span", "", "health-text");
+  const healthReason = el("span", "", "health-reason");
+  const healthLink = el("a", "details", "health-link");
+  healthLink.href = "/api/health";
+  healthLink.target = "_blank";
+  healthLink.rel = "noopener";
+  healthLink.setAttribute("aria-label", "capture health details");
+  health.append(healthText, healthReason, healthLink);
+  head.replaceChildren(brand, crumbs, live, open, settings, help.dlg, health);
   // The header can wrap, so its height is published for the turn rail, which sticks
   // below it (F7).
   if (typeof ResizeObserver === "function" && root && root.style && typeof root.style.setProperty === "function") {
@@ -201,6 +215,13 @@ export function mountShell({ head, storage, root, theme, look = "lean" }) {
       liveWord.textContent = text;
       live.title = text;
       live.className = `live-dot live-${tone}`;
+    },
+    // setHealth shows or hides the capture-health banner from a parsed /api/health answer.
+    setHealth(h) {
+      const b = healthBanner(h);
+      health.hidden = !b.show;
+      healthText.textContent = b.text;
+      healthReason.textContent = b.reason ? ` — ${b.reason}` : "";
     },
     // setKeyBar records the page's shortcuts for the "?" dialog.
     setKeyBar(route, pos) {

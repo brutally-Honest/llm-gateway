@@ -259,7 +259,9 @@ func TestRun_StartupLine(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK || string(body) != `{"status":"ok"}` {
+	// Spec 045: the body carries the capture counts; nothing lost here, so ok.
+	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(string(body), `{"status":"ok","since":`) ||
+		!strings.Contains(string(body), `"lost":0`) {
 		t.Errorf("healthz = %d %q", resp.StatusCode, body)
 	}
 

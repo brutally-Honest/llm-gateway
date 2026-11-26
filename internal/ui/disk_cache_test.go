@@ -769,8 +769,8 @@ func TestDiskCache_ViewOfAnOlderBuildNotWritten(t *testing.T) {
 	}
 }
 
-// A content read that fails for a reason other than not-found makes a result that is
-// served and kept nowhere: not in memory, not on disk.
+// A content read that fails for a reason other than not-found or unavailable (here a row the
+// reader cannot scan) makes a result that is served and kept nowhere: not in memory, not on disk.
 func TestDiskCache_ContentErrorIsCachedNowhere(t *testing.T) {
 	e := newDiskEnv(t)
 	e.call("a", 1, 0, 0, "user:fix the retry")
@@ -784,10 +784,18 @@ func TestDiskCache_ContentErrorIsCachedNowhere(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := store.ContentHash(copyOf)
-	blob := filepath.Join(e.dir, "blobs", h[:2], h[2:])
-	if err := os.Remove(blob); err != nil {
-		t.Fatalf("the copy is not a blob file: %v", err)
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(e.dir, store.DBName)+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatal(err)
 	}
+	res, err := db.Exec("UPDATE content SET size = 'not-a-number' WHERE hash = ?", h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		t.Fatalf("corrupted %d content rows, want 1", n)
+	}
+	_ = db.Close()
 
 	e.mustGet("/api/sessions/" + sid() + "/view") // served
 	e.mustGet("/api/sessions/" + sid())
@@ -810,12 +818,130 @@ func TestDiskCache_ContentErrorIsCachedNowhere(t *testing.T) {
 	}
 }
 
+// A blob read that fails for a transient reason (here the blob path is a symlink loop) is a failed
+// read, not an unavailable blob: the result is served and kept nowhere (045 review P2-1).
+func TestDiskCache_TransientBlobErrorIsCachedNowhere(t *testing.T) {
+	e := newDiskEnv(t)
+	e.call("a", 1, 0, 0, "user:fix the retry")
+	copyOf := bytes.Repeat([]byte("line\n"), store.InlineMax)
+	id := store.SessionIdent{Principal: core.PrincipalLocal, Client: "cc", Key: "k"}
+	cp := store.Checkpoint{Copies: [][]byte{copyOf}, Effects: []core.Effect{{Kind: core.EffectFileChange,
+		At: baseTime.Add(2 * time.Second), Principal: id.Principal, Client: id.Client, SessionKey: id.Key, Root: "/w",
+		Path: "/w/a.txt", Change: core.FileCreated, Size: int64(len(copyOf)), Mode: "git", AfterHash: store.ContentHash(copyOf)}},
+		Upserts: []store.SnapshotRow{{Root: "/w"}}}
+	if err := e.s.SaveCheckpoint(t.Context(), id, cp); err != nil {
+		t.Fatal(err)
+	}
+	h := store.ContentHash(copyOf)
+	blob := filepath.Join(e.dir, "blobs", h[:2], h[2:])
+	if err := os.Remove(blob); err != nil {
+		t.Fatalf("the copy is not a blob file: %v", err)
+	}
+	if err := os.Symlink(blob, blob); err != nil {
+		t.Fatal(err)
+	}
+
+	e.mustGet("/api/sessions/" + sid() + "/view") // served
+	e.mustGet("/api/sessions/" + sid())
+	e.flush()
+	if len(e.files("v")) != 0 || len(e.files("m")) != 0 {
+		t.Errorf("a degraded result was written: %v %v", e.files("m"), e.files("v"))
+	}
+	if _, ok := e.dep.Views.peek(id); ok {
+		t.Error("a degraded view is in the in-memory view cache")
+	}
+	if pe, ok := e.dep.Digests.peek(id); ok {
+		if !pe.memo.degraded {
+			t.Error("a good memo is in the in-memory digest cache for a degraded session")
+		}
+		if _, ok := e.dep.Digests.lookup(id, pe.ver); ok {
+			t.Error("a degraded memo answers a lookup")
+		}
+	}
+}
+
+// A blob that is gone is not a failed read (spec 045 D1): the view and the list are served
+// with a placeholder for the block, and the result is not marked degraded.
+func TestDiskCache_UnavailableBlobIsNotDegraded(t *testing.T) {
+	e := newDiskEnv(t)
+	e.call("a", 1, 0, 0, "user:fix the retry")
+	copyOf := bytes.Repeat([]byte("line\n"), store.InlineMax) // over InlineMax: a blob file
+	id := store.SessionIdent{Principal: core.PrincipalLocal, Client: "cc", Key: "k"}
+	cp := store.Checkpoint{Copies: [][]byte{copyOf}, Effects: []core.Effect{{Kind: core.EffectFileChange,
+		At: baseTime.Add(2 * time.Second), Principal: id.Principal, Client: id.Client, SessionKey: id.Key, Root: "/w",
+		Path: "/w/a.txt", Change: core.FileCreated, Size: int64(len(copyOf)), Mode: "git", AfterHash: store.ContentHash(copyOf)}},
+		Upserts: []store.SnapshotRow{{Root: "/w"}}}
+	if err := e.s.SaveCheckpoint(t.Context(), id, cp); err != nil {
+		t.Fatal(err)
+	}
+	h := store.ContentHash(copyOf)
+	blob := filepath.Join(e.dir, "blobs", h[:2], h[2:])
+	if err := os.Remove(blob); err != nil {
+		t.Fatalf("the copy is not a blob file: %v", err)
+	}
+
+	e.mustGet("/api/sessions/" + sid() + "/view") // served
+	e.mustGet("/api/sessions/" + sid())
+	e.flush()
+	if pe, ok := e.dep.Digests.peek(id); ok && pe.memo.degraded {
+		t.Error("a missing blob degraded the digest memo")
+	}
+}
+
+// 045 round 2 P3-b: a view or memo that holds a placeholder for an unavailable blob is
+// served, not degraded and kept in memory, but never written to disk: another session can
+// heal the shared blob without changing this session's version, so a file would keep the
+// placeholder across restarts. A session with no damage in the same env is written.
+func TestDiskCache_UnavailableBlobIsNeverWrittenToDisk(t *testing.T) {
+	e := newDiskEnv(t)
+	e.call("a", 1, 0, 0, "user:fix the retry")
+	e.save("o1", "k2", "cc", 2) // the control: no damage
+	copyOf := bytes.Repeat([]byte("line\n"), store.InlineMax)
+	id := store.SessionIdent{Principal: core.PrincipalLocal, Client: "cc", Key: "k"}
+	cp := store.Checkpoint{Copies: [][]byte{copyOf}, Effects: []core.Effect{{Kind: core.EffectFileChange,
+		At: baseTime.Add(2 * time.Second), Principal: id.Principal, Client: id.Client, SessionKey: id.Key, Root: "/w",
+		Path: "/w/a.txt", Change: core.FileCreated, Size: int64(len(copyOf)), Mode: "git", AfterHash: store.ContentHash(copyOf)}},
+		Upserts: []store.SnapshotRow{{Root: "/w"}}}
+	if err := e.s.SaveCheckpoint(t.Context(), id, cp); err != nil {
+		t.Fatal(err)
+	}
+	h := store.ContentHash(copyOf)
+	if err := os.Remove(filepath.Join(e.dir, "blobs", h[:2], h[2:])); err != nil {
+		t.Fatalf("the copy is not a blob file: %v", err)
+	}
+	ctl := sessionID(store.SessionRow{PrincipalID: core.PrincipalLocal, Client: "cc", SessionKey: "k2"})
+
+	e.mustGet("/api/sessions/" + sid() + "/view")
+	e.mustGet("/api/sessions/" + sid())
+	e.mustGet("/api/sessions/" + ctl + "/view")
+	e.mustGet("/api/sessions/" + ctl)
+	e.flush()
+
+	if _, ok := e.dep.Views.peek(id); !ok {
+		t.Error("the partial view is not in the in-memory view cache")
+	}
+	if pe, ok := e.dep.Digests.peek(id); !ok || pe.memo.degraded || !pe.memo.partial {
+		t.Errorf("memo in memory = %v, %v, want a partial, not degraded memo", pe.memo, ok)
+	}
+	if _, err := os.Stat(e.fileOf("v", "k")); err == nil {
+		t.Error("a view holding a placeholder was written to disk")
+	}
+	if _, err := os.Stat(e.fileOf("m", "k")); err == nil {
+		t.Error("a memo built without an unavailable blob was written to disk")
+	}
+	for _, kind := range []string{"v", "m"} {
+		if _, err := os.Stat(e.fileOf(kind, "k2")); err != nil {
+			t.Errorf("the undamaged session has no %q file: %v", kind, err)
+		}
+	}
+}
+
 // sessionViewChecked reports a content failure other than not-found and ignores not-found.
 func TestSessionView_DegradedOnlyForRealContentErrors(t *testing.T) {
 	for _, tc := range []struct {
 		err  error
 		want bool
-	}{{errors.New("i/o"), true}, {context.DeadlineExceeded, true}, {store.ErrNotFound, false}, {nil, false}} {
+	}{{errors.New("i/o"), true}, {context.DeadlineExceeded, true}, {store.ErrNotFound, false}, {store.ErrContentUnavailable, false}, {nil, false}} {
 		r := fakeViewReader{err: tc.err}
 		_, degraded, err := viewDeps{}.sessionViewChecked(r, sessIdent{core.PrincipalLocal, "cc", "k"}, builtSession{}, nil, false, "")
 		if err != nil || degraded != tc.want {

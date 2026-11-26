@@ -44,7 +44,7 @@ func (s *Store) SaveCheckpoint(ctx context.Context, session SessionIdent, cp Che
 	for _, c := range cp.Copies {
 		items = append(items, content{hash: hashOf(c), data: c})
 	}
-	return s.write(ctx, items, func(tx *sql.Tx) error {
+	return s.counted(s.write(ctx, items, func(tx *sql.Tx) error {
 		if err := insertEffects(ctx, tx, cp.Effects); err != nil {
 			return err
 		}
@@ -67,7 +67,7 @@ func (s *Store) SaveCheckpoint(ctx context.Context, session SessionIdent, cp Che
 			}
 		}
 		return nil
-	})
+	}))
 }
 
 func insertEffects(ctx context.Context, tx *sql.Tx, effects []core.Effect) error {

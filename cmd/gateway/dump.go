@@ -143,6 +143,10 @@ func printBody(out *bytes.Buffer, r *store.Reader, name, hash string, header htt
 		return nil
 	}
 	body, err := r.Content(hash)
+	if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrContentUnavailable) {
+		out.WriteString("== " + name + " (content unavailable)\n")
+		return nil
+	}
 	if err != nil {
 		return err
 	}
