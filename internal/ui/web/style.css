@@ -265,12 +265,13 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .today .spark i { flex: 1 1 0; min-width: 1px; max-width: 6px; height: calc(var(--v) / var(--peak) * 100%); min-height: 1px; border-radius: 1px 1px 0 0; background: var(--accent); }
 :root[data-style="lean"] .today .spark i { background: var(--accent-grad); }
 .sp-head .today .stat b { font-size: 22px; line-height: 1.2; letter-spacing: -.02em; }
-/* the bar under a row's token figures: input, output and cache read, each segment as wide as
-   its own count (flex-grow is set from the count, in sessions-page.js) */
+/* the bar under a row's token figures: input, output, cache write and cache read, each segment
+   as wide as its own count (flex-grow is set from the count, in sessions-page.js) */
 .tokbar { display: flex; gap: 1px; height: 4px; width: 100%; min-width: 7rem; max-width: 12rem; margin-top: 5px; border-radius: var(--radius-xs); overflow: hidden; background: var(--panel2); }
 .tokseg { display: block; flex: 0 1 0; min-width: 0; }
 .tokseg-in { background: var(--tok-in); }
 .tokseg-out { background: var(--tok-out); }
+.tokseg-cw { background: var(--hi); }
 .tokseg-cache { background: var(--tok-cache); }
 .sessions-page .filter-bar { align-items: center; gap: 10px; padding: 0; }
 .sessions-page .filter-bar input { width: 18rem; max-width: 100%; padding: 6px 10px; }

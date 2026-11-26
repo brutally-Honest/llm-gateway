@@ -161,6 +161,7 @@ export function rowCells(s) {
     time: dur(l.clock_ms ?? null),
     input: hooksOnly ? DASH : counter(u.input),
     output: hooksOnly ? DASH : counter(u.output),
+    cacheWrite: hooksOnly ? DASH : counter(u.cache_write),
     cacheRead: hooksOnly ? DASH : counter(u.cache_read),
     cost: hooksOnly ? { text: DASH, title: "" } : totalCost(u.cost),
     look: lookText(l),
@@ -308,16 +309,16 @@ function rowNode(id) {
   parts.cells[2].append(parts.a, parts.place, parts.look);
   // each count an unbreakable part, " · " between them as text, so the cell wraps only at
   // the dots, as Work and Changes do (setSegments); the cost is a line of its own
-  parts.tokens = [span("tok seg"), span("tok seg"), span("tok seg")];
-  parts.seps = [span("", " · "), span("", " · ")];
+  parts.tokens = [span("tok seg"), span("tok seg"), span("tok seg"), span("tok seg")];
+  parts.seps = [span("", " · "), span("", " · "), span("", " · ")];
   parts.cost = span("cost");
-  // the bar under the figures: input, output and cache read side by side, each as wide as its
-  // own count; the numbers are already in text, so the bar is hidden from screen readers
+  // the bar under the figures: input, output, cache write and cache read side by side, each as
+  // wide as its own count; the numbers are already in text, so the bar is hidden from screen readers
   parts.bar = span("tokbar");
   parts.bar.setAttribute("aria-hidden", "true");
-  parts.barSegs = ["in", "out", "cache"].map((k) => span(`tokseg tokseg-${k}`));
+  parts.barSegs = ["in", "out", "cw", "cache"].map((k) => span(`tokseg tokseg-${k}`));
   parts.bar.append(...parts.barSegs);
-  parts.cells[6].append(parts.tokens[0], parts.seps[0], parts.tokens[1], parts.seps[1], parts.tokens[2], parts.cost, parts.bar);
+  parts.cells[6].append(parts.tokens[0], parts.seps[0], parts.tokens[1], parts.seps[1], parts.tokens[2], parts.seps[2], parts.tokens[3], parts.cost, parts.bar);
   // Work: prompts, calls and tool calls as segments, then the failed tools standing out
   parts.work = span("");
   parts.failedSep = span("");
@@ -462,13 +463,14 @@ function fillRow(parts, s, selected) {
   } else {
     setToken(parts.tokens[0], c.input, "in");
     setToken(parts.tokens[1], c.output, "out");
-    setToken(parts.tokens[2], c.cacheRead, "cache read");
+    setToken(parts.tokens[2], c.cacheWrite, "cache write");
+    setToken(parts.tokens[3], c.cacheRead, "cache read");
   }
-  for (const e of [parts.tokens[1], parts.tokens[2], ...parts.seps]) setHidden(e, c.hooksOnly);
+  for (const e of [parts.tokens[1], parts.tokens[2], parts.tokens[3], ...parts.seps]) setHidden(e, c.hooksOnly);
   // an unknown cost says nothing once its label is gone, so it is left out (027 C7b)
   setHidden(parts.cost, c.hooksOnly || c.cost.text === DASH);
   const u = s.usage || {};
-  setTokenBar(parts, c.hooksOnly ? [] : [u.input, u.output, u.cache_read].map((x) => x && x.value));
+  setTokenBar(parts, c.hooksOnly ? [] : [u.input, u.output, u.cache_write, u.cache_read].map((x) => x && x.value));
   // the Tokens header already says the figure is API-equivalent, so the row does not repeat it
   setText(parts.cost, c.cost.text);
   setTitle(parts.cost, c.cost.title);

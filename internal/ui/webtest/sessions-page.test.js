@@ -88,7 +88,7 @@ test("hooksOnlyTokensCellIsASingleDash", () => {
   assert.deepEqual(visible.map((e) => e.textContent), ["—"]);
   // a live update to a row with calls shows the counts again
   p.page.update({ items: [session()] });
-  assert.equal(p.cell("s1", 6).startsWith("10 in · — out · 7 cache read"), true);
+  assert.equal(p.cell("s1", 6).startsWith("10 in · — out · 0 cache write · 7 cache read"), true);
 });
 
 // spec 017 E5: a hooks-only row says it has no model calls, and shows no token counts.
@@ -517,7 +517,7 @@ test("listFormatsForReading", () => {
   const p = livePage([session({ usage: { input: counter(3707), output: counter(null), cache_write: counter(0), cache_read: counter(15074885) } })]);
   const tds = byTag(p.row("s1"), "td");
   const toks = withClass(tds[6], "tok");
-  assert.deepEqual(toks.map((t) => t.textContent), ["3.7k in", "— out", "15.1M cache read"]);
+  assert.deepEqual(toks.map((t) => t.textContent), ["3.7k in", "— out", "0 cache write", "15.1M cache read"]);
   assert.equal(toks[0].title, "in: 3707", "the exact value is kept");
   assert.equal(toks[1].title, "out: not reported");
   assert.equal(p.link("s1").title, "session key k-123", "the key shows on hover only");
@@ -628,7 +628,7 @@ test("rowShowsApiEquivalentCost", () => {
   // under it the token bar (027 C6a), which holds no text
   const cell = byTag(p.page.el, "td").find((x) => x.className === "tokens");
   assert.deepEqual(cell.children.map((c) => [c.className || "", c.textContent]),
-    [["tok seg", "10 in"], ["", " · "], ["tok seg", "— out"], ["", " · "], ["tok seg", "7 cache read"], ["cost", "$12.35"], ["tokbar", ""]]);
+    [["tok seg", "10 in"], ["", " · "], ["tok seg", "— out"], ["", " · "], ["tok seg", "0 cache write"], ["", " · "], ["tok seg", "7 cache read"], ["cost", "$12.35"], ["tokbar", ""]]);
   assert.match(line.title, /not what was charged/);
 });
 
@@ -662,17 +662,32 @@ test("tokenBarSegmentsGrowByTheirCounts", () => {
   const bar = withClass(byTag(p.row("s1"), "td")[6], "tokbar")[0];
   assert.equal(bar.attrs["aria-hidden"], "true", "the numbers are in text already");
   const segs = withClass(bar, "tokseg");
-  assert.equal(segs.length, 3);
-  assert.deepEqual(segs.map((s) => s.style.flexGrow), ["3000", "", "7000"]);
-  assert.deepEqual(segs.map((s) => Boolean(s.hidden)), [false, true, false], "a zero count has no segment");
+  assert.equal(segs.length, 4);
+  assert.deepEqual(segs.map((s) => s.style.flexGrow), ["3000", "", "", "7000"]);
+  assert.deepEqual(segs.map((s) => Boolean(s.hidden)), [false, true, true, false], "a zero count has no segment");
   assert.ok(!bar.hidden);
   // a live update with other counts re-sizes the same segments
   p.page.update({ items: [session({ usage: { input: counter(5), output: counter(10), cache_write: counter(0), cache_read: counter(null) } })] });
   const again = withClass(byTag(p.row("s1"), "td")[6], "tokseg");
-  assert.deepEqual(again.map((s) => s.style.flexGrow), ["5", "10", ""]);
+  assert.deepEqual(again.map((s) => s.style.flexGrow), ["5", "10", "", ""]);
   // nothing reported: no bar at all
   p.page.update({ items: [session({ usage: {} })] });
   assert.ok(withClass(byTag(p.row("s1"), "td")[6], "tokbar")[0].hidden);
+});
+
+// spec 017 AC1: the Tokens cell labels cache write, between output and cache read, and its bar
+// has a segment for it in the same order: input, output, cache write, cache read.
+test("tokensCellShowsCacheWriteBetweenOutputAndCacheRead", () => {
+  const p = livePage([session({ usage: { input: counter(3707), output: counter(999), cache_write: counter(94487), cache_read: counter(15074885) } })]);
+  const cell = byTag(p.row("s1"), "td")[6];
+  assert.equal(p.cell("s1", 6).startsWith("3.7k in · 999 out · 94k cache write · 15.1M cache read"), true);
+  const toks = withClass(cell, "tok");
+  assert.deepEqual(toks.map((t) => t.textContent), ["3.7k in", "999 out", "94k cache write", "15.1M cache read"]);
+  assert.equal(toks[2].title, "cache write: 94487", "the exact value is kept on hover");
+  const segs = withClass(withClass(cell, "tokbar")[0], "tokseg");
+  assert.equal(segs.length, 4, "one bar segment per figure");
+  assert.deepEqual(segs.map((s) => s.style.flexGrow), ["3707", "999", "94487", "15074885"]);
+  assert.deepEqual(segs.map((s) => Boolean(s.hidden)), [false, false, false, false]);
 });
 
 // spec 027 C6b: the sessions and model-calls tiles carry a sparkline of the server's hourly
