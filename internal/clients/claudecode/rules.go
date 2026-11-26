@@ -126,9 +126,13 @@ const (
 	maxTitleDepth   = 8
 )
 
-// pastedTag matches a pasted-content opening or closing tag, with attributes. A tag with
-// no ">" is removed to the end of its line.
-var pastedTag = regexp.MustCompile(`(?m)</?pasted_content\b[^>\n]*(?:>|$)`)
+// pastedTag matches a real pasted-content wrapper tag, opening or closing, and nothing a
+// user merely typed about it. Two shapes count: a tag that starts a line (after optional
+// spaces), which goes with the line break after it, and, when unclosed, to the end of its
+// line; and a complete tag carrying a quoted attribute (the client's id="…"), anywhere.
+// A bare or unquoted tag in the middle of a sentence is left as typed. Each match stays
+// inside one line, so several pasted blocks never merge.
+var pastedTag = regexp.MustCompile(`(?m)^[ \t]*</?pasted_content\b[^>\n]*(?:>|$)\n?|</?pasted_content[ \t]+[A-Za-z_-]+=(?:"[^"\n]*"|'[^'\n]*')[^>\n]*>`)
 
 // PromptTitle gives a turn's title from its prompt (reminders already removed), and
 // whether the title is synthetic: text Claude Code added by itself, which a session title
