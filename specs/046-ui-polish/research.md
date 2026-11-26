@@ -19,7 +19,8 @@ feature: 046-ui-polish
 - 2026-11-26 step 3: UI check on the store copy passed in all four style/theme combinations at 1,440 and 2,560 px (titles 0 raw wrappers, Last active, error + Retry, reconnecting note, empty filter + Clear, session not found, multi-line input); written as docs/manual-checks/046-ui-polish.md (haiku), a5e6b06.
 - 2026-11-26 step 4 round 1 (fresh opus): no P1, 2 P2, 5 P3, 7 P4 (see Review round 1). P2-a (sonnet): list and session titles read the same main-thread prompts (D16), 65e572e; 2 tests failing before the fix; make verify green.
 - 2026-11-26 step 4 P2-b (sonnet): typed text after a synthetic part with a known end is the title; open-ended parts left as a recorded gap (D17), 74ba20f; 12 rule cases, 6 failing before; make verify green.
-- 2026-11-26 step 4 P3-a (sonnet): only real pasted-content wrappers are stripped from titles (D18) (this commit); 6 rule cases; make verify green.
+- 2026-11-26 step 4 P3-a (sonnet): only real pasted-content wrappers are stripped from titles (D18), bb63fed; 6 rule cases; make verify green.
+- 2026-11-26 step 4 P3-b + P4-4 (sonnet): a local command without its caveat block no longer titles a session as a typed slash command (D19) (this commit); 6 rule cases; make verify green.
 
 ## Findings
 
@@ -207,3 +208,7 @@ Fresh opus reviewer, `git diff main...HEAD` at a5e6b06. No P1.
   quoted attribute anywhere (the client's `id="…"` form, which can sit mid-line); a bare or
   unquoted mention typed mid-sentence stays as typed. Probed: the old pattern turned the two
   review scenarios into "why does show in titles" and "explain".
+- **D19** 2026-11-26 P3-b/P4-4 fix: command blocks that carry a local-command stdout or stderr
+  block are a local command whether or not the caveat block comes first (title the typed text
+  left over, else "/<name>" synthetic); "(system) slash command" (no readable name) is now
+  synthetic, so no "(system)" title can win over a typed prompt.

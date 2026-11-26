@@ -156,7 +156,10 @@ func promptTitle(text string, depth int) (string, bool) {
 	}
 	switch {
 	case strings.HasPrefix(s, "<command-message>") || strings.HasPrefix(s, "<command-name>"):
-		return slashCommandTitle(s), false
+		if strings.Contains(s, "<local-command-stdout>") || strings.Contains(s, "<local-command-stderr>") {
+			return localCommandTitle(s)
+		}
+		return slashCommandTitle(s)
 	case strings.HasPrefix(s, "<local-command-caveat>"):
 		return localCommandTitle(s)
 	case strings.HasPrefix(s, "<task-notification>"):
@@ -262,15 +265,16 @@ func commandName(s string) string {
 
 // slashCommandTitle is "/name args"; whatever follows the command blocks (a skill body)
 // is dropped.
-func slashCommandTitle(s string) string {
+// A command with no readable name is synthetic, so a "(system)" title never leads a session.
+func slashCommandTitle(s string) (string, bool) {
 	name := commandName(s)
 	if name == "" {
-		return "(system) slash command"
+		return "(system) slash command", true
 	}
 	if args := stripPasted(tagBody(s, "command-args")); args != "" {
-		return name + " " + args
+		return name + " " + args, false
 	}
-	return name
+	return name, false
 }
 
 // localCommandTitle drops the caveat, command and output blocks of a local command. What
