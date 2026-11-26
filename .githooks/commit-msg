@@ -1,5 +1,5 @@
 #!/bin/sh
-# Enforces the commit conventions in PLAN.md §11.
+# Enforces the commit conventions in AGENTS.md (Commits).
 # Enabled with: git config core.hooksPath .githooks
 
 msg_file="$1"
