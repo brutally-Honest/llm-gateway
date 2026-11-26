@@ -317,13 +317,14 @@ rewrite it.
 ## Known limits
 
 - **Several sessions at once: network effects may show as unassigned.** A connection
-  through the proxy is linked to a session only when exactly one routed session is
-  active; with two or more open, it is listed under "unassigned connections" instead.
+  through the proxy is linked to a session only when exactly one session has had a hook
+  event in the last 10 minutes (`effects.network.active_window`) and has not ended; with
+  none or two or more, it is listed under "unassigned connections" instead.
 
 - **Node needs 22.21 or later, or 24 or later, for network effects.** The settings file
   sets `NODE_USE_ENV_PROXY=1`, so Node sends its calls through the gateway's proxy:
   `fetch` from Node 22.21 (22 line) or 24.0, and the `http`/`https` modules from 22.21 or
-  24.5. Older Node (22.20 and before, 23, 20 and before) ignores it: with the sandbox off
+  24.5. Older Node ignores it: with the sandbox off
   its calls go direct and are not seen; with it on they fail with `ENOTFOUND`. Check with
   `node --version`. Install's summary says the same.
 

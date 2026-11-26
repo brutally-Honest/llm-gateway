@@ -117,8 +117,9 @@ and the web UI's live pages are closed straight away (a tunnel is stored as clos
 early; the page reconnects once the gateway is back). In-flight model calls get a
 grace period, **10 seconds** by default (`shutdown_timeout`), to finish; a call still
 running then is cut, and its capture says the gateway cut it (`gateway_error:
-gateway_shutdown`). Claude Code retries a cut call. Captures then finish storing, so a
-stop with nothing in flight takes well under a second.
+gateway_shutdown`). Claude Code retries a cut call. Captures then finish storing, and the
+gateway waits up to 5 seconds for the web UI's background work, which is usually done at
+once, so a stop with nothing in flight takes well under a second.
 
 - **`make run`:** the first Ctrl-C starts the stop. A **second Ctrl-C stops the gateway
   at once**, cutting any open streams.
@@ -179,7 +180,7 @@ With `effects.network.enabled: false` the output is the hooks alone, as in 010.
 file to add a `sandbox` block that turns on Claude Code's Bash sandbox and points it at the
 proxy ports, so every Bash command's traffic goes through the gateway or not at all: the
 sandbox also points git's ssh at the SOCKS port, and a program that ignores the proxy
-variables (Node older than 22.21 or 24, many database clients) fails instead of going
+variables (Node without `NODE_USE_ENV_PROXY` support, see [install.md](../install.md#known-limits), many database clients) fails instead of going
 direct. Without it, only programs that honour `HTTPS_PROXY` / `HTTP_PROXY` are seen.
 
 - **Linux needs both `bubblewrap` and `socat`.** If either is missing, Claude Code quietly
@@ -313,8 +314,9 @@ The settings file now carries everything the shell exports and user-scope hooks 
 - Network: traffic through the gateway's proxy only. HTTPS shows host, port, bytes, timing
   and outcome; it is never decrypted. With the sandbox on, all Bash commands; MCP servers
   only if they use the proxy setting.
-- A connection is linked to the one session active in the last 10 minutes; with two at
-  once it is listed under "unassigned connections" on the Sessions page.
+- A connection is linked to a session only when exactly one session has had a hook event
+  in the last 10 minutes (`effects.network.active_window`) and has not ended; with none or
+  two or more it is listed under "unassigned connections" on the Sessions page.
 - Copies of changed text files, `.env` included, are stored as-is (ADR 0005).
 
 The full list of accepted limits is in `specs/014-file-and-network-effects/research.md`.
