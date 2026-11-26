@@ -16,7 +16,8 @@ feature: 046-ui-polish
 - 2026-11-26 step 2 U9 (haiku): a visible "reconnecting…" beside the live dot while the stream is down, gone on reconnect; aria-hidden since the dot already speaks, 8da3757; 1 test, 2 app assertions; make verify green.
 - 2026-11-26 step 2 U10 (haiku): the tool dialog's Input shows multi-line strings with real line breaks, Copy keeps the JSON (D7, D12), a60bc38; 3 tests; make verify green.
 - 2026-11-26 step 3 (partial): empty-cache start, 0 of 46 rows shrank at 1,440 and 2,560 px; at 2,560 px the four-figure Tokens cell was cut (U2 regression), fixed by wrapping Tokens at the dots at every width (D13, haiku), fac8476; make verify green.
-- 2026-11-26 step 3: UI check on the store copy passed in all four style/theme combinations at 1,440 and 2,560 px (titles 0 raw wrappers, Last active, error + Retry, reconnecting note, empty filter + Clear, session not found, multi-line input); written as docs/manual-checks/046-ui-polish.md (haiku) (this commit).
+- 2026-11-26 step 3: UI check on the store copy passed in all four style/theme combinations at 1,440 and 2,560 px (titles 0 raw wrappers, Last active, error + Retry, reconnecting note, empty filter + Clear, session not found, multi-line input); written as docs/manual-checks/046-ui-polish.md (haiku), a5e6b06.
+- 2026-11-26 step 4 round 1 (fresh opus): no P1, 2 P2, 5 P3, 7 P4 (see Review round 1). P2-a (sonnet): list and session titles read the same main-thread prompts (D16) (this commit); 2 tests failing before the fix; make verify green.
 
 ## Findings
 
@@ -156,3 +157,34 @@ has 7 of 28 in this copy.
 - **D15** 2026-11-26 Step 3: the tool dialog's "Hook input" block (shown only when the hook saw
   a different input) still shows the hook's raw text with escaped line breaks. Left as is: it
   is shown to compare the raw input the hook received, and U10 names the tool's Input.
+
+## Review round 1
+Fresh opus reviewer, `git diff main...HEAD` at a5e6b06. No P1.
+- **P2-a** `digest.go:92-115` vs `view_overview.go:157-174`: the list digest scans every user
+  text of every non-side exchange (sub-agent prompts included) while the overview reads only
+  main-thread turns, so the two titles can differ when synthetic turns come first.
+- **P2-b** `rules.go:139-172`: synthetic openings are matched on the joined text of a user
+  message, so typed text in a later block of the same message would be hidden. The one
+  CLAUDE.md turn, one usage-reset turn and two continuation turns in the store copy were
+  checked: none carries text after its fixed part; fixed anyway.
+- **P3-a** `rules.go:126`: the pasted-tag regexp strips a lone `<pasted_content` a user typed
+  mid-sentence, and with no `>` eats to the end of the line.
+- **P3-b** `rules.go:145-148`: a local command without the caveat block is titled as a typed
+  slash command. With P4-4: "(system) slash command" is not marked synthetic.
+- **P3-c** `session-page.js:410-413`: any failed open writes "No turns." into the rail, which
+  the page does not know.
+- **P3-d** `view.go:31`: nothing proves `claudecode.Profile` satisfies `PromptTitler`; a
+  signature drift would turn U1 off silently.
+- **P3-e** `sessions-page.js:757-764`: Clear leaves focus on `<body>`.
+- P4 (not fixed unless noted): P4-1 `.tokseg-cw` borrows `--hi`; P4-2 CRLF strings show `\r`;
+  P4-3 an empty statusText with no JSON body reads "not answering"; P4-4 with P3-b; P4-5
+  doctor Detail still says "warming up"; P4-6 7aa2d79's scope could have been `claude-code`;
+  P4-7 the Store copy line names a time zone and free disk space — left, since research
+  entries are never deleted, and it holds nothing user-authored.
+- **D16** 2026-11-26 P2-a fix: the digest builds its entries before the title and runs the
+  existing `CallFactsWith` over them, so it takes, per main call in order, the first new user
+  text, exactly the text that starts a view turn. Entries are cut to 1 byte, so the digest
+  reads the full input of agent tool calls (small JSON) to tell sub-agent calls apart: one
+  extra content read per agent call per list row. Nil rules keep the old path (they cannot
+  tell main from sub-agent). A media-only user message starts a view turn but gives the
+  digest no text; both then fall to the next prompt.

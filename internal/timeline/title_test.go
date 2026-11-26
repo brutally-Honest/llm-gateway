@@ -112,3 +112,48 @@ func TestDigestTitleWithoutATitler(t *testing.T) {
 	}
 	eq(t, "title", d.Title, "SYS: tool loaded")
 }
+
+// subAgentTitleSession is a main thread of msgs, one per call, in which the call after the
+// first two asks a sub-agent (tool "Task") to investigate the cache; the sub-agent's own
+// call carries that prompt, which is not synthetic.
+func subAgentTitleSession(msgs ...string) *fixture {
+	f := newFake()
+	var seen []string
+	for i, m := range msgs {
+		seen = append(seen, "u:"+m)
+		spec := vcallSpec{id: "c" + string(rune('a'+i)), from: float64(i*4 + 1), to: float64(i*4 + 2), msgs: append(append([]string{}, seen...), "a:ok")}
+		if i == 1 {
+			spec.tools = [][3]string{{"t1", "Task", `{"prompt":"investigate the cache"}`}}
+		}
+		f.call(spec)
+		if i == 1 {
+			f.call(vcallSpec{id: "sub", from: float64(i*4) + 2.2, to: float64(i*4) + 2.5, msgs: []string{"u:investigate the cache", "a:found it"}})
+		}
+		seen = append(seen, "a:ok")
+	}
+	return &fixture{f: f}
+}
+
+func digestAndOverview(t *testing.T, x *fixture) (digest, overview string) {
+	t.Helper()
+	v := x.viewWith(t, titleRules{})
+	d, err := timeline.SessionDigest(x.f, store.SessionRow{PrincipalID: "p", Client: "c", SessionKey: "k"}, titleRules{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d.Title, v.Overview.Title
+}
+
+// 046 P2-a: a sub-agent's prompt (written by the model, not synthetic) never becomes the
+// list title; the digest reads the same main-thread prompts the overview does
+func TestDigestTitleIgnoresSubAgentPrompts(t *testing.T) {
+	d, o := digestAndOverview(t, subAgentTitleSession("SYS: tool loaded", "SYS: skill demo-skill", "<p>fix the login button</p>"))
+	eq(t, "digest title", d, "fix the login button")
+	eq(t, "overview title", o, "fix the login button")
+}
+
+func TestDigestTitleOfOnlySyntheticMainPromptsIgnoresSubAgentPrompts(t *testing.T) {
+	d, o := digestAndOverview(t, subAgentTitleSession("SYS: tool loaded", "SYS: skill demo-skill"))
+	eq(t, "digest title", d, "(system) tool loaded")
+	eq(t, "overview title", o, "(system) tool loaded")
+}

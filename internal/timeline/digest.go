@@ -47,11 +47,25 @@ func SessionDigest(src Source, session store.SessionRow, rules DigestRules) (Dig
 	for _, s := range Chips {
 		d.ToolStates[s] = 0
 	}
-	var generated, firstPrompt string
-	// firstPrompt is the first typed prompt; until one is found it is the first synthetic
-	// one's title (046 D4). seen spares a text the exchanges repeat.
-	var firstSynthetic bool
-	seen := map[string]bool{}
+	var generated string
+	// recs holds what the title needs of each counted non-side exchange, by request id.
+	type placedText struct {
+		idx  int // the message's place among the request's message events
+		text string
+	}
+	recs := map[string][]placedText{}
+	allTexts := map[string][]string{}
+	var legacy []string // every non-side user text in order, for rules that know no agent tool
+	var fr FactRules
+	if rules != nil {
+		var ok bool
+		if fr, ok = rules.(FactRules); !ok {
+			fr = noAgentTools{rules}
+		}
+	}
+	// agentInputs is the whole input of each agent tool call, by request id and tool call
+	// id: the build below cuts entry texts, and the call facts match a sub-agent by it.
+	agentInputs := map[string]string{}
 	for _, ex := range exchanges {
 		evs, err := loadEvents(src, ex)
 		if err != nil {
@@ -61,7 +75,8 @@ func SessionDigest(src Source, session store.SessionRow, rules DigestRules) (Dig
 			continue // SessionStats counts nothing from these either
 		}
 		var userTexts []string
-		var errs int
+		var placed []placedText
+		var errs, idx int
 		var failed bool
 		var last *store.EventRow
 		for i, e := range evs {
@@ -69,15 +84,30 @@ func SessionDigest(src Source, session store.SessionRow, rules DigestRules) (Dig
 			case "error":
 				errs++
 				failed = true
+			case "tool_call":
+				if fr != nil {
+					var p toolCallPayload
+					_ = json.Unmarshal(e.Payload, &p)
+					if fr.IsAgentTool(p.Name) {
+						if in, err := rawContent(src, e.ContentHash); err != nil {
+							return Digest{}, err
+						} else {
+							agentInputs[e.RequestID+"\x00"+e.ToolCallID] = in
+						}
+					}
+				}
 			case "message":
 				last = &evs[i]
 				if t, ok, err := userText(src, e); err != nil {
 					return Digest{}, err
 				} else if ok {
 					userTexts = append(userTexts, t)
+					placed = append(placed, placedText{idx, t})
 				}
+				idx++
 			}
 		}
+		allTexts[ex.RequestID] = userTexts
 		side := rules != nil && rules.IsSideCall(userTexts)
 		if side {
 			d.SideErrors += errs
@@ -89,41 +119,76 @@ func SessionDigest(src Source, session store.SessionRow, rules DigestRules) (Dig
 			continue
 		}
 		d.MainErrors += errs
-		for _, t := range userTexts {
-			if firstPrompt != "" && !firstSynthetic {
-				break
-			}
-			if rules != nil {
-				t = rules.StripReminders(t)
-			}
-			if t = strings.TrimSpace(t); t == "" || seen[t] {
-				continue
-			}
-			seen[t] = true
-			title, synthetic := t, false
-			if pt, ok := rules.(PromptTitler); ok {
-				// the same title the session view gives its turns (046)
-				title, synthetic = pt.PromptTitle(t)
-				title = strings.Join(strings.Fields(title), " ")
-			}
-			switch {
-			case title == "":
-			case !synthetic:
-				firstPrompt, firstSynthetic = title, false
-			case firstPrompt == "":
-				firstPrompt, firstSynthetic = title, true
-			}
-		}
-	}
-	d.Title = cutRunes(firstPrompt, PreviewRunes)
-	if generated != "" {
-		d.Title = cutRunes(generated, PreviewRunes)
+		recs[ex.RequestID] = placed
+		legacy = append(legacy, userTexts...)
 	}
 
 	entries, err := Build(src, session, Options{Cut: 1})
 	if err != nil {
 		return Digest{}, err
 	}
+	// The title reads the texts the session view's turns start with (046 P2-a): for each
+	// main-thread call, the first user text among its new messages. Rules that cannot tell
+	// a side call apart have no main thread to find: every text counts, as before.
+	var firstPrompt string
+	if rules == nil {
+		for _, t := range legacy {
+			if t = strings.TrimSpace(t); t != "" {
+				firstPrompt = t
+				break
+			}
+		}
+	} else {
+		for i, e := range entries {
+			if in, ok := agentInputs[e.RequestID+"\x00"+e.ToolCallID]; ok && e.Kind == KindToolCall {
+				entries[i].Text = in
+			}
+		}
+		facts, err := CallFactsWith(entries, fr, func(id string) ([]string, error) { return allTexts[id], nil })
+		if err != nil {
+			return Digest{}, err
+		}
+		pt, _ := rules.(PromptTitler)
+		first, firstSynthetic := "", false
+		for _, e := range entries {
+			f := facts[e.RequestID]
+			if e.Kind != KindExchange || e.Call == nil || f == nil || !f.Main {
+				continue
+			}
+			for _, u := range recs[e.RequestID] {
+				if u.idx < e.Carried {
+					continue // carried from the call before, not new
+				}
+				// the first new user message with text starts the turn, as the view reads it
+				if strings.TrimSpace(u.text) == "" {
+					continue
+				}
+				t := strings.TrimSpace(rules.StripReminders(u.text))
+				title, synthetic := t, false
+				if pt != nil {
+					title, synthetic = pt.PromptTitle(t)
+				}
+				if title = strings.Join(strings.Fields(title), " "); title == "" {
+					break
+				}
+				if !synthetic {
+					first, firstSynthetic = title, false
+				} else if first == "" {
+					first, firstSynthetic = title, true
+				}
+				break
+			}
+			if first != "" && !firstSynthetic {
+				break
+			}
+		}
+		firstPrompt = first
+	}
+	d.Title = cutRunes(firstPrompt, PreviewRunes)
+	if generated != "" {
+		d.Title = cutRunes(generated, PreviewRunes)
+	}
+
 	hookCalls := map[string]bool{}
 	for _, e := range entries {
 		switch {
@@ -143,6 +208,11 @@ func SessionDigest(src Source, session store.SessionRow, rules DigestRules) (Dig
 	}
 	return d, nil
 }
+
+// noAgentTools makes DigestRules the FactRules of a client that names no agent tool.
+type noAgentTools struct{ DigestRules }
+
+func (noAgentTools) IsAgentTool(string) bool { return false }
 
 // TextMemo is an optional extension of a Source: a per-build memo of message texts.
 // A message's content hash covers its role and each block's type and hash (see
