@@ -20,7 +20,8 @@ feature: 046-ui-polish
 - 2026-11-26 step 4 round 1 (fresh opus): no P1, 2 P2, 5 P3, 7 P4 (see Review round 1). P2-a (sonnet): list and session titles read the same main-thread prompts (D16), 65e572e; 2 tests failing before the fix; make verify green.
 - 2026-11-26 step 4 P2-b (sonnet): typed text after a synthetic part with a known end is the title; open-ended parts left as a recorded gap (D17), 74ba20f; 12 rule cases, 6 failing before; make verify green.
 - 2026-11-26 step 4 P3-a (sonnet): only real pasted-content wrappers are stripped from titles (D18), bb63fed; 6 rule cases; make verify green.
-- 2026-11-26 step 4 P3-b + P4-4 (sonnet): a local command without its caveat block no longer titles a session as a typed slash command (D19) (this commit); 6 rule cases; make verify green.
+- 2026-11-26 step 4 P3-b + P4-4 (sonnet): a local command without its caveat block no longer titles a session as a typed slash command (D19), ecd9aa0; 6 rule cases; make verify green.
+- 2026-11-26 step 4 P3-c (sonnet): a failed open says "Turns not loaded." in the rail; "No turns." only for a missing session (this commit); 1 expectation moved, 1 assertion added; make verify green.
 
 ## Findings
 

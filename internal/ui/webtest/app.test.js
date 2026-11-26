@@ -215,7 +215,8 @@ test("aServerErrorShowsItsMessageAndNoTurnsSkeleton", async () => {
   assert.match(textOf(app), /store broke/);
   assert.equal(withClass(app, "loading").length, 0, "no skeleton remains");
   assert.doesNotMatch(textOf(app), /Loading turns/);
-  assert.match(textOf(app), /No turns\./);
+  assert.match(textOf(app), /Turns not loaded\./);
+  assert.doesNotMatch(textOf(app), /No turns\./);
   assert.equal(asked.filter((u) => u === path).length, 1, "a 500 is not retried");
 });
 

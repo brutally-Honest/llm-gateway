@@ -397,9 +397,9 @@ export function createSessionPage(ctx = {}) {
   };
   page.applyEvent = (ev) => page.setView(mergeView(view, ev));
   let loader = null; // the story's loader, until the view arrives
-  // noTurns replaces the rail's loading item with "No turns." when no view is coming
-  const noTurns = () => {
-    tocList.replaceChildren(el("li", "muted", "No turns."));
+  // railNote replaces the rail's loading item with a note when no view is coming
+  const railNote = (text) => {
+    tocList.replaceChildren(el("li", "muted", text));
     tocSub.textContent = "";
   };
   page.setStatus = (text, kind = "note") => {
@@ -409,7 +409,7 @@ export function createSessionPage(ctx = {}) {
     loader = !view && kind !== "error" ? skeleton("Loading the session…", 4, "cards") : null;
     if (loader) status.append(loader);
     if (!view) {
-      if (kind === "error") noTurns();
+      if (kind === "error") railNote("Turns not loaded.");
       reconcile(story, [status]);
     }
   };
@@ -424,7 +424,7 @@ export function createSessionPage(ctx = {}) {
     status.append(note);
     loader = null;
     if (!view) {
-      noTurns();
+      railNote("No turns.");
       reconcile(story, [status]);
     }
   };
