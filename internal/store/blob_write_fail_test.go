@@ -105,6 +105,23 @@ func TestBlobWriteFailure_ParseKept(t *testing.T) {
 	}
 }
 
+// A call whose blob and transaction both fail is one lost call: it counts once, in
+// Writes, and not also in BlobWrites.
+func TestBlobWriteFailure_FailedWriteCountsOnce(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := open(t, dir)
+	readOnlyBlobs(t, dir)
+	s.SetBeforeRowsHookForTest(func() error { return errors.New("disk full") })
+
+	body := noise(inlineMax+500, 11)
+	if err := s.SaveExchange(t.Context(), exchange("x", nil, body)); err == nil {
+		t.Fatal("SaveExchange succeeded, want the hook's error")
+	}
+	if f := s.Failures(); f.BlobWrites != 0 || f.Writes != 1 {
+		t.Errorf("Failures = %+v, want BlobWrites 0, Writes 1", f)
+	}
+}
+
 // A failed data write counts once; a maintenance delete does not count.
 func TestWriteFailures_Counted(t *testing.T) {
 	s, _ := open(t, t.TempDir())

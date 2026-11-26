@@ -185,3 +185,8 @@ Fresh opus reviewer, `git diff main...HEAD` at 9b8532d. No P1.
   EIO, EISDIR) stays a plain error, so the result is degraded and cached nowhere, and the
   next request retries (spec 030 D16 as before). Probed: with every read error treated as
   permanent, both new tests fail.
+- **D21** 2026-11-26 P3-1 fix: a blob failure is counted only after its write commits; a
+  write that fails as a whole counts once, as a store write failure. Probed: counting at the
+  moment of failure fails the new test (BlobWrites 1, Writes 1). P4 (same code): a directory
+  sync failure after a good rename is logged ("blob dir not synced") and not counted; the
+  file is in place. No test seam makes syncDir fail, so that P4 has no test.

@@ -47,7 +47,7 @@ type Store struct {
 	// before its transaction; an error from it fails the write there.
 	beforeRows func() error
 
-	blobWriteFailures atomic.Int64 // blobs left unwritten; their writes still went on
+	blobWriteFailures atomic.Int64 // blobs left unwritten in committed writes
 	writeFailures     atomic.Int64 // failed data writes (not maintenance deletes)
 
 	mu     sync.Mutex
@@ -57,7 +57,7 @@ type Store struct {
 
 // Failures counts what went wrong in writes since the store opened.
 type Failures struct {
-	BlobWrites int64 // blobs that could not be written; the write itself succeeded
+	BlobWrites int64 // blobs that could not be written in writes that committed; blobs of a failed write count in Writes only
 	Writes     int64 // data writes that failed (SaveExchange, SaveParse, SaveHook, SaveEffects, SaveCheckpoint)
 }
 
@@ -171,16 +171,19 @@ func (s *Store) Close() error {
 // write stores items and runs fn in one transaction on the writer connection. It
 // first checks that the database file is still the one the store opened (research
 // Q10, Q11), then puts every blob on disk, and only then opens the transaction that
-// inserts the content rows and runs fn. A blob that could not be written is counted
-// and logged, not fatal: its content row is still inserted, so the row points at a
-// missing blob and reads as content unavailable (spec 045 D5). A later write of the
-// same hash writes the missing blob and heals it.
+// inserts the content rows and runs fn. A blob that could not be written is logged,
+// not fatal: its content row is still inserted, so the row points at a missing blob
+// and reads as content unavailable (spec 045 D5). Such blobs are counted only once
+// the transaction commits; if the write fails, only the write failure counts (the
+// whole call is lost, its blob with it). A later write of the same hash writes the
+// missing blob and heals it.
 func (s *Store) write(ctx context.Context, items []content, fn func(*sql.Tx) error) error {
 	if err := s.checkFile(); err != nil {
 		return err
 	}
 	items = dedup(items)
-	if err := s.writeBlobs(ctx, items); err != nil {
+	blobsFailed, err := s.writeBlobs(ctx, items)
+	if err != nil {
 		return fmt.Errorf("store %s: %w", s.path, err)
 	}
 	if s.beforeRows != nil {
@@ -203,6 +206,7 @@ func (s *Store) write(ctx context.Context, items []content, fn func(*sql.Tx) err
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("store %s: commit: %w", s.path, err)
 	}
+	s.blobWriteFailures.Add(int64(blobsFailed))
 	return nil
 }
 
