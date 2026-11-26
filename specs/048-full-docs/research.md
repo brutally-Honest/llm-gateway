@@ -4,7 +4,7 @@
 - [x] 2026-11-26 branch chore/048-full-docs from up-to-date main; spec and research created
 - [x] 2026-11-26 group A: docs/what-gets-recorded.md (D4-D14)
 - [x] 2026-11-26 group B: docs/architecture.md, docs/ui.md (D15-D20)
-- [ ] group C: README.md and docs/getting-started.md
+- [x] 2026-11-26 group C: README.md, docs/getting-started.md (D21-D24)
 - [ ] group D: AGENTS.md / PLAN.md rules, stale-docs sweep, links
 - [ ] review round 1
 - [ ] fixes for round 1 P1-P3
@@ -80,6 +80,11 @@
   "building session…". ui.md says "reload the page" and offers Retry only where the code has one
   (sessions list, the "Details are not available yet" line). Search matches client, session key,
   id, folder, title and models (`searchVerdict`), so ui.md lists those.
+
+- **D21** 2026-11-26 README rewritten to the spec's section order; the old project log, the "Known limits" block, the Setup and Web UI sections are gone (limits live in install.md and what-gets-recorded.md, UI in ui.md). One pointer to roadmap.md was dropped from the README body and kept in the Docs index line for the roadmap.
+- **D22** 2026-11-26 No LICENSE file exists in the repo (ls LICENSE*: no match), so the README has no license line. docs/licenses/ holds third-party notices and is not linked as a license.
+- **D23** 2026-11-26 The README says the sandbox is needed for network effects only by implication ("through its proxy"); the exact conditions stay in what-gets-recorded.md. Keeps one home per rule.
+- **D24** 2026-11-26 getting-started.md describes the PATH case from code: install.sh and `gateway install` copy the binary to ~/.local/bin/gateway and add it to PATH only on macOS when missing (shell.go:20-22); on Linux the doc gives the install.md fix. Prompts described: `Run it now?` (preflight.go:467) and `Proceed?` (install.go:128), shown as `[y/N]` and `[Y/n]` per install.md.
 
 ## Notes
 
@@ -206,3 +211,44 @@ Stale or doubtful statements in OTHER docs (not fixed; group D):
 4. docs/clients/claude-code.md:315-317 — "linked to the one session active in the last 10 minutes": same wording issue as group A item 3 (code: a hook event inside the window and no session end).
 5. docs/clients/claude-code-hooks.md:118-122 — "its ungrouped list has no hook entries" and "known v1 gap": not re-checked against ungrouped-list.js.
 6. docs/install.md:268 (fixed in this group) described rows as showing "start time"; the first column is "Last active".
+
+### Group C evidence
+- one-command install line and URL https://raw.githubusercontent.com/brutally-Honest/llm-gateway/main/install.sh — install.sh:5, docs/install.md:6
+- flags `--check` and `--dry-run` through `sh -s --` — install.sh:6-7, cmd/gateway/install.go:119-120 (flag defs), install.go:35-37 (help)
+- installer shows preflight table, asks `Run it now?`, shows plan, asks `Proceed?` — internal/install/preflight.go:467, internal/install/install.go:128, docs/install.md:61-66
+- `--yes` skips Proceed; `--install-deps`, `--no-shell`, `--no-service` exist — cmd/gateway/install.go:111-118
+- binary installed to ~/.local/bin/gateway — docs/install.md:303-307 (Paths), install.sh:166-167 comment
+- PATH changed only on macOS when ~/.local/bin missing — internal/install/shell.go:20-22
+- Linux `gateway: command not found` fix (add ~/.local/bin to PATH or run ~/.local/bin/gateway doctor) — docs/install.md Troubleshooting row
+- ends "Open a new terminal, then run claude." — internal/install/install.go:704
+- `claude` function loads settings only when /healthz answers, else prints "llm-gateway is not running: starting plain Claude Code" — internal/clients/claudecode/install.go:98-108
+- shell files: ~/.zshrc ($ZDOTDIR), ~/.bashrc (Linux), ~/.bash_profile (macOS) — internal/install/preflight.go:365-370
+- Linux systemd user unit llm-gateway.service, macOS launchd label dev.llm-gateway — internal/install/service.go:59-60, 69
+- service starts at login — docs/install.md:11 (opening lines), cmd/gateway/install.go:17 help text ("login service")
+- `gateway doctor` exists, checks install and running gateway, pass/warn/fail with fix — cmd/gateway/install.go:70-80, 138-145; exit 1 on fail, ibid.
+- UI default http://127.0.0.1:7199 — internal/config/ui.go:27
+- `gateway uninstall` removes service, claude function block, settings file; keeps config, data, binary — cmd/gateway/install.go:50-58, internal/install/uninstall.go:85-99
+- `gateway uninstall --purge` deletes config dir and data dir, asks once more naming size, "cannot be undone" — internal/install/uninstall.go:156-166, 228-232
+- doc line "plain uninstall keeps config, data and binary" — internal/install/uninstall.go:96-99
+- `make build`, `make setup`, `make verify` exist; `make build && ./bin/gateway install` — Makefile:16, 54-55, 110; docs/install.md:99-100; BIN is ./bin (Makefile build target uses $(BIN)/gateway; BIN value not re-read, install.md and AGENTS.md use ./bin)
+- `make setup` / `make verify` as contributor commands — AGENTS.md:72-73
+- CI badge URL kept verbatim from the old README — README.md:3 (not re-checked against .github/workflows/verify.yml name)
+- Claude Code only built client, Anthropic Messages only built protocol; others "designed for, later" — PLAN.md:66-72 (section 3)
+- README link PLAN.md#3-client-support — PLAN.md:66 heading "## 3. Client support"
+- anchors used: docs/install.md#requirements (line 14), #troubleshooting (line 336); docs/ui.md, what-gets-recorded.md, architecture.md, capture.md, observability.md, roadmap.md, release-checklist.md, clients/claude-code.md, clients/claude-code-hooks.md, decisions/ all exist (ls docs)
+- UI list items (sessions, turns, tool calls, file and network effects, "needs a look", live updates, capture-degraded banner) — docs/ui.md headings (Sessions page, Session page, Live updates, Capture-health banner) and docs/what-gets-recorded.md:25-45
+- "records prompts, responses, tool calls, tokens, API-equivalent cost" — docs/what-gets-recorded.md:6-45
+- "auth headers and keys are not stored" — AGENTS.md hard rules (credentials); not re-verified in capture code
+- "listens on loopback only, no login" — docs/ui.md:11-14, docs/install.md Known limits
+- "direct calls to api.anthropic.com are missed" — PLAN.md:77 (known client limits)
+- getting-started: "session shows up in the UI after using claude" — docs/install.md Troubleshooting row 1 (UI shows sessions); behaviour not run
+- getting-started: UI file-change claim for CLAUDE settings file removal on uninstall — internal/install/uninstall.go:85-87 (settings removed when install owns it)
+- NOT VERIFIABLE IN CODE: "It starts again each time you log in" — worded from service manager semantics (systemd user unit, launchd agent) and install.md; unit/plist contents not re-read
+- NOT VERIFIABLE IN CODE: "a few other tools (such as curl)" and "installer offers to install what is missing" — worded from docs/install.md:14-20 only
+- NOT VERIFIABLE IN CODE: CI badge workflow name verify.yml — kept from old README
+
+#### Stale statements elsewhere for group D
+1. docs/install.md:99-100 points to clients/claude-code.md §6 for the manual setup; check the anchor `#6-files-and-network-014` still resolves (heading text not re-read).
+2. docs/roadmap.md:4-7 says "v1 is complete" and keeps spec numbers; fine as history, but the README no longer carries that line, so roadmap.md is now its only home.
+3. The old README's "Known limits" (loopback only, secrets in captures) was removed; install.md#known-limits and what-gets-recorded.md#privacy hold it. No link elsewhere pointed to the README section (not grepped repo-wide: group D should grep for `README.md#`).
+4. PLAN.md section 10 and AGENTS.md still carry the workflow split (group D, AC4).
