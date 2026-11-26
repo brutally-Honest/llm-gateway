@@ -1,7 +1,8 @@
 #!/bin/sh
 # The local gate (ADR 0001). A branch push is blocked unless every pushed commit
 # passes .githooks/commit-msg, each pushed sha is HEAD, the tree is clean and
-# `make verify` passes. Notes, tags and deletions are not checked.
+# `make verify` passes. Any push to refs/notes/* is rejected, deletions included;
+# tags and other deletions are not checked.
 # Enabled with: make setup
 
 root=$(git rev-parse --show-toplevel) || exit 1
@@ -17,6 +18,10 @@ trap 'rm -f "$msg"' EXIT
 
 branches=0
 while read -r local_ref local_sha remote_ref remote_sha; do
+	# Notes are local only (AGENTS.md, Git notes). Checked first, deletions included.
+	case "$remote_ref" in
+		refs/notes/*) fail "$remote_ref is local only and is never pushed (AGENTS.md)" ;;
+	esac
 	case "$remote_ref" in
 		refs/heads/*) ;;
 		*) continue ;;

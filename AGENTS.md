@@ -144,12 +144,10 @@ Repo setup (`make setup` runs it), so notes survive a rebase:
 ```
 git config core.hooksPath .githooks
 git config notes.rewriteRef refs/notes/commits
-git config --add remote.origin.fetch '+refs/notes/*:refs/notes/*'
 ```
-Notes are local by default. Pushing `refs/notes/*` changes a remote ref, so it needs the
-human's explicit go-ahead (see "Always stop and ask first"). The fetch refspec stays so
-notes can be fetched if they are ever pushed. GitHub doesn't display notes anyway, so the
-PR description still carries the essentials (spec link, acceptance-criteria evidence).
+Notes stay local. Never push `refs/notes/*`; the pre-push hook rejects it. GitHub doesn't
+display notes anyway, so the PR description carries the essentials (spec link,
+acceptance-criteria evidence).
 
 ### Enforcement
 The skill gets the message right when it is written. The repo assumes it wasn't:
@@ -159,7 +157,8 @@ The skill gets the message right when it is written. The repo assumes it wasn't:
   lines.
 - `.githooks/pre-push` re-runs `commit-msg` on every commit in the pushed range, so a commit
   made with `--no-verify` can't get through, and blocks the push unless the pushed sha is
-  HEAD, tracked files are clean and `make verify` passes (ADR 0001).
+  HEAD, tracked files are clean and `make verify` passes (ADR 0001). It also rejects any
+  push of `refs/notes/*`, deletions included.
 - CI runs the `verify` workflow on Linux and macOS for every PR and every push to main
   (ADR 0019, which supersedes ADR 0001's "no CI").
 - Bypassing either hook is under "Always stop and ask first".
@@ -188,7 +187,7 @@ Decided in `PLAN.md` §8. Adding a dependency is under "Always stop and ask firs
 A D-entry is for judgment calls inside the repo. These need the human's explicit go-ahead
 every time, even mid-build:
 - Anything outside the repo: other directories, system config, external services.
-- Any push or merge (local or pull request), or change to a remote branch or ref (notes included).
+- Any push or merge (local or pull request), or change to a remote branch or ref.
 - Deleting user data: local stores, captures, untracked files, or anything not in git.
 - Adding a dependency: it needs an ADR and the human's go-ahead, even with the ADR drafted.
 - Bypassing, disabling or skipping a hook, guard or check (`--no-verify` included).

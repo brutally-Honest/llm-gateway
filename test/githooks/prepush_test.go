@@ -152,8 +152,49 @@ func TestPrePush_Rejects(t *testing.T) {
 	}
 }
 
-// AC21: each of these pushes is allowed. Deletions, notes and tags push while
-// `make verify` fails, which shows the hook doesn't check them at all.
+// Notes are local only (AGENTS.md, Git notes): a push to refs/notes/* is rejected
+// before any other check, and so is its deletion.
+func TestPrePush_RejectsNotes(t *testing.T) {
+	const want = "is local only and is never pushed"
+
+	t.Run("push", func(t *testing.T) {
+		w := newGatedWorld(t)
+		w.git("notes", "add", "-m", "a note", "HEAD")
+
+		out, ok := w.push(nil, "origin", "refs/notes/commits")
+		if ok {
+			t.Fatalf("notes push succeeded, want it rejected\n%s", out)
+		}
+		if !strings.Contains(out, want) {
+			t.Errorf("push output does not contain %q\n%s", want, out)
+		}
+		if sha := w.remoteSHA("refs/notes/commits"); sha != "" {
+			t.Errorf("origin has refs/notes/commits at %s, want none", sha)
+		}
+	})
+
+	t.Run("deletion", func(t *testing.T) {
+		w := newGatedWorld(t)
+		// Put a notes ref on origin directly; the hook is what is under test, not this setup.
+		remote := strings.TrimSpace(w.git("remote", "get-url", "origin"))
+		head := strings.TrimSpace(w.git("rev-parse", "HEAD"))
+		w.run(w.dir, "git", "--git-dir", remote, "update-ref", "refs/notes/commits", head)
+
+		out, ok := w.push(nil, "origin", ":refs/notes/commits")
+		if ok {
+			t.Fatalf("notes deletion succeeded, want it rejected\n%s", out)
+		}
+		if !strings.Contains(out, want) {
+			t.Errorf("push output does not contain %q\n%s", want, out)
+		}
+		if sha := w.remoteSHA("refs/notes/commits"); sha != head {
+			t.Errorf("origin refs/notes/commits = %q, want it left at %s", sha, head)
+		}
+	})
+}
+
+// AC21: each of these pushes is allowed. Deletions and tags push while `make verify`
+// fails, which shows the hook doesn't check them at all.
 func TestPrePush_Allows(t *testing.T) {
 	t.Run("branch_deletion", func(t *testing.T) {
 		w := newGatedWorld(t)
@@ -185,19 +226,6 @@ func TestPrePush_Allows(t *testing.T) {
 		}
 		if got, want := w.remoteSHA("refs/heads/feat/next"), strings.TrimSpace(w.git("rev-parse", "HEAD")); got != want {
 			t.Errorf("origin feat/next = %s, want %s", got, want)
-		}
-	})
-
-	t.Run("notes", func(t *testing.T) {
-		w := newGatedWorld(t)
-		// git writes the notes commit's message itself, and it is not conventional.
-		w.git("notes", "add", "-m", "a note", "HEAD")
-
-		if out, ok := w.push(verifyFails, "origin", "refs/notes/commits"); !ok {
-			t.Fatalf("notes push rejected\n%s", out)
-		}
-		if w.remoteSHA("refs/notes/commits") == "" {
-			t.Error("origin has no refs/notes/commits")
 		}
 	})
 

@@ -25,5 +25,14 @@
   confirmation (they may prefer docs-only).
 - **D4** 2026-11-26 `notes.rewriteRef refs/notes/commits` stays in `make setup`: it is local
   only (keeps notes across a rebase) and pushes nothing.
+- **D5** 2026-11-26 The hook policy change outlives 049, so it is ADR 0022 (notes stay local),
+  which amends ADR 0001's "notes and tags are pushed unchecked". ADR 0001's body and the
+  000 spec/plan lines on the notes refspec stay as history. → ADR-0022
 
 ## Notes
+- 2026-11-26 Task 1 grep: no stale notes text in README.md, PLAN.md or docs/*.md; the only
+  hits outside AGENTS.md, Makefile, the hook and its tests are history (ADR 0001:25,
+  specs/000-foundation spec.md and plan.md, specs/048 research D34/D51).
+- 2026-11-26 `shellcheck .githooks/pre-push` reports 5 warnings (SC2046, SC1007 x4) that
+  are on main too; `make verify` lints only install.sh, so they do not fail the gate. Not in
+  049's scope; follow-up candidate.

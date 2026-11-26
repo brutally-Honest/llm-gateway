@@ -29,6 +29,7 @@ func TestSetupGit_Idempotent(t *testing.T) {
 		}
 	}
 
+	// Notes stay local: setup never adds a fetch refspec for them.
 	fetch := strings.Split(strings.TrimSpace(w.git("config", "--get-all", "remote.origin.fetch")), "\n")
 	n := 0
 	for _, refspec := range fetch {
@@ -36,7 +37,7 @@ func TestSetupGit_Idempotent(t *testing.T) {
 			n++
 		}
 	}
-	if n != 1 {
-		t.Errorf("notes refspec appears %d times in remote.origin.fetch, want 1: %q", n, fetch)
+	if n != 0 {
+		t.Errorf("notes refspec appears %d times in remote.origin.fetch, want 0: %q", n, fetch)
 	}
 }
