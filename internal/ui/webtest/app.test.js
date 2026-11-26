@@ -13,6 +13,7 @@ const byId = (id) => {
 const streams = [];
 const listeners = {};
 // plans[path] is a queue of statuses answered before the stubbed reply; 200 means the reply.
+// An entry may be an object {status, statusText, code, message} for an error with its own body.
 const plans = {};
 const asked = [];
 class FakeEventSource {
@@ -75,8 +76,10 @@ Object.assign(globalThis, {
   fetch: async (url) => {
     const path = String(url).split("?")[0];
     asked.push(String(url));
-    const status = plans[path]?.shift() ?? 200;
-    if (status !== 200) return { ok: false, status, statusText: "Gateway Timeout", json: async () => ({ error: { message: "store timed out" } }) };
+    const planned = plans[path]?.shift() ?? 200;
+    const reply = typeof planned === "number" ? { status: planned } : planned;
+    const status = reply.status;
+    if (status !== 200) return { ok: false, status, statusText: reply.statusText ?? "Gateway Timeout", json: async () => ({ error: { code: reply.code, message: reply.message ?? "store timed out" } }) };
     const body = typeof replies[path] === "function" ? replies[path](String(url)) : replies[path];
     return { ok: Boolean(body), status: body ? 200 : 404, statusText: "not stubbed", json: async () => body };
   },
@@ -92,6 +95,11 @@ const liveText = () => {
   return textOf(d).trim();
 };
 const liveTone = () => liveDot().className;
+// liveNote is the dot's visible note: its text while shown, "" while hidden
+const liveNote = () => {
+  const n = withClass(byId("shell-head"), "live-note")[0];
+  return n.hidden ? "" : textOf(n).trim();
+};
 
 test("droppedSessionStreamKeepsCallDialogAndHistoryAndShowsDisconnected", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
@@ -119,6 +127,7 @@ test("droppedSessionStreamKeepsCallDialogAndHistoryAndShowsDisconnected", async 
   first.onerror();
   assert.equal(liveText(), "live: disconnected, retrying");
   assert.equal(liveTone(), "live-dot live-warn", "amber while reconnecting");
+  assert.equal(liveNote(), "reconnecting…", "the note says so beside the dot");
   held();
 
   // the browser gave up: the page reopens the stream, and the view still holds meanwhile
@@ -131,6 +140,7 @@ test("droppedSessionStreamKeepsCallDialogAndHistoryAndShowsDisconnected", async 
   assert.equal(streams.length, 2);
   streams[1].onopen();
   assert.equal(liveText(), "live");
+  assert.equal(liveNote(), "", "the note is hidden once the stream is back");
   held();
 });
 
@@ -171,6 +181,43 @@ test("showsBuildingSessionWhileWaitingToRetry", async () => {
   await settle();
   await settle();
   assert.doesNotMatch(textOf(byId("app")), /building session/);
+});
+
+// a session the server does not have: the story says so, the rail stops loading, and the
+// page offers a way back to the list
+test("aMissingSessionSaysNotFoundWithALinkBackAndNoSpinner", async () => {
+  const path = "/api/sessions/gone/view";
+  plans[path] = [{ status: 404, statusText: "Not Found", code: "not_found", message: "no such session" }];
+  asked.length = 0;
+  location.hash = "#/sessions/gone";
+  for (const fn of listeners.hashchange) fn();
+  await settle();
+  await settle();
+  const app = byId("app");
+  assert.match(textOf(app), /Session not found\./);
+  const link = all(app).find((e) => e.tagName === "a" && textOf(e).trim() === "Back to the sessions list");
+  assert.ok(link, "a link back to the list");
+  assert.equal(link.href, "#/");
+  assert.equal(withClass(app, "loading").length, 0, "no skeleton remains");
+  assert.doesNotMatch(textOf(app), /Loading turns|Loading the session|building session/);
+  assert.equal(asked.filter((u) => u === path).length, 1, "a 404 is not retried");
+});
+
+test("aServerErrorShowsItsMessageAndNoTurnsSkeleton", async () => {
+  const path = "/api/sessions/broken/view";
+  plans[path] = [{ status: 500, statusText: "Internal Server Error", message: "store broke" }];
+  asked.length = 0;
+  location.hash = "#/sessions/broken";
+  for (const fn of listeners.hashchange) fn();
+  await settle();
+  await settle();
+  const app = byId("app");
+  assert.match(textOf(app), /store broke/);
+  assert.equal(withClass(app, "loading").length, 0, "no skeleton remains");
+  assert.doesNotMatch(textOf(app), /Loading turns/);
+  assert.match(textOf(app), /Turns not loaded\./);
+  assert.doesNotMatch(textOf(app), /No turns\./);
+  assert.equal(asked.filter((u) => u === path).length, 1, "a 500 is not retried");
 });
 
 test("secondFailureShowsTheError", async () => {

@@ -528,12 +528,13 @@ async function loadUngroupedHead() {
   }
 }
 
-// liveText is the header status for a stream state: its word, and the dot's tone (green
-// when live, amber while it retries).
+// liveText is the header status for a stream state: its word, the dot's tone (green
+// when live, amber while it retries), and the note shown beside the dot (only while the
+// stream is down; the snapshot error already has its own message on the page).
 function liveText(state) {
-  if (state === "connected") return ["live", "ok"];
-  if (state === "snapshot_error") return ["live: snapshot failed, retrying in 30 s", "warn"];
-  return ["live: disconnected, retrying", "warn"];
+  if (state === "connected") return ["live", "ok", ""];
+  if (state === "snapshot_error") return ["live: snapshot failed, retrying in 30 s", "warn", ""];
+  return ["live: disconnected, retrying", "warn", "reconnecting…"];
 }
 
 function stopStream() {
@@ -652,7 +653,12 @@ async function showSession(id) {
   try {
     view = await retryOn504(() => getJSON(`sessions/${enc(id)}/view`), () => page.setStatus("building session…"));
   } catch (e) {
-    if (mine === seq) page.setStatus(e.message, "error");
+    if (mine === seq) {
+      if (e.status === 404) {
+        shell.setRoute(parseRoute(location.hash), "Session not found");
+        page.setMissing();
+      } else page.setStatus(e.message, "error");
+    }
     return;
   }
   if (mine !== seq) return;

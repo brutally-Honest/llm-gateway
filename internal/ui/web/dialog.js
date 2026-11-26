@@ -1,5 +1,5 @@
 import { button, bytes, clock, dur, el, markText, plural, skeleton } from "./fmt.js";
-import { hookInputEntry, omittedNote, prettyJSON } from "./entries.js";
+import { hookInputEntry, omittedNote, prettyJSON, readableJSON } from "./entries.js";
 import { labelBadge } from "./story.js";
 import { copyButton } from "./tool-card.js";
 
@@ -62,9 +62,10 @@ const lines = (a, d) => {
   s.append(el("span", "a", `+${a}`), " ", el("span", "d", `−${d}`));
   return s;
 };
-function block(text, cls = "") {
+// block shows shown (default text) in its <pre>; Copy always copies text.
+function block(text, cls = "", shown = text) {
   const box = el("div", cls);
-  const pre = el("pre", "", text);
+  const pre = el("pre", "", shown);
   box.append(copyButton(() => text), pre);
   return box;
 }
@@ -269,7 +270,7 @@ export function createDialog(ctx = {}) {
       const res = result === null ? el("p", "muted-note", "No result was captured.") : block(result, det.is_error ? "errbox" : "");
       if (result !== null && det.result_truncated && det.result_exchange_id) res.append(rawLink(det.result_exchange_id));
       out.push(section(isCmd ? "Output" : "Result", "", res));
-      const input = block(prettyJSON(det.input || ""));
+      const input = block(prettyJSON(det.input || ""), "", readableJSON(det.input || ""));
       if (det.input_truncated && det.exchange_id) input.append(rawLink(det.exchange_id));
       out.push(section("Input", "", input));
       if (det.input_differs) {

@@ -209,6 +209,8 @@ main#app { padding: 16px 24px 3rem; }
    ink, so the dot has its own pair), and always round, whatever the style's corners */
 .live-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--live-on); box-shadow: 0 0 0 3px color-mix(in srgb, var(--live-on) 22%, transparent); flex: none; }
 .live-dot.live-warn, .live-dot.live-bad { background: var(--live-off); box-shadow: 0 0 0 3px color-mix(in srgb, var(--live-off) 22%, transparent); }
+/* the note beside the dot while the stream is down; [hidden] above already hides it */
+.live-note { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 /* the "?" button: the shortcuts of this page, in a dialog */
 .help .shortcuts { display: flex; flex-direction: column; gap: 6px; padding: 4px 0 10px; font-size: 13px; }
@@ -265,12 +267,13 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .today .spark i { flex: 1 1 0; min-width: 1px; max-width: 6px; height: calc(var(--v) / var(--peak) * 100%); min-height: 1px; border-radius: 1px 1px 0 0; background: var(--accent); }
 :root[data-style="lean"] .today .spark i { background: var(--accent-grad); }
 .sp-head .today .stat b { font-size: 22px; line-height: 1.2; letter-spacing: -.02em; }
-/* the bar under a row's token figures: input, output and cache read, each segment as wide as
-   its own count (flex-grow is set from the count, in sessions-page.js) */
+/* the bar under a row's token figures: input, output, cache write and cache read, each segment
+   as wide as its own count (flex-grow is set from the count, in sessions-page.js) */
 .tokbar { display: flex; gap: 1px; height: 4px; width: 100%; min-width: 7rem; max-width: 12rem; margin-top: 5px; border-radius: var(--radius-xs); overflow: hidden; background: var(--panel2); }
 .tokseg { display: block; flex: 0 1 0; min-width: 0; }
 .tokseg-in { background: var(--tok-in); }
 .tokseg-out { background: var(--tok-out); }
+.tokseg-cw { background: var(--hi); }
 .tokseg-cache { background: var(--tok-cache); }
 .sessions-page .filter-bar { align-items: center; gap: 10px; padding: 0; }
 .sessions-page .filter-bar input { width: 18rem; max-width: 100%; padding: 6px 10px; }
@@ -297,6 +300,9 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 /* a failed page: the error text and its Retry on one row (spec 042 AC2) */
 .sp-list > .sp-error { display: flex; align-items: center; gap: 12px; padding: 1.5rem 1.25rem; }
 .sp-list > .sp-error > .error { margin: 0; padding: 0; }
+/* a filter or search that matches nothing: the note and a Clear on one row (spec 046 U8) */
+.sp-list > .sp-empty { display: flex; align-items: center; gap: 12px; padding: 1.5rem 1.25rem; }
+.sp-list > .sp-empty > .empty { margin: 0; padding: 0; }
 .sp-list table { min-width: 72rem; }
 /* the header paints above the rows (positioned for their stretched link) on an opaque
    background; its line is a box-shadow, since a collapsed border does not travel with a sticky cell (spec 042 AC1). */
@@ -350,39 +356,35 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .sp-list td.work, .sp-list td.tools, .sp-list td.changes, .sp-list td.dur, .sp-list td.tokens { white-space: nowrap; color: var(--text); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 /* below the page's full 1,600 px width, Work, Changes and Tokens wrap onto two lines, at
    the dots, so the Session column keeps its 20rem and nothing is cut (research D49, 020
-   D17); wider, they stay on one line */
+   D17); wider, Work and Changes stay on one line, and Tokens wraps at the dots at every
+   width since it holds four figures (spec 046 U2) */
 .sp-list td .seg { white-space: nowrap; }
 /* 1599px must stay one below .sessions-page, .page { max-width: 1600px } */
 @media (max-width: 1599px) {
 .sp-list td.work, .sp-list td.changes, .sp-list td.tokens { white-space: normal; min-width: 12.5rem; }
 .sessions-page > .sp-list td.work, .sessions-page > .sp-list td.changes, .sessions-page > .sp-list td.tokens { min-width: 0; }
 }
+.sp-list td.tokens { white-space: normal; }
 .sp-list td.work .bad { color: var(--bad); font-weight: 600; }
 .sp-list td.tokens .cost { display: block; white-space: nowrap; color: var(--muted); }
 /* A row whose facts are not built yet (spec 043 AC6): the cheap cells are real, and each heavy
-   cell holds a quiet bar. The bars are drawn here, not in the DOM, so a row going from
-   pending to filled writes only its cells' text. Nothing may move when the facts arrive: the
-   columns are fixed (above), so the bars cannot change a width; the title link and the place
-   line keep the lines they have when filled (the link's text is transparent, so its height is
-   the real one); and each heavy cell reserves the lines its facts usually take at this width,
-   in line heights (lh), so the row is as tall as a common filled row at any font or style: below
-   1,600 px Work 3 lines, Changes 2, Tokens 3 of figures; from 1,600 px 1, 1 and 2. Tokens adds
-   its cost line and its bar (5 px gap, 4 px bar) as filled. A row that gains a third "needs a
-   look" line, or wraps more than usual, may still grow. No animation. */
-.sp-list { --pend-work: 3; --pend-changes: 2; --pend-figures: 2; }
-@media (min-width: 1600px) {
-.sp-list { --pend-work: 1; --pend-changes: 1; --pend-figures: 1; }
-}
+   cell holds one quiet bar, one line tall (lh), the shortest a filled cell can be. So a row
+   only grows when its facts arrive (spec 046 U4) and never shrinks. The bars are drawn here,
+   not in the DOM, so a row going from pending to filled writes only its cells' text. Nothing
+   may move when the facts arrive: the columns are fixed (above), so the bars cannot change a
+   width; the title link keeps its line (its text is transparent, so its height is the real
+   one), and the place line keeps its line only when it has text, as a filled one does (an
+   empty one is hidden, so a row with no folder yet grows when its model arrives, never
+   shrinks). No animation. */
 .sp-list tr.pending a.stitle { color: transparent; width: min(16rem, 70%); background: var(--panel2); border-radius: var(--radius-xs); user-select: none; }
 .sp-list tr.pending .splace { display: block; min-height: 1.3em; }
 .sp-list tr.pending .splace::after { content: ""; display: inline-block; width: 6rem; height: .8em; margin-left: .5rem; vertical-align: middle; background: var(--panel2); border-radius: var(--radius-xs); }
-.sp-list tr.pending .splace:empty::after { margin-left: 0; }
+.sp-list tr.pending .splace:empty { display: none; }
 .sp-list tr.pending td.work::before, .sp-list tr.pending td.changes::before, .sp-list tr.pending td.dur::before, .sp-list tr.pending td.tokens::before { content: ""; display: block; max-width: 100%; height: 1em; background: var(--panel2); border-radius: var(--radius-xs); }
-.sp-list tr.pending td.work::before { width: 9rem; margin-bottom: calc(var(--pend-work) * 1lh - 1em); }
-.sp-list tr.pending td.changes::before { width: 7rem; margin-bottom: calc(var(--pend-changes) * 1lh - 1em); }
+.sp-list tr.pending td.work::before { width: 9rem; margin-bottom: calc(1lh - 1em); }
+.sp-list tr.pending td.changes::before { width: 7rem; margin-bottom: calc(1lh - 1em); }
 .sp-list tr.pending td.dur::before { width: 3rem; }
-.sp-list tr.pending td.tokens::before { width: 10rem; margin-bottom: calc(var(--pend-figures) * 1lh - 1em); }
-.sp-list tr.pending td.tokens::after { content: ""; display: block; width: 4rem; max-width: 100%; height: 1em; margin-bottom: calc(1lh - 1em + 9px); background: var(--panel2); border-radius: var(--radius-xs); }
+.sp-list tr.pending td.tokens::before { width: 10rem; margin-bottom: calc(1lh - 1em); }
 .sicon-pending { opacity: .45; }
 /* the list's status line: rows a filter is still checking, or the follow-up giving up */
 .sp-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 13px; }

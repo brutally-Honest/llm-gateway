@@ -1,9 +1,25 @@
+// UNREACHABLE is the message the page shows when the gateway did not answer at all: the
+// request failed, or the reply was cut off or was not JSON.
+export const UNREACHABLE = "The gateway is not answering.";
+
+// unreachable makes the error for a request that got no usable answer; cause is what the browser threw.
+function unreachable(cause) {
+  const err = new Error(UNREACHABLE, { cause });
+  err.code = "unreachable";
+  return err;
+}
+
 // fetch and EventSource wrappers; every URL is relative to the UI origin.
 export async function getJSON(path, params = {}) {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null) q.set(k, v);
   const qs = q.toString();
-  const res = await fetch(`/api/${path}${qs ? `?${qs}` : ""}`);
+  let res;
+  try {
+    res = await fetch(`/api/${path}${qs ? `?${qs}` : ""}`);
+  } catch (cause) {
+    throw unreachable(cause);
+  }
   if (!res.ok) {
     let msg = res.statusText;
     try {
@@ -11,17 +27,26 @@ export async function getJSON(path, params = {}) {
     } catch {
       // keep the status text
     }
-    const err = new Error(msg);
+    const err = msg ? new Error(msg) : unreachable();
     err.status = res.status;
     throw err;
   }
-  return res.json();
+  try {
+    return await res.json();
+  } catch (cause) {
+    throw unreachable(cause);
+  }
 }
 
 // getBody fetches one stored body of an exchange as text. It resolves to { text, truncated }
 // and rejects with an Error whose code is the API's error code, such as body_not_stored.
 export async function getBody(id, part) {
-  const res = await fetch(`/api/exchanges/${encodeURIComponent(id)}/body?part=${encodeURIComponent(part)}`);
+  let res;
+  try {
+    res = await fetch(`/api/exchanges/${encodeURIComponent(id)}/body?part=${encodeURIComponent(part)}`);
+  } catch (cause) {
+    throw unreachable(cause);
+  }
   if (!res.ok) {
     let code = "";
     let msg = res.statusText;
@@ -36,7 +61,13 @@ export async function getBody(id, part) {
     err.code = code;
     throw err;
   }
-  return { text: await res.text(), truncated: res.headers.get("X-Body-Truncated") === "true" };
+  let text;
+  try {
+    text = await res.text();
+  } catch (cause) {
+    throw unreachable(cause);
+  }
+  return { text, truncated: res.headers.get("X-Body-Truncated") === "true" };
 }
 
 // STREAM_EVENTS are the named events the server sends on /api/.../stream. openStream listens

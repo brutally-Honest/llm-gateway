@@ -154,11 +154,23 @@ func (b *builder) title(o *Overview, v *View) {
 			}
 		}
 	}
-	for _, t := range v.Turns {
-		if t.N > 0 && !t.Background && strings.TrimSpace(t.Prompt) != "" {
-			o.Title, o.TitleSource = cutRunes(strings.Join(strings.Fields(t.Prompt), " "), titleRunes), "prompt"
+	// the first typed prompt; when every prompt is synthetic, the first of those (046 D4)
+	first := -1
+	for i, t := range v.Turns {
+		if t.N == 0 || t.Background || t.Title == "" {
+			continue
+		}
+		if !t.synthetic {
+			o.Title, o.TitleSource = t.Title, "prompt"
 			return
 		}
+		if first < 0 {
+			first = i
+		}
+	}
+	if first >= 0 {
+		o.Title, o.TitleSource = v.Turns[first].Title, "prompt"
+		return
 	}
 	kind, src := "No prompt", "no_prompt"
 	// an exchange stored but not yet parsed is a call, not hooks only
@@ -331,4 +343,19 @@ func FolderDisplay(full, home string) string {
 		}
 	}
 	return full
+}
+
+// turnTitle is a prompt's title and whether it is synthetic. Rules that know no
+// PromptTitler leave the prompt as it is, whitespace collapsed and cut.
+func turnTitle(rules any, prompt string) (string, bool) {
+	title, synthetic := strings.TrimSpace(prompt), false
+	if pt, ok := rules.(PromptTitler); ok {
+		title, synthetic = pt.PromptTitle(title)
+	}
+	// a prompt of block placeholders only ("[media]") has no typed words: the title keeps
+	// the placeholder for the rail, but the session title looks past it (046 P3-1)
+	if prompt != "" && strings.TrimSpace(stripPlaceholders(prompt)) == "" {
+		synthetic = true
+	}
+	return cutRunes(strings.Join(strings.Fields(title), " "), titleRunes), synthetic
 }

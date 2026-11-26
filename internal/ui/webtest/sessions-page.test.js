@@ -88,7 +88,7 @@ test("hooksOnlyTokensCellIsASingleDash", () => {
   assert.deepEqual(visible.map((e) => e.textContent), ["—"]);
   // a live update to a row with calls shows the counts again
   p.page.update({ items: [session()] });
-  assert.equal(p.cell("s1", 6).startsWith("10 in · — out · 7 cache read"), true);
+  assert.equal(p.cell("s1", 6).startsWith("10 in · — out · 0 cache write · 7 cache read"), true);
 });
 
 // spec 017 E5: a hooks-only row says it has no model calls, and shows no token counts.
@@ -196,15 +196,16 @@ test("emptyStatesSayWhatIsTrue", () => {
   assert.match(text(p), /No sessions captured yet\./);
   // a filter or search on, nothing left to test: no match
   p.page.update({ kind: "active", q: "", total: 7, scanned: 7, next_after: null });
-  assert.equal(text(p).split("no sessions match").length - 1, 1, "said once");
+  assert.equal(text(p).split("No sessions match").length - 1, 1, "said once");
+  assert.match(text(p), /No sessions match the filter "Active"\./);
   assert.doesNotMatch(text(p), /No sessions captured yet/);
   p.page.update({ kind: "all", q: "zzz" });
-  assert.match(text(p), /no sessions match/);
+  assert.match(text(p), /No sessions match the search "zzz"\./);
   assert.doesNotMatch(text(p), /filtering .* loaded/, "the old note is gone");
   // nothing yet but more rows to test: a muted line with the count scanned, › to go on
   p.page.update({ next_after: "tok", scanned: 500, total: 900 });
   assert.match(text(p), /No matches in the newest 500 sessions yet/);
-  assert.doesNotMatch(text(p), /no sessions match/);
+  assert.doesNotMatch(text(p), /No sessions match/);
   assert.equal(withClass(p.page.el, "muted").some((e) => /No matches in the newest/.test(e.textContent)), true, "muted");
   const next = byTag(p.page.el, "button").find((b) => b.textContent === "Next ›");
   assert.ok(next, "Next continues the walk");
@@ -517,7 +518,7 @@ test("listFormatsForReading", () => {
   const p = livePage([session({ usage: { input: counter(3707), output: counter(null), cache_write: counter(0), cache_read: counter(15074885) } })]);
   const tds = byTag(p.row("s1"), "td");
   const toks = withClass(tds[6], "tok");
-  assert.deepEqual(toks.map((t) => t.textContent), ["3.7k in", "— out", "15.1M cache read"]);
+  assert.deepEqual(toks.map((t) => t.textContent), ["3.7k in", "— out", "0 cache write", "15.1M cache read"]);
   assert.equal(toks[0].title, "in: 3707", "the exact value is kept");
   assert.equal(toks[1].title, "out: not reported");
   assert.equal(p.link("s1").title, "session key k-123", "the key shows on hover only");
@@ -537,8 +538,23 @@ test("listFormatsForReading", () => {
   assert.equal(icon.attrs["aria-label"], "failed");
   assert.equal(icon.attrs.role, "img");
   const ths = byTag(p.page.el, "th").map((x) => x.textContent);
-  assert.deepEqual(ths.slice(0, 7), ["", "Start", "Session", "Work", "Changes", "Time", "Tokens"], "no Sources, Status or Tools header");
+  assert.deepEqual(ths.slice(0, 7), ["", "Last active", "Session", "Work", "Changes", "Time", "Tokens"], "no Sources, Status or Tools header");
   assert.equal(byTag(p.page.el, "th")[0].attrs["aria-label"], byTag(p.page.el, "th")[0].title, "the icon column is named");
+});
+
+// spec 046 U6: the list is sorted by last activity, so its time column shows last_at and the
+// start is the hover text; a live update that moves only last_at rewrites the cell.
+test("firstColumnIsLastActiveAndShowsLastActivity", () => {
+  const p = livePage([session({ first_at: "2026-01-01T09:00:00Z", last_at: "2026-01-01T11:30:00Z" })]);
+  assert.equal(byTag(p.page.el, "th")[1].textContent, "Last active");
+  const time = () => byTag(byTag(p.row("s1"), "td")[1], "time")[0];
+  assert.equal(time().dateTime, "2026-01-01T11:30:00Z");
+  assert.equal(time().textContent, startText("2026-01-01T11:30:00Z"));
+  assert.equal(time().title, `Started ${startText("2026-01-01T09:00:00Z")}`);
+  p.page.update({ items: [session({ first_at: "2026-01-01T09:00:00Z", last_at: "2026-01-01T12:00:00Z" })] });
+  assert.equal(time().dateTime, "2026-01-01T12:00:00Z", "the cell follows last_at");
+  assert.equal(time().textContent, startText("2026-01-01T12:00:00Z"));
+  assert.equal(time().title, `Started ${startText("2026-01-01T09:00:00Z")}`, "the start is unchanged");
 });
 
 test("listShowsALoaderUntilItsFirstPage", () => {
@@ -628,7 +644,7 @@ test("rowShowsApiEquivalentCost", () => {
   // under it the token bar (027 C6a), which holds no text
   const cell = byTag(p.page.el, "td").find((x) => x.className === "tokens");
   assert.deepEqual(cell.children.map((c) => [c.className || "", c.textContent]),
-    [["tok seg", "10 in"], ["", " · "], ["tok seg", "— out"], ["", " · "], ["tok seg", "7 cache read"], ["cost", "$12.35"], ["tokbar", ""]]);
+    [["tok seg", "10 in"], ["", " · "], ["tok seg", "— out"], ["", " · "], ["tok seg", "0 cache write"], ["", " · "], ["tok seg", "7 cache read"], ["cost", "$12.35"], ["tokbar", ""]]);
   assert.match(line.title, /not what was charged/);
 });
 
@@ -662,17 +678,32 @@ test("tokenBarSegmentsGrowByTheirCounts", () => {
   const bar = withClass(byTag(p.row("s1"), "td")[6], "tokbar")[0];
   assert.equal(bar.attrs["aria-hidden"], "true", "the numbers are in text already");
   const segs = withClass(bar, "tokseg");
-  assert.equal(segs.length, 3);
-  assert.deepEqual(segs.map((s) => s.style.flexGrow), ["3000", "", "7000"]);
-  assert.deepEqual(segs.map((s) => Boolean(s.hidden)), [false, true, false], "a zero count has no segment");
+  assert.equal(segs.length, 4);
+  assert.deepEqual(segs.map((s) => s.style.flexGrow), ["3000", "", "", "7000"]);
+  assert.deepEqual(segs.map((s) => Boolean(s.hidden)), [false, true, true, false], "a zero count has no segment");
   assert.ok(!bar.hidden);
   // a live update with other counts re-sizes the same segments
   p.page.update({ items: [session({ usage: { input: counter(5), output: counter(10), cache_write: counter(0), cache_read: counter(null) } })] });
   const again = withClass(byTag(p.row("s1"), "td")[6], "tokseg");
-  assert.deepEqual(again.map((s) => s.style.flexGrow), ["5", "10", ""]);
+  assert.deepEqual(again.map((s) => s.style.flexGrow), ["5", "10", "", ""]);
   // nothing reported: no bar at all
   p.page.update({ items: [session({ usage: {} })] });
   assert.ok(withClass(byTag(p.row("s1"), "td")[6], "tokbar")[0].hidden);
+});
+
+// spec 017 AC1: the Tokens cell labels cache write, between output and cache read, and its bar
+// has a segment for it in the same order: input, output, cache write, cache read.
+test("tokensCellShowsCacheWriteBetweenOutputAndCacheRead", () => {
+  const p = livePage([session({ usage: { input: counter(3707), output: counter(999), cache_write: counter(94487), cache_read: counter(15074885) } })]);
+  const cell = byTag(p.row("s1"), "td")[6];
+  assert.equal(p.cell("s1", 6).startsWith("3.7k in · 999 out · 94k cache write · 15.1M cache read"), true);
+  const toks = withClass(cell, "tok");
+  assert.deepEqual(toks.map((t) => t.textContent), ["3.7k in", "999 out", "94k cache write", "15.1M cache read"]);
+  assert.equal(toks[2].title, "cache write: 94487", "the exact value is kept on hover");
+  const segs = withClass(withClass(cell, "tokbar")[0], "tokseg");
+  assert.equal(segs.length, 4, "one bar segment per figure");
+  assert.deepEqual(segs.map((s) => s.style.flexGrow), ["3707", "999", "94487", "15074885"]);
+  assert.deepEqual(segs.map((s) => Boolean(s.hidden)), [false, false, false, false]);
 });
 
 // spec 027 C6b: the sessions and model-calls tiles carry a sparkline of the server's hourly
@@ -812,4 +843,54 @@ test("theErrorBoxIsKeptAcrossRedrawsWithTheSameError", () => {
   p.page.update({ error: "other" });
   assert.notEqual(retryOf(p), retry, "a new error text builds the box again");
   assert.match(textOf(withClass(p.page.el, "sp-list")[0]), /other/);
+});
+
+// spec 046 U8: a filter or search that matches nothing names what it was, with a Clear that
+// empties the box and goes back to All in one step. The box is kept across a redraw with the
+// same text, so a Clear with focus is not destroyed.
+const noMatchOf = (p) => withClass(p.page.el, "sp-empty")[0];
+const noMatchText = (p) => withClass(noMatchOf(p), "empty")[0].textContent;
+
+test("anEmptyFilterNamesTheFilterAndOffersClear", () => {
+  const asked = [];
+  const p = livePage([], { onKind: (k) => asked.push(k) });
+  p.page.update({ loaded: true, kind: "look", q: "", items: [], total: 12, scanned: 12, next_after: null });
+  assert.equal(noMatchText(p), 'No sessions match the filter "Needs a look".');
+  const clear = byTag(noMatchOf(p), "button")[0];
+  assert.equal(clear.textContent, "Clear");
+  assert.equal(clear.type, "button");
+  const before = noMatchOf(p);
+  clear.focus();
+  p.page.update({ today: { sessions: 1 } });
+  assert.equal(noMatchOf(p), before, "same text, same box: focus on Clear is kept");
+  assert.equal(document.activeElement, clear);
+  clear.fire("click");
+  assert.deepEqual(asked, ["all"]);
+  assert.equal(document.activeElement, byTag(p.page.el, "input")[0], "Clear hands focus to the search box");
+});
+
+test("aMatchlessSearchSaysSoAndClearEmptiesTheBox", () => {
+  const asked = [];
+  const p = livePage([], { onKind: (k) => asked.push(k) });
+  const input = byTag(p.page.el, "input")[0];
+  input.value = "fix login";
+  p.page.update({ loaded: true, kind: "all", q: "fix login", items: [], total: 12, scanned: 12, next_after: null });
+  assert.equal(noMatchText(p), 'No sessions match the search "fix login".');
+  byTag(noMatchOf(p), "button")[0].fire("click");
+  assert.equal(input.value, "", "the box is emptied");
+  assert.deepEqual(asked, ["all"]);
+});
+
+test("aMatchlessFilterAndSearchNamesBoth", () => {
+  const p = livePage([]);
+  p.page.update({ loaded: true, kind: "look", q: "fix login", items: [], total: 12, scanned: 12, next_after: null });
+  assert.equal(noMatchText(p), 'No sessions match the filter "Needs a look" and the search "fix login".');
+});
+
+test("anUnfilteredEmptyStoreHasNoClear", () => {
+  const p = livePage([]);
+  p.page.update({ loaded: true, kind: "all", q: "", items: [], total: 0, next_after: null });
+  assert.match(textOf(p.page.el), /No sessions captured yet\./);
+  assert.equal(noMatchOf(p), undefined, "no no-match box");
+  assert.equal(byTag(p.page.el, "button").some((b) => b.textContent === "Clear"), false);
 });

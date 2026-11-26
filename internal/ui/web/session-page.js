@@ -242,7 +242,7 @@ export function createSessionPage(ctx = {}) {
       };
       if (c.failed) mark("bad", "✗", `${c.failed} failed`);
       if (t.end) mark(t.end.word === "ended by error" ? "bad" : "", t.end.glyph, t.end.word);
-      b.append(el("span", "n", t.n ? String(t.n) : "·"), el("span", "p clamp", t.prompt || "(no prompt text)"), meta);
+      b.append(el("span", "n", t.n ? String(t.n) : "·"), el("span", "p clamp", t.title || t.prompt || "(no prompt text)"), meta);
     }
     entries = next;
     tocList.replaceChildren(...items);
@@ -397,13 +397,36 @@ export function createSessionPage(ctx = {}) {
   };
   page.applyEvent = (ev) => page.setView(mergeView(view, ev));
   let loader = null; // the story's loader, until the view arrives
+  // railNote replaces the rail's loading item with a note when no view is coming
+  const railNote = (text) => {
+    tocList.replaceChildren(el("li", "muted", text));
+    tocSub.textContent = "";
+  };
   page.setStatus = (text, kind = "note") => {
     status.replaceChildren();
     if (text) status.append(el("p", `page-note${kind === "error" ? " error" : ""}`, text));
     // until the view arrives the page keeps its loader, under any note ("building session…")
     loader = !view && kind !== "error" ? skeleton("Loading the session…", 4, "cards") : null;
     if (loader) status.append(loader);
-    if (!view) reconcile(story, [status]);
+    if (!view) {
+      if (kind === "error") railNote("Turns not loaded.");
+      reconcile(story, [status]);
+    }
+  };
+  // setMissing says the session does not exist: a note with a way back, and no loader or
+  // rail skeleton left on the page
+  page.setMissing = () => {
+    status.replaceChildren();
+    const note = el("p", "page-note error", "Session not found. ");
+    const back = el("a", "", "Back to the sessions list");
+    back.href = "#/";
+    note.append(back);
+    status.append(note);
+    loader = null;
+    if (!view) {
+      railNote("No turns.");
+      reconcile(story, [status]);
+    }
   };
   page.moveTurn = (delta) => select(current + delta);
   page.dialogOpen = () => dialog.isOpen();

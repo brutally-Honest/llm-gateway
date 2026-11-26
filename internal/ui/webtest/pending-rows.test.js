@@ -174,12 +174,12 @@ test("onlyTheSessionsTableIsFixedAndNoColumnHasAFloorAnyMore", () => {
   assert.match(css, /\.sessions-page > \.sp-list td\.work, \.sessions-page > \.sp-list td\.changes, \.sessions-page > \.sp-list td\.tokens \{ min-width: 0; \}/);
 });
 
-test("heavyPlaceholdersReserveTheLinesTheFilledCellsTakeAtEachWidth", () => {
-  assert.match(css, /\n\.sp-list \{ --pend-work: 3; --pend-changes: 2; --pend-figures: 2; \}/);
-  assert.match(css, /min-width: 1600px\) \{\n\.sp-list \{ --pend-work: 1; --pend-changes: 1; --pend-figures: 1; \}/);
-  assert.match(ruleBody(".sp-list tr.pending td.work::before"), /margin-bottom: calc\(var\(--pend-work\) \* 1lh - 1em\)/);
-  assert.match(ruleBody(".sp-list tr.pending td.changes::before"), /margin-bottom: calc\(var\(--pend-changes\) \* 1lh - 1em\)/);
-  assert.match(ruleBody(".sp-list tr.pending td.tokens::before"), /margin-bottom: calc\(var\(--pend-figures\) \* 1lh - 1em\)/);
+test("heavyPlaceholdersReserveOneLineAtEveryWidth", () => {
+  // spec 046 U4: the per-width line counts are gone; every heavy placeholder is one line
+  assert.doesNotMatch(css, /--pend-/, "no --pend- variable anywhere in style.css");
+  assert.match(ruleBody(".sp-list tr.pending td.work::before"), /margin-bottom: calc\(1lh - 1em\)/);
+  assert.match(ruleBody(".sp-list tr.pending td.changes::before"), /margin-bottom: calc\(1lh - 1em\)/);
+  assert.match(ruleBody(".sp-list tr.pending td.tokens::before"), /margin-bottom: calc\(1lh - 1em\)/);
   // no hard-coded row height
   assert.doesNotMatch(css.split("\n").filter((l) => l.includes("tr.pending")).join("\n"), /\btr\.pending\s*\{[^}]*height/);
 });
@@ -191,12 +191,31 @@ test("placeholdersKeepTheLinesTheFilledCellsHave", () => {
   assert.match(t, /color: transparent/);
   assert.doesNotMatch(t, /display: none|height:/, "the link's own height is the real one");
   assert.match(ruleBody(".sp-list tr.pending .splace"), /display: block/);
-  // Tokens: figures lines, then the cost line and the bar (4px bar and its 5px gap)
+  // Tokens: one line, as the other heavy cells; no cost line or bar placeholder, since a filled
+  // row with an unknown cost hides its cost line and a hooks-only row has neither (spec 046 U4)
   assert.match(ruleBody(".sp-list tr.pending td.tokens::before"), /width: 10rem/);
-  assert.match(ruleBody(".sp-list tr.pending td.tokens::after"), /height: 1em/);
-  assert.match(ruleBody(".sp-list tr.pending td.tokens::after"), /margin-bottom: calc\(1lh - 1em \+ 9px\)/, "the cost line, then the 4px bar and its 5px gap");
+  assert.doesNotMatch(css, /tr\.pending td\.tokens::after/, "no cost-line or bar placeholder for Tokens");
   // a one-line bar in Work, Changes and Time
   assert.match(ruleBody(".sp-list tr.pending td.work::before, .sp-list tr.pending td.changes::before, .sp-list tr.pending td.dur::before, .sp-list tr.pending td.tokens::before"), /height: 1em/);
+});
+
+// spec 046 U4: a pending row is as short as the shortest filled row, so a row only grows when its
+// facts arrive. Every pending rule that touches a heavy cell reserves at most one line.
+test("aPendingRowNeverReservesMoreThanTheShortestFilledRow", () => {
+  const rules = [...css.matchAll(/^([^{}\n]*\.sp-list tr\.pending[^{}\n]*)\{([^}]*)\}/gm)]
+    .map((m) => ({ sel: m[1].trim(), body: m[2] }));
+  const heavy = rules.filter((r) => /td\.(work|changes|dur|tokens)\b/.test(r.sel));
+  assert.ok(heavy.length >= 4, `found the heavy placeholder rules, got ${heavy.length}`);
+  for (const { sel, body } of heavy) {
+    for (const m of body.matchAll(/([\d.]+|var\([^)]*\))\s*\*\s*1lh/g)) {
+      assert.equal(m[1], "1", `${sel} reserves ${m[1]} lines`);
+    }
+    const mb = /margin-bottom:\s*([^;]+);/.exec(body);
+    if (mb) assert.equal(mb[1].trim(), "calc(1lh - 1em)", `${sel} margin-bottom`);
+    assert.doesNotMatch(body, /min-height/, `${sel} sets no min-height`);
+  }
+  // spec 046 U4: an empty pending place line is hidden, as a filled empty one is, so it reserves no line
+  assert.match(ruleBody(".sp-list tr.pending .splace:empty"), /display: none/);
 });
 
 test("placeholderBarsUseThemeTokensOfBothStylesAndBothThemesAndNeverAnimate", () => {

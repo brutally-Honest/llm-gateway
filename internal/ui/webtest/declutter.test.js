@@ -72,6 +72,24 @@ test("liveIndicatorIsADotWithItsWordAsNameAndTitle", () => {
   // the colours are checked in liveDotIsGreenOrRedAndRoundInBothStyles
 });
 
+// spec 046 U9: a dropped stream shows a short note beside the dot until it is back
+test("aDroppedStreamShowsAReconnectingNoteUntilItIsBack", () => {
+  const { head, m } = shell();
+  const note = find(head, (e) => e.className === "live-note");
+  assert.ok(note, "the note sits in the header");
+  m.setLive("live", "ok");
+  assert.equal(note.hidden, true, "no note while live");
+  m.setLive("live: disconnected, retrying", "warn", "reconnecting…");
+  assert.equal(note.hidden, false, "shown while the stream is down");
+  assert.equal(textOf(note).trim(), "reconnecting…");
+  assert.equal(note.attrs["aria-hidden"], "true", "the dot's word already speaks for it");
+  m.setLive("live", "ok");
+  assert.equal(note.hidden, true, "gone once the stream is back");
+  m.setLive("live: disconnected, retrying", "warn", "reconnecting…");
+  m.setLive("");
+  assert.equal(note.hidden, true, "gone with the dot");
+});
+
 // item 5: Settings is the gear alone, named for assistive tech
 test("settingsButtonIsTheGearWithAnAccessibleName", () => {
   const { head } = shell();

@@ -147,6 +147,7 @@ export function rowCells(s) {
     work: work || (tools.failed ? "" : DASH),
     id: s.id,
     start: s.first_at,
+    last: s.last_at || s.first_at,
     title: pending ? PENDING_TITLE : s.title || NO_TITLE,
     key: s.session_key || "",
     folder: l.folder || "",
@@ -161,6 +162,7 @@ export function rowCells(s) {
     time: dur(l.clock_ms ?? null),
     input: hooksOnly ? DASH : counter(u.input),
     output: hooksOnly ? DASH : counter(u.output),
+    cacheWrite: hooksOnly ? DASH : counter(u.cache_write),
     cacheRead: hooksOnly ? DASH : counter(u.cache_read),
     cost: hooksOnly ? { text: DASH, title: "" } : totalCost(u.cost),
     look: lookText(l),
@@ -308,16 +310,16 @@ function rowNode(id) {
   parts.cells[2].append(parts.a, parts.place, parts.look);
   // each count an unbreakable part, " · " between them as text, so the cell wraps only at
   // the dots, as Work and Changes do (setSegments); the cost is a line of its own
-  parts.tokens = [span("tok seg"), span("tok seg"), span("tok seg")];
-  parts.seps = [span("", " · "), span("", " · ")];
+  parts.tokens = [span("tok seg"), span("tok seg"), span("tok seg"), span("tok seg")];
+  parts.seps = [span("", " · "), span("", " · "), span("", " · ")];
   parts.cost = span("cost");
-  // the bar under the figures: input, output and cache read side by side, each as wide as its
-  // own count; the numbers are already in text, so the bar is hidden from screen readers
+  // the bar under the figures: input, output, cache write and cache read side by side, each as
+  // wide as its own count; the numbers are already in text, so the bar is hidden from screen readers
   parts.bar = span("tokbar");
   parts.bar.setAttribute("aria-hidden", "true");
-  parts.barSegs = ["in", "out", "cache"].map((k) => span(`tokseg tokseg-${k}`));
+  parts.barSegs = ["in", "out", "cw", "cache"].map((k) => span(`tokseg tokseg-${k}`));
   parts.bar.append(...parts.barSegs);
-  parts.cells[6].append(parts.tokens[0], parts.seps[0], parts.tokens[1], parts.seps[1], parts.tokens[2], parts.cost, parts.bar);
+  parts.cells[6].append(parts.tokens[0], parts.seps[0], parts.tokens[1], parts.seps[1], parts.tokens[2], parts.seps[2], parts.tokens[3], parts.cost, parts.bar);
   // Work: prompts, calls and tool calls as segments, then the failed tools standing out
   parts.work = span("");
   parts.failedSep = span("");
@@ -422,10 +424,13 @@ function fillRow(parts, s, selected) {
   }
   const cls = [selected ? "selected" : "", c.pending ? "pending" : ""].filter(Boolean).join(" ");
   if (tr.className !== cls) tr.className = cls;
-  if (key.start !== c.start) {
-    key.start = c.start;
-    const t = timeElement(c.start);
-    t.textContent = startText(c.start);
+  // the time column shows the last activity (the list's sort key); the start is its hover text
+  const stamp = `${c.last}|${c.start}`;
+  if (key.time !== stamp) {
+    key.time = stamp;
+    const t = timeElement(c.last);
+    t.textContent = startText(c.last);
+    t.title = `Started ${startText(c.start)}`;
     cells[1].replaceChildren(t);
   }
   setText(a, c.title);
@@ -462,13 +467,14 @@ function fillRow(parts, s, selected) {
   } else {
     setToken(parts.tokens[0], c.input, "in");
     setToken(parts.tokens[1], c.output, "out");
-    setToken(parts.tokens[2], c.cacheRead, "cache read");
+    setToken(parts.tokens[2], c.cacheWrite, "cache write");
+    setToken(parts.tokens[3], c.cacheRead, "cache read");
   }
-  for (const e of [parts.tokens[1], parts.tokens[2], ...parts.seps]) setHidden(e, c.hooksOnly);
+  for (const e of [parts.tokens[1], parts.tokens[2], parts.tokens[3], ...parts.seps]) setHidden(e, c.hooksOnly);
   // an unknown cost says nothing once its label is gone, so it is left out (027 C7b)
   setHidden(parts.cost, c.hooksOnly || c.cost.text === DASH);
   const u = s.usage || {};
-  setTokenBar(parts, c.hooksOnly ? [] : [u.input, u.output, u.cache_read].map((x) => x && x.value));
+  setTokenBar(parts, c.hooksOnly ? [] : [u.input, u.output, u.cache_write, u.cache_read].map((x) => x && x.value));
   // the Tokens header already says the figure is API-equivalent, so the row does not repeat it
   setText(parts.cost, c.cost.text);
   setTitle(parts.cost, c.cost.title);
@@ -477,7 +483,7 @@ function fillRow(parts, s, selected) {
 // COLUMNS are the list's headers and each column's class; every count carries its own label
 // in words (spec 017 AC1).
 const COLUMNS = [
-  ["", "status", "Status: ● active, ✗ failed, ◇ hooks only; an ordinary ended session shows none"], ["Start", "time"], ["Session", "title"], ["Work", "work"],
+  ["", "status", "Status: ● active, ✗ failed, ◇ hooks only; an ordinary ended session shows none"], ["Last active", "time", "The list is sorted by last activity, newest first; hover a time for the session's start"], ["Session", "title"], ["Work", "work"],
   ["Changes", "changes"], ["Time", "dur"], ["Tokens", "tokens", `Second line: ${explain("")}`],
 ];
 
@@ -734,6 +740,33 @@ export function createSessionsPage(handlers) {
   let builtUnassignedItems = NONE;
   let builtError = null;
   let errorBox = null;
+  // The no-match box names the filter and the search, with a Clear (spec 046 U8). It is built
+  // when its text changes and otherwise left in place, so a Clear with focus survives a redraw.
+  let builtEmpty = "";
+  let emptyBox = null;
+  function drawNoMatch() {
+    const parts = [];
+    if (kind !== "all") parts.push(`the filter "${FILTER_LABELS[kind]}"`);
+    if ((state.q || "") !== "") parts.push(`the search "${state.q}"`);
+    const text = `No sessions match ${parts.join(" and ")}.`;
+    if (text !== builtEmpty) {
+      builtEmpty = text;
+      const box = document.createElement("div");
+      box.className = "sp-empty";
+      const clear = document.createElement("button");
+      clear.type = "button";
+      clear.className = "btn sm";
+      clear.textContent = "Clear";
+      clear.addEventListener("click", () => {
+        input.value = "";
+        if (handlers.onKind) handlers.onKind("all");
+        input.focus({ preventScroll: true }); // the redraw removes this button; keep focus in the list
+      });
+      box.append(note("empty", text), clear);
+      emptyBox = box;
+    }
+    if (list.children.length !== 1 || list.children[0] !== emptyBox) list.replaceChildren(emptyBox);
+  }
   const pressed = new Map(); // the aria-pressed value last written to each kind button
 
   function drawToday() {
@@ -840,7 +873,8 @@ export function createSessionsPage(handlers) {
       selected = "";
       if (!(state.total > 0)) list.replaceChildren(note("empty", "No sessions captured yet."));
       else if (state.next_after) list.replaceChildren(note("muted", `No matches in the newest ${plural(state.scanned || 0, "session")} yet`));
-      else list.replaceChildren(note("empty", filtering ? "no sessions match" : "No sessions captured yet."));
+      else if (filtering) drawNoMatch();
+      else list.replaceChildren(note("empty", "No sessions captured yet."));
     } else {
       drawRows();
     }

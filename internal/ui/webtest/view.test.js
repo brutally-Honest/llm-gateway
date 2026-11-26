@@ -440,6 +440,30 @@ test("toolDialogShowsQuestionsAndAnswers", async () => {
   assert.match(textOf(items[1]), /No option picked\..*Notes: like the stepper/s);
 });
 
+// spec 046 U10: the Input section shows a multi-line string with real line breaks, and its
+// Copy button still copies the pretty JSON with the string's \n escaped.
+test("toolDialogInputShowsLineBreaksButCopiesPrettyJSON", async () => {
+  const input = JSON.stringify({ command: "echo one\necho two" });
+  const { page } = mount(fixture(), { loadTool: async () => ({ ...toolDetails, input, input_truncated: false }) });
+  const realNav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const copied = [];
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { clipboard: { writeText: async (t) => { copied.push(t); } } } });
+  try {
+    withClass(byId(page.el, "tool-t1"), "nm")[0].fire("click");
+    await settle();
+    const sec = withClass(page.dialog.el, "ms").find((s) => s.children[0].textContent === "Input");
+    const pre = byTag(sec, "pre")[0];
+    assert.equal(pre.textContent, '{\n  "command": "echo one\n    echo two"\n}', "real line breaks, no literal \\n");
+    assert.ok(!pre.textContent.includes("\\n"));
+    withClass(sec, "copy")[0].fire("click");
+    await settle();
+    assert.deepEqual(copied, ['{\n  "command": "echo one\\necho two"\n}']);
+  } finally {
+    if (realNav) Object.defineProperty(globalThis, "navigator", realNav);
+    else delete globalThis.navigator;
+  }
+});
+
 // 017 AC5, AC15 (T018): every place a model call is named opens the call details dialog
 // through the call's URL, noting the link it was opened from: a step's #n, a chip row, a
 // Context row, a tool dialog's "Asked by", and a "needs a look" target.
@@ -656,4 +680,17 @@ test("shortTurnIsDrawnCallByCall", async () => {
   await settle();
   assert.equal(page.dialogOpen(), true, "a tool box opens the tool's details");
   assert.equal(withClass(byId(page.el, "turn-2"), "flow").length, 0);
+});
+
+// 046 U1: the turn list shows a turn's title, the story keeps its whole prompt; without a
+// title the list falls back to the prompt.
+test("turnListShowsTheTitleAndTheStoryTheWholePrompt", () => {
+  const v = fixture();
+  v.turns = [turn(1, { title: "fix the login button", prompt: "<pasted_content id=\"a1\">fix the login button</pasted_content>" }), turn(2)];
+  const { page } = mount(v);
+  const rail = withClass(page.el, "toc-item").map((e) => withClass(e, "p")[0].textContent);
+  assert.ok(rail.includes("fix the login button"), "the rail shows the title");
+  assert.ok(!rail.some((t) => t.includes("pasted_content")), "no wrapper in the rail");
+  assert.ok(rail.includes("prompt 2"), "no title: the prompt");
+  assert.match(textOf(byId(page.el, "turn-1")), /<pasted_content id="a1">/, "the story keeps the whole prompt");
 });

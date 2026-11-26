@@ -132,7 +132,8 @@ type fixture struct {
 	f       *fake
 	effects []store.EffectRow
 	labels  []timeline.EffectLabel
-	lines   map[string][2]int // a change's line counts by path; src/a.js is 2 1 always
+	lines   map[string][2]int  // a change's line counts by path; src/a.js is 2 1 always
+	rules   timeline.ViewRules // the view's rules when it has them; viewRules{} when nil
 }
 
 func (x *fixture) effect(e store.EffectRow, l timeline.EffectLabel) {
@@ -247,6 +248,9 @@ func (x *fixture) view(t *testing.T, rules bool) timeline.View {
 	}
 	if rules {
 		in.Rules, in.Summarizer = viewRules{}, viewSummarizer{}
+		if x.rules != nil {
+			in.Rules = x.rules
+		}
 	}
 	return timeline.BuildView(in)
 }
