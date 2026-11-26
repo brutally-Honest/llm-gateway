@@ -41,7 +41,7 @@ only after the cause is fixed. The counts are failed writes and dropped events, 
 | `GET /api/health` (UI listener, `127.0.0.1:7199`) | the same JSON, plus `"ok": true`; always 200 |
 | `GET /metrics` | the four counters below, by reason |
 | `gateway doctor` | a "Capture health" line: pass when nothing is lost, warn with the counts |
-| UI header | a red banner, "capture degraded: N lost since start", with a link to `/api/health`; it cannot be dismissed |
+| UI header | a red banner, "capture degraded: N lost since start", with a link to `/api/health`; its close button hides it for this tab only (sessionStorage), and it comes back when the lost count rises or the gateway restarts |
 
 `/healthz` stays 200 when degraded, so the `claude` shell function does not bypass a
 gateway that is only degraded. Check the status field, not the HTTP code.

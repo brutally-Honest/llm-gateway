@@ -3,6 +3,7 @@
 ## Progress
 - 2026-11-26 spec and research created on fix/047-flake-and-banner
 - 2026-11-26 F1 reproduced, cause found, fixed and committed (fix(ui))
+- 2026-11-26 U11 dismissible banner built and committed (fix(ui))
 
 ## Decisions
 - **D1** 2026-11-26 Dismissal stores `{since, lost}` from the answer shown when dismissed
@@ -69,3 +70,18 @@
   8 busy loops: 0 (before 1); one more round on the final build: 0. `make verify` passes
   (run under the same systemd-run scope). The first verify run failed
   `TestNoBareGoStatements` on the `go` statement in `flight.Wait`; it now uses `logging.Go`.
+- **D8** 2026-11-26 U11 button: a real `<button type="button">` showing "×", with aria-label
+  "dismiss capture health banner" and a title; styled like the existing `.health-link` (no box,
+  `--bad`, bold, same in both styles) with the existing focus outline token. No new colour. The
+  old DOM assertion "no close button" (045 D4) is replaced by one that requires this button,
+  since U11 reverses that decision.
+- **D9** 2026-11-26 U11 storage: the dismissal is written to sessionStorage (`llmgw.healthDismissed`)
+  and to an in-memory copy; a read takes the stored value, or the memory copy when storage is
+  empty or throws. So a dismissal holds for the page's lifetime even when storage is blocked.
+  Accessing `globalThis.sessionStorage` itself is guarded, since a blocked browser throws there.
+- **D10** 2026-11-26 U11 stale dismissal: when a degraded answer is shown past the stored
+  dismissal (new `since`, or a higher `lost`), `setHealth` clears the stored dismissal at once.
+  An ok answer leaves it alone (D1). The decision is the pure `bannerVisible(h, dismissed)`.
+- **D11** 2026-11-26 `docs/manual-checks/045-failures-visible.md` 1.5 still says the banner
+  "cannot be dismissed". It is left as is: it is 045's dated record of what was checked then.
+  The current behaviour is in `docs/observability.md` and in this spec.

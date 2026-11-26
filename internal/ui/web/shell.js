@@ -1,6 +1,6 @@
 import { STYLES, THEMES, pickStyle, pickTheme } from "./theme.js";
 import { keyBar } from "./keys.js";
-import { healthBanner } from "./health.js";
+import { healthBanner, bannerVisible, dismissalStore } from "./health.js";
 
 // breadcrumb returns the header trail: "Sessions" first (the link back to the list once
 // inside a view). The page's own heading says where you are, so the trail stops at the
@@ -166,7 +166,8 @@ export function mountShell({ head, storage, root, theme, look = "lean" }) {
   brand.setAttribute("aria-label", "LLM Gateway — home");
   brand.title = "Sessions";
   // the capture-health banner: its own full-width row of the header, shown while the gateway
-  // reports degraded; it has no close button (spec 045 D4)
+  // reports degraded. Its dismiss button hides it for this tab until the lost count rises or the
+  // gateway restarts (spec 047 U11, D1); the dismissal lives in sessionStorage.
   const health = el("div", "", "health-banner");
   health.setAttribute("role", "status");
   health.hidden = true;
@@ -177,7 +178,18 @@ export function mountShell({ head, storage, root, theme, look = "lean" }) {
   healthLink.target = "_blank";
   healthLink.rel = "noopener";
   healthLink.setAttribute("aria-label", "capture health details");
-  health.append(healthText, healthReason, healthLink);
+  const healthDismiss = el("button", "×", "health-dismiss");
+  healthDismiss.type = "button";
+  healthDismiss.setAttribute("aria-label", "dismiss capture health banner");
+  healthDismiss.title = "dismiss for this tab";
+  // the answer on screen, and the dismissal the tab has stored for it
+  const dismissal = dismissalStore();
+  let shown = null;
+  healthDismiss.addEventListener("click", () => {
+    if (shown) dismissal.set({ since: shown.since, lost: Number.isFinite(shown.lost) ? shown.lost : 0 });
+    health.hidden = true;
+  });
+  health.append(healthText, healthReason, healthLink, healthDismiss);
   head.replaceChildren(brand, crumbs, live, liveNote, open, settings, help.dlg, health);
   // The header can wrap, so its height is published for the turn rail, which sticks
   // below it (F7).
@@ -228,7 +240,13 @@ export function mountShell({ head, storage, root, theme, look = "lean" }) {
     // setHealth shows or hides the capture-health banner from a parsed /api/health answer.
     setHealth(h) {
       const b = healthBanner(h);
-      health.hidden = !b.show;
+      const dismissed = dismissal.get();
+      const visible = bannerVisible(h, dismissed);
+      // a degraded answer that still shows is past the stored dismissal (a new restart or a
+      // higher count): the dismissal no longer applies, so it is cleared
+      if (b.show && dismissed && visible) dismissal.clear();
+      if (b.show) shown = h;
+      health.hidden = !visible;
       healthText.textContent = b.text;
       healthReason.textContent = b.reason ? ` — ${b.reason}` : "";
     },
