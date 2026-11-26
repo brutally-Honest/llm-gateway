@@ -6,6 +6,7 @@
 - 2026-11-26 U11 dismissible banner built and committed (fix(ui))
 - 2026-11-26 U12 banner updates only on change, committed (fix(ui))
 - 2026-11-26 review round 1 P1/P2 fixed and committed (fix(server))
+- 2026-11-26 review round 2: no P1/P2; P3 and P4s left open (D20); spec marked done
 
 ## Decisions
 - **D1** 2026-11-26 Dismissal stores `{since, lost}` from the answer shown when dismissed
@@ -152,3 +153,13 @@
   `-test.run '^(TestSessionsPage_BadParams|TestAPI_AfterFromOtherListIs400)$' -test.count=200`)
   3 rounds of 200: all PASS.
   `make verify` passed (exit 0) after the changes.
+- **D20** 2026-11-26 Review round 2 (opus, focus a0464a5): no P1 or P2, so no third round and
+  no further code on this branch (it would ship unreviewed). Left open as follow-ups:
+  P3 `digest_cache.go` `joinLocked` "not newer" branch: during shutdown, if `rankLocked`'s
+  launch is refused and `abandon` detaches `cur`, the waiter sets `rs.next` on the detached run
+  and waits until its own ctx ends instead of getting `errStopped` (probed by the reviewer;
+  shutdown only, bounded by the request ctx, nothing counted or leaked; D17's "no waiter
+  hangs" is corrected by this line). Fix: re-check `c.active[id] != rs` after rank/launch.
+  P4: `captureRun.bg` comment says nil with the UI off but it is the run ctx (harmless,
+  `bgOr` is used only with the UI on); `testHandler`'s doc comment sits on `backgroundDone`;
+  `waitUIWork` logs nothing when its 5 s budget runs out.

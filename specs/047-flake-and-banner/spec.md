@@ -3,6 +3,7 @@ feature: 047-flake-and-banner
 kind: fix
 created: 2026-11-26
 branch: fix/047-flake-and-banner
+status: done
 ---
 
 ## Problem
