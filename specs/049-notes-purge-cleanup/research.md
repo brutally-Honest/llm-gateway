@@ -5,7 +5,7 @@
 - [x] 2026-11-26 task 1: notes local only (150ed75 hook/Makefile/tests/AGENTS.md, b55a178 ADR 0022)
 - [x] 2026-11-26 task 2: uninstall --purge wording (help, keep lists, docs; D6-D8)
 - [x] 2026-11-26 task 3: app.js liveText comment says red (style.css:215 `--live-off`); no other amber text in UI or docs
-- [ ] task 4: outbound-destination audit
+- [x] 2026-11-26 task 4: outbound-destination audit; list under Notes; what-gets-recorded.md privacy bullets fixed (D9)
 - [ ] task 5: check of the 048 round-2 fix commit (6059872)
 - [ ] review round 1
 - [ ] review round 2 (if needed)
@@ -40,7 +40,39 @@
   folders (not equal to and not under either), so the keep list never names a path purge
   removes.
 
+- **D9** 2026-11-26 Task 4: "no telemetry" holds, but docs/what-gets-recorded.md's "and
+  nothing else" overclaims. It is reworded to name the network sensor's loopback proxy,
+  `HTTP(S)_PROXY`, and the installer's asked-first downloads. Tracing and listener
+  sentences are supported and keep their wording; "Loopback only" gets one line saying it
+  is about listening, not connecting.
+
 ## Notes
+- 2026-11-26 Task 4 outbound destinations of the `gateway` binary (sonnet audit, read-only):
+  1. Provider upstream, default `https://api.anthropic.com` (protocols/anthropic/adapter.go:28),
+     set by `upstreams.anthropic.base_url` / `GATEWAY_UPSTREAMS_ANTHROPIC_BASE_URL`; https
+     anywhere, http loopback only. Sends the client's request verbatim minus
+     `X-Gateway-Key`, hop-by-hop and `Proxy-*` headers (core/proxy.go).
+  2. `HTTP_PROXY`/`HTTPS_PROXY` from the environment for that upstream traffic
+     (core/proxy.go:270,279, `http.ProxyFromEnvironment`).
+  3. OTLP/HTTP collector, only with `tracing.enabled` (default off), default
+     `http://127.0.0.1:4318`; spans carry sizes, timings, status, protocol, client label,
+     exchange id, error reason, parse status, model (client string, cut to 128 bytes); no
+     content, headers or credentials.
+  4. Network sensor proxies (HTTP 127.0.0.1:7198, SOCKS5 127.0.0.1:7195, on by default,
+     loopback listen only) dial whatever host a local client names (netproxy/http.go:157,291,
+     socks5.go:108); CONNECT tunnels are opaque; host, port, bytes and outcome are stored.
+  5. Loopback health checks during install/doctor/uninstall (install/real.go).
+  6. `gateway install` only: `curl -fsSL https://claude.ai/install.sh | bash` when `claude`
+     is missing, after asking (default no) or with `--install-deps`
+     (clients/claudecode/install.go:15, install/preflight.go:448-473).
+  7. `gateway install` only: apt-get/dnf/pacman/brew for missing deps, same asking rule
+     (install/pkg.go:58-75).
+  8. `git` subprocess for file effects runs with `protocol.allow=never` (effects/git.go:124-127):
+     no network.
+  No analytics, update check or phone-home dependency in go.mod. The web UI loads only
+  same-origin files (fonts are bundled). install.sh contacts only GitHub releases (or
+  `LLM_GATEWAY_BASE_URL`). Unverified: whether the OTLP SDK honours `OTEL_EXPORTER_OTLP_*`
+  env vars.
 - 2026-11-26 Task 2 evidence: `uninstall.go` RemoveAll on `p.ConfigDir` and `p.DataDir`
   only; `p.DataDir` is `config.DefaultCaptureDir` (XDG_DATA_HOME or ~/.local/share), never
   the configured capture.dir; `logDir` (service.go:189) and `startup.Path` are never removed.
