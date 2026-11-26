@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/brutally-honest/llm-gateway/internal/config"
@@ -95,6 +96,8 @@ func Uninstall(e *Env, c Client, o UninstallOptions) int {
 	keep = append(keep, p.tilde(p.Binary)+" (the gateway binary; remove it last with rm "+p.tilde(p.Binary)+")")
 	if !o.Purge {
 		keep = append(keep, p.tilde(p.Config)+" (your config)", p.tilde(p.DataDir)+" (captured data, "+humanBytes(dirSize(p.DataDir))+")")
+	} else {
+		keep = append(keep, purgeKept(e, p, svc)...)
 	}
 	keep = append(keep, "every dependency ("+strings.Join(installedDeps(e, c), ", ")+")")
 
@@ -226,7 +229,7 @@ func Uninstall(e *Env, c Client, o UninstallOptions) int {
 	}
 	e.printf("Uninstalled.\n")
 	if purge {
-		e.printf("  Config and data deleted.\n")
+		e.printf("  Deleted %s and %s.\n", p.tilde(p.ConfigDir), p.tilde(p.DataDir))
 	}
 	if restored != "" {
 		e.printf("%s", restored)
@@ -234,6 +237,41 @@ func Uninstall(e *Env, c Client, o UninstallOptions) int {
 	printKeep(e, keep)
 	e.printf("Open a new terminal: %s then runs plain %s.\n", c.Binary, c.Name)
 	return ExitOK
+}
+
+// purgeKept lists what --purge leaves behind, so the "keep" list does not imply that
+// everything else is gone: a custom capture.dir, the macOS logs and the startup-error
+// record. --purge deletes only the config folder and the default data folder.
+func purgeKept(e *Env, p Paths, svc ServiceManager) []string {
+	var keep []string
+	if _, ok, _ := readMaybe(p.Config); ok && e.LoadConfig != nil {
+		if cfg, err := e.LoadConfig(p.Config); err == nil && cfg.Capture.Dir != "" &&
+			!within(cfg.Capture.Dir, p.DataDir) && !within(cfg.Capture.Dir, p.ConfigDir) {
+			keep = append(keep, p.tilde(cfg.Capture.Dir)+" (capture.dir from your config; --purge deletes only the default data folder)")
+		}
+	}
+	if svc.Kind() == "launchd" {
+		if _, err := os.Stat(logDir(p)); err == nil {
+			keep = append(keep, p.tilde(logDir(p))+" (the service logs)")
+		}
+	}
+	if p.StartupError != "" {
+		if _, err := os.Stat(p.StartupError); err == nil {
+			keep = append(keep, p.tilde(p.StartupError)+" (the last startup error record)")
+		}
+	}
+	return keep
+}
+
+// within reports whether dir is root or lies somewhere under it, after cleaning both
+// paths. A sibling that only shares a name prefix (/a/llm-gateway-2 vs /a/llm-gateway)
+// is not within.
+func within(dir, root string) bool {
+	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(dir))
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // uninstallConfig is the config the gateway runs with: the file, else the defaults.

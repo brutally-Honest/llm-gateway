@@ -67,7 +67,7 @@ gateway uninstall            # removes the service, the claude function and the 
 gateway uninstall --purge    # also deletes the config folder and the default data folder
 ```
 
-Plain `uninstall` keeps your config, your recorded data and the `gateway` binary. `--purge` keeps a data folder set with `capture.dir`, and on macOS the logs in `~/Library/Logs/llm-gateway`.
+Plain `uninstall` keeps your config, your recorded data and the `gateway` binary. `--purge` keeps a data folder set with `capture.dir`, on macOS the logs in `~/Library/Logs/llm-gateway`, and the startup-error record under `~/.local/state/llm-gateway`.
 
 ## Build from source
 

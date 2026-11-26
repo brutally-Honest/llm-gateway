@@ -170,7 +170,7 @@ func checkVerdict(e *Env, pre *Preflight) int {
 // the sandbox on only when its prerequisites passed (research D6).
 func defaultConfig(sandbox bool) []byte {
 	return fmt.Appendf(nil, `# llm-gateway config, written by `+"`gateway install`"+` because there was none. It is
-# yours now: install never overwrites it, and uninstall keeps it (unless --purge).
+# yours now: install never overwrites it, and uninstall keeps it (unless --purge, which deletes the whole config folder).
 # Every other key and its default is in config.example.yaml:
 # https://github.com/brutally-Honest/llm-gateway/blob/main/config.example.yaml
 # Loopback only: the gateway has no auth.

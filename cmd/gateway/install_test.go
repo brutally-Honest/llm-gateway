@@ -26,7 +26,7 @@ func TestHelpTexts(t *testing.T) {
 	}
 	for cmd, want := range map[string]string{
 		"install":   "--install-deps  answer yes to every offer",
-		"uninstall": "--purge  also delete the config and the captured data",
+		"uninstall": "--purge  also delete the config folder (~/.config/llm-gateway) and the default data",
 		"doctor":    "--json  print the checks as one JSON document",
 	} {
 		for _, flag := range []string{"--help", "-h"} {

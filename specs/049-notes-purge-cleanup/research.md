@@ -3,7 +3,7 @@
 ## Progress
 - [x] 2026-11-26 PR #77 confirmed on origin/main; branch chore/049-notes-purge-cleanup from up-to-date main; spec and research created
 - [x] 2026-11-26 task 1: notes local only (150ed75 hook/Makefile/tests/AGENTS.md, b55a178 ADR 0022)
-- [ ] task 2: uninstall --purge wording
+- [x] 2026-11-26 task 2: uninstall --purge wording (help, keep lists, docs; D6-D8)
 - [ ] task 3: app.js liveText comment
 - [ ] task 4: outbound-destination audit
 - [ ] task 5: check of the 048 round-2 fix commit (6059872)
@@ -29,7 +29,27 @@
   which amends ADR 0001's "notes and tags are pushed unchecked". ADR 0001's body and the
   000 spec/plan lines on the notes refspec stay as history. → ADR-0022
 
+- **D6** 2026-11-26 Task 2 goes beyond help text: with `--purge` the "Will keep"/"Kept"
+  lists now name a custom capture.dir, the macOS logs (launchd only) and the startup-error
+  record when present (`purgeKept`), and the last line names the deleted folders. The brief
+  asked for "any other user-facing message"; a keep list that omits them implies they are
+  gone. What is deleted is unchanged. New tests: `TestUninstallPurgeListsWhatItKeeps`,
+  `TestUninstallPurgeKeepsMacLogs`; `TestHelpTexts` substring updated (it already existed).
+- **D7** 2026-11-26 Task 2 work went to sonnet, not haiku: it changes Go output and tests.
+- **D8** 2026-11-26 `purgeKept` lists capture.dir only when it is outside both deleted
+  folders (not equal to and not under either), so the keep list never names a path purge
+  removes.
+
 ## Notes
+- 2026-11-26 Task 2 evidence: `uninstall.go` RemoveAll on `p.ConfigDir` and `p.DataDir`
+  only; `p.DataDir` is `config.DefaultCaptureDir` (XDG_DATA_HOME or ~/.local/share), never
+  the configured capture.dir; `logDir` (service.go:189) and `startup.Path` are never removed.
+- 2026-11-26 Pre-existing, not changed: if the user answers no to the purge question, the
+  final "Kept" list leaves out the config and data folders (the list was built assuming
+  purge); the line "Keeping the config and the data." is printed though. Follow-up.
+- 2026-11-26 First cut of `purgeKept` listed a capture.dir inside the default data folder
+  (or inside the config folder) as kept, though RemoveAll deletes it; fixed so only a dir
+  outside both is listed (D8).
 - 2026-11-26 Task 1 grep: no stale notes text in README.md, PLAN.md or docs/*.md; the only
   hits outside AGENTS.md, Makefile, the hook and its tests are history (ADR 0001:25,
   specs/000-foundation spec.md and plan.md, specs/048 research D34/D51).

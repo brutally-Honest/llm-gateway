@@ -148,9 +148,13 @@ commands carry `ANTHROPIC_BASE_URL` pointing at it), uninstall warns that stoppi
 service cuts that session off, and asks first, even with `--yes`. Answer no and nothing
 changes; run it from a plain terminal instead, or pass `--yes --force` to skip the question.
 
-`gateway uninstall --purge` also deletes the config folder and the default data folder; it asks
-once more, naming the size. It keeps a data folder set with `capture.dir`, and on macOS the logs in
-`~/Library/Logs/llm-gateway`. `--yes` answers both questions.
+`gateway uninstall --purge` also deletes the config folder (`~/.config/llm-gateway`, which holds
+`config.yaml`, the Claude Code settings file and `install-state.json`) and the default data folder
+(`$XDG_DATA_HOME/llm-gateway`, else `~/.local/share/llm-gateway`); it asks once more, naming the
+size. It keeps a data folder set with `capture.dir`, on macOS the logs in
+`~/Library/Logs/llm-gateway`, the startup-error record (`startup-error.json` under
+`$XDG_STATE_HOME/llm-gateway`, else `~/.local/state/llm-gateway`), the `gateway` binary and every
+dependency; the "Will keep" list shows the ones that exist. `--yes` answers both questions.
 
 ## Doctor
 
