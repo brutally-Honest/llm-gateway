@@ -30,6 +30,7 @@ import (
 	"github.com/brutally-honest/llm-gateway/internal/ratelimit"
 	"github.com/brutally-honest/llm-gateway/internal/server"
 	"github.com/brutally-honest/llm-gateway/internal/store"
+	"github.com/brutally-honest/llm-gateway/internal/timeline"
 	"github.com/brutally-honest/llm-gateway/internal/ui"
 )
 
@@ -1027,6 +1028,11 @@ func (c *captureRun) stop(ctx context.Context, log *zap.Logger) {
 		zap.Int64("memory_peak_bytes", c.budget.Peak()),
 	)
 }
+
+// The UI's client rules must satisfy the timeline's optional PromptTitler: the view finds it
+// by type assertion, so a drift in PromptTitle's signature would turn the title rule off
+// without a failing test (046 P3-d).
+var _ timeline.PromptTitler = claudecode.Profile{}
 
 // uiRules maps each client with UI rules to them.
 func uiRules() map[string]ui.ClientRules {

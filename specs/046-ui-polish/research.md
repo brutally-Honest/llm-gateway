@@ -21,7 +21,8 @@ feature: 046-ui-polish
 - 2026-11-26 step 4 P2-b (sonnet): typed text after a synthetic part with a known end is the title; open-ended parts left as a recorded gap (D17), 74ba20f; 12 rule cases, 6 failing before; make verify green.
 - 2026-11-26 step 4 P3-a (sonnet): only real pasted-content wrappers are stripped from titles (D18), bb63fed; 6 rule cases; make verify green.
 - 2026-11-26 step 4 P3-b + P4-4 (sonnet): a local command without its caveat block no longer titles a session as a typed slash command (D19), ecd9aa0; 6 rule cases; make verify green.
-- 2026-11-26 step 4 P3-c (sonnet): a failed open says "Turns not loaded." in the rail; "No turns." only for a missing session (this commit); 1 expectation moved, 1 assertion added; make verify green.
+- 2026-11-26 step 4 P3-c (sonnet): a failed open says "Turns not loaded." in the rail; "No turns." only for a missing session, 673653c; 1 expectation moved, 1 assertion added; make verify green.
+- 2026-11-26 step 4 P3-d (sonnet): compile-time check and an end-to-end test that the real profile titles turns (D20) (this commit); probed by changing the signature (build fails); make verify green.
 
 ## Findings
 
@@ -213,3 +214,9 @@ Fresh opus reviewer, `git diff main...HEAD` at a5e6b06. No P1.
   block are a local command whether or not the caveat block comes first (title the typed text
   left over, else "/<name>" synthetic); "(system) slash command" (no readable name) is now
   synthetic, so no "(system)" title can win over a typed prompt.
+- **D20** 2026-11-26 P3-d fix: the guarantee lives in `cmd/gateway`, the one package that
+  already imports both the client profile and the timeline (the purity test forbids naming
+  the client in `internal/ui` and `internal/timeline`, tests included): a compile-time
+  `var _ timeline.PromptTitler = claudecode.Profile{}` beside `uiRules()`, so a signature
+  drift fails the build, plus `TestRun_PromptTitleRuleReachesTheView` through the real
+  gateway, store and UI handler.
