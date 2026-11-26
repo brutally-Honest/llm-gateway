@@ -95,6 +95,8 @@ Object.assign(globalThis, {
       const params = new URLSearchParams(qs || "");
       sessionReqs.push(params);
       const body = await serve(params);
+      // { __network: true } fails the request the way a stopped gateway does
+      if (body && body.__network) throw new TypeError("Failed to fetch");
       // { __status, message } answers with that status and an error message (a 504, say)
       if (body && body.__status) return { ok: false, status: body.__status, statusText: "nope", json: async () => ({ error: { message: body.message } }) };
       return { ok: body !== null, status: body ? 200 : 500, statusText: "boom", json: async () => (body || { error: { message: "store boom" } }) };
@@ -409,6 +411,22 @@ test("anErrorOnPageTwoKeepsThePagerAndShowsRetryInTheBox", async (t) => {
   assert.equal(pagerLabel(), "Page 2 of 2");
   assert.equal(pagerBtn(PREV).disabled, false);
   assert.equal(hash, "#/?page=2", "the URL still names page 2");
+});
+
+// spec 046: a page whose request fails at the network level says the gateway is not answering, with Retry
+test("aNetworkFailOnPageTwoSaysTheGatewayIsNotAnsweringAndShowsRetry", async (t) => {
+  const networkPageTwo = (p) => (p.get("offset") === "50" && failPageTwo ? { __network: true } : { items: rows(Number(p.get("offset") || 0), 50), next_after: "x", total: 100, scanned: 50 });
+  failPageTwo = true;
+  await fresh(t, "#/", networkPageTwo);
+  pagerBtn(NEXT).fire("click");
+  await settle();
+  assert.match(textOf(box()), /The gateway is not answering\./, "the unreachable text is inside the box");
+  assert.doesNotMatch(textOf(box()), /Failed to fetch/, "the browser's text is not shown");
+  assert.ok(retryBtn(), "Retry is inside the box");
+  failPageTwo = false;
+  retryBtn().fire("click");
+  await settle();
+  assert.equal(ids()[0], "r50", "Retry loads page 2");
 });
 
 // spec 042 F1: a live event must not turn a page error into a skeleton with no Retry

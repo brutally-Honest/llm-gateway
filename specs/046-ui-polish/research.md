@@ -6,7 +6,8 @@ feature: 046-ui-polish
 ## Progress
 - 2026-11-26 step 1: branch fix/046-ui-polish from main at c2eab80; store copied; 247 turns in 70 sessions classified (D1); spec and research written, committed edf4b08.
 - 2026-11-26 step 2 U1 (sonnet): 7aa2d79, turn and session titles from `PromptTitle`, story keeps the whole prompt; 7 timeline tests, a table test, 1 webtest; make verify green.
-- 2026-11-26 step 2 U2 (haiku): token cell and bar show cache write between output and cache read (this commit); 4 existing expectations moved from 3 figures to 4; make verify green.
+- 2026-11-26 step 2 U2 (haiku): token cell and bar show cache write between output and cache read, e365ed5; 4 existing expectations moved from 3 figures to 4; make verify green.
+- 2026-11-26 step 2 U3 (haiku): a network failure or unreadable answer reads "The gateway is not answering." (code unreachable), the list keeps Retry (this commit); 7 api tests, 1 list test; make verify green.
 
 ## Findings
 
