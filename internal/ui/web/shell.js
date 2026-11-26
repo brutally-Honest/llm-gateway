@@ -131,6 +131,11 @@ export function mountShell({ head, storage, root, theme, look = "lean" }) {
   const liveWord = el("span", "", "sr-only");
   live.append(liveWord);
   live.hidden = true;
+  // the visible note beside the dot while the stream is down; aria-hidden because the dot's
+  // word already speaks for it
+  const liveNote = el("span", "", "live-note");
+  liveNote.setAttribute("aria-hidden", "true");
+  liveNote.hidden = true;
   const settings = settingsDialog({ storage, root, theme, look });
   const open = el("button", "⚙", "settings-open");
   open.type = "button";
@@ -173,7 +178,7 @@ export function mountShell({ head, storage, root, theme, look = "lean" }) {
   healthLink.rel = "noopener";
   healthLink.setAttribute("aria-label", "capture health details");
   health.append(healthText, healthReason, healthLink);
-  head.replaceChildren(brand, crumbs, live, open, settings, help.dlg, health);
+  head.replaceChildren(brand, crumbs, live, liveNote, open, settings, help.dlg, health);
   // The header can wrap, so its height is published for the turn rail, which sticks
   // below it (F7).
   if (typeof ResizeObserver === "function" && root && root.style && typeof root.style.setProperty === "function") {
@@ -210,11 +215,15 @@ export function mountShell({ head, storage, root, theme, look = "lean" }) {
     },
     // setLive shows the stream's state as a dot, green while connected ("ok") and red
     // otherwise ("warn", "bad"), in both styles; no text (a page with no stream) shows nothing.
-    setLive(text, tone = "ok") {
+    // note, when given, is a short visible word beside the dot ("reconnecting…"), shown only
+    // while there is a state to show.
+    setLive(text, tone = "ok", note = "") {
       live.hidden = !text;
       liveWord.textContent = text;
       live.title = text;
       live.className = `live-dot live-${tone}`;
+      liveNote.textContent = note;
+      liveNote.hidden = !text || !note;
     },
     // setHealth shows or hides the capture-health banner from a parsed /api/health answer.
     setHealth(h) {

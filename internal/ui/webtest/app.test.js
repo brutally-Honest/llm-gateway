@@ -95,6 +95,11 @@ const liveText = () => {
   return textOf(d).trim();
 };
 const liveTone = () => liveDot().className;
+// liveNote is the dot's visible note: its text while shown, "" while hidden
+const liveNote = () => {
+  const n = withClass(byId("shell-head"), "live-note")[0];
+  return n.hidden ? "" : textOf(n).trim();
+};
 
 test("droppedSessionStreamKeepsCallDialogAndHistoryAndShowsDisconnected", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
@@ -122,6 +127,7 @@ test("droppedSessionStreamKeepsCallDialogAndHistoryAndShowsDisconnected", async 
   first.onerror();
   assert.equal(liveText(), "live: disconnected, retrying");
   assert.equal(liveTone(), "live-dot live-warn", "amber while reconnecting");
+  assert.equal(liveNote(), "reconnecting…", "the note says so beside the dot");
   held();
 
   // the browser gave up: the page reopens the stream, and the view still holds meanwhile
@@ -134,6 +140,7 @@ test("droppedSessionStreamKeepsCallDialogAndHistoryAndShowsDisconnected", async 
   assert.equal(streams.length, 2);
   streams[1].onopen();
   assert.equal(liveText(), "live");
+  assert.equal(liveNote(), "", "the note is hidden once the stream is back");
   held();
 });
 
