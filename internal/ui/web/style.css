@@ -361,29 +361,23 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 .sp-list td.work .bad { color: var(--bad); font-weight: 600; }
 .sp-list td.tokens .cost { display: block; white-space: nowrap; color: var(--muted); }
 /* A row whose facts are not built yet (spec 043 AC6): the cheap cells are real, and each heavy
-   cell holds a quiet bar. The bars are drawn here, not in the DOM, so a row going from
-   pending to filled writes only its cells' text. Nothing may move when the facts arrive: the
-   columns are fixed (above), so the bars cannot change a width; the title link and the place
-   line keep the lines they have when filled (the link's text is transparent, so its height is
-   the real one); and each heavy cell reserves the lines its facts usually take at this width,
-   in line heights (lh), so the row is as tall as a common filled row at any font or style: below
-   1,600 px Work 3 lines, Changes 2, Tokens 3 of figures; from 1,600 px 1, 1 and 2. Tokens adds
-   its cost line and its bar (5 px gap, 4 px bar) as filled. A row that gains a third "needs a
-   look" line, or wraps more than usual, may still grow. No animation. */
-.sp-list { --pend-work: 3; --pend-changes: 2; --pend-figures: 2; }
-@media (min-width: 1600px) {
-.sp-list { --pend-work: 1; --pend-changes: 1; --pend-figures: 1; }
-}
+   cell holds one quiet bar, one line tall (lh), the shortest a filled cell can be. So a row
+   only grows when its facts arrive (spec 046 U4) and never shrinks. The bars are drawn here,
+   not in the DOM, so a row going from pending to filled writes only its cells' text. Nothing
+   may move when the facts arrive: the columns are fixed (above), so the bars cannot change a
+   width; the title link keeps its line (its text is transparent, so its height is the real
+   one), and the place line keeps its line only when it has text, as a filled one does (an
+   empty one is hidden, so a row with no folder yet grows when its model arrives, never
+   shrinks). No animation. */
 .sp-list tr.pending a.stitle { color: transparent; width: min(16rem, 70%); background: var(--panel2); border-radius: var(--radius-xs); user-select: none; }
 .sp-list tr.pending .splace { display: block; min-height: 1.3em; }
 .sp-list tr.pending .splace::after { content: ""; display: inline-block; width: 6rem; height: .8em; margin-left: .5rem; vertical-align: middle; background: var(--panel2); border-radius: var(--radius-xs); }
-.sp-list tr.pending .splace:empty::after { margin-left: 0; }
+.sp-list tr.pending .splace:empty { display: none; }
 .sp-list tr.pending td.work::before, .sp-list tr.pending td.changes::before, .sp-list tr.pending td.dur::before, .sp-list tr.pending td.tokens::before { content: ""; display: block; max-width: 100%; height: 1em; background: var(--panel2); border-radius: var(--radius-xs); }
-.sp-list tr.pending td.work::before { width: 9rem; margin-bottom: calc(var(--pend-work) * 1lh - 1em); }
-.sp-list tr.pending td.changes::before { width: 7rem; margin-bottom: calc(var(--pend-changes) * 1lh - 1em); }
+.sp-list tr.pending td.work::before { width: 9rem; margin-bottom: calc(1lh - 1em); }
+.sp-list tr.pending td.changes::before { width: 7rem; margin-bottom: calc(1lh - 1em); }
 .sp-list tr.pending td.dur::before { width: 3rem; }
-.sp-list tr.pending td.tokens::before { width: 10rem; margin-bottom: calc(var(--pend-figures) * 1lh - 1em); }
-.sp-list tr.pending td.tokens::after { content: ""; display: block; width: 4rem; max-width: 100%; height: 1em; margin-bottom: calc(1lh - 1em + 9px); background: var(--panel2); border-radius: var(--radius-xs); }
+.sp-list tr.pending td.tokens::before { width: 10rem; margin-bottom: calc(1lh - 1em); }
 .sicon-pending { opacity: .45; }
 /* the list's status line: rows a filter is still checking, or the follow-up giving up */
 .sp-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 13px; }
