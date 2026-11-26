@@ -9,7 +9,8 @@ feature: 045-failures-visible
 - 2026-11-26 step 3: bb5f426, blob write failure keeps the row (content row kept, file missing, D14), heals on rewrite, counted; make verify green.
 - 2026-11-26 step 4: 221641f, counters + metrics, /healthz and /api/health degraded body (200), doctor capture-health; make verify green (one lint fix first).
 - 2026-11-26 step 5: 8c13546, header banner from /api/health every 15 s, both styles and themes; webtests 285/285, make verify green.
-- 2026-11-26 step 6: docs (observability.md Capture health, install.md check and troubleshooting rows) and the doctor link moved to #check-capture-health; see commit below.
+- 2026-11-26 step 6: c61172f, docs (observability.md Capture health, install.md check and troubleshooting rows), doctor link to #check-capture-health; make verify green.
+- 2026-11-26 step 7: end-to-end on a throwaway gateway (17196-17199) passed: degraded 200, metrics, doctor warn, banner in 8 cases, call listed without body, list loads with blobs deleted, hook drops reconcile (D19); manual check written.
 
 ## Findings
 
@@ -158,3 +159,11 @@ the status stays 200.
   header row, text wraps. The details link keeps an underline despite the header's
   no-underline rule, so it is not signalled by colour alone. The default poll timer is
   `unref`'d under node so the webtests that import app.js still exit; a browser is unaffected.
+- **D19** 2026-11-26 End-to-end (step 7): with the default `hooks.queue_size` (256) a burst of
+  1,000 hook events dropped nothing on this machine (all stored), so the drop was shown by
+  restarting the throwaway with `hooks.queue_size: 8`, `workers: 1`: 961 stored + 39 counted
+  as queue_full = 1,000, every answer 200. A deleted text-block blob shows as a placeholder
+  only after a rebuild: deleting a file does not change the store version, so a cached view
+  keeps the text until then (repairing or re-checking a damaged store is a non-goal).
+  The Chrome extension was not connected; the banner check ran in a headless Chrome with a
+  throwaway profile over DevTools on 127.0.0.1:9333.
