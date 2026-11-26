@@ -216,3 +216,5 @@ stable ids `TestAPI_TimelineStableIdsAndOrder`; convergence `TestLive_ConvergesW
 - v2 (2026-10-31) — CR-001: paging parameter `cursor` renamed `after` (`next_after`) in Design; vocabulary rule added to Test strategy; T002 reworked as T018
 - v3 (2026-10-31) — reopened: spec v4 changed its contract sections
 - v4 (2026-10-31) — CR-003: tool_call_id field name, two-level CSP, Host forms and static GET-only tests added to AC coverage; no design change
+
+> Note (2026-11-26, spec 048): PLAN.md §10 and §11 moved to AGENTS.md (Workflow, Commits, Scopes, Enforcement). A citation of either section above now points there. Nothing else in this file changed.

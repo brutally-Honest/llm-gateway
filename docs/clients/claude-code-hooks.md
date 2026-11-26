@@ -9,8 +9,12 @@ Hooks are optional. The proxy works without them (see [claude-code.md](claude-co
 
 ## 1. Install at user scope
 
-The hooks go in your user settings, `~/.claude/settings.json`, so they apply to every
-project you run `claude` in.
+`gateway install` does not use this route: it saves the hooks in the gateway's own
+settings file (`~/.config/llm-gateway/claude-settings.json`), which the `claude` function
+loads with `--settings` (see [install.md](../install.md)). Use one route only: with
+`gateway install`, do not also add the hooks below, or each event is sent twice. The steps
+below are the manual route for the hooks alone: they go in your user settings,
+`~/.claude/settings.json`, so they apply to every project you run `claude` in.
 
 The snippet sends events to the gateway's `listen_addr`, read from its config (the default
 `config.yaml` if present, or `-config <path>`). Print it:

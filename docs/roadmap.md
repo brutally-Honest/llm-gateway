@@ -10,6 +10,38 @@ below and AC44, the API-key smoke test of Phase 1.
 Nothing queued.
 
 ## Done
+Each entry describes its spec as it merged. [ui.md](ui.md) describes the UI as it is now.
+
+- **047 flake and banner** (`specs/047-flake-and-banner/`, fix): a test flake named at its
+  writer and fixed at the cause; the capture-degraded banner can be dismissed per tab and
+  comes back only when the lost count goes up or the gateway restarted.
+- **046 UI polish** (`specs/046-ui-polish/`, fix): one title rule per turn and session, a
+  cache-write figure in the token cell, "The gateway is not answering." with Retry,
+  "Last active" as the first column, a "Session not found" page, a reconnecting note
+  beside the live dot and a Clear button on an empty filtered list.
+- **045 failures visible** (`specs/045-failures-visible/`, fix): a missing body shows as
+  "content unavailable"; a call whose body could not be stored is kept with its metadata;
+  every drop or store failure is counted, exported as a metric, reported by `/healthz` and
+  `/api/health` as degraded, and shown in the UI as a banner.
+- **044 netproxy shutdown race** (`specs/044-netproxy-shutdown-race/`, fix): no tunnel
+  joins the wait group after shutdown has started.
+- **043 fast rows first** (`specs/043-fast-rows-first/`, fix): every `/api/sessions` page
+  and filter answers at once; rows show the cheap columns first and the heavy facts fill
+  in when built, the rows on the page being viewed first.
+- **042 sessions list UI** (`specs/042-sessions-list-ui/`, fix): a pinned table header
+  readable in both styles and themes, a failed page that can be retried, smooth scrolling
+  while live events arrive.
+- **041 flakes and quick speed** (`specs/041-flakes-and-quick-speed/`, fix): three test
+  flakes (a stream replay, wall-clock-minute rate-limit tests, an unexplained
+  `cmd/gateway` failure) and four small speed problems (first call details after a
+  restart, `/api/today` refetching, two unused indexes, a noisy shutdown warning).
+- **036 macOS stream test hang** (`specs/036-macos-stream-test-hang/`, fix): the
+  `cmd/gateway` run test that hung on macOS CI until the 10-minute timeout.
+- **034 effects git hardening** (`specs/034-effects-git-hardening/`, fix): no git call
+  the gateway makes can run a program named by the repo it runs in; the config folder is
+  `0700` and `config.yaml` `0600`.
+- **033 docs correctness** (`specs/033-docs-correctness/`, chore): wrong or stale claims
+  in the docs fixed against the code, and spec and ADR statuses set.
 - **040 incremental live updates** (`specs/040-incremental-live-updates/`, feat): a live
   update of an open session re-reads only the calls that changed; on the largest session a
   new call shows in about 0.3 s instead of 2.6 s. The first open and a few fallbacks still
@@ -140,8 +172,8 @@ Nothing queued.
 - On Ubuntu, test `sandbox.network.allowAllUnixSockets: true` as the workaround for the
   sandbox bug (014 D17).
 - Per-session network attribution when several Claude Code sessions run at once (today
-  connections go to unassigned unless exactly one routed session is active; 014 AC10's
-  rule). Idea: tag each claude launch with its own id in the proxy URL.
+  connections go to unassigned unless exactly one session has a hook event in the active
+  window and has not ended; 014 AC10's rule). Idea: tag each claude launch with its own id in the proxy URL.
 - Label sessions by account: when several Claude accounts are used on one machine, show
   which account each session came from; today their sessions are mixed.
 - The speed follow-ups, re-measured after 016.

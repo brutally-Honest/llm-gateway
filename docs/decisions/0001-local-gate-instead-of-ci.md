@@ -53,3 +53,5 @@ dependency tree stays out of `go.mod`.
 - Cost of reversing: add a workflow that runs `make verify` plus the same range check
   over `.githooks/commit-msg`. The Makefile and hooks stay as they are, so this is
   cheap.
+
+> Note (2026-11-26, spec 048): PLAN.md §10 and §11 moved to AGENTS.md (Workflow, Commits, Scopes, Enforcement). A citation of either section above now points there. Nothing else in this file changed.

@@ -225,3 +225,5 @@ Touches none of the three axes: there is no client, protocol or provider code ye
 ## Open questions
 - [OPEN] Shutdown for long SSE streams: a 30s `shutdown_timeout` will cut streams that
   run longer. Feature 001 must revisit this when it adds streaming routes.
+
+> Note (2026-11-26, spec 048): PLAN.md §10 and §11 moved to AGENTS.md (Workflow, Commits, Scopes, Enforcement). A citation of either section above now points there. Nothing else in this file changed.

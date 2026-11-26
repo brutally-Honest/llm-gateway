@@ -119,3 +119,5 @@ name against `grep -rn 'Name: *"gateway_' internal` before keeping it.
 - **D21** 2026-11-22: ADR status values unified on `accepted`. `status: approved` became `status: accepted` in the frontmatter of 0002, 0003, 0004, 0005, 0006, 0009, 0010, 0012, 0013, 0014, 0015, 0016, 0019 and 0020; no body changed.
 - **D22** 2026-11-22: D15 resolved. Every §11 scope stays; PLAN.md §11 now says `server` is the preferred scope for new commits where `gateway` overlaps it.
 - **D23** 2026-11-22: D9 resolved. The human gave the wording; docs/roadmap.md Later has "Label sessions by account".
+
+> Note (2026-11-26, spec 048): PLAN.md §10 and §11 moved to AGENTS.md (Workflow, Commits, Scopes, Enforcement). A citation of either section above now points there. Nothing else in this file changed.

@@ -236,3 +236,5 @@ previous: 1578dc6
 - v3 (2026-10-31) — CR-002: T007 Tests line gains TestAPI_TimelineOmitsUnreadableReasoning
 - v4 (2026-10-31) — reopened: spec v4 changed its contract sections
 - v5 (2026-10-31) — CR-003: new T019, T020, T021, T022 rework done T007 and T005; T008 gains TestHub_PublishReturnsWhenQueueFull and depends on T019 to T022; T013 wording uses tool_call_id
+
+> Note (2026-11-26, spec 048): PLAN.md §10 and §11 moved to AGENTS.md (Workflow, Commits, Scopes, Enforcement). A citation of either section above now points there. Nothing else in this file changed.

@@ -3,6 +3,7 @@ feature: 033-docs-correctness
 kind: chore
 created: 2026-11-22
 branch: chore/033-docs-correctness
+status: done
 ---
 # Docs correctness
 

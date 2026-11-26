@@ -183,3 +183,5 @@ install.sh reads SHA256SUMS first and takes the archive name from the line endin
   file carries it (seen in this session: `ANTHROPIC_BASE_URL=http://127.0.0.1:7197/anthropic`,
   `CLAUDECODE=1`). The check is the client's (`claudecode.Routed`), like the rest of
   what is Claude Code's (D3).
+
+> Note (2026-11-26, spec 048): PLAN.md §10 and §11 moved to AGENTS.md (Workflow, Commits, Scopes, Enforcement). A citation of either section above now points there. Nothing else in this file changed.

@@ -148,8 +148,9 @@ commands carry `ANTHROPIC_BASE_URL` pointing at it), uninstall warns that stoppi
 service cuts that session off, and asks first, even with `--yes`. Answer no and nothing
 changes; run it from a plain terminal instead, or pass `--yes --force` to skip the question.
 
-`gateway uninstall --purge` also deletes the config and the captured data; it asks once more,
-naming the size. `--yes` answers both questions.
+`gateway uninstall --purge` also deletes the config folder and the default data folder; it asks
+once more, naming the size. It keeps a data folder set with `capture.dir`, and on macOS the logs in
+`~/Library/Logs/llm-gateway`. `--yes` answers both questions.
 
 ## Doctor
 
@@ -258,17 +259,15 @@ started" (from the API's `/metrics`); after that it is a **fail**.
 The UI keeps a per-session cache of list rows and session views in `<capture.dir>/view-cache/`
 (by default `~/.local/share/llm-gateway/view-cache/`). It holds only results built from the
 store, so it is disposable: delete the folder at any time, even while the gateway runs. It is
-rebuilt in the background after a start. `gateway uninstall --purge` removes it with the rest
-of the data folder. Restoring an older `gateway.db` from a backup is detected, and that
+rebuilt in the background after a start. `gateway uninstall --purge` removes it only with the
+default data folder; a custom `capture.dir` and its `view-cache/` are kept. Restoring an older `gateway.db` from a backup is detected, and that
 build's cache is dropped; deleting `view-cache/` when you restore is the simple rule. A view
 over 32 MiB is not cached, and the folder is kept under 1 GiB (the oldest views go first).
 Folders are 0700 and files 0600. There is no config key for it.
 
 The cache is empty right after an install or an upgrade (it is tied to the gateway binary) and
-on a new install. The sessions list still answers at once: each row shows its start time,
-folder and status straight away, and its title, work, changes, time and tokens fill in over a
-few seconds as they are built, the page you are looking at first. A filtered list or search
-says how many sessions are still being checked until they are done.
+on a new install. The sessions list still answers at once and fills in the details over a few
+seconds; see [ui.md](ui.md#the-list).
 
 ### Check: capture-health
 Reads the `/healthz` body. **Pass** when no capture data was lost since the gateway started;
@@ -319,13 +318,14 @@ rewrite it.
 ## Known limits
 
 - **Several sessions at once: network effects may show as unassigned.** A connection
-  through the proxy is linked to a session only when exactly one routed session is
-  active; with two or more open, it is listed under "unassigned connections" instead.
+  through the proxy is linked to a session only when exactly one session has had a hook
+  event in the last 10 minutes (`effects.network.active_window`) and has not ended; with
+  none or two or more, it is listed under "unassigned connections" instead.
 
 - **Node needs 22.21 or later, or 24 or later, for network effects.** The settings file
   sets `NODE_USE_ENV_PROXY=1`, so Node sends its calls through the gateway's proxy:
   `fetch` from Node 22.21 (22 line) or 24.0, and the `http`/`https` modules from 22.21 or
-  24.5. Older Node (22.20 and before, 23, 20 and before) ignores it: with the sandbox off
+  24.5. Older Node ignores it: with the sandbox off
   its calls go direct and are not seen; with it on they fail with `ENOTFOUND`. Check with
   `node --version`. Install's summary says the same.
 

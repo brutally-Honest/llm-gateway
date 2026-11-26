@@ -456,3 +456,5 @@ Found in review round 5 but older than round 4, so not in this PR:
 
 Also later, though from round 4 (accepted, V7): **P4** `internal/effects/checkpoint.go:127`
 (`openDirRoot`) should log once when a root is treated as gone because it became a symlink.
+
+> Note (2026-11-26, spec 048): PLAN.md §10 and §11 moved to AGENTS.md (Workflow, Commits, Scopes, Enforcement). A citation of either section above now points there. Nothing else in this file changed.

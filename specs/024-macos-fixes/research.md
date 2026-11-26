@@ -131,3 +131,5 @@ All of AC1–AC10 are built, each with a test that failed before its fix, and
 `make verify` is green. The Linux real check passed with the restart gap accepted (D13) and
 the connections unassigned by 014 AC10 (D14). B8 and B12, and per-session network
 attribution, are on the roadmap's Later list. No open questions.
+
+> Note (2026-11-26, spec 048): PLAN.md §10 and §11 moved to AGENTS.md (Workflow, Commits, Scopes, Enforcement). A citation of either section above now points there. Nothing else in this file changed.

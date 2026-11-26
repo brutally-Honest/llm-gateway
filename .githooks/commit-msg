@@ -1,5 +1,5 @@
 #!/bin/sh
-# Enforces the commit conventions in PLAN.md §11.
+# Enforces the commit conventions in AGENTS.md (Commits).
 # Enabled with: git config core.hooksPath .githooks
 
 msg_file="$1"
@@ -15,7 +15,7 @@ esac
 
 fail() {
 	printf '\ncommit-msg: %s\n\n' "$1" >&2
-	printf 'Format (PLAN.md §11):\n' >&2
+	printf 'Format (AGENTS.md, Commits):\n' >&2
 	printf '  <type>(<scope>): <imperative summary>\n\n  <1-3 sentence body>\n\n' >&2
 	printf 'Types: feat fix refactor perf test docs build ci chore revert\n' >&2
 	printf 'Your subject was:\n  %s\n\n' "$subject" >&2

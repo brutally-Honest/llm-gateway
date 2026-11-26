@@ -1,6 +1,6 @@
 # LLM Gateway — Project Plan (gist)
 
-> The one-page source of intent. If a spec, plan, or PR contradicts this file, either this file is updated (with an ADR) or the other thing is wrong.
+> The one-page source of intent and design: goal, agnosticism, design rules, phases, stack, open questions. If a spec or PR contradicts this file's intent or design, either this file is updated (with an ADR) or the other thing is wrong. How work is done (workflow, commits, hooks) is in [AGENTS.md](AGENTS.md).
 
 ---
 
@@ -208,12 +208,13 @@ Each is resolved in the named phase's spec and recorded as an ADR. The leaning i
 
 ---
 
-## 10. How the work is organised
+## 10. Repo layout, and where the workflow rules live
 
-### Repo layout
+How work is done here (the per-feature flow, spec and research.md formats, ADR escalation, commit conventions, git notes, hooks) is owned by [AGENTS.md](AGENTS.md), not by this file.
+
 ```
-AGENTS.md                  # rules for any agent working in this repo
-PLAN.md                    # this file
+AGENTS.md                  # how work is done: workflow, commits, hooks
+PLAN.md                    # this file: intent, design rules, phases, stack
 docs/decisions/            # ADRs: NNNN-title.md (context, decision, alternatives, consequences)
 docs/clients/              # one page per client: how to connect, known limits
 specs/
@@ -227,114 +228,3 @@ internal/
   clients/<name>/          # one profile per client/harness
 cmd/  deploy/
 ```
-
-### Flow per feature
-Each change gets `specs/NNN-slug/` with `spec.md` and `research.md`. There is no `plan.md`, no `tasks.md`, and no approval fields; a spec may carry one frontmatter line, `status: draft` or `status: done`. The agent-loop kit (brutally-Honest/agent-loop) that used to drive this was removed in 031 and may be installed again later; its settings are in `specs/031-remove-clutter/research.md`. Specs 003–017 were built with it and keep its frontmatter as history; specs 000–002 predate it.
-
-1. **Spec.** Branch `feat/NNN-slug`, `fix/NNN-slug` or `chore/NNN-slug`; `specs/NNN-slug/spec.md` is drafted with me (skeleton below).
-2. **Build.** Built without stopping. Every judgment call is a D-entry (`- **Dn** …`) under `## Decisions` in `research.md`. Commits follow §11.
-3. **Decisions.** A decision that outlives the feature or is hard to reverse becomes an ADR in `docs/decisions/`. Resolving an OQ always produces an ADR, and this file is updated in the same PR.
-4. **PR.** Links the spec, lists each acceptance criterion with its evidence (test name, log, screenshot), and notes any deviation from the spec.
-
-Small fixes don't need a spec folder. The PR description states the bug, the cause, the fix, and the test that proves it.
-
-### AGENTS.md should contain
-- Project goal, the "not a harness" line, and the priority order (a link to this file)
-- The agnosticism rules from §2, which are **checked in every review**: no provider or client logic in `core/`
-- Workflow: spec.md + research.md per change, built without stopping, judgment calls recorded as D-entries; never code outside the current spec's scope
-- Hard rules: §5
-- Stack: §8, with an instruction not to introduce a dependency without an ADR
-- Commands: build, test (`go test -race ./...`), lint, compose up
-- Conventions: package layout, error wrapping, logging fields, test style
-- When unsure: record the call as a D-entry in the feature's `research.md` under `## Decisions`; if it is hard to reverse, stop and ask
-
-### spec.md skeleton
-```
----
-feature: NNN-slug
-kind: feat | fix | chore
-created: YYYY-MM-DD
-branch: feat/NNN-slug
----
-
-## Problem              who has it, what happens today, why it matters
-## Goal                 what is true when this is done
-## Non-goals            what this explicitly does not do
-## Acceptance criteria  - **AC1** — When <trigger>, the system shall <result>.
-## Edge cases           - **E1** — <situation> → <expected behaviour> (AC2)
-```
-For a feature that touches a provider, client or protocol axis, confirm in the spec that `core/` is unchanged or justify it: the agnosticism rules (§2) are a review aid, not a template section.
-
-### research.md: the feature's working memory
-
-**What goes here:** the drilled-down stuff that's too detailed for the spec but worth remembering:
-- **Flow:** "does Claude Code send `count_tokens` before or after the first message?"
-- **Low-level technical:** "`ReverseProxy` buffers when `Content-Length` is set — how to force flush?"
-- **Limits hit:** "Claude Code's `HEAD /api/hello` sends no `x-app`, so the profile can't label it."
-- **Roadblocks and workarounds:** what blocked, what unblocked it.
-
-**Where it's referenced:** commit git notes cite decisions (`Research: … (D2, D5)`). The spec doesn't link to it; it stays at the level of intent.
-
-**Escalation rules**, so nothing important stays buried:
-| If the decision… | Then |
-|---|---|
-| matters beyond this feature, or is hard to reverse | write an ADR, and note `→ ADR-NNNN` |
-| is local to this feature | it stays here; that's the default |
-
-**Entry format.** Every judgment call is a D-entry under `## Decisions`; everything else goes under `## Notes`:
-```
-## Decisions
-- **D1** (2026-10-11) — Session ID comes from the client profile, not core — core must not name a client header
-```
-Entries are never deleted. A wrong decision later gets a new dated line, not an edit, so the history of the confusion is kept.
-
----
-
-## 11. Commit conventions
-
-Every commit message is written with intent. No `wip`, `fix stuff`, `update`, or auto-generated summaries.
-
-**The format itself is not defined here.** It is a personal, cross-repository standard, kept in one place so it can't drift per project: the user-level skill `~/.claude/skills/commit-conventions/SKILL.md`. Any agent working in this repo loads that skill before writing a commit message or a PR description. In short, it requires `<type>(<scope>): <imperative summary>` — lowercase, no trailing period, subject ≤ 72 characters — then a blank line and one to three present-tense sentences saying what the commit does and why; one logical change per commit; extended context in a git note rather than the body; and **no `Co-authored-by` or any other AI attribution trailer**, because I am the author of record.
-
-What is repo-specific, and so belongs here:
-
-### Scopes
-
-A scope is a noun naming the area touched, matching this codebase: `proxy`, `capture`, `anthropic`, `openai-chat`, `claude-code`, `cost`, `ratelimit`, `routing`, `store`, `observability`, `config`, `server` (`internal/server`, `cmd/gateway`), `logging`, `ui` (`internal/ui`, the web page and its API), `deploy` (`deploy/`, the observability compose stack), `docs`, `repo` (repo-level tooling, hooks, process docs), `core` (`internal/core`, the proxy engine), `timeline` (`internal/timeline`), `install` (`gateway install`, `uninstall`, `doctor`, `install.sh`), `gateway` (`cmd/gateway`), `harness-hooks` (the harness hook events and endpoint), `contentcoding` (response decompression), `session-token-usage` (the Phase 4 usage counters), `spec` (files under `specs/`), `adr` (`docs/decisions/`), `roadmap` (`docs/roadmap.md`), `verify` (the `make verify` gate).
-
-Where `gateway` and `server` overlap (`cmd/gateway`), use `server` for new commits.
-
-**Branch and commit agree.** Commits on `feat/003-sessions-and-timeline` use scopes from that feature.
-
-### Git notes in this repo
-
-Add a note (`git notes add -m "<note>" <commit>`) when the commit involves a decision, a trade-off, or a spec criterion:
-
-```
-Spec: specs/003-sessions-and-timeline/spec.md (AC2, AC4)
-ADR: docs/decisions/0004-capture-store.md
-Research: specs/003-sessions-and-timeline/research.md (Q2, Q5)
-Why this approach: <one or two lines>
-Alternatives rejected: <one line each>
-Trade-off / known limit: <…>
-Verified by: <test names, manual check>
-```
-
-Repo setup, so notes survive and travel:
-```
-git config core.hooksPath .githooks
-git config notes.rewriteRef refs/notes/commits
-git config --add remote.origin.fetch '+refs/notes/*:refs/notes/*'
-git push origin refs/notes/commits
-```
-GitHub doesn't display notes, so the PR description still carries the essentials (spec link, acceptance-criteria evidence). Notes are the permanent per-commit record; the PR is the review surface.
-
-### Enforcement
-
-The skill gets the message right when it is written. The repo assumes it wasn't:
-
-- A **`commit-msg` hook** at `.githooks/commit-msg`, enabled with `git config core.hooksPath .githooks`:
-  - rejects a subject that doesn't match `^(feat|fix|refactor|perf|test|docs|build|ci|chore|revert)(\([a-z0-9-]+\))!?: .+$`, ends in a period, or runs over 72 characters;
-  - rejects any `Co-authored-by:` or AI-attribution trailer.
-- A **`pre-push` hook** at `.githooks/pre-push` re-runs `.githooks/commit-msg` on every commit in the pushed range, so a commit made with `git commit --no-verify` can't sneak through. CI runs `make verify` on Linux and macOS for every PR and every push to main, beside this local gate ([ADR 0019](docs/decisions/0019-ci-on-linux-and-macos.md), which supersedes [ADR 0001](docs/decisions/0001-local-gate-instead-of-ci.md)).
-- Never bypass either with `--no-verify`.
