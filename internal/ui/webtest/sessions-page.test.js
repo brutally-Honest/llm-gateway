@@ -196,15 +196,16 @@ test("emptyStatesSayWhatIsTrue", () => {
   assert.match(text(p), /No sessions captured yet\./);
   // a filter or search on, nothing left to test: no match
   p.page.update({ kind: "active", q: "", total: 7, scanned: 7, next_after: null });
-  assert.equal(text(p).split("no sessions match").length - 1, 1, "said once");
+  assert.equal(text(p).split("No sessions match").length - 1, 1, "said once");
+  assert.match(text(p), /No sessions match the filter "Active"\./);
   assert.doesNotMatch(text(p), /No sessions captured yet/);
   p.page.update({ kind: "all", q: "zzz" });
-  assert.match(text(p), /no sessions match/);
+  assert.match(text(p), /No sessions match the search "zzz"\./);
   assert.doesNotMatch(text(p), /filtering .* loaded/, "the old note is gone");
   // nothing yet but more rows to test: a muted line with the count scanned, › to go on
   p.page.update({ next_after: "tok", scanned: 500, total: 900 });
   assert.match(text(p), /No matches in the newest 500 sessions yet/);
-  assert.doesNotMatch(text(p), /no sessions match/);
+  assert.doesNotMatch(text(p), /No sessions match/);
   assert.equal(withClass(p.page.el, "muted").some((e) => /No matches in the newest/.test(e.textContent)), true, "muted");
   const next = byTag(p.page.el, "button").find((b) => b.textContent === "Next ›");
   assert.ok(next, "Next continues the walk");
@@ -842,4 +843,53 @@ test("theErrorBoxIsKeptAcrossRedrawsWithTheSameError", () => {
   p.page.update({ error: "other" });
   assert.notEqual(retryOf(p), retry, "a new error text builds the box again");
   assert.match(textOf(withClass(p.page.el, "sp-list")[0]), /other/);
+});
+
+// spec 046 U8: a filter or search that matches nothing names what it was, with a Clear that
+// empties the box and goes back to All in one step. The box is kept across a redraw with the
+// same text, so a Clear with focus is not destroyed.
+const noMatchOf = (p) => withClass(p.page.el, "sp-empty")[0];
+const noMatchText = (p) => withClass(noMatchOf(p), "empty")[0].textContent;
+
+test("anEmptyFilterNamesTheFilterAndOffersClear", () => {
+  const asked = [];
+  const p = livePage([], { onKind: (k) => asked.push(k) });
+  p.page.update({ loaded: true, kind: "look", q: "", items: [], total: 12, scanned: 12, next_after: null });
+  assert.equal(noMatchText(p), 'No sessions match the filter "Needs a look".');
+  const clear = byTag(noMatchOf(p), "button")[0];
+  assert.equal(clear.textContent, "Clear");
+  assert.equal(clear.type, "button");
+  const before = noMatchOf(p);
+  clear.focus();
+  p.page.update({ today: { sessions: 1 } });
+  assert.equal(noMatchOf(p), before, "same text, same box: focus on Clear is kept");
+  assert.equal(document.activeElement, clear);
+  clear.fire("click");
+  assert.deepEqual(asked, ["all"]);
+});
+
+test("aMatchlessSearchSaysSoAndClearEmptiesTheBox", () => {
+  const asked = [];
+  const p = livePage([], { onKind: (k) => asked.push(k) });
+  const input = byTag(p.page.el, "input")[0];
+  input.value = "fix login";
+  p.page.update({ loaded: true, kind: "all", q: "fix login", items: [], total: 12, scanned: 12, next_after: null });
+  assert.equal(noMatchText(p), 'No sessions match the search "fix login".');
+  byTag(noMatchOf(p), "button")[0].fire("click");
+  assert.equal(input.value, "", "the box is emptied");
+  assert.deepEqual(asked, ["all"]);
+});
+
+test("aMatchlessFilterAndSearchNamesBoth", () => {
+  const p = livePage([]);
+  p.page.update({ loaded: true, kind: "look", q: "fix login", items: [], total: 12, scanned: 12, next_after: null });
+  assert.equal(noMatchText(p), 'No sessions match the filter "Needs a look" and the search "fix login".');
+});
+
+test("anUnfilteredEmptyStoreHasNoClear", () => {
+  const p = livePage([]);
+  p.page.update({ loaded: true, kind: "all", q: "", items: [], total: 0, next_after: null });
+  assert.match(textOf(p.page.el), /No sessions captured yet\./);
+  assert.equal(noMatchOf(p), undefined, "no no-match box");
+  assert.equal(byTag(p.page.el, "button").some((b) => b.textContent === "Clear"), false);
 });

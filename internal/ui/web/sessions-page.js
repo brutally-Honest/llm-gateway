@@ -740,6 +740,32 @@ export function createSessionsPage(handlers) {
   let builtUnassignedItems = NONE;
   let builtError = null;
   let errorBox = null;
+  // The no-match box names the filter and the search, with a Clear (spec 046 U8). It is built
+  // when its text changes and otherwise left in place, so a Clear with focus survives a redraw.
+  let builtEmpty = "";
+  let emptyBox = null;
+  function drawNoMatch() {
+    const parts = [];
+    if (kind !== "all") parts.push(`the filter "${FILTER_LABELS[kind]}"`);
+    if ((state.q || "") !== "") parts.push(`the search "${state.q}"`);
+    const text = `No sessions match ${parts.join(" and ")}.`;
+    if (text !== builtEmpty) {
+      builtEmpty = text;
+      const box = document.createElement("div");
+      box.className = "sp-empty";
+      const clear = document.createElement("button");
+      clear.type = "button";
+      clear.className = "btn sm";
+      clear.textContent = "Clear";
+      clear.addEventListener("click", () => {
+        input.value = "";
+        if (handlers.onKind) handlers.onKind("all");
+      });
+      box.append(note("empty", text), clear);
+      emptyBox = box;
+    }
+    if (list.children.length !== 1 || list.children[0] !== emptyBox) list.replaceChildren(emptyBox);
+  }
   const pressed = new Map(); // the aria-pressed value last written to each kind button
 
   function drawToday() {
@@ -846,7 +872,8 @@ export function createSessionsPage(handlers) {
       selected = "";
       if (!(state.total > 0)) list.replaceChildren(note("empty", "No sessions captured yet."));
       else if (state.next_after) list.replaceChildren(note("muted", `No matches in the newest ${plural(state.scanned || 0, "session")} yet`));
-      else list.replaceChildren(note("empty", filtering ? "no sessions match" : "No sessions captured yet."));
+      else if (filtering) drawNoMatch();
+      else list.replaceChildren(note("empty", "No sessions captured yet."));
     } else {
       drawRows();
     }

@@ -298,6 +298,9 @@ ul.qa-opts .qa-d { grid-column: 2; font-size: 12.5px; }
 /* a failed page: the error text and its Retry on one row (spec 042 AC2) */
 .sp-list > .sp-error { display: flex; align-items: center; gap: 12px; padding: 1.5rem 1.25rem; }
 .sp-list > .sp-error > .error { margin: 0; padding: 0; }
+/* a filter or search that matches nothing: the note and a Clear on one row (spec 046 U8) */
+.sp-list > .sp-empty { display: flex; align-items: center; gap: 12px; padding: 1.5rem 1.25rem; }
+.sp-list > .sp-empty > .empty { margin: 0; padding: 0; }
 .sp-list table { min-width: 72rem; }
 /* the header paints above the rows (positioned for their stretched link) on an opaque
    background; its line is a box-shadow, since a collapsed border does not travel with a sticky cell (spec 042 AC1). */

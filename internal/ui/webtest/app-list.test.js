@@ -755,7 +755,7 @@ test("emptyStatesFollowTheServersAnswer", async (t) => {
   // a filter that nothing matches, every row tested
   serve = () => ({ items: [], next_after: null, total: 12, scanned: 12 });
   await go("#/?kind=look");
-  assert.match(text(), /no sessions match/);
+  assert.match(text(), /No sessions match the filter "Needs a look"\./);
   assert.doesNotMatch(text(), /No sessions captured yet/);
   // a short page with more to test: say so, keep Next to go on, sum what was scanned
   serve = (p) => (p.get("after") ? { items: [], next_after: "t2", total: 2000, scanned: 500 } : { items: [], next_after: "t1", total: 2000, scanned: 500 });
