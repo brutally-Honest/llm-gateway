@@ -223,3 +223,10 @@ fixes complete for every caller; /healthz cannot answer non-200; no double count
   `TestAPI_AfterFromOtherListIs400`). Pre-existing, not from this branch: the two tests at
   `-count=200` fail 11 times on a clean main worktree (bd01c63), 3 at 79d4448 and 8 with the
   P3-a change. Verify was rerun unchanged; the flake is left for its own fix (out of scope).
+- **D25** 2026-11-26 Round 2 P3-b fix: a view or digest memo built with a placeholder for a
+  not-found or unavailable block is "partial": served and kept in memory, never written to the
+  disk cache (and no background full build is queued to write it), so a restart rebuilds it
+  and shows a blob healed meanwhile. It is not "degraded": the list's memo lookup still hits,
+  so a damaged session is not rebuilt on every request. The memo is flagged at the Content
+  reader inside computeMemo, which covers digest, stats and view at once. Probed: removing
+  either the view or the memo guard fails the new test.

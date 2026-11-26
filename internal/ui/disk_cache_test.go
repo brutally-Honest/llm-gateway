@@ -888,6 +888,54 @@ func TestDiskCache_UnavailableBlobIsNotDegraded(t *testing.T) {
 	}
 }
 
+// 045 round 2 P3-b: a view or memo that holds a placeholder for an unavailable blob is
+// served, not degraded and kept in memory, but never written to disk: another session can
+// heal the shared blob without changing this session's version, so a file would keep the
+// placeholder across restarts. A session with no damage in the same env is written.
+func TestDiskCache_UnavailableBlobIsNeverWrittenToDisk(t *testing.T) {
+	e := newDiskEnv(t)
+	e.call("a", 1, 0, 0, "user:fix the retry")
+	e.save("o1", "k2", "cc", 2) // the control: no damage
+	copyOf := bytes.Repeat([]byte("line\n"), store.InlineMax)
+	id := store.SessionIdent{Principal: core.PrincipalLocal, Client: "cc", Key: "k"}
+	cp := store.Checkpoint{Copies: [][]byte{copyOf}, Effects: []core.Effect{{Kind: core.EffectFileChange,
+		At: baseTime.Add(2 * time.Second), Principal: id.Principal, Client: id.Client, SessionKey: id.Key, Root: "/w",
+		Path: "/w/a.txt", Change: core.FileCreated, Size: int64(len(copyOf)), Mode: "git", AfterHash: store.ContentHash(copyOf)}},
+		Upserts: []store.SnapshotRow{{Root: "/w"}}}
+	if err := e.s.SaveCheckpoint(t.Context(), id, cp); err != nil {
+		t.Fatal(err)
+	}
+	h := store.ContentHash(copyOf)
+	if err := os.Remove(filepath.Join(e.dir, "blobs", h[:2], h[2:])); err != nil {
+		t.Fatalf("the copy is not a blob file: %v", err)
+	}
+	ctl := sessionID(store.SessionRow{PrincipalID: core.PrincipalLocal, Client: "cc", SessionKey: "k2"})
+
+	e.mustGet("/api/sessions/" + sid() + "/view")
+	e.mustGet("/api/sessions/" + sid())
+	e.mustGet("/api/sessions/" + ctl + "/view")
+	e.mustGet("/api/sessions/" + ctl)
+	e.flush()
+
+	if _, ok := e.dep.Views.peek(id); !ok {
+		t.Error("the partial view is not in the in-memory view cache")
+	}
+	if pe, ok := e.dep.Digests.peek(id); !ok || pe.memo.degraded || !pe.memo.partial {
+		t.Errorf("memo in memory = %v, %v, want a partial, not degraded memo", pe.memo, ok)
+	}
+	if _, err := os.Stat(e.fileOf("v", "k")); err == nil {
+		t.Error("a view holding a placeholder was written to disk")
+	}
+	if _, err := os.Stat(e.fileOf("m", "k")); err == nil {
+		t.Error("a memo built without an unavailable blob was written to disk")
+	}
+	for _, kind := range []string{"v", "m"} {
+		if _, err := os.Stat(e.fileOf(kind, "k2")); err != nil {
+			t.Errorf("the undamaged session has no %q file: %v", kind, err)
+		}
+	}
+}
+
 // sessionViewChecked reports a content failure other than not-found and ignores not-found.
 func TestSessionView_DegradedOnlyForRealContentErrors(t *testing.T) {
 	for _, tc := range []struct {
