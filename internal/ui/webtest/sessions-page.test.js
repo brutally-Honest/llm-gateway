@@ -537,8 +537,23 @@ test("listFormatsForReading", () => {
   assert.equal(icon.attrs["aria-label"], "failed");
   assert.equal(icon.attrs.role, "img");
   const ths = byTag(p.page.el, "th").map((x) => x.textContent);
-  assert.deepEqual(ths.slice(0, 7), ["", "Start", "Session", "Work", "Changes", "Time", "Tokens"], "no Sources, Status or Tools header");
+  assert.deepEqual(ths.slice(0, 7), ["", "Last active", "Session", "Work", "Changes", "Time", "Tokens"], "no Sources, Status or Tools header");
   assert.equal(byTag(p.page.el, "th")[0].attrs["aria-label"], byTag(p.page.el, "th")[0].title, "the icon column is named");
+});
+
+// spec 046 U6: the list is sorted by last activity, so its time column shows last_at and the
+// start is the hover text; a live update that moves only last_at rewrites the cell.
+test("firstColumnIsLastActiveAndShowsLastActivity", () => {
+  const p = livePage([session({ first_at: "2026-01-01T09:00:00Z", last_at: "2026-01-01T11:30:00Z" })]);
+  assert.equal(byTag(p.page.el, "th")[1].textContent, "Last active");
+  const time = () => byTag(byTag(p.row("s1"), "td")[1], "time")[0];
+  assert.equal(time().dateTime, "2026-01-01T11:30:00Z");
+  assert.equal(time().textContent, startText("2026-01-01T11:30:00Z"));
+  assert.equal(time().title, `Started ${startText("2026-01-01T09:00:00Z")}`);
+  p.page.update({ items: [session({ first_at: "2026-01-01T09:00:00Z", last_at: "2026-01-01T12:00:00Z" })] });
+  assert.equal(time().dateTime, "2026-01-01T12:00:00Z", "the cell follows last_at");
+  assert.equal(time().textContent, startText("2026-01-01T12:00:00Z"));
+  assert.equal(time().title, `Started ${startText("2026-01-01T09:00:00Z")}`, "the start is unchanged");
 });
 
 test("listShowsALoaderUntilItsFirstPage", () => {

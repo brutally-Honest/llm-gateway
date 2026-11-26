@@ -147,6 +147,7 @@ export function rowCells(s) {
     work: work || (tools.failed ? "" : DASH),
     id: s.id,
     start: s.first_at,
+    last: s.last_at || s.first_at,
     title: pending ? PENDING_TITLE : s.title || NO_TITLE,
     key: s.session_key || "",
     folder: l.folder || "",
@@ -423,10 +424,13 @@ function fillRow(parts, s, selected) {
   }
   const cls = [selected ? "selected" : "", c.pending ? "pending" : ""].filter(Boolean).join(" ");
   if (tr.className !== cls) tr.className = cls;
-  if (key.start !== c.start) {
-    key.start = c.start;
-    const t = timeElement(c.start);
-    t.textContent = startText(c.start);
+  // the time column shows the last activity (the list's sort key); the start is its hover text
+  const stamp = `${c.last}|${c.start}`;
+  if (key.time !== stamp) {
+    key.time = stamp;
+    const t = timeElement(c.last);
+    t.textContent = startText(c.last);
+    t.title = `Started ${startText(c.start)}`;
     cells[1].replaceChildren(t);
   }
   setText(a, c.title);
@@ -479,7 +483,7 @@ function fillRow(parts, s, selected) {
 // COLUMNS are the list's headers and each column's class; every count carries its own label
 // in words (spec 017 AC1).
 const COLUMNS = [
-  ["", "status", "Status: ● active, ✗ failed, ◇ hooks only; an ordinary ended session shows none"], ["Start", "time"], ["Session", "title"], ["Work", "work"],
+  ["", "status", "Status: ● active, ✗ failed, ◇ hooks only; an ordinary ended session shows none"], ["Last active", "time", "The list is sorted by last activity, newest first; hover a time for the session's start"], ["Session", "title"], ["Work", "work"],
   ["Changes", "changes"], ["Time", "dur"], ["Tokens", "tokens", `Second line: ${explain("")}`],
 ];
 
