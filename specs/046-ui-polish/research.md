@@ -22,7 +22,8 @@ feature: 046-ui-polish
 - 2026-11-26 step 4 P3-a (sonnet): only real pasted-content wrappers are stripped from titles (D18), bb63fed; 6 rule cases; make verify green.
 - 2026-11-26 step 4 P3-b + P4-4 (sonnet): a local command without its caveat block no longer titles a session as a typed slash command (D19), ecd9aa0; 6 rule cases; make verify green.
 - 2026-11-26 step 4 P3-c (sonnet): a failed open says "Turns not loaded." in the rail; "No turns." only for a missing session, 673653c; 1 expectation moved, 1 assertion added; make verify green.
-- 2026-11-26 step 4 P3-d (sonnet): compile-time check and an end-to-end test that the real profile titles turns (D20) (this commit); probed by changing the signature (build fails); make verify green.
+- 2026-11-26 step 4 P3-d (sonnet): compile-time check and an end-to-end test that the real profile titles turns (D20), 6e07596; probed by changing the signature (build fails); make verify green.
+- 2026-11-26 step 4 P3-e (sonnet): Clear moves focus to the search box (this commit); 1 assertion, failing before; make verify green. Round 1 closed: P2-a, P2-b (partial, D17), P3-a..e fixed; P4 left as recorded.
 
 ## Findings
 

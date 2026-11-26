@@ -866,6 +866,7 @@ test("anEmptyFilterNamesTheFilterAndOffersClear", () => {
   assert.equal(document.activeElement, clear);
   clear.fire("click");
   assert.deepEqual(asked, ["all"]);
+  assert.equal(document.activeElement, byTag(p.page.el, "input")[0], "Clear hands focus to the search box");
 });
 
 test("aMatchlessSearchSaysSoAndClearEmptiesTheBox", () => {

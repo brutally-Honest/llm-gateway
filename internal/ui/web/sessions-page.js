@@ -760,6 +760,7 @@ export function createSessionsPage(handlers) {
       clear.addEventListener("click", () => {
         input.value = "";
         if (handlers.onKind) handlers.onKind("all");
+        input.focus({ preventScroll: true }); // the redraw removes this button; keep focus in the list
       });
       box.append(note("empty", text), clear);
       emptyBox = box;
