@@ -8,8 +8,8 @@
 - [x] 2026-11-26 group D: AGENTS.md/PLAN.md rules, stale sweep, status lines, links (D25-D43)
 - [x] 2026-11-26 review round 1: 62 claims, 1 P2, 7 P3, 9 P4 (P4s under Notes)
 - [x] 2026-11-26 fixes for round 1 P2-P3 (D44-D51)
-- [ ] review round 2 (only if round 1 found P1-P3)
-- [ ] spec marked done, PR opened, CI watched
+- [x] 2026-11-26 review round 2: 77 claims, 3 P3 fixed (D52-D54), 15 P4 under Notes; the round 2 fixes were not re-reviewed (two-round limit)
+- [x] 2026-11-26 spec marked done; PR and CI below
 
 ## Decisions
 - **D1** 2026-11-26 Branch is `chore/048-full-docs`, not the bare `048-full-docs` the request

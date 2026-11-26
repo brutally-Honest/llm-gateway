@@ -3,7 +3,7 @@ feature: 048-full-docs
 kind: chore
 created: 2026-11-26
 branch: chore/048-full-docs
-status: draft
+status: done
 ---
 
 ## Problem
