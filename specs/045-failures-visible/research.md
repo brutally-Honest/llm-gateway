@@ -7,7 +7,8 @@ feature: 045-failures-visible
 - 2026-11-26 step 1: branch fix/045-failures-visible made from main at bd01c63; spec and research written (paths, D1-D12), committed b818522.
 - 2026-11-26 step 2: 4c1cc71, missing/unreadable blob is a per-block placeholder; body endpoint 404 body_not_stored with one log line; make verify green.
 - 2026-11-26 step 3: bb5f426, blob write failure keeps the row (content row kept, file missing, D14), heals on rewrite, counted; make verify green.
-- 2026-11-26 step 4: counters, metrics, /healthz and /api/health degraded body, doctor check built; see commit below.
+- 2026-11-26 step 4: 221641f, counters + metrics, /healthz and /api/health degraded body (200), doctor capture-health; make verify green (one lint fix first).
+- 2026-11-26 step 5: banner built (health.js, shell.js setHealth, app.js poll); webtests 285/285; see commit below.
 
 ## Findings
 
@@ -150,3 +151,9 @@ the status stays 200.
   health body it understands (no Fetch, fetch error, unparsable, or an older gateway's bare
   `{"status":"ok"}`); a warn never makes doctor exit non-zero. Its link is the listeners
   anchor until docs/install.md has its own `### Check:` section (step 6).
+- **D18** 2026-11-26 Banner: `--bad` on `--bad-bg` (already a contrast-checked pair in all
+  four style/theme combinations; Stark's `--warn` is blue, so it would not read as a
+  problem), radius from `--radius-md` (round in Lean, square in Stark), its own full-width
+  header row, text wraps. The details link keeps an underline despite the header's
+  no-underline rule, so it is not signalled by colour alone. The default poll timer is
+  `unref`'d under node so the webtests that import app.js still exit; a browser is unaffected.

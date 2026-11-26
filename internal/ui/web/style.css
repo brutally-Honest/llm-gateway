@@ -174,6 +174,12 @@ a.brand::before { content: ""; position: absolute; inset: 3px; background: var(-
 a.brand:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
 :root[data-style="lean"] a.brand { background: var(--accent-grad); box-shadow: inset 0 1px 0 var(--glass-hi); }
 :root[data-style="stark"] a.brand { border-radius: 0; }
+/* spec 045 AC7: the capture-health banner, a full-width row of the header; --bad on --bad-bg is
+   a checked pair in all four style and theme combinations; the radius token makes it round in
+   Lean and square in Stark; the text wraps, so it never scrolls the page sideways */
+.health-banner { flex: 1 0 100%; min-width: 0; padding: 6px 12px; font-size: 13px; font-weight: 500; color: var(--bad); background: var(--bad-bg); border: 1px solid var(--bad); border-radius: var(--radius-md); overflow-wrap: anywhere; }
+.health-banner .health-link { margin-left: 8px; color: var(--bad); font-weight: 700; text-decoration: underline !important; }
+:root[data-style="stark"] .health-banner { font-family: var(--font-mono); }
 /* no underline on anything in the header, at rest or on hover (027 C7a) */
 header#shell-head a, header#shell-head a:hover { text-decoration: none; }
 .crumbs { flex: 1; display: flex; gap: 6px; align-items: center; min-width: 0; font-size: 13px; color: var(--muted); }

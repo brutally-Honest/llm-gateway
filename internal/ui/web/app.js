@@ -11,6 +11,7 @@ import { buildRoute, capQuery, parseRoute } from "./route.js";
 import { handleKey, isTextInput } from "./keys.js";
 import { createCallDialog } from "./call-dialog.js";
 import { mountShell } from "./shell.js";
+import { startHealthPoll } from "./health.js";
 import { createExchangePage } from "./exchange-detail.js";
 import { createUngroupedPage } from "./ungrouped-list.js";
 
@@ -29,6 +30,8 @@ const shell = mountShell({
   theme: initTheme(storage, root),
   look: initStyle(storage, root),
 });
+// the capture-health banner: read on load and every 15 s, one timer for the page's lifetime
+startHealthPoll({ read: () => getJSON("health"), onHealth: (h) => shell.setHealth(h) });
 const store = createStore({ sessions: [], sessionsNext: null, sessionsError: "", sessionsKind: "all", sessionsQ: "", sessionsTotal: 0, sessionsScanned: 0, sessionsPage: 1, sessionsChecking: 0, sessionsWant: 0, sessionsStalled: false, ungrouped: [], ungroupedNext: null, ungroupedError: "", ungroupedHead: { items: [], next_after: null }, today: null, unassigned: 0, unassignedItems: [] });
 let closeStream = null;
 let view = null;
