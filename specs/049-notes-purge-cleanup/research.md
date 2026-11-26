@@ -2,7 +2,7 @@
 
 ## Progress
 - [x] 2026-11-26 PR #77 confirmed on origin/main; branch chore/049-notes-purge-cleanup from up-to-date main; spec and research created
-- [ ] task 1: notes local only
+- [x] 2026-11-26 task 1: notes local only (150ed75 hook/Makefile/tests/AGENTS.md, b55a178 ADR 0022)
 - [ ] task 2: uninstall --purge wording
 - [ ] task 3: app.js liveText comment
 - [ ] task 4: outbound-destination audit
@@ -36,3 +36,12 @@
 - 2026-11-26 `shellcheck .githooks/pre-push` reports 5 warnings (SC2046, SC1007 x4) that
   are on main too; `make verify` lints only install.sh, so they do not fail the gate. Not in
   049's scope; follow-up candidate.
+- 2026-11-26 Slip: between the two task 1 commits the main session ran a bare `make -s`,
+  which runs the default target `setup`. It re-ran `git config core.hooksPath .githooks` and
+  `git config notes.rewriteRef refs/notes/commits` on this clone (both already set to those
+  values; the refspec lines were already removed, so none was added) and `go mod download`.
+  The ADR commit b55a178 was therefore made without `make verify` first; `make verify` was
+  run on that same tree right after and passed.
+- 2026-11-26 This clone's notes refspec is `refs/notes/*:refs/notes/remote/*` (no `+`, a
+  different destination), not the `+refs/notes/*:refs/notes/*` that `make setup` used to
+  add, so the removal command for the owner must match any `refs/notes` refspec.

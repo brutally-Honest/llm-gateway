@@ -30,7 +30,8 @@ This amends ADR 0001 on that one point. The rest of ADR 0001 still stands.
 ## Consequences
 - Notes exist only in the clone that wrote them. The PR description carries the
   essentials: the spec link and the acceptance-criteria evidence.
-- A clone made before this change still has the old refspec. Remove it with
-  `git config --unset-all remote.origin.fetch '^\+refs/notes/\*:refs/notes/\*$'`.
+- A clone made before this change may still have a notes fetch refspec, with any
+  destination (for example `refs/notes/*:refs/notes/remote/*`). Remove every notes fetch
+  refspec with `git config --unset-all remote.origin.fetch '^\+?refs/notes/'`.
 - Cost of reversing: remove the hook check and its test (`TestPrePush_RejectsNotes` in
   `test/githooks/prepush_test.go`), and add the refspec back in `make setup`.
