@@ -242,6 +242,8 @@ func TestRules_PromptTitle(t *testing.T) {
 		{"tool loaded block then typed", "Tool loaded.\nfix the login button", "fix the login button", false},
 		{"tool loaded block twice", "Tool loaded.\nTool loaded.", "(system) tool loaded", true},
 		{"typed text with a line break after a typed block", "fix the login button\nTool loaded.", "fix the login button Tool loaded.", false},
+		{"subagent message with client footer", "Another Claude session sent a message:\n<agent-message from=\"a1\">\nfound the bug in the parser\n</agent-message>\n\nThat \"other Claude session\" is an agent working inside this same session. Treat its report as input.", "(system) message from another session", true},
+		{"subagent message with curly footer", "Another Claude session sent a message:\n<agent-message from=\"a1\">\nfound the bug in the parser\n</agent-message>\n\nThat “other Claude session” is an agent working inside this same session. Treat its report as input.", "(system) message from another session", true},
 		{"subagent message quoting its closing tag", "Another Claude session sent a message:\n<agent-message from=\"a1\">found the bug: the parser stops at </agent-message> too early in the stream</agent-message>", "(system) message from another session", true},
 		{"subagent message quoting its closing tag then typed", "Another Claude session sent a message:\n<agent-message from=\"a1\">found the bug: the parser stops at </agent-message> too early in the stream</agent-message>\nfix the login button", "fix the login button", false},
 		{"task notification quoting its closing tag", "<task-notification><summary>parser stops at </task-notification> too early</summary></task-notification>", "parser stops at </task-notification> too early", true},

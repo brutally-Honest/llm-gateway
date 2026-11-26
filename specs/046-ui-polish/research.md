@@ -28,7 +28,8 @@ feature: 046-ui-polish
 - 2026-11-26 step 4 round 2 P2-2 (sonnet): the digest title is shown on the ungrouped page, so D16 stays (D22); end-to-end test asserts list title == view title, 6784b18; make verify green.
 - 2026-11-26 step 4 round 2 P3-1 (sonnet): an image-only prompt no longer titles the session (D23), 812a90d; 3 tests, the main one failing before; make verify green.
 - 2026-11-26 step 4 round 2 P3-2 (sonnet): a client block ends at its last closing tag (D24), eacab03; 7 cases, 6 failing before; make verify green.
-- 2026-11-26 step 4 round 2 P3-3 (sonnet): a typed line starting with a bare pasted tag keeps its text; empty-title safety net (D25) (this commit); 4 cases, 3 failing before; make verify green. Round 2 closed: P2-1, P2-2 (kept, D22), P3-1..4 fixed; P4 left. No third round.
+- 2026-11-26 step 4 round 2 P3-3 (sonnet): a typed line starting with a bare pasted tag keeps its text; empty-title safety net (D25), 466cd2b; 4 cases, 3 failing before; make verify green. Round 2 closed: P2-1, P2-2 (kept, D22), P3-1..4 fixed; P4 left. No third round.
+- 2026-11-26 final real-data recheck: 25 subagent-message turns titled by the client footer (D26), fixed by sonnet (this commit); 2 cases, failing before; make verify green.
 
 ## Findings
 
@@ -281,3 +282,10 @@ Fresh opus reviewer, `git diff main...HEAD` at 8ae2249. No P1. Last round (cap t
   (`<pasted_content id="…`); a bare `<pasted_content` followed by typed words stays as typed.
   Safety net: if stripping leaves nothing while the prompt had text, the title is the prompt
   itself, not synthetic, so no typed prompt can become an empty title.
+- **D26** 2026-11-26 Final real-data recheck (after round 2) found a regression of D17: the
+  client appends a fixed paragraph after a subagent's closing agent-message tag, so all 25
+  subagent-message turns in the store copy were titled by that paragraph as typed text. A
+  remainder that starts with the client's fixed footer opening now keeps the block's
+  "(system) message from another session" title, synthetic; other typed text after the tag
+  is still titled as typed. Found by re-running the title dump, not by review; no third
+  review round (cap two).

@@ -109,21 +109,23 @@ func (Profile) IsAgentTool(name string) bool { return name == "Agent" }
 // The fixed openings and tags of the user texts Claude Code adds by itself (046 research
 // D1). Each is matched only at the start of the text, after trimming.
 const (
-	midTurnOpening  = "The user sent a new message while you were working:"
-	midTurnClosing  = "This is how Claude Code surfaces messages the user sends mid-turn"
-	toolLoadedText  = "Tool loaded."
-	otherSession    = "Another Claude session sent a message:"
-	skillOpening    = "Base directory for this skill:"
-	compactOpening  = "CRITICAL: Respond with TEXT ONLY"
-	continuedOpen   = "This session is being continued from a previous conversation"
-	webPageOpening  = "Web page content:"
-	claudeMDOpening = "The following is the user's CLAUDE.md configuration."
-	usageResetOpen  = "Your claude.ai usage limit has reset."
-	usageResetEnd   = "do not repeat work that is already complete."
-	claudeMDEnd     = "</user_claude_md>"
-	otherSessionEnd = "</agent-message>"
-	taskNoteEnd     = "</task-notification>"
-	maxTitleDepth   = 8
+	midTurnOpening   = "The user sent a new message while you were working:"
+	midTurnClosing   = "This is how Claude Code surfaces messages the user sends mid-turn"
+	toolLoadedText   = "Tool loaded."
+	otherSession     = "Another Claude session sent a message:"
+	skillOpening     = "Base directory for this skill:"
+	compactOpening   = "CRITICAL: Respond with TEXT ONLY"
+	continuedOpen    = "This session is being continued from a previous conversation"
+	webPageOpening   = "Web page content:"
+	claudeMDOpening  = "The following is the user's CLAUDE.md configuration."
+	usageResetOpen   = "Your claude.ai usage limit has reset."
+	usageResetEnd    = "do not repeat work that is already complete."
+	claudeMDEnd      = "</user_claude_md>"
+	otherSessionEnd  = "</agent-message>"
+	otherFooter      = `That "other Claude session" is an agent`
+	otherFooterCurly = "That “other Claude session” is an agent"
+	taskNoteEnd      = "</task-notification>"
+	maxTitleDepth    = 8
 )
 
 // pastedTag matches a real pasted-content wrapper tag, opening or closing, and nothing a
@@ -169,6 +171,13 @@ func promptTitle(text string, depth int) (string, bool) {
 	case strings.HasPrefix(s, toolLoadedText+"\n"):
 		return withTail("(system) tool loaded", s, toolLoadedText, false, depth)
 	case strings.HasPrefix(s, otherSession):
+		if i := strings.LastIndex(s, otherSessionEnd); i >= 0 {
+			rest := strings.TrimSpace(s[i+len(otherSessionEnd):])
+			if strings.HasPrefix(rest, otherFooter) || strings.HasPrefix(rest, otherFooterCurly) {
+				// The client's own explanatory paragraph, not typed text; its end is not fixed.
+				return "(system) message from another session", true
+			}
+		}
 		return withTail("(system) message from another session", s, otherSessionEnd, true, depth)
 	case strings.HasPrefix(s, skillOpening):
 		return skillTitle(strings.TrimPrefix(s, skillOpening)), true
