@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/brutally-honest/llm-gateway/internal/config"
 )
 
 // Each required dependency missing stops the install before any gateway file is
@@ -385,6 +387,125 @@ func TestUninstallPurge(t *testing.T) {
 	}
 }
 
+// --purge deletes only the config folder and the default data folder: a capture.dir of
+// the user's own and the startup-error record are listed as kept and stay on disk.
+func TestUninstallPurgeListsWhatItKeeps(t *testing.T) {
+	f := newFake(t, "linux")
+	f.install(InstallOptions{Yes: true})
+	custom := filepath.Join(f.env.Home, "mydata")
+	f.write("mydata/store.db", "keep me")
+	f.write(".local/share/llm-gateway/store.db", "gone")
+	rec := f.write(".local/state/llm-gateway/startup-error.json", "{}")
+	f.env.LoadConfig = func(string) (config.Config, error) {
+		cfg := config.Defaults()
+		cfg.Capture.Dir = custom
+		return cfg, nil
+	}
+	f.uninstall(UninstallOptions{Purge: true, Yes: true})
+	out := f.out.String()
+	contains(t, out, "~/mydata (capture.dir from your config; --purge deletes only the default data folder)")
+	contains(t, out, "~/.local/state/llm-gateway/startup-error.json (the last startup error record)")
+	contains(t, out, "Deleted ~/.config/llm-gateway and ~/.local/share/llm-gateway.")
+	for _, path := range []string{filepath.Join(custom, "store.db"), rec} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("%s deleted by --purge: %v", path, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(f.env.Home, ".local/share/llm-gateway")); err == nil {
+		t.Fatal("default data folder kept after purge")
+	}
+}
+
+// A settings file the user made lives in the config folder, which --purge deletes: it is
+// named on the deleted line, not listed as kept. Without --purge, or when purge is
+// declined, it is still listed as kept.
+func TestUninstallPurgeNamesUnownedSettingsAsDeleted(t *testing.T) {
+	setup := func() *fake {
+		f := newFake(t, "linux")
+		f.install(InstallOptions{Yes: true})
+		f.uninstall(UninstallOptions{Yes: true})
+		f.write(".config/llm-gateway/claude-settings.json", `{"mine":true}`)
+		return f
+	}
+	const keepLine = "~/.config/llm-gateway/claude-settings.json (not made by install)"
+
+	f := setup()
+	f.uninstall(UninstallOptions{Purge: true, Yes: true})
+	out := f.out.String()
+	lacks(t, out, keepLine)
+	contains(t, out, "purge   ~/.config/llm-gateway and ~/.local/share/llm-gateway (including your own claude-settings.json)")
+	contains(t, out, "Deleted ~/.config/llm-gateway and ~/.local/share/llm-gateway (including your own claude-settings.json).")
+	if _, err := os.Stat(filepath.Join(f.env.Home, ".config/llm-gateway/claude-settings.json")); err == nil {
+		t.Fatal("settings file kept after purge")
+	}
+
+	f = setup()
+	f.uninstall(UninstallOptions{Yes: true})
+	contains(t, f.out.String(), keepLine)
+
+	f = setup()
+	f.answer("y", "n")
+	f.uninstall(UninstallOptions{Purge: true})
+	out = f.out.String()
+	contains(t, out, "Keeping the config and the data.")
+	contains(t, out, keepLine)
+	if _, err := os.Stat(filepath.Join(f.env.Home, ".config/llm-gateway/claude-settings.json")); err != nil {
+		t.Fatalf("settings file deleted although purge was declined: %v", err)
+	}
+}
+
+// A capture.dir inside the default data folder is deleted by --purge, so it is not
+// listed as kept.
+func TestUninstallPurgeDoesNotListCaptureDirInsideDataFolder(t *testing.T) {
+	f := newFake(t, "linux")
+	f.install(InstallOptions{Yes: true})
+	inside := filepath.Join(f.env.Home, ".local/share/llm-gateway/captures")
+	f.write(".local/share/llm-gateway/captures/store.db", "gone")
+	f.env.LoadConfig = func(string) (config.Config, error) {
+		cfg := config.Defaults()
+		cfg.Capture.Dir = inside
+		return cfg, nil
+	}
+	f.uninstall(UninstallOptions{Purge: true, Yes: true})
+	lacks(t, f.out.String(), "~/.local/share/llm-gateway/captures (capture.dir")
+	if _, err := os.Stat(filepath.Join(inside, "store.db")); err == nil {
+		t.Fatal("capture.dir inside the data folder kept after purge")
+	}
+}
+
+func TestWithin(t *testing.T) {
+	cases := []struct {
+		name, dir, root string
+		want            bool
+	}{
+		{"equal", "/a/llm-gateway", "/a/llm-gateway", true},
+		{"equal with trailing slash", "/a/llm-gateway/", "/a/llm-gateway", true},
+		{"child", "/a/llm-gateway/captures", "/a/llm-gateway", true},
+		{"sibling with shared prefix", "/a/llm-gateway-2", "/a/llm-gateway", false},
+		{"parent", "/a", "/a/llm-gateway", false},
+		{"unrelated", "/b/captures", "/a/llm-gateway", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := within(c.dir, c.root); got != c.want {
+				t.Fatalf("within(%q, %q) = %v, want %v", c.dir, c.root, got, c.want)
+			}
+		})
+	}
+}
+
+// On macOS --purge also lists the service logs as kept.
+func TestUninstallPurgeKeepsMacLogs(t *testing.T) {
+	f, _ := launchdFake(t)
+	f.install(InstallOptions{Yes: true})
+	f.write("Library/Logs/llm-gateway/gateway.log", "x")
+	f.uninstall(UninstallOptions{Purge: true, Yes: true})
+	contains(t, f.out.String(), "~/Library/Logs/llm-gateway (the service logs)")
+	if _, err := os.Stat(filepath.Join(f.env.Home, "Library/Logs/llm-gateway/gateway.log")); err != nil {
+		t.Fatal("logs deleted by --purge")
+	}
+}
+
 // A hand-written function is detected, shown and replaced only on yes, with a .bak;
 // on no it is kept and no block is added, so there are never two (spec AC16).
 func TestHandWrittenFunction(t *testing.T) {
@@ -604,6 +725,30 @@ func TestIdenticalUnmanagedSettingsRestoredOnUninstall(t *testing.T) {
 	f.uninstall(UninstallOptions{Yes: true})
 	if after := f.snapshot(); !maps.Equal(before, after) {
 		t.Fatalf("before %v\nafter %v", keys(before), keys(after))
+	}
+}
+
+// With --purge, a settings file that install took over from the user (a .bak of their own
+// is restored on uninstall) is deleted along with the config folder, so the deleted line
+// names it as the user's own.
+func TestUninstallPurgeNamesRestoredSettingsAsDeleted(t *testing.T) {
+	f := newFake(t, "linux")
+	f.install(InstallOptions{Yes: true})
+	f.uninstall(UninstallOptions{Yes: true})
+	f.write(".config/llm-gateway/claude-settings.json", `{"mine":true}`) // differs from install's
+	f.out.Reset()
+	if code := f.install(InstallOptions{Yes: true}); code != ExitOK {
+		t.Fatalf("exit %d\n%s", code, f.out)
+	}
+	contains(t, f.out.String(), "claude-settings.json.bak")
+
+	f.out.Reset()
+	f.uninstall(UninstallOptions{Purge: true, Yes: true})
+	out := f.out.String()
+	contains(t, out, "purge   ~/.config/llm-gateway and ~/.local/share/llm-gateway (including your own claude-settings.json)")
+	contains(t, out, "Deleted ~/.config/llm-gateway and ~/.local/share/llm-gateway (including your own claude-settings.json).")
+	if _, err := os.Stat(filepath.Join(f.env.Home, ".config/llm-gateway/claude-settings.json")); err == nil {
+		t.Fatal("settings file kept after purge")
 	}
 }
 

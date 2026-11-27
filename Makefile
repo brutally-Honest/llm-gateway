@@ -4,7 +4,6 @@ GOLANGCI_LINT_VERSION := 2.13.2
 
 BIN           := $(CURDIR)/bin
 GOLANGCI_LINT := $(BIN)/golangci-lint
-NOTES_REFSPEC := +refs/notes/*:refs/notes/*
 
 # `dev` when git can't describe the tree, e.g. a source tarball without .git.
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -19,8 +18,6 @@ setup: setup-git setup-lint setup-shellcheck setup-node
 setup-git:
 	git config core.hooksPath .githooks
 	git config notes.rewriteRef refs/notes/commits
-	@git config --get-all remote.origin.fetch | grep -qxF '$(NOTES_REFSPEC)' || \
-		git config --add remote.origin.fetch '$(NOTES_REFSPEC)'
 
 # make test (so make verify) lints install.sh with shellcheck (spec 023 AC23); setup only
 # reports whether it is installed, because it comes from the system package manager.

@@ -83,7 +83,7 @@ On the list, click Next and stop the gateway at the same moment. Then restart it
 Retry.
 
 Expected: the list says "The gateway is not answering." with Retry, never the browser's
-text. The header shows the amber dot and "reconnecting…". After a restart the dot is green,
+text. The header shows the red dot and "reconnecting…". After a restart the dot is green,
 the note is gone, and Retry loads the page.
 
 Seen 2026-11-26: as expected in Lean light at 1,440 px and Stark dark at 2,560 px. No

@@ -116,14 +116,23 @@ is off by default. Further investigation of the sandbox is deferred until after 
   `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `X-Gateway-Key` and `x-api-key` are
   replaced with `[REDACTED]`. Details:
   [capture.md](capture.md#3-what-is-redacted-and-what-isnt).
-- **Nothing is uploaded.** The gateway has no telemetry. It sends your requests to the
-  provider you configured, as a proxy must, and nothing else. Tracing is off by default.
+- **Nothing is uploaded.** The gateway has no telemetry, update check or analytics, and
+  its web page loads nothing from other hosts. While it runs, its own outbound traffic is
+  your requests to the provider you configured, forwarded as sent (minus `X-Gateway-Key`),
+  through your `HTTP_PROXY` or `HTTPS_PROXY` if you set one. Two more things reach other
+  hosts. The network sensor's proxies (`effects.network`, on by default, listening on
+  loopback only) forward the connections a local client such as Claude Code opens through
+  them, to the host that client names. `gateway install` can download and run Claude Code's
+  installer or a package manager, only after showing the command and asking, or with
+  `--install-deps`. Tracing is off by default.
   If you turn it on, spans (sizes, timings, status, model, exchange id; no content or
   headers) go to `tracing.otlp_endpoint`, which defaults to a Jaeger on `127.0.0.1`. That
   setting also accepts an `https` address elsewhere, so check it if you change it. See
   [observability.md](observability.md#traces-off-by-default).
 - **Loopback only.** Every listener (API, UI, proxies) must be `127.0.0.0/8`, `::1` or
-  `localhost`. Any other address stops the gateway at start. There is no override.
+  `localhost`. Any other address stops the gateway at start. There is no override. This
+  is about what the gateway listens on; "Nothing is uploaded" above covers what it
+  connects to.
 - **File permissions.** The capture folder is `0700` and every file in it is `0600`. The
   config folder and file the installer writes are `0700` and `0600`.
 
