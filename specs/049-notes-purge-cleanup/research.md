@@ -13,7 +13,8 @@
 - [x] 2026-11-27 round 1 fixes P3-1/P3-2: app.test.js:129 message and manual check 046:86 say red; no "amber" left in internal/ui, docs or README (corrects the task 3 line above, which missed both)
 - [x] 2026-11-27 review round 2 (fresh opus): no P1/P2; P3 missing test for the restored-.bak purge note; P4-a, P4-b under Follow-ups
 - [x] 2026-11-27 round 2 fix: `TestUninstallPurgeNamesRestoredSettingsAsDeleted` (fails with the restored-.bak branch disabled); max two rounds reached
-- [ ] spec marked done; PR and CI
+- [x] 2026-11-27 spec marked done
+- [ ] push, PR and CI
 
 ## Decisions
 - **D1** 2026-11-26 The main session writes spec.md and research.md itself (they are the

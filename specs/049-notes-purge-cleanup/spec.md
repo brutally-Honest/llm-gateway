@@ -3,7 +3,7 @@ feature: 049-notes-purge-cleanup
 kind: chore
 created: 2026-11-26
 branch: chore/049-notes-purge-cleanup
-status: draft
+status: done
 ---
 
 ## Problem
