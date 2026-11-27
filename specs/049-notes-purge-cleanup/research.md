@@ -10,7 +10,7 @@
 - [x] 2026-11-27 resumed after a killed session; local git notes added to 150ed75, b55a178, 0344ecf, 6fbd103, b74283f, b927021, ed6f1a4 (none had one)
 - [x] 2026-11-27 review round 1 (fresh opus): P2-1, P3-1, P3-2; P4s under Follow-ups (D10, D11)
 - [x] 2026-11-27 round 1 fix P2-1: unowned or restored claude-settings.json inside the purged config folder is named on the purge/Deleted lines, not kept (`TestUninstallPurgeNamesUnownedSettingsAsDeleted`; no test for the restored-.bak note)
-- [ ] round 1 fixes: P3-1/P3-2 amber leftovers
+- [x] 2026-11-27 round 1 fixes P3-1/P3-2: app.test.js:129 message and manual check 046:86 say red; no "amber" left in internal/ui, docs or README (corrects the task 3 line above, which missed both)
 - [ ] review round 2 (if needed)
 - [ ] spec marked done; PR and CI
 

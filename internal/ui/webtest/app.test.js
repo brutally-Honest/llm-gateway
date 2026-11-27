@@ -126,7 +126,7 @@ test("droppedSessionStreamKeepsCallDialogAndHistoryAndShowsDisconnected", async 
   first.readyState = FakeEventSource.CONNECTING;
   first.onerror();
   assert.equal(liveText(), "live: disconnected, retrying");
-  assert.equal(liveTone(), "live-dot live-warn", "amber while reconnecting");
+  assert.equal(liveTone(), "live-dot live-warn", "red while reconnecting");
   assert.equal(liveNote(), "reconnecting…", "the note says so beside the dot");
   held();
 
