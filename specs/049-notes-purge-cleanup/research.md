@@ -11,7 +11,8 @@
 - [x] 2026-11-27 review round 1 (fresh opus): P2-1, P3-1, P3-2; P4s under Follow-ups (D10, D11)
 - [x] 2026-11-27 round 1 fix P2-1: unowned or restored claude-settings.json inside the purged config folder is named on the purge/Deleted lines, not kept (`TestUninstallPurgeNamesUnownedSettingsAsDeleted`; no test for the restored-.bak note)
 - [x] 2026-11-27 round 1 fixes P3-1/P3-2: app.test.js:129 message and manual check 046:86 say red; no "amber" left in internal/ui, docs or README (corrects the task 3 line above, which missed both)
-- [ ] review round 2 (if needed)
+- [x] 2026-11-27 review round 2 (fresh opus): no P1/P2; P3 missing test for the restored-.bak purge note; P4-a, P4-b under Follow-ups
+- [x] 2026-11-27 round 2 fix: `TestUninstallPurgeNamesRestoredSettingsAsDeleted` (fails with the restored-.bak branch disabled); max two rounds reached
 - [ ] spec marked done; PR and CI
 
 ## Decisions
@@ -49,6 +50,9 @@
   sentences are supported and keep their wording; "Loopback only" gets one line saying it
   is about listening, not connecting.
 
+- **D2 correction** 2026-11-27 The task 1 work landed as one `chore(repo)` commit (150ed75:
+  hook, Makefile, tests, AGENTS.md) and task 2 as one `fix(install)` (6fbd103: help, keep
+  lists, docs), each a single logical change, instead of D2's per-file scopes.
 - **D10** 2026-11-27 Review P4-5: the HEAD commit body named a model ("The haiku check");
   it was still HEAD and unpushed, so it was amended (37863aa) after `make verify`, and its
   git note reworded. No other commit was rewritten.
@@ -64,6 +68,10 @@
   folder, or a capture.dir that is a parent of DataDir/ConfigDir, is listed as kept.
 - 2026-11-27 P4-4 what-gets-recorded.md:120 "minus `X-Gateway-Key`" omits hop-by-hop and
   `Proxy-*` headers.
+- 2026-11-27 Round 2 P4-a internal/install/install.go:173: the config.yaml comment line
+  install writes is 118 characters; neighbours wrap near 90.
+- 2026-11-27 Round 2 P4-b: D2's planned per-file scopes were not used; see the D2
+  correction below.
 - 2026-11-27 Settled: the OTLP exporter uses `WithEndpointURL` (observability/tracing.go:41),
   which overrides `OTEL_EXPORTER_OTLP_ENDPOINT`; the Task 4 "unverified" note is answered.
 

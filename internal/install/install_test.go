@@ -728,6 +728,30 @@ func TestIdenticalUnmanagedSettingsRestoredOnUninstall(t *testing.T) {
 	}
 }
 
+// With --purge, a settings file that install took over from the user (a .bak of their own
+// is restored on uninstall) is deleted along with the config folder, so the deleted line
+// names it as the user's own.
+func TestUninstallPurgeNamesRestoredSettingsAsDeleted(t *testing.T) {
+	f := newFake(t, "linux")
+	f.install(InstallOptions{Yes: true})
+	f.uninstall(UninstallOptions{Yes: true})
+	f.write(".config/llm-gateway/claude-settings.json", `{"mine":true}`) // differs from install's
+	f.out.Reset()
+	if code := f.install(InstallOptions{Yes: true}); code != ExitOK {
+		t.Fatalf("exit %d\n%s", code, f.out)
+	}
+	contains(t, f.out.String(), "claude-settings.json.bak")
+
+	f.out.Reset()
+	f.uninstall(UninstallOptions{Purge: true, Yes: true})
+	out := f.out.String()
+	contains(t, out, "purge   ~/.config/llm-gateway and ~/.local/share/llm-gateway (including your own claude-settings.json)")
+	contains(t, out, "Deleted ~/.config/llm-gateway and ~/.local/share/llm-gateway (including your own claude-settings.json).")
+	if _, err := os.Stat(filepath.Join(f.env.Home, ".config/llm-gateway/claude-settings.json")); err == nil {
+		t.Fatal("settings file kept after purge")
+	}
+}
+
 // B5: with network effects on, the summary says which Node versions get them (spec 024
 // AC3); with them off it says nothing about Node.
 func TestSummaryNamesNodeVersions(t *testing.T) {
