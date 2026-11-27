@@ -82,12 +82,27 @@ func Uninstall(e *Env, c Client, o UninstallOptions) int {
 	}
 
 	// The settings file, restoring the one it replaced.
+	// With --purge, a settings file inside the config or data folder is deleted with
+	// it, so it is named on the purge line, not in the keep list (unless purge is declined).
+	var purgedOwn, declinedKeep []string
+	inPurge := func(path string) bool { return within(path, p.ConfigDir) || within(path, p.DataDir) }
 	if _, ok, _ := readMaybe(p.Settings); ok {
 		if st.owns(p.Settings) {
-			steps = append(steps, removal{label: "settings", path: p.Settings, remove: true, restore: existingBackup(st, p.Settings)})
+			r := removal{label: "settings", path: p.Settings, remove: true, restore: existingBackup(st, p.Settings)}
+			steps = append(steps, r)
+			if r.restore != "" && o.Purge && inPurge(p.Settings) {
+				purgedOwn = append(purgedOwn, "your own "+filepath.Base(p.Settings))
+			}
+		} else if o.Purge && inPurge(p.Settings) {
+			purgedOwn = append(purgedOwn, "your own "+filepath.Base(p.Settings))
+			declinedKeep = append(declinedKeep, p.tilde(p.Settings)+" (not made by install)")
 		} else {
 			keep = append(keep, p.tilde(p.Settings)+" (not made by install)")
 		}
+	}
+	purgeNote := ""
+	if len(purgedOwn) > 0 {
+		purgeNote = " (including " + strings.Join(purgedOwn, ", ") + ")"
 	}
 	if st != nil {
 		steps = append(steps, removal{label: "state", path: p.State, remove: true})
@@ -133,7 +148,7 @@ func Uninstall(e *Env, c Client, o UninstallOptions) int {
 		e.printf("    run     %s\n", strings.Join(cmd, " "))
 	}
 	if o.Purge {
-		e.printf("    purge   %s and %s\n", p.tilde(p.ConfigDir), p.tilde(p.DataDir))
+		e.printf("    purge   %s and %s%s\n", p.tilde(p.ConfigDir), p.tilde(p.DataDir), purgeNote)
 	}
 	e.printf("  Will keep\n")
 	for _, k := range keep {
@@ -168,6 +183,7 @@ func Uninstall(e *Env, c Client, o UninstallOptions) int {
 		}
 		if !purge {
 			e.printf("Keeping the config and the data.\n")
+			keep = append(keep, declinedKeep...)
 		}
 	}
 
@@ -229,7 +245,7 @@ func Uninstall(e *Env, c Client, o UninstallOptions) int {
 	}
 	e.printf("Uninstalled.\n")
 	if purge {
-		e.printf("  Deleted %s and %s.\n", p.tilde(p.ConfigDir), p.tilde(p.DataDir))
+		e.printf("  Deleted %s and %s%s.\n", p.tilde(p.ConfigDir), p.tilde(p.DataDir), purgeNote)
 	}
 	if restored != "" {
 		e.printf("%s", restored)

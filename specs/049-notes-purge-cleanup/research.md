@@ -7,7 +7,10 @@
 - [x] 2026-11-26 task 3: app.js liveText comment says red (style.css:215 `--live-off`); no other amber text in UI or docs
 - [x] 2026-11-26 task 4: outbound-destination audit; list under Notes; what-gets-recorded.md privacy bullets fixed (D9)
 - [x] 2026-11-26 task 5: check of the 048 round-2 fix commit (6059872): no typos, no links added, no contradictions (`?` help matches keys.js/shell.js; --purge paragraph superseded by 6fbd103); nothing to fix
-- [ ] review round 1
+- [x] 2026-11-27 resumed after a killed session; local git notes added to 150ed75, b55a178, 0344ecf, 6fbd103, b74283f, b927021, ed6f1a4 (none had one)
+- [x] 2026-11-27 review round 1 (fresh opus): P2-1, P3-1, P3-2; P4s under Follow-ups (D10, D11)
+- [x] 2026-11-27 round 1 fix P2-1: unowned or restored claude-settings.json inside the purged config folder is named on the purge/Deleted lines, not kept (`TestUninstallPurgeNamesUnownedSettingsAsDeleted`; no test for the restored-.bak note)
+- [ ] round 1 fixes: P3-1/P3-2 amber leftovers
 - [ ] review round 2 (if needed)
 - [ ] spec marked done; PR and CI
 
@@ -45,6 +48,24 @@
   `HTTP(S)_PROXY`, and the installer's asked-first downloads. Tracing and listener
   sentences are supported and keep their wording; "Loopback only" gets one line saying it
   is about listening, not connecting.
+
+- **D10** 2026-11-27 Review P4-5: the HEAD commit body named a model ("The haiku check");
+  it was still HEAD and unpushed, so it was amended (37863aa) after `make verify`, and its
+  git note reworded. No other commit was rewritten.
+- **D11** 2026-11-27 Review P3-2: `docs/manual-checks/046-ui-polish.md` is re-run guidance,
+  not history, so its "amber dot" is corrected like the test message (P3-1).
+
+## Follow-ups (review P4s)
+- 2026-11-27 P4-1 docs/install.md:157 says "Will keep" shows only what exists; capture.dir,
+  the binary and the dependencies line are listed without a Stat.
+- 2026-11-27 P4-2 `purgeKept` skips a custom capture.dir when LoadConfig errors, though the
+  partial cfg has it.
+- 2026-11-27 P4-3 `within` compares paths as text: a symlinked capture.dir into the data
+  folder, or a capture.dir that is a parent of DataDir/ConfigDir, is listed as kept.
+- 2026-11-27 P4-4 what-gets-recorded.md:120 "minus `X-Gateway-Key`" omits hop-by-hop and
+  `Proxy-*` headers.
+- 2026-11-27 Settled: the OTLP exporter uses `WithEndpointURL` (observability/tracing.go:41),
+  which overrides `OTEL_EXPORTER_OTLP_ENDPOINT`; the Task 4 "unverified" note is answered.
 
 ## Notes
 - 2026-11-26 Task 4 outbound destinations of the `gateway` binary (sonnet audit, read-only):

@@ -416,6 +416,44 @@ func TestUninstallPurgeListsWhatItKeeps(t *testing.T) {
 	}
 }
 
+// A settings file the user made lives in the config folder, which --purge deletes: it is
+// named on the deleted line, not listed as kept. Without --purge, or when purge is
+// declined, it is still listed as kept.
+func TestUninstallPurgeNamesUnownedSettingsAsDeleted(t *testing.T) {
+	setup := func() *fake {
+		f := newFake(t, "linux")
+		f.install(InstallOptions{Yes: true})
+		f.uninstall(UninstallOptions{Yes: true})
+		f.write(".config/llm-gateway/claude-settings.json", `{"mine":true}`)
+		return f
+	}
+	const keepLine = "~/.config/llm-gateway/claude-settings.json (not made by install)"
+
+	f := setup()
+	f.uninstall(UninstallOptions{Purge: true, Yes: true})
+	out := f.out.String()
+	lacks(t, out, keepLine)
+	contains(t, out, "purge   ~/.config/llm-gateway and ~/.local/share/llm-gateway (including your own claude-settings.json)")
+	contains(t, out, "Deleted ~/.config/llm-gateway and ~/.local/share/llm-gateway (including your own claude-settings.json).")
+	if _, err := os.Stat(filepath.Join(f.env.Home, ".config/llm-gateway/claude-settings.json")); err == nil {
+		t.Fatal("settings file kept after purge")
+	}
+
+	f = setup()
+	f.uninstall(UninstallOptions{Yes: true})
+	contains(t, f.out.String(), keepLine)
+
+	f = setup()
+	f.answer("y", "n")
+	f.uninstall(UninstallOptions{Purge: true})
+	out = f.out.String()
+	contains(t, out, "Keeping the config and the data.")
+	contains(t, out, keepLine)
+	if _, err := os.Stat(filepath.Join(f.env.Home, ".config/llm-gateway/claude-settings.json")); err != nil {
+		t.Fatalf("settings file deleted although purge was declined: %v", err)
+	}
+}
+
 // A capture.dir inside the default data folder is deleted by --purge, so it is not
 // listed as kept.
 func TestUninstallPurgeDoesNotListCaptureDirInsideDataFolder(t *testing.T) {
